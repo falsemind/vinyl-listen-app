@@ -16,7 +16,7 @@ This repository is organized as a **monorepo** containing both the backend and t
 # Project Architecture
 
 ```
-vinyl-listening-app/
+vinyl-listen-app/
 │
 ├── backend/        # FastAPI backend service
 │
