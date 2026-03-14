@@ -1,0 +1,479 @@
+# Vinyl Listening App — MVP Screen Specification
+
+## Purpose
+
+This document defines the core screens and user flow for the MVP of the Vinyl Listening App. It is intended to support **Figma wireframing and UX exploration**.
+
+Scope includes:
+
+- record identification
+    
+- listening session logging
+    
+- basic analytics
+    
+
+AI assistant, selling recommendations, and collection sync are **not included in MVP**.
+
+---
+
+# Screen 1 — Home
+
+## Purpose
+
+Provide a quick overview of listening activity and allow the user to quickly log a new session.
+
+## Main Sections
+
+### Header
+
+App title or logo.
+
+### Quick Action
+
+Button:
+
+```
+Log Listening Session
+```
+
+### Recent Sessions
+
+List showing last 3–5 listening sessions.
+
+Each item shows:
+
+```
+Artist
+Title
+Side played
+Rating
+Timestamp
+```
+
+### Stats Snapshot
+
+Small overview metrics:
+
+```
+Total sessions
+Records played this month
+Most played record
+Least played record
+```
+
+## Actions
+
+```
+Tap Log Listening Session → Capture Record Screen
+Tap Session → Record Detail Screen
+Tap Record → Record Detail Screen
+```
+
+---
+
+# Screen 2 — Capture Record
+
+## Purpose
+
+Capture a photo to identify the record.
+
+## Main Components
+
+### Camera View
+
+Camera preview using device camera.
+
+### Capture Button
+
+```
+Take Photo
+```
+
+### Alternative Actions
+
+```
+Upload Photo
+Manual Search
+```
+
+### Help Hint
+
+Small hint text:
+
+```
+Capture the record label, runout etching, or barcode.
+```
+
+## Actions
+
+```
+Take Photo → Processing Screen
+Upload Photo → Processing Screen
+Manual Search → Manual Search Screen
+```
+
+---
+
+# Screen 3 — Processing
+
+## Purpose
+
+Show system progress while identifying the record.
+
+## UI Elements
+
+### Loading Indicator
+
+### Status Messages
+
+Example messages:
+
+```
+Uploading image
+Extracting text
+Searching Discogs
+Ranking matches
+```
+
+## Navigation
+
+```
+If matches found → Match Confirmation Screen
+If no results → Manual Search Screen
+```
+
+---
+
+# Screen 4 — Match Confirmation
+
+## Purpose
+
+Allow the user to confirm the correct Discogs release.
+
+## Layout
+
+Scrollable list of candidate releases.
+
+Each candidate shows:
+
+```
+Artist
+Title
+Year
+Label
+Catalog number
+Thumbnail image
+```
+
+## Actions per Candidate
+
+```
+Confirm Release
+View Details (optional)
+```
+
+## Bottom Actions
+
+```
+Show More Matches
+Manual Search
+```
+
+## Navigation
+
+```
+MatchConfirmation
+     ↓
+User selects candidate
+     ↓
+POST /sessions OR GET /releases/{discogs_release_id}
+     ↓
+backend creates internal record
+     ↓
+release_id returned
+```
+
+---
+
+# Screen 5 — Manual Search
+
+## Purpose
+
+Allow the user to find a record manually if identification fails.
+
+## Search Fields
+
+Search input:
+
+```
+Artist
+Title
+Catalog number
+Barcode
+```
+
+## Results List
+
+Each result shows:
+
+```
+Artist
+Title
+Year
+Label
+Thumbnail
+```
+
+## Actions
+
+```
+Select Release → Session Logging Screen
+```
+
+---
+
+# Screen 6 — Session Logging
+
+## Purpose
+
+Record a listening session for the selected release.
+
+## Record Info (Top Section)
+
+Display:
+
+```
+Artist
+Title
+Year
+Label
+Thumbnail
+```
+
+## Input Fields
+
+### Side Played
+
+Dropdown or selector:
+
+```
+A
+B
+C
+D
+E
+F
+```
+
+Values based on release data.
+
+### Rating
+
+Scale:
+
+```
+1 — 5
+```
+
+Example UI:  
+Star or slider input.
+
+### Mood
+
+Predefined moods:
+
+```
+Energetic
+Calm
+Melancholic
+Nostalgic
+Focused
+Background
+```
+
+Additional option:
+
+```
+Add Custom Mood
+```
+
+### Notes
+
+Optional text field.
+
+Purpose:  
+Personal listening notes for future analysis.
+
+## Actions
+
+```
+Save Session
+Cancel
+```
+
+## Navigation
+
+```
+Save Session → Record Detail Screen
+Cancel → Home
+```
+
+---
+
+# Screen 7 — Record Detail
+
+## Purpose
+
+Show detailed information and listening history for a record.
+
+## Sections
+
+### Record Info
+
+```
+Artist
+Title
+Year
+Label
+Catalog number
+Discogs link
+```
+
+### Listening Stats
+
+```
+Total plays
+Average rating
+Last played
+```
+
+### Mood Summary
+
+Small visualization:
+
+```
+Mood frequency
+```
+
+### Listening History
+
+List of sessions:
+
+```
+Date
+Side played
+Rating
+Mood
+Notes indicator
+```
+
+## Actions
+
+```
+Add Session
+View Notes
+```
+
+Navigation:
+
+```
+Add Session → Session Logging Screen
+```
+
+---
+
+# Screen 8 — Analytics
+
+## Purpose
+
+Provide visual insights into listening habits.
+
+Charts use Compose-compatible chart components.
+
+## Charts
+
+### Plays Over Time
+
+Line chart showing:
+
+```
+Sessions per month
+```
+
+### Top Records
+
+Bar chart:
+
+```
+Most played records
+```
+
+### Rating Distribution
+
+Histogram or bar chart:
+
+```
+Rating frequency
+```
+
+### Mood Distribution
+
+Pie or bar chart:
+
+```
+Mood counts
+```
+
+## Actions
+
+```
+Tap record in chart → Record Detail Screen
+```
+
+---
+
+# MVP Navigation Flow
+
+```
+Home
+ ↓
+Capture Record
+ ↓
+Processing
+ ↓
+Match Confirmation
+ ↓
+Session Logging
+ ↓
+Record Detail
+ ↓
+Home
+```
+
+Alternative paths:
+
+```
+Capture Record → Manual Search → Session Logging
+Record Detail → Add Session
+Home → Session → Record Detail
+```
+
+---
+
+# Notes for Figma Exploration
+
+Design considerations to explore:
+
+- quick logging with minimal taps
+    
+- large camera capture interaction
+    
+- clean session logging interface
+    
+- lightweight analytics visuals
+    
+- clear record identification confirmation
+    
+
+The MVP prioritizes **speed of logging a listening session** over deep record management features.
