@@ -1,0 +1,408 @@
+# Vinyl Listening App — Database Schema Specification (MVP)
+
+## Purpose
+
+Define the relational database schema used by the backend service.
+
+The schema supports:
+
+- record identification
+    
+- listening session logging
+    
+- analytics queries
+    
+- Discogs metadata caching
+    
+
+Database engine:
+
+PostgreSQL
+
+The schema is designed to be **simple for MVP**, while allowing future expansion for:
+
+- AI insights
+    
+- collection management
+    
+- pricing analytics
+    
+- recommendation engines
+    
+
+---
+
+# Entity Overview
+
+Core entities:
+
+```
+releases
+sessions
+session_moods
+discogs_release_cache
+```
+
+Relationships:
+
+```
+releases
+   │
+   ├── sessions
+   │        │
+   │        └── session_moods
+   │
+   └── discogs_release_cache
+```
+
+---
+
+# Table: releases
+
+Represents a **vinyl release imported from Discogs** and stored internally for session tracking and analytics.
+
+## Columns
+
+| Column             | Type      | Notes                                    |
+| ------------------ | --------- | ---------------------------------------- |
+| id                 | UUID      | Primary key                              |
+| discogs_release_id | BIGINT    | Discogs release identifier               |
+| artist             | TEXT      | Cached artist name                       |
+| title              | TEXT      | Album title                              |
+| year               | INTEGER   | Release year                             |
+| label              | TEXT      | Label name                               |
+| catalog_number     | TEXT      | Catalog number                           |
+| barcode            | TEXT      | Barcode if available                     |
+| genres             | TEXT[]    | Discogs genres (e.g. Electronic, Rock)   |
+| styles             | TEXT[]    | Discogs styles (e.g. Techno, Dub Techno) |
+| cover_image_url    | TEXT      | Cached Discogs image                     |
+| created_at         | TIMESTAMP | Record creation time                     |
+| updated_at         | TIMESTAMP | Last metadata update                     |
+
+## Example Stored Record
+
+```json
+{
+  "id": "6e3e1c1c-b5c5-4c0e-bbc8-2b5bdb5c4e21",
+  "discogs_release_id": 123456,
+  "artist": "Basic Channel",
+  "title": "Phylyps Trak",
+  "year": 1993,
+  "label": "Basic Channel",
+  "catalog_number": "BC 01",
+  "genres": ["Electronic"],
+  "styles": ["Techno", "Dub Techno"],
+  "cover_image_url": "https://discogs.com/image.jpg"
+}
+```
+
+## Indexes
+
+```sql
+PRIMARY KEY (id)
+
+UNIQUE (discogs_release_id)
+
+INDEX (artist)
+INDEX (title)
+
+CREATE INDEX idx_releases_genres
+ON releases
+USING GIN (genres);
+
+CREATE INDEX idx_releases_styles
+ON releases
+USING GIN (styles);
+```
+
+## Why Arrays Work Well Here
+
+Discogs metadata already returns genres and styles as arrays:
+
+```
+genres → ["Electronic"]
+styles → ["Dub Techno", "Minimal"]
+```
+
+Using `TEXT[]` allows:
+
+- direct mapping from API → database
+    
+- simple analytics queries
+    
+- efficient filtering
+    
+- no join tables required
+    
+
+Example query:
+
+```sql
+SELECT *
+FROM releases
+WHERE 'Techno' = ANY(styles);
+```
+---
+
+# Table: sessions
+
+Represents a **listening event**.
+
+Each time a user listens to a record, a session is created.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID|Primary key|
+|release_id|UUID|FK → releases.id|
+|rating|INTEGER|1–5 rating|
+|mood|TEXT|User selected mood|
+|notes|TEXT|Optional session notes|
+|played_at|TIMESTAMP|Time of listening|
+|vinyl_side|TEXT|Optional side (A,B,C,D...)|
+|created_at|TIMESTAMP|Session creation time|
+
+### Foreign Keys
+
+```
+release_id → releases.id
+```
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (release_id)
+
+INDEX (played_at)
+```
+
+---
+
+# Table: session_moods
+
+Defines allowed moods.
+
+Users may add custom moods.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID|Primary key|
+|name|TEXT|Mood label|
+|is_custom|BOOLEAN|User-defined mood|
+|created_at|TIMESTAMP|Creation time|
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+UNIQUE (name)
+```
+
+---
+
+# Table: discogs_release_cache
+
+Caches Discogs metadata to reduce API calls and avoid rate limits.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|discogs_release_id|BIGINT|Primary key|
+|raw_discogs_json|JSONB|Full Discogs payload|
+|cached_at|TIMESTAMP|When cached|
+|last_accessed_at|TIMESTAMP|Cache usage tracking|
+
+### Indexes
+
+```
+PRIMARY KEY (discogs_release_id)
+
+INDEX (last_accessed_at)
+```
+
+---
+
+# Derived Analytics (Computed)
+
+Analytics are calculated dynamically from sessions.
+
+Examples:
+
+### Play Count
+
+```
+SELECT COUNT(*)
+FROM sessions
+WHERE release_id = ?
+```
+
+---
+
+### Plays in Last 90 Days
+
+```
+SELECT COUNT(*)
+FROM sessions
+WHERE release_id = ?
+AND played_at > NOW() - INTERVAL '90 days'
+```
+
+---
+
+### Average Rating
+
+```
+SELECT AVG(rating)
+FROM sessions
+WHERE release_id = ?
+```
+
+---
+
+### Most Played Records
+
+```
+SELECT release_id, COUNT(*) AS play_count
+FROM sessions
+GROUP BY release_id
+ORDER BY play_count DESC
+LIMIT 20
+```
+
+---
+
+# ID Strategy
+
+All internal entities use UUIDs.
+
+```
+releases.id
+sessions.id
+session_moods.id
+```
+
+Discogs identifiers remain separate:
+
+```
+discogs_release_id
+```
+
+---
+
+# Data Lifecycle
+
+### Release Import
+
+When a Discogs match is confirmed:
+
+```
+if release not exists
+   → fetch Discogs metadata
+   → insert into releases
+   → cache full payload
+```
+
+---
+
+### Listening Session
+
+```
+insert into sessions
+```
+
+---
+
+### Analytics Queries
+
+```
+computed dynamically
+no materialized views required for MVP
+```
+
+---
+
+# Migration Strategy
+
+Use a migration tool such as:
+
+```
+Alembic
+```
+
+Initial migration should create:
+
+```
+releases
+sessions
+session_moods
+discogs_release_cache
+```
+
+---
+
+# Future Schema Extensions
+
+Possible additions after MVP:
+
+```
+collections
+wishlist
+record_prices
+marketplace_links
+ai_insights
+```
+
+Example future tables:
+
+```
+record_value_history
+collection_tags
+session_sentiment_analysis
+```
+
+---
+
+# Performance Considerations
+
+Expected workload for MVP:
+
+```
+< 10k sessions
+< 2k releases
+```
+
+PostgreSQL handles this easily without optimization.
+
+Indexes on:
+
+```
+release_id
+played_at
+discogs_release_id
+```
+
+will ensure fast analytics queries.
+
+---
+
+# Summary
+
+The MVP schema provides:
+
+- normalized record storage
+    
+- efficient session logging
+    
+- Discogs metadata caching
+    
+- simple analytics queries
+    
+
+while remaining **minimal and easy to maintain**.

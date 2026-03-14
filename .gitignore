@@ -205,3 +205,132 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# =========================
+
+# OS Files
+
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# =========================
+
+# Python
+
+# =========================
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+
+venv/
+.env
+.env.*
+
+# Python packaging
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage
+
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Mypy
+
+.mypy_cache/
+
+# =========================
+
+# Backend specific
+
+# =========================
+
+backend/venv/
+backend/.env
+backend/.env.*
+
+backend/**pycache**/
+backend/**/*.pyc
+
+# Alembic cache
+
+backend/alembic/versions/*.pyc
+
+# =========================
+
+# Android / Gradle
+
+# =========================
+
+android-app/.gradle/
+android-app/local.properties
+android-app/.idea/
+
+android-app/build/
+android-app/app/build/
+
+# Kotlin / Java
+
+*.class
+*.jar
+*.war
+*.dex
+
+# Android Studio caches
+
+android-app/captures/
+android-app/.externalNativeBuild/
+
+# =========================
+
+# IDEs
+
+# =========================
+
+.vscode/
+.idea/
+*.iml
+
+# =========================
+
+# Logs
+
+# =========================
+
+*.log
+logs/
+
+# =========================
+
+# Temporary files
+
+# =========================
+
+*.tmp
+*.swp
+*.swo
+
+# =========================
+
+# Docker
+
+# =========================
+
+docker-data/
+
+# =========================
+
+# Documentation build artifacts
+
+# =========================
+
+site/
