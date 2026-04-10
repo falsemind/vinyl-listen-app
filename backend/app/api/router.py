@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import health, releases, sessions
+from app.api.routes import analytics, health, releases, sessions
 
 api_router = APIRouter()
 
@@ -22,4 +22,10 @@ api_router.include_router(
     sessions.router,
     prefix="/sessions",
     tags=["sessions"],
+)
+
+api_router.include_router(
+    analytics.router,
+    prefix="/analytics",
+    tags=["analytics"],
 )

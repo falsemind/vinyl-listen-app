@@ -3,13 +3,13 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
 
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/vinyl"
+    database_url: str
+
+    database_echo: bool = False
 
     discogs_token: str | None = None
 
     api_rate_limit_per_minute: int = 60
-
-    database_echo: bool = False
 
     log_level: str = "INFO"
 
