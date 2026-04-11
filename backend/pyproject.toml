@@ -27,6 +27,9 @@ select = [
     "I",   # import sorting
     "UP",  # pyupgrade
     "B",   # bugbear
+    "SIM", # simplification rules
+    "RET", # return correctness rules
+    "ARG", # unused argument detection (API hygiene)
 ]
 
 
