@@ -334,3 +334,6 @@ docker-data/
 # =========================
 
 site/
+
+# local database files (if any)
+*.db

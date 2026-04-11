@@ -17,18 +17,26 @@ exclude = [
     "__pycache__",
 ]
 
+fix = true
+
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
     "I",   # import sorting
     "UP",  # pyupgrade
     "B",   # bugbear
+    "SIM", # simplification rules
+    "RET", # return correctness rules
+    "ARG", # unused argument detection (API hygiene)
 ]
 
-fix = true
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["app"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 [project]
 name = "backend"
 version = "0.1.0"
