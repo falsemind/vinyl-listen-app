@@ -69,6 +69,8 @@ This separation allows future integrations with:
 
 The Android app should **always use `release_id` when communicating with the backend**.
 
+**Internal Release Priority:** When performing searches or retrieving details using `discogs_release_id`, the backend service will first check if an associated `release_id` (internal ID) has already been created and stored in the local database. This ensures data integrity and optimizes retrieval speed for previously matched records.
+
 ---
 
 # API Overview
@@ -198,7 +200,7 @@ GET /api/v1/releases/search?artist=boards+of+canada&title=music&limit=10&offset=
 
 # 3. Release Details
 
-Fetch complete metadata for a release.
+Retrieves and compiles complete metadata for a release using the Discogs ID. This endpoint acts as an intelligent retrieval layer, prioritizing data freshness from local caches or performing a fetch if no cached version is available. If an internal `release_id` exists, it will be returned alongside the metadata.
 
 ## GET /releases/{discogs_release_id}
 

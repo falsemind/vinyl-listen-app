@@ -103,6 +103,7 @@ backend/
 │   │   │   ├── identify.py
 │   │   │   ├── releases.py
 │   │   │   ├── sessions.py
+│   │   │   ├── health.py
 │   │   │   └── analytics.py
 │   │   │
 │   │   └── router.py
@@ -123,20 +124,20 @@ backend/
 │   │       └── candidate_ranker.py
 │
 │   ├── models/
-│   │   ├── release.py
-│   │   ├── session.py
-│   │   ├── mood.py
-│   │   └── discogs_cache.py
+│   │   ├── releases.py
+│   │   ├── sessions.py
+│   │   ├── sessions_moods.py
+│   │   └── discogs_release_cache.py
 │
 │   ├── schemas/
-│   │   ├── release_schema.py
-│   │   ├── session_schema.py
+│   │   ├── releases_schema.py
+│   │   ├── sessions_schema.py
 │   │   └── analytics_schema.py
 │
 │   ├── repositories/
-│   │   ├── release_repository.py
-│   │   ├── session_repository.py
-│   │   └── discogs_cache_repository.py
+│   │   ├── releases_repository.py
+│   │   ├── sessions_repository.py
+│   │   └── discogs_release_repository.py
 │
 │   ├── database/
 │   │   ├── db.py
