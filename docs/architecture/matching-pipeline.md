@@ -68,23 +68,16 @@ image
 # High-Level Pipeline
 
 ```
-Image Upload
-      ↓
-Image Preprocessing
-      ↓
-Signal Detection
-   ├ barcode detection
-   └ OCR text extraction
-      ↓
-Identifier Extraction
-      ↓
-Discogs Search
-      ↓
-Candidate Ranking
-      ↓
-Return candidate releases
-```
+graph TD
+    A[Image Upload] --> B(Image Preprocessing);
+    B --> C{Signal Detection & Identifier Extraction};
+    C --> D{Local Database Lookup (DB)};
+    D -- Match Found --> E[Return Internal/Cached Metadata];
+    D -- No Match Found --> F(Discogs Search API Call);
+    F --> G[Candidate Ranking & Filtering];
+    G --> H[Return Candidate Releases to Client];
 
+```
 ---
 
 # Stage 1 — Image Upload
@@ -271,6 +264,8 @@ Parsed identifiers are then used for Discogs search queries.
 ---
 
 # Discogs Search Strategy
+
+**Prioritization Logic (Crucial):** Before constructing and executing any external Discogs API query, the system must perform a database lookup using the extracted identifiers (barcode, catalog number). If an entry is found in the releases table or associated cache tables, that data is used immediately to return candidates/details, bypassing the Discogs API entirely.
 
 The backend constructs search queries based on available identifiers.
 
