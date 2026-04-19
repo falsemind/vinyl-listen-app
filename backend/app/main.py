@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     # ---- Startup ----
     setup_logging()
     logger.info("Vinyl Listening API starting")
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Vinyl Listening App API", version="0.1.0", lifespan=lifespan)
 
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/")
