@@ -193,6 +193,7 @@ class DiscogsService:
         title: str | None = None,
         catalog_number: str | None = None,
         barcode: str | None = None,
+        query: str | None = None,
         limit: int = 10,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -207,6 +208,7 @@ class DiscogsService:
             "release_title": title,
             "catno": catalog_number,
             "barcode": barcode,
+            "q": query,
         }
         cache_key = self._search_cache_key(query_params, limit=limit, offset=offset)
         cached_payload = self._get_cached_search_payload(cache_key)

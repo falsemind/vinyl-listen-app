@@ -1,3 +1,4 @@
+from app.schemas.identify import IdentifyCandidateResponse, IdentifyResponse
 from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse
 from app.schemas.sessions import (
     CreateSessionRequest,
@@ -11,6 +12,8 @@ from app.schemas.sessions import (
 __all__ = [
     "CreateSessionRequest",
     "ErrorResponse",
+    "IdentifyCandidateResponse",
+    "IdentifyResponse",
     "ReleaseImportRequest",
     "ReleaseImportResponse",
     "ReleaseSessionHistoryItem",
