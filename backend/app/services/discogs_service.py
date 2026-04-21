@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 import json
+import logging
+import ssl
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,11 +11,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import certifi
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class DiscogsServiceError(Exception):
@@ -38,7 +41,7 @@ class DiscogsApiConfig:
     timeout_seconds: float
 
     @classmethod
-    def from_settings(cls) -> DiscogsApiConfig:
+    def from_settings(cls) -> "DiscogsApiConfig":
         if not settings.discogs_token:
             raise DiscogsConfigurationError("Discogs token is not configured.")
 
@@ -108,16 +111,22 @@ class DiscogsClient:
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._rate_limiter.wait()
         url = self._build_url(path, params)
+        logger.info("Requesting Discogs resource path=%s", path)
+        logger.debug("Discogs request url=%s params=%s", url, params)
 
         try:
-            return self._transport(
+            payload = self._transport(
                 url=url,
                 headers=self._config.build_headers(),
                 timeout=self._config.timeout_seconds,
             )
+            logger.info("Discogs request succeeded path=%s", path)
+            return payload
         except HTTPError as error:
+            logger.warning("Discogs request failed with status path=%s status=%s", path, error.code)
             raise DiscogsClientError(self._parse_error_response(error)) from error
         except URLError as error:
+            logger.warning("Discogs request failed path=%s reason=%s", path, error.reason)
             raise DiscogsClientError(f"Unable to reach Discogs API: {error.reason}") from error
 
     def _build_url(self, path: str, params: dict[str, Any] | None = None) -> str:
@@ -136,9 +145,12 @@ class DiscogsClient:
 
     def _default_transport(self, url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:
         request = Request(url=url, headers=headers, method="GET")
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout, context=self._build_ssl_context()) as response:
             payload = response.read().decode("utf-8")
         return json.loads(payload)
+
+    def _build_ssl_context(self) -> ssl.SSLContext:
+        return ssl.create_default_context(cafile=certifi.where())
 
     def _parse_error_response(self, error: HTTPError) -> str:
         try:
@@ -199,8 +211,10 @@ class DiscogsService:
         cache_key = self._search_cache_key(query_params, limit=limit, offset=offset)
         cached_payload = self._get_cached_search_payload(cache_key)
         if cached_payload is not None:
+            logger.info("Using cached Discogs search results limit=%s offset=%s", limit, offset)
             return cached_payload
 
+        logger.info("Fetching Discogs search results limit=%s offset=%s", limit, offset)
         payload = self._fetch_search_results(query_params, limit=limit, offset=offset)
         self._search_cache[cache_key] = (self._now_provider(), payload)
         return payload
@@ -214,15 +228,22 @@ class DiscogsService:
     ) -> dict[str, Any]:
         cache_entry = self._repository.get_by_discogs_release_id(db, discogs_release_id)
         if not force_refresh and self._is_fresh(cache_entry):
+            logger.info("Using cached Discogs release discogs_release_id=%s", discogs_release_id)
             self._repository.touch(db, cache_entry)
             return cache_entry.raw_discogs_json
 
+        logger.info(
+            "Fetching Discogs release discogs_release_id=%s force_refresh=%s",
+            discogs_release_id,
+            force_refresh,
+        )
         payload = self._client.get(f"/releases/{discogs_release_id}")
         self._repository.upsert(
             db,
             discogs_release_id=discogs_release_id,
             raw_discogs_json=payload,
         )
+        logger.info("Stored Discogs release in cache discogs_release_id=%s", discogs_release_id)
         return payload
 
     def _is_fresh(self, cache_entry: DiscogsReleaseCache | None) -> bool:

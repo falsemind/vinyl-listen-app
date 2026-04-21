@@ -6,10 +6,6 @@ from app.services.release_mapper import InternalReleaseData
 
 class ReleasesRepository:
     @staticmethod
-    def get_all(db: Session):
-        return db.query(Releases).all()
-
-    @staticmethod
     def get_by_id(db: Session, release_id: str) -> Releases | None:
         return db.query(Releases).filter(Releases.id == release_id).one_or_none()
 
