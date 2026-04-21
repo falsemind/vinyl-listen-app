@@ -1,0 +1,55 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
+
+
+class CreateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    release_id: str
+    side: str | None = None
+    rating: int | None = None
+    mood: str | None = None
+    notes: str | None = None
+    played_at: str
+
+
+class SessionCreateResponse(BaseModel):
+    session_id: str
+    timestamp: datetime
+    status: str
+
+
+class SessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    release_id: str
+    rating: int | None
+    mood: str | None
+    notes: str | None
+    played_at: datetime | None
+    vinyl_side: str | None
+    created_at: datetime
+
+
+class ReleaseSessionHistoryItem(BaseModel):
+    session_id: str
+    date: str | None
+    side: str | None
+    rating: int | None
+    mood: str | None
+    has_notes: bool
+
+
+class ReleaseSessionsResponse(BaseModel):
+    sessions: list[ReleaseSessionHistoryItem]

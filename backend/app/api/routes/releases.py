@@ -1,13 +1,16 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse
+from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse
 from app.services.discogs_service import DiscogsClientError
 from app.services.release_import_service import ReleaseImportService
+from app.services.sessions_service import ReleaseNotFoundError, SessionsService, SessionValidationError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,6 +18,10 @@ router = APIRouter()
 
 def get_release_import_service() -> ReleaseImportService:
     return ReleaseImportService()
+
+
+def get_sessions_service() -> SessionsService:
+    return SessionsService()
 
 
 @router.get("/")
@@ -40,7 +47,7 @@ def import_release(
             force_refresh=payload.force_refresh,
         )
     except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     except DiscogsClientError as error:
         error_message = str(error)
         status_code = status.HTTP_404_NOT_FOUND if "(404)" in error_message else status.HTTP_502_BAD_GATEWAY
@@ -68,3 +75,43 @@ def get_release(
         )
 
     return ReleaseResponse.model_validate(release)
+
+
+@router.get(
+    "/{release_id}/sessions",
+    response_model=ReleaseSessionsResponse,
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def get_release_sessions(
+    release_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
+):
+    try:
+        sessions = service.get_sessions_by_release(db, release_id, limit=limit, offset=offset)
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except ReleaseNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "release_not_found", "message": str(error)}},
+        )
+
+    return ReleaseSessionsResponse(
+        sessions=[
+            ReleaseSessionHistoryItem(
+                session_id=session.id,
+                date=session.played_at.date().isoformat() if session.played_at is not None else None,
+                side=session.vinyl_side,
+                rating=session.rating,
+                mood=session.mood,
+                has_notes=bool(session.notes and session.notes.strip()),
+            )
+            for session in sessions
+        ]
+    )
