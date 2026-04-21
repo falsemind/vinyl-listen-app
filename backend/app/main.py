@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api.router import api_router
 from app.core.logging import setup_logging
@@ -46,3 +46,8 @@ async def request_validation_exception_handler(_request: Request, exc: RequestVa
 @app.get("/")
 def root():
     return {"status": "vinyl-listen-app backend running"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
