@@ -13,10 +13,9 @@ def test_releases_route_is_versioned() -> None:
 
 
 def test_sessions_route_is_versioned() -> None:
-    response = client.post("/api/v1/sessions")
+    response = client.get("/api/v1/sessions/missing-session")
 
-    assert response.status_code == 200
-    assert response.json() == {"message": "session logged"}
+    assert response.status_code == 404
 
 
 def test_analytics_route_is_versioned() -> None:

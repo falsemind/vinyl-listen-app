@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from unittest.mock import sentinel
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -81,3 +80,26 @@ def test_search_cache_expires_after_ttl(build_discogs_client) -> None:
     assert second_payload == {"results": [{"id": 1}]}
     assert third_payload == {"results": [{"id": 2}]}
     assert len(calls) == 2
+
+
+def test_discogs_client_builds_ssl_context_from_certifi_bundle(
+    build_discogs_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = build_discogs_client(lambda url, headers, timeout: {})
+    create_default_context_calls: list[str] = []
+
+    def fake_where() -> str:
+        return "/tmp/discogs-certifi.pem"
+
+    def fake_create_default_context(*, cafile: str):
+        create_default_context_calls.append(cafile)
+        return sentinel.ssl_context
+
+    monkeypatch.setattr("app.services.discogs_service.certifi.where", fake_where)
+    monkeypatch.setattr("app.services.discogs_service.ssl.create_default_context", fake_create_default_context)
+
+    context = client._build_ssl_context()
+
+    assert context is sentinel.ssl_context
+    assert create_default_context_calls == ["/tmp/discogs-certifi.pem"]

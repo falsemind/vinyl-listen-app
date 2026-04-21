@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
+
+from alembic import command
 
 
 def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeypatch, capsys) -> None:

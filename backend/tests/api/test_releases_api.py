@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -99,6 +97,27 @@ def test_import_release_endpoint_returns_404_for_missing_discogs_release() -> No
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Discogs API error (404): release not found"}
+
+
+def test_import_release_endpoint_sanitizes_request_validation_errors() -> None:
+    service = StubReleaseImportService()
+    app.dependency_overrides[get_release_import_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import",
+            json={"discogs_release_id": "not-an-integer"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "invalid_request",
+            "message": "Input should be a valid integer, unable to parse string as an integer",
+        }
+    }
 
 
 def test_get_release_endpoint_returns_local_release_metadata() -> None:
