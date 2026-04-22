@@ -88,13 +88,15 @@ class IdentifyService:
         logger.info(
             (
                 "Identify pipeline extracted signals filename=%s barcodes=%s "
-                "catalog_numbers=%s has_artist=%s has_title=%s text_fragments=%s"
+                "catalog_numbers=%s has_artist=%s has_title=%s has_year=%s has_label=%s text_fragments=%s"
             ),
             filename,
             len(identifiers.barcodes),
             len(identifiers.catalog_numbers),
             bool(identifiers.artist),
             bool(identifiers.title),
+            identifiers.year is not None,
+            bool(identifiers.label),
             len(identifiers.text_fragments),
         )
 

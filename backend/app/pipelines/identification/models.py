@@ -4,7 +4,15 @@ from dataclasses import dataclass
 from typing import Literal
 
 BARCODE_VARIANT_NAMES = ("normalized", "grayscale", "threshold")
-OCR_VARIANT_NAMES = ("grayscale", "threshold")
+OCR_VARIANT_NAMES = (
+    "grayscale",
+    "threshold",
+    "threshold_low",
+    "inverted_threshold",
+    "sharpened",
+    "upscaled_grayscale",
+    "upscaled_threshold",
+)
 
 
 @dataclass(frozen=True)
@@ -37,10 +45,20 @@ class ExtractedIdentifiers:
     catalog_numbers: tuple[str, ...] = ()
     artist: str | None = None
     title: str | None = None
+    year: int | None = None
+    label: str | None = None
     text_fragments: tuple[str, ...] = ()
 
     def has_signals(self) -> bool:
-        return bool(self.barcodes or self.catalog_numbers or self.artist or self.title or self.text_fragments)
+        return bool(
+            self.barcodes
+            or self.catalog_numbers
+            or self.artist
+            or self.title
+            or self.year
+            or self.label
+            or self.text_fragments
+        )
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,8 @@ from app.pipelines.identification.models import ImageVariant, PreparedImage
 
 DEFAULT_MAX_IMAGE_DIMENSION = 1800
 DEFAULT_THRESHOLD = 160
+LOW_THRESHOLD_OFFSET = 25
+UPSCALE_FACTOR = 2
 
 
 class ImageProcessor:
@@ -35,15 +37,22 @@ class ImageProcessor:
         grayscale_image = ImageOps.grayscale(resized_image)
         denoised_image = grayscale_image.filter(ImageFilter.MedianFilter(size=3))
         enhanced_image = ImageOps.autocontrast(denoised_image)
-        threshold_image = enhanced_image.point(
-            lambda value: 255 if value >= self._threshold else 0,
-            mode="L",
-        )
+        sharpened_image = enhanced_image.filter(ImageFilter.UnsharpMask(radius=1, percent=180, threshold=3))
+        threshold_image = _threshold_image(enhanced_image, threshold=self._threshold)
+        threshold_low_image = _threshold_image(enhanced_image, threshold=max(1, self._threshold - LOW_THRESHOLD_OFFSET))
+        inverted_threshold_image = ImageOps.invert(threshold_image)
+        upscaled_grayscale_image = _upscale_image(enhanced_image, factor=UPSCALE_FACTOR)
+        upscaled_threshold_image = _threshold_image(upscaled_grayscale_image, threshold=self._threshold)
 
         variants = (
             ImageVariant(name="normalized", data=_serialize_png(resized_image)),
             ImageVariant(name="grayscale", data=_serialize_png(enhanced_image)),
             ImageVariant(name="threshold", data=_serialize_png(threshold_image)),
+            ImageVariant(name="threshold_low", data=_serialize_png(threshold_low_image)),
+            ImageVariant(name="inverted_threshold", data=_serialize_png(inverted_threshold_image)),
+            ImageVariant(name="sharpened", data=_serialize_png(sharpened_image)),
+            ImageVariant(name="upscaled_grayscale", data=_serialize_png(upscaled_grayscale_image)),
+            ImageVariant(name="upscaled_threshold", data=_serialize_png(upscaled_threshold_image)),
         )
 
         return PreparedImage(
@@ -69,6 +78,23 @@ def _resize_image(image: Image.Image, *, max_image_dimension: int) -> Image.Imag
         max(1, int(image.height * scale)),
     )
     return image.resize(resized_dimensions, Image.Resampling.LANCZOS)
+
+
+def _upscale_image(image: Image.Image, *, factor: int) -> Image.Image:
+    if factor <= 1:
+        return image.copy()
+
+    return image.resize(
+        (max(1, image.width * factor), max(1, image.height * factor)),
+        Image.Resampling.LANCZOS,
+    )
+
+
+def _threshold_image(image: Image.Image, *, threshold: int) -> Image.Image:
+    return image.point(
+        lambda value: 255 if value >= threshold else 0,
+        mode="L",
+    )
 
 
 def _serialize_png(image: Image.Image) -> bytes:

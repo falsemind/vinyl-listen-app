@@ -6,7 +6,7 @@ from app.pipelines.identification.models import ExtractedIdentifiers, IdentifyCa
 
 
 class CandidateRanker:
-    _MAX_SCORE = 300.0
+    _MAX_SCORE = 325.0
 
     def rank(
         self,
@@ -61,6 +61,14 @@ class CandidateRanker:
             score += 25
             matched_on.append("title")
 
+        if identifiers.label and _normalize_token(candidate.label) == _normalize_token(identifiers.label):
+            score += 15
+            matched_on.append("label")
+
+        if identifiers.year is not None and candidate.year == identifiers.year:
+            score += 10
+            matched_on.append("year")
+
         if identifiers.text_fragments and any(
             _fragment_matches_candidate(fragment, candidate) for fragment in identifiers.text_fragments
         ):
@@ -80,6 +88,7 @@ def _fragment_matches_candidate(fragment: str, candidate: IdentifyCandidate) -> 
         _normalize_token(candidate.artist),
         _normalize_token(candidate.title),
         _normalize_token(candidate.catalog_number),
+        _normalize_token(candidate.label),
     ]
     return any(normalized_fragment in haystack for haystack in haystacks if haystack)
 
