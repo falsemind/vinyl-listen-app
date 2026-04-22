@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: vinyl_postgres
+    environment:
+      POSTGRES_DB: vinyl
+      POSTGRES_USER: vinyl
+      POSTGRES_PASSWORD: vinyl
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vinyl -d vinyl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: vinyl_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl
+      DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+    ports:
+      - "8000:8000"
+    command:
+      - /bin/sh
+      - -c
+      - alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug --access-log
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/').read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres_data:

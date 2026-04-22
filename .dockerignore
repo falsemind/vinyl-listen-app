@@ -1,0 +1,14 @@
+.git
+.gitignore
+.pytest_cache
+**/__pycache__/
+**/.DS_Store
+
+backend/.env
+backend/.venv/
+backend/venv/
+
+android-app/.gradle/
+android-app/.idea/
+android-app/build/
+android-app/app/build/

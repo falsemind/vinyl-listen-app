@@ -11,14 +11,17 @@ logger = logging.getLogger(__name__)
 
 try:
     from pyzbar.pyzbar import decode as decode_barcodes
-except (ImportError, OSError):
+except (ImportError, OSError) as error:
     decode_barcodes = None
+    IMPORT_ERROR = error
+else:
+    IMPORT_ERROR = None
 
 
 class BarcodeDetector:
     def detect(self, prepared_image: PreparedImage) -> tuple[str, ...]:
         if decode_barcodes is None:
-            logger.debug("Barcode detection unavailable because pyzbar/zbar is not installed.")
+            logger.debug("Barcode detection unavailable because pyzbar/zbar is not loadable: %s", IMPORT_ERROR)
             return ()
 
         detected_barcodes: list[str] = []

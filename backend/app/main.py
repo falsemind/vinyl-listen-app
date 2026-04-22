@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.router import api_router
 from app.core.logging import setup_logging
+from app.core.runtime_dependencies import log_runtime_dependency_statuses
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ async def lifespan(_app: FastAPI):
     # ---- Startup ----
     setup_logging()
     logger.info("Vinyl Listening API starting")
+    log_runtime_dependency_statuses()
 
     yield
 
