@@ -1,0 +1,323 @@
+import json
+import logging
+import ssl
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from time import monotonic, sleep
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+import certifi
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.models.discogs_release_cache import DiscogsReleaseCache
+from app.repositories.discogs_release_repository import DiscogsReleaseRepository
+
+logger = logging.getLogger(__name__)
+
+
+class DiscogsServiceError(Exception):
+    """Base error for Discogs integration failures."""
+
+
+class DiscogsConfigurationError(DiscogsServiceError):
+    """Raised when the Discogs integration is misconfigured."""
+
+
+class DiscogsClientError(DiscogsServiceError):
+    """Raised when the Discogs API returns an error or cannot be reached."""
+
+
+@dataclass(frozen=True)
+class DiscogsApiConfig:
+    base_url: str
+    token: str
+    user_agent: str
+    timeout_seconds: float
+
+    @classmethod
+    def from_settings(cls) -> "DiscogsApiConfig":
+        if not settings.discogs_token:
+            raise DiscogsConfigurationError("Discogs token is not configured.")
+
+        return cls(
+            base_url=settings.discogs_base_url.rstrip("/"),
+            token=settings.discogs_token,
+            user_agent=settings.discogs_user_agent,
+            timeout_seconds=settings.discogs_request_timeout_seconds,
+        )
+
+    def build_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Discogs token={self.token}",
+            "User-Agent": self.user_agent,
+            "Accept": "application/json",
+        }
+
+
+class DiscogsRateLimiter:
+    """Simple process-local limiter that spaces calls across the quota window."""
+
+    def __init__(
+        self,
+        requests_per_minute: int,
+        sleep_func: Callable[[float], None] = sleep,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if requests_per_minute <= 0:
+            raise ValueError("requests_per_minute must be positive")
+
+        self._minimum_interval_seconds = 60.0 / requests_per_minute
+        self._sleep = sleep_func
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._last_request_started_at: float | None = None
+
+    def wait(self) -> None:
+        with self._lock:
+            now = self._clock()
+            if self._last_request_started_at is None:
+                self._last_request_started_at = now
+                return
+
+            elapsed = now - self._last_request_started_at
+            remaining = self._minimum_interval_seconds - elapsed
+
+            if remaining > 0:
+                self._sleep(remaining)
+                now = self._clock()
+
+            self._last_request_started_at = now
+
+
+class DiscogsClient:
+    """Thin client for authenticated Discogs API GET requests."""
+
+    def __init__(
+        self,
+        config: DiscogsApiConfig | None = None,
+        rate_limiter: DiscogsRateLimiter | None = None,
+        transport: Callable[[str, dict[str, str], float], dict[str, Any]] | None = None,
+    ) -> None:
+        self._config = config or DiscogsApiConfig.from_settings()
+        self._rate_limiter = rate_limiter or DiscogsRateLimiter(settings.api_rate_limit_per_minute)
+        self._transport = transport or self._default_transport
+
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._rate_limiter.wait()
+        url = self._build_url(path, params)
+        logger.info("Requesting Discogs resource path=%s", path)
+        logger.debug("Discogs request url=%s params=%s", url, params)
+
+        try:
+            payload = self._transport(
+                url=url,
+                headers=self._config.build_headers(),
+                timeout=self._config.timeout_seconds,
+            )
+            logger.info("Discogs request succeeded path=%s", path)
+            return payload
+        except HTTPError as error:
+            logger.warning("Discogs request failed with status path=%s status=%s", path, error.code)
+            raise DiscogsClientError(self._parse_error_response(error)) from error
+        except URLError as error:
+            logger.warning("Discogs request failed path=%s reason=%s", path, error.reason)
+            raise DiscogsClientError(f"Unable to reach Discogs API: {error.reason}") from error
+
+    def _build_url(self, path: str, params: dict[str, Any] | None = None) -> str:
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        url = f"{self._config.base_url}{normalized_path}"
+
+        if not params:
+            return url
+
+        filtered_params = {key: value for key, value in params.items() if value is not None and value != ""}
+        query_string = urlencode(filtered_params)
+        if not query_string:
+            return url
+
+        return f"{url}?{query_string}"
+
+    def _default_transport(self, url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:
+        request = Request(url=url, headers=headers, method="GET")
+        with urlopen(request, timeout=timeout, context=self._build_ssl_context()) as response:
+            payload = response.read().decode("utf-8")
+        return json.loads(payload)
+
+    def _build_ssl_context(self) -> ssl.SSLContext:
+        return ssl.create_default_context(cafile=certifi.where())
+
+    def _parse_error_response(self, error: HTTPError) -> str:
+        try:
+            body = error.read().decode("utf-8")
+            payload = json.loads(body)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+
+        if isinstance(payload, dict):
+            message = payload.get("message") or payload.get("error") or payload.get("detail")
+            if message:
+                return f"Discogs API error ({error.code}): {message}"
+
+        return f"Discogs API error ({error.code})"
+
+
+class DiscogsService:
+    """Service facade for search and release-metadata access."""
+
+    def __init__(
+        self,
+        client: DiscogsClient | None = None,
+        repository: DiscogsReleaseRepository | None = None,
+        cache_ttl: timedelta | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._client = client or DiscogsClient()
+        self._repository = repository or DiscogsReleaseRepository()
+        self._cache_ttl = cache_ttl or timedelta(seconds=settings.discogs_cache_ttl_seconds)
+        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._search_cache: dict[tuple[tuple[str, Any], ...], tuple[datetime, dict[str, Any]]] = {}
+
+    def search_by_barcode(self, barcode: str, *, limit: int = 10, offset: int = 0) -> dict[str, Any]:
+        return self.search_releases(barcode=barcode, limit=limit, offset=offset)
+
+    def search_releases(
+        self,
+        *,
+        artist: str | None = None,
+        title: str | None = None,
+        catalog_number: str | None = None,
+        barcode: str | None = None,
+        query: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+
+        query_params = {
+            "type": "release",
+            "artist": artist,
+            "release_title": title,
+            "catno": catalog_number,
+            "barcode": barcode,
+            "q": query,
+        }
+        cache_key = self._search_cache_key(query_params, limit=limit, offset=offset)
+        cached_payload = self._get_cached_search_payload(cache_key)
+        if cached_payload is not None:
+            logger.info("Using cached Discogs search results limit=%s offset=%s", limit, offset)
+            return cached_payload
+
+        logger.info("Fetching Discogs search results limit=%s offset=%s", limit, offset)
+        payload = self._fetch_search_results(query_params, limit=limit, offset=offset)
+        self._search_cache[cache_key] = (self._now_provider(), payload)
+        return payload
+
+    def fetch_release(
+        self,
+        db: Session,
+        discogs_release_id: int,
+        *,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+        cache_entry = self._repository.get_by_discogs_release_id(db, discogs_release_id)
+        if not force_refresh and self._is_fresh(cache_entry):
+            logger.info("Using cached Discogs release discogs_release_id=%s", discogs_release_id)
+            self._repository.touch(db, cache_entry)
+            return cache_entry.raw_discogs_json
+
+        logger.info(
+            "Fetching Discogs release discogs_release_id=%s force_refresh=%s",
+            discogs_release_id,
+            force_refresh,
+        )
+        payload = self._client.get(f"/releases/{discogs_release_id}")
+        self._repository.upsert(
+            db,
+            discogs_release_id=discogs_release_id,
+            raw_discogs_json=payload,
+        )
+        logger.info("Stored Discogs release in cache discogs_release_id=%s", discogs_release_id)
+        return payload
+
+    def _is_fresh(self, cache_entry: DiscogsReleaseCache | None) -> bool:
+        if cache_entry is None:
+            return False
+
+        cached_at = cache_entry.cached_at
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=UTC)
+
+        return (self._now_provider() - cached_at) <= self._cache_ttl
+
+    def _fetch_search_results(
+        self,
+        query_params: dict[str, Any],
+        *,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        page = (offset // limit) + 1
+        intra_page_offset = offset % limit
+
+        payload = self._client.get(
+            "/database/search",
+            params={**query_params, "per_page": limit, "page": page},
+        )
+        results = list(payload.get("results", []))
+
+        while len(results) - intra_page_offset < limit and results:
+            if len(results) % limit != 0:
+                break
+
+            page += 1
+            next_page_payload = self._client.get(
+                "/database/search",
+                params={**query_params, "per_page": limit, "page": page},
+            )
+            next_page_results = list(next_page_payload.get("results", []))
+            if not next_page_results:
+                break
+            results.extend(next_page_results)
+
+        payload["results"] = results[intra_page_offset : intra_page_offset + limit]
+        return payload
+
+    def _get_cached_search_payload(
+        self,
+        cache_key: tuple[tuple[str, Any], ...],
+    ) -> dict[str, Any] | None:
+        cached_search = self._search_cache.get(cache_key)
+        if cached_search is None:
+            return None
+
+        cached_at, payload = cached_search
+        if (self._now_provider() - cached_at) > self._cache_ttl:
+            self._search_cache.pop(cache_key, None)
+            return None
+
+        return payload
+
+    def _search_cache_key(
+        self,
+        query_params: dict[str, Any],
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[tuple[str, Any], ...]:
+        normalized_params = {
+            **query_params,
+            "limit": limit,
+            "offset": offset,
+        }
+        return tuple(
+            sorted((key, value) for key, value in normalized_params.items() if value is not None and value != "")
+        )

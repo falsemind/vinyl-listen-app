@@ -116,87 +116,109 @@ Charts are rendered in the Android app using Compose charts.
 
 ## Requirements
 
-* Python 3.10+
-* Docker (recommended)
-* PostgreSQL
+* Python 3.13+
+* Docker and Docker Compose
+* PostgreSQL if you are not using Docker
 
 ---
 
-## 1. Start Database
+## Docker Setup
+
+The repository root keeps `docker-compose.yml` because it orchestrates project-level services in this monorepo.
+
+### 1. Configure environment variables
+
+Create a root `.env` file or export these variables in your shell:
+
+```env
+DISCOGS_TOKEN=your_discogs_token
+DISCOGS_BASE_URL=https://api.discogs.com
+LOG_LEVEL=DEBUG
+```
+
+`DATABASE_URL` is provided automatically inside Docker Compose and points the backend container at the bundled PostgreSQL service.
+
+### 2. Start the backend and database
 
 From the repository root:
 
-```
-docker compose up -d
+```bash
+docker compose up --build
 ```
 
-This launches a PostgreSQL container used by the backend.
+This starts:
+
+* `postgres` on `localhost:5432`
+* `backend` on `http://localhost:8000`
+
+The backend container installs both `tesseract-ocr` and `zbar`, so OCR and barcode detection work without any macOS-specific setup.
+
+### 3. Check runtime dependencies
+
+You can verify runtime dependency availability with:
+
+```bash
+curl http://localhost:8000/api/v1/health/runtime
+```
+
+You should also see startup log lines showing whether `tesseract` and `zbar` are available inside the container.
+For quieter logs later, set `LOG_LEVEL=INFO` in the root `.env`.
 
 ---
 
-## 2. Create Python Virtual Environment
+## Local Backend Setup
 
+### 1. Start Database
+
+From the repository root:
+
+```bash
+docker compose up -d postgres
 ```
+
+This launches only PostgreSQL for local backend development.
+
+### 2. Create Python Virtual Environment
+
+```bash
 cd backend
 python3 -m venv venv
-```
-
-Activate environment:
-
-Mac/Linux:
-
-```
 source venv/bin/activate
 ```
 
----
+### 3. Install Dependencies
 
-## 3. Install Dependencies
-
-```
-pip install -r requirements.txt
-```
-
----
-
-## 4. Environment Variables
-
-Create file:
-
-```
-backend/.env
+```bash
+pip install --upgrade pip poetry
+POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-root
 ```
 
-Example configuration:
+### 4. Environment Variables
 
-```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vinyl
+Create `backend/.env`:
+
+```env
+DATABASE_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl
 DISCOGS_TOKEN=your_discogs_token
-API_RATE_LIMIT=60
-IMAGE_UPLOAD_MAX_SIZE=10MB
+DISCOGS_BASE_URL=https://api.discogs.com
+API_RATE_LIMIT_PER_MINUTE=60
+LOG_LEVEL=INFO
 ```
 
----
+### 5. Run Backend Server
 
-## 5. Run Backend Server
-
-```
+```bash
 cd backend
 source venv/bin/activate
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Server will start at:
+Server will start at `http://localhost:8000`
 
-```
-http://localhost:8000
-```
+API documentation is available at `http://localhost:8000/docs`
 
-API documentation available at:
-
-```
-http://localhost:8000/docs
-```
+If you run the backend outside Docker, make sure the host machine also has the native `tesseract` binary and `zbar` shared library installed.
 
 ---
 
@@ -246,17 +268,17 @@ Main backend endpoints:
 ### Identify Record
 
 ```
-POST /identify
+POST /api/v1/identify
 ```
 
-Upload record photo to detect candidate releases.
+Upload a record photo as multipart form data with the `image` field to detect candidate releases.
 
 ---
 
 ### Import Release
 
 ```
-POST /releases/import
+POST /api/v1/releases/import
 ```
 
 Import Discogs release metadata into the local database.
@@ -266,7 +288,7 @@ Import Discogs release metadata into the local database.
 ### Get Release
 
 ```
-GET /releases/{release_id}
+GET /api/v1/releases/{release_id}
 ```
 
 Retrieve stored release metadata.
@@ -276,7 +298,7 @@ Retrieve stored release metadata.
 ### Create Listening Session
 
 ```
-POST /sessions
+POST /api/v1/sessions/
 ```
 
 Log a new listening session.
@@ -286,10 +308,20 @@ Log a new listening session.
 ### Analytics
 
 ```
-GET /analytics/summary
+GET /api/v1/analytics/
 ```
 
-Retrieve listening statistics.
+Retrieve the current analytics summary placeholder response.
+
+---
+
+### Runtime Health
+
+```
+GET /api/v1/health/runtime
+```
+
+Inspect whether runtime OCR and barcode dependencies are available.
 
 ---
 
