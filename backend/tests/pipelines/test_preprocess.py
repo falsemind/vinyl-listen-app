@@ -18,7 +18,16 @@ def test_image_processor_normalizes_and_resizes_images() -> None:
     assert prepared_image.filename == "cover.png"
     assert prepared_image.width == 1200
     assert prepared_image.height == 600
-    assert [variant.name for variant in prepared_image.variants] == ["normalized", "grayscale", "threshold"]
+    assert [variant.name for variant in prepared_image.variants] == [
+        "normalized",
+        "grayscale",
+        "threshold",
+        "threshold_low",
+        "inverted_threshold",
+        "sharpened",
+        "upscaled_grayscale",
+        "upscaled_threshold",
+    ]
     assert all(variant.data for variant in prepared_image.variants)
 
 

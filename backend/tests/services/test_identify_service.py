@@ -73,17 +73,23 @@ class StubReleasesRepository:
 
 
 class StubDiscogsService:
-    def __init__(self, payload: dict | None = None) -> None:
+    def __init__(self, payload: dict | None = None, *, payloads: list[dict] | None = None) -> None:
         self.payload = payload or {"results": []}
+        self.payloads = payloads or []
         self.search_by_barcode_calls: list[tuple[str, int]] = []
         self.search_release_calls: list[dict] = []
 
     def search_by_barcode(self, barcode: str, *, limit: int = 10) -> dict:
         self.search_by_barcode_calls.append((barcode, limit))
-        return self.payload
+        return self._next_payload()
 
     def search_releases(self, *, limit: int = 10, **kwargs) -> dict:
         self.search_release_calls.append({"limit": limit, **kwargs})
+        return self._next_payload()
+
+    def _next_payload(self) -> dict:
+        if self.payloads:
+            return self.payloads.pop(0)
         return self.payload
 
 
@@ -187,7 +193,7 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order() -> No
 
 
 def test_identify_service_rejects_unsupported_image_type() -> None:
-    service = IdentifyService()
+    service = IdentifyService(discogs_service=StubDiscogsService())
 
     try:
         service.identify(
@@ -224,3 +230,84 @@ def test_identify_service_returns_empty_candidates_when_no_signals_are_available
     assert result.candidates == ()
     assert discogs_service.search_by_barcode_calls == []
     assert discogs_service.search_release_calls == []
+
+
+def test_identify_service_uses_label_fragment_for_free_text_search() -> None:
+    repository = StubReleasesRepository()
+    discogs_service = StubDiscogsService(
+        payload={
+            "results": [
+                {
+                    "id": 456,
+                    "title": "Artist - Title",
+                    "year": "2019",
+                    "label": ["Scotch Bonnet Records"],
+                    "catno": "SCRUB019",
+                }
+            ]
+        }
+    )
+    service = IdentifyService(
+        repository=repository,
+        discogs_service=discogs_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(
+            ExtractedIdentifiers(
+                year=2019,
+                label="Scotch Bonnet Records",
+                text_fragments=("Scotch Bonnet Records",),
+            )
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert discogs_service.search_by_barcode_calls == []
+    assert discogs_service.search_release_calls == [{"limit": 5, "query": "Scotch Bonnet Records"}]
+
+
+def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_query() -> None:
+    repository = StubReleasesRepository()
+    discogs_service = StubDiscogsService(
+        payloads=[
+            {"results": []},
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "Artist - Title",
+                        "year": "2019",
+                        "label": ["Scotch Bonnet Records"],
+                        "catno": "SCRUB019",
+                    }
+                ]
+            },
+        ]
+    )
+    service = IdentifyService(
+        repository=repository,
+        discogs_service=discogs_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(
+            ExtractedIdentifiers(catalog_numbers=("SCRUBO19", "SCRUB019", "SCRUBO19 8"))
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert discogs_service.search_release_calls == [
+        {"limit": 5, "catalog_number": "SCRUBO19"},
+        {"limit": 5, "catalog_number": "SCRUB019"},
+    ]
