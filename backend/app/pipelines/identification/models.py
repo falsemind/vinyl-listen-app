@@ -12,6 +12,10 @@ OCR_VARIANT_NAMES = (
     "sharpened",
     "upscaled_grayscale",
     "upscaled_threshold",
+    "color_red_center_band",
+    "color_blue_center_band",
+    "color_red_right_mid",
+    "color_blue_right_mid",
 )
 
 
@@ -48,6 +52,7 @@ class ExtractedIdentifiers:
     year: int | None = None
     label: str | None = None
     text_fragments: tuple[str, ...] = ()
+    raw_text: str = ""
 
     def has_signals(self) -> bool:
         return bool(
@@ -58,6 +63,7 @@ class ExtractedIdentifiers:
             or self.year
             or self.label
             or self.text_fragments
+            or self.raw_text
         )
 
 

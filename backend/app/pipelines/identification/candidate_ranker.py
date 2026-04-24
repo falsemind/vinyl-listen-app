@@ -1,8 +1,42 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import re
+from dataclasses import dataclass, replace
 
 from app.pipelines.identification.models import ExtractedIdentifiers, IdentifyCandidate
+
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+STOPWORDS = frozenset(
+    {
+        "a",
+        "aa",
+        "and",
+        "at",
+        "by",
+        "cat",
+        "catalog",
+        "copyright",
+        "label",
+        "mastered",
+        "mixed",
+        "music",
+        "other",
+        "present",
+        "presents",
+        "produced",
+        "record",
+        "records",
+        "remaster",
+        "remasters",
+        "rpm",
+        "side",
+        "the",
+        "this",
+        "track",
+        "tracks",
+        "vinyl",
+    }
+)
 
 
 class CandidateRanker:
@@ -75,6 +109,30 @@ class CandidateRanker:
             score += 10
             matched_on.append("text")
 
+        evidence_tokens = _identifier_evidence_tokens(identifiers)
+        artist_overlap = _field_overlap(candidate.artist, evidence_tokens)
+        if artist_overlap.matches and artist_overlap.ratio >= 0.6 and "artist" not in matched_on:
+            score += 20
+            matched_on.append("ocr_artist")
+
+        title_overlap = _field_overlap(candidate.title, evidence_tokens)
+        if title_overlap.matches and title_overlap.ratio >= 0.6 and "title" not in matched_on:
+            score += 35
+            matched_on.append("ocr_title")
+
+        label_overlap = _field_overlap(candidate.label, evidence_tokens)
+        if label_overlap.matches >= 2 and label_overlap.ratio >= 0.6 and "label" not in matched_on:
+            score += 15
+            matched_on.append("ocr_label")
+
+        if (
+            artist_overlap.matches
+            and title_overlap.matches
+            and ("artist" not in matched_on or "title" not in matched_on)
+        ):
+            score += 15
+            matched_on.append("discogs_validated_text")
+
         confidence = round(min(score / self._MAX_SCORE, 1.0), 3)
         return replace(candidate, matched_on=tuple(matched_on), confidence=confidence)
 
@@ -104,4 +162,41 @@ def _normalize_barcode(value: str | None) -> str | None:
 def _normalize_token(value: str | None) -> str:
     if value is None:
         return ""
-    return " ".join(value.strip().lower().split())
+    return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _identifier_evidence_tokens(identifiers: ExtractedIdentifiers) -> set[str]:
+    values = [
+        identifiers.raw_text,
+        identifiers.artist,
+        identifiers.title,
+        identifiers.label,
+        *identifiers.text_fragments,
+    ]
+    return {
+        token
+        for value in values
+        for token in _tokenize(value)
+        if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+    }
+
+
+def _tokenize(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    return tuple(match.group(0).lower() for match in TOKEN_PATTERN.finditer(value))
+
+
+def _field_overlap(value: str | None, evidence_tokens: set[str]) -> _Overlap:
+    field_tokens = [token for token in _tokenize(value) if token not in STOPWORDS and len(token) >= 2]
+    if not field_tokens:
+        return _Overlap(matches=0, ratio=0.0)
+
+    matches = sum(1 for token in field_tokens if token in evidence_tokens)
+    return _Overlap(matches=matches, ratio=matches / len(field_tokens))
+
+
+@dataclass(frozen=True)
+class _Overlap:
+    matches: int
+    ratio: float

@@ -168,14 +168,19 @@ class IdentifyService:
         return [self._map_local_release(release) for release in release_map.values()]
 
     def _find_external_candidates(self, identifiers: ExtractedIdentifiers) -> list[IdentifyCandidate]:
+        candidate_map: dict[int, IdentifyCandidate] = {}
+
         for search_step in self._build_search_plan(identifiers):
             logger.info("Searching Discogs identify strategy=%s", search_step.strategy)
             payload = self._execute_search_step(search_step)
             candidates = self._map_external_candidates(payload.get("results", []))
-            if candidates:
+            if candidates and search_step.strategy == "barcode":
                 return candidates
 
-        return []
+            for candidate in candidates:
+                candidate_map.setdefault(candidate.discogs_release_id, candidate)
+
+        return list(candidate_map.values())
 
     def _rank_candidates(
         self,
