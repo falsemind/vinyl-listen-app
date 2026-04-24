@@ -133,11 +133,13 @@ def _build_color_channel_variants(image: Image.Image) -> tuple[ImageVariant, ...
 
 def _crop_region(image: Image.Image, box_percentages: tuple[float, float, float, float]) -> Image.Image:
     left, upper, right, lower = box_percentages
+    left_px = min(max(0, int(image.width * left)), image.width - 1)
+    upper_px = min(max(0, int(image.height * upper)), image.height - 1)
     box = (
-        max(0, int(image.width * left)),
-        max(0, int(image.height * upper)),
-        min(image.width, int(image.width * right)),
-        min(image.height, int(image.height * lower)),
+        left_px,
+        upper_px,
+        min(image.width, max(left_px + 1, int(image.width * right))),
+        min(image.height, max(upper_px + 1, int(image.height * lower))),
     )
     return image.crop(box)
 

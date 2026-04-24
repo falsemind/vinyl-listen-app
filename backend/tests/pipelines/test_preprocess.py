@@ -50,6 +50,20 @@ def test_image_processor_rejects_invalid_image_bytes() -> None:
         raise AssertionError("Expected ValueError for invalid image bytes")
 
 
+def test_image_processor_handles_tiny_valid_images() -> None:
+    image_processor = ImageProcessor()
+
+    prepared_image = image_processor.prepare(
+        filename="tiny.png",
+        content_type="image/png",
+        data=_build_test_image(width=1, height=1),
+    )
+
+    assert prepared_image.width == 1
+    assert prepared_image.height == 1
+    assert all(variant.data for variant in prepared_image.variants)
+
+
 def _build_test_image(*, width: int, height: int) -> bytes:
     image = Image.new("RGB", (width, height), color="white")
     buffer = BytesIO()
