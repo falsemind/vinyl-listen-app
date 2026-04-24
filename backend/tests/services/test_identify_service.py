@@ -310,4 +310,108 @@ def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_quer
     assert discogs_service.search_release_calls == [
         {"limit": 5, "catalog_number": "SCRUBO19"},
         {"limit": 5, "catalog_number": "SCRUB019"},
+        {"limit": 5, "catalog_number": "SCRUBO19 8"},
     ]
+
+
+def test_identify_service_ranks_aggregated_non_barcode_discogs_results() -> None:
+    repository = StubReleasesRepository()
+    discogs_service = StubDiscogsService(
+        payloads=[
+            {
+                "results": [
+                    {
+                        "id": 111,
+                        "title": "Wrong Artist - Wrong Title",
+                        "catno": "WRONG001",
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "Sub Basics - Walk & Skank",
+                        "label": ["Lion Charge Records"],
+                        "catno": "LIONCHGX003",
+                    }
+                ]
+            },
+        ]
+    )
+    service = IdentifyService(
+        repository=repository,
+        discogs_service=discogs_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(ExtractedIdentifiers(catalog_numbers=("BAD001", "LIONCHGX003"))),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456, 111]
+    assert discogs_service.search_release_calls == [
+        {"limit": 5, "catalog_number": "BAD001"},
+        {"limit": 5, "catalog_number": "LIONCHGX003"},
+    ]
+
+
+def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wrong() -> None:
+    repository = StubReleasesRepository()
+    discogs_service = StubDiscogsService(
+        payloads=[
+            {"results": []},
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "DJ Kane - Just Jungle",
+                        "label": ["Trouble On Vinyl"],
+                        "catno": "TOVRI 001",
+                    }
+                ]
+            },
+        ]
+    )
+    service = IdentifyService(
+        repository=repository,
+        discogs_service=discogs_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(
+            ExtractedIdentifiers(
+                artist="All tracks mixed and produced by",
+                title="Justin Richardson at Mixing Lab Studio",
+                raw_text="\n".join(
+                    [
+                        "DJ KANE PRESENTS",
+                        "JUST JUNGLE",
+                        "TOVRI 001",
+                        "This Side",
+                        "A. SKY",
+                        "Other Side",
+                        "AA. NEXT SOUND",
+                    ]
+                ),
+            )
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert {
+        "limit": 5,
+        "artist": "All tracks mixed and produced by",
+        "title": "Justin Richardson at Mixing Lab Studio",
+    } in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "TOVRI 001 DJ KANE PRESENTS"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "TOVRI 001 JUST JUNGLE"} in discogs_service.search_release_calls

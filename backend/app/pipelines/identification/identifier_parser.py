@@ -17,7 +17,19 @@ LABELED_LABEL_PATTERN = re.compile(
 )
 YEAR_PATTERN = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])"
+    r"(?:[A-Z]{3,}[A-Z0-9]*#[A-Z0-9]*\d[A-Z0-9]*"
+    r"|[A-Z]{2,}[A-Z0-9]*(?:[-/.]?[A-Z0-9]+)*\d[A-Z0-9]*(?:[-/.]?[A-Z0-9]+)*"
+    r"|[A-Z0-9]*\d[A-Z0-9]*(?:[-/.#][A-Z0-9]+)+)"
+    r"(?![A-Z0-9])",
+    re.IGNORECASE,
+)
+SPACED_CATALOG_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{3,5})(?![A-Z0-9])", re.IGNORECASE)
+SIDE_PREFIX_PATTERN = re.compile(r"^\s*[A-H][.)]\s+")
 SEPARATOR_PATTERNS = (" - ", " / ", " – ", " — ", ": ")
+EDGE_JUNK_CHARACTERS = " \t\r\n'\"“”‘’`-:#*/.,;|\\"
+MAX_TEXT_FRAGMENTS = 8
 LABEL_SUFFIX_TERMS = frozenset(
     {
         "records",
@@ -95,6 +107,7 @@ class IdentifierParser:
             year=year,
             label=label,
             text_fragments=text_fragments,
+            raw_text=raw_text,
         )
 
 
@@ -152,12 +165,17 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
         _append_catalog_number_candidates(match.group(1), detected_catalog_numbers, seen)
 
     for line in cleaned_lines:
-        if not _looks_like_catalog_number(line):
+        catalog_tokens = _extract_catalog_number_tokens(line)
+        for token in catalog_tokens:
+            _append_catalog_number_candidates(token, detected_catalog_numbers, seen)
+
+        if catalog_tokens and not _line_starts_with_catalog_token(line):
             continue
 
-        _append_catalog_number_candidates(line, detected_catalog_numbers, seen)
+        if _looks_like_catalog_number(line):
+            _append_catalog_number_candidates(line, detected_catalog_numbers, seen)
 
-    return tuple(detected_catalog_numbers)
+    return tuple(_sort_catalog_number_candidates(detected_catalog_numbers))
 
 
 def _extract_year(cleaned_lines: list[str]) -> tuple[int | None, set[str]]:
@@ -232,11 +250,10 @@ def _extract_artist_and_title(
             if artist and title and _is_strict_metadata_line(artist) and _is_strict_metadata_line(title):
                 return artist, title
 
-    candidate_lines = [
-        line for line in cleaned_lines if line.lower() not in blocked_values and _is_strict_metadata_line(line)
-    ]
-    if len(candidate_lines) >= 2:
-        return candidate_lines[0], candidate_lines[1]
+    candidate_lines = _candidate_metadata_lines(cleaned_lines, blocked_values=blocked_values)
+    scored_pair = _select_artist_title_pair(candidate_lines)
+    if scored_pair is not None:
+        return scored_pair
     if len(candidate_lines) == 1:
         return None, candidate_lines[0]
 
@@ -264,33 +281,61 @@ def _extract_text_fragments(
         fragments.append(label)
         blocked_lines.add(label.lower())
 
-    for line in cleaned_lines:
+    for line in _candidate_metadata_lines(cleaned_lines, blocked_values=blocked_lines):
         lowered_line = line.lower()
         if lowered_line in blocked_lines or _looks_like_year_line(line):
             continue
-        if not _is_strict_metadata_line(line):
-            continue
         fragments.append(line)
-        if len(fragments) == 4:
+        if len(fragments) == MAX_TEXT_FRAGMENTS:
             break
 
     return tuple(fragments)
 
 
+def _candidate_metadata_lines(cleaned_lines: list[str], *, blocked_values: set[str]) -> list[str]:
+    candidate_lines: list[str] = []
+    seen: set[str] = set()
+
+    for line in cleaned_lines:
+        lowered_line = line.lower()
+        if lowered_line in blocked_values:
+            continue
+
+        candidate = _clean_candidate_line(line)
+        if candidate is None or candidate.lower() in blocked_values:
+            continue
+        if candidate.lower() in seen or not _is_strict_metadata_line(candidate):
+            continue
+
+        seen.add(candidate.lower())
+        candidate_lines.append(candidate)
+
+    return candidate_lines
+
+
 def _looks_like_catalog_number(value: str) -> bool:
-    if len(value) < 4 or len(value) > 24:
+    cleaned_value = _clean_catalog_candidate(value)
+    if cleaned_value is None:
         return False
-    if value.isdigit():
+    if len(cleaned_value) < 4 or len(cleaned_value) > 24:
         return False
-    if _is_short_yearish_line(value):
+    if _looks_like_track_listing(cleaned_value):
         return False
-    if not any(character.isalpha() for character in value):
+    if cleaned_value.isdigit():
         return False
-    if not any(character.isdigit() for character in value):
+    if _is_short_yearish_line(cleaned_value):
         return False
-    if _is_labeled_metadata_line(value):
+    if not any(character.isalpha() for character in cleaned_value):
         return False
-    return len(value.split()) <= 4
+    if not any(character.isdigit() for character in cleaned_value):
+        return False
+    if any(not (character.isalnum() or character.isspace() or character in "-/.#") for character in cleaned_value):
+        return False
+    if _is_labeled_metadata_line(cleaned_value):
+        return False
+    return len(cleaned_value.split()) <= 4 and (
+        _line_starts_with_catalog_token(cleaned_value) or bool(_extract_catalog_number_tokens(cleaned_value))
+    )
 
 
 def _is_candidate_metadata_line(value: str) -> bool:
@@ -298,6 +343,8 @@ def _is_candidate_metadata_line(value: str) -> bool:
     if len(value) < 3 or len(value) > 80:
         return False
     if lowered_value in NOISE_TERMS:
+        return False
+    if _looks_like_track_listing(value):
         return False
     if lowered_value.startswith(("http://", "https://", "www.")):
         return False
@@ -318,6 +365,9 @@ def _is_strict_metadata_line(value: str) -> bool:
     if not _is_candidate_metadata_line(value):
         return False
 
+    if any(character.isdigit() for character in value):
+        return False
+
     stripped_value = value.strip()
     if stripped_value and not stripped_value[0].isalnum():
         return False
@@ -325,6 +375,10 @@ def _is_strict_metadata_line(value: str) -> bool:
     tokens = TOKEN_PATTERN.findall(value)
     alpha_tokens = [token for token in tokens if any(character.isalpha() for character in token)]
     if not alpha_tokens:
+        return False
+    if len(alpha_tokens[0]) <= 2 and not alpha_tokens[0].isupper():
+        return False
+    if len(alpha_tokens) == 1 and len(alpha_tokens[0]) < 3:
         return False
 
     short_alpha_tokens = [token for token in alpha_tokens if len(token) <= 2]
@@ -350,13 +404,67 @@ def _clean_label_value(value: str, *, strict: bool = False) -> str | None:
     return None
 
 
+def _select_artist_title_pair(candidate_lines: list[str]) -> tuple[str, str] | None:
+    if len(candidate_lines) < 2:
+        return None
+
+    best_pair: tuple[str, str] | None = None
+    best_score: float | None = None
+
+    for index, (artist, title) in enumerate(zip(candidate_lines, candidate_lines[1:], strict=False)):
+        score = _metadata_line_quality(artist) + _metadata_line_quality(title) - min(index, 10) * 0.25
+        if best_score is None or score > best_score:
+            best_score = score
+            best_pair = (artist, title)
+
+    return best_pair
+
+
+def _metadata_line_quality(value: str) -> float:
+    tokens = TOKEN_PATTERN.findall(value)
+    alpha_tokens = [token for token in tokens if any(character.isalpha() for character in token)]
+    if not alpha_tokens:
+        return 0.0
+
+    score = sum(len(token) for token in alpha_tokens) / 3
+    score += min(len(alpha_tokens), 3)
+
+    if value.upper() == value and len(alpha_tokens) > 1:
+        score += 3
+    if value.upper().startswith("DJ "):
+        score += 4
+    if any(token.upper() in {"EP", "LP", "ALBUM", "SINGLE"} for token in alpha_tokens):
+        score += 6
+    if "&" in value or "/" in value:
+        score += 2
+    if len(alpha_tokens) == 1:
+        score -= 2
+
+    return score
+
+
 def _clean_candidate_line(value: str) -> str | None:
-    cleaned_value = " ".join(value.strip().split())
+    cleaned_value = " ".join(value.strip(EDGE_JUNK_CHARACTERS).split())
+    cleaned_value = SIDE_PREFIX_PATTERN.sub("", cleaned_value)
+    cleaned_value = " ".join(cleaned_value.strip(EDGE_JUNK_CHARACTERS).split())
+    tokens = cleaned_value.split()
+    if len(tokens) >= 3 and tokens[-1].isdigit() and all(token.isalpha() for token in tokens[:-1]):
+        cleaned_value = " ".join(tokens[:-1])
     return cleaned_value or None
 
 
 def _normalize_catalog_number(value: str) -> str | None:
-    cleaned_value = " ".join(value.strip(" -:#").split())
+    cleaned_value = _clean_catalog_candidate(value)
+    return cleaned_value or None
+
+
+def _clean_catalog_candidate(value: str) -> str | None:
+    cleaned_value = " ".join(value.strip(EDGE_JUNK_CHARACTERS).split())
+    cleaned_value = _strip_leading_lowercase_ocr_prefix(cleaned_value)
+    cleaned_value = SIDE_PREFIX_PATTERN.sub("", cleaned_value)
+    cleaned_value = " ".join(cleaned_value.strip(EDGE_JUNK_CHARACTERS).split())
+    if " " not in cleaned_value and CATALOG_TOKEN_PATTERN.fullmatch(cleaned_value):
+        cleaned_value = cleaned_value.upper()
     return cleaned_value or None
 
 
@@ -422,6 +530,80 @@ def _catalog_number_variants(value: str) -> tuple[str, ...]:
     return tuple(variants)
 
 
+def _sort_catalog_number_candidates(candidates: list[str]) -> list[str]:
+    normalized_candidates = [_normalize_catalog_sort_token(candidate) for candidate in candidates]
+
+    def sort_key(indexed_candidate: tuple[int, str]) -> tuple[int, int]:
+        index, candidate = indexed_candidate
+        normalized_candidate = normalized_candidates[index]
+        suffix_penalty = int(
+            any(
+                other and normalized_candidate.endswith(other) and len(normalized_candidate) > len(other)
+                for other in normalized_candidates
+            )
+        )
+        space_penalty = int(" " in candidate and SPACED_CATALOG_TOKEN_PATTERN.fullmatch(candidate) is None)
+        return suffix_penalty, space_penalty
+
+    return [candidate for _, candidate in sorted(enumerate(candidates), key=sort_key)]
+
+
+def _normalize_catalog_sort_token(value: str) -> str:
+    return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    for match in SPACED_CATALOG_TOKEN_PATTERN.finditer(value):
+        token = _clean_catalog_candidate(match.group(1))
+        if token is None or token.lower() in seen:
+            continue
+        if _extract_year_from_value(token) is not None:
+            continue
+        seen.add(token.lower())
+        tokens.append(token)
+
+    for match in CATALOG_TOKEN_PATTERN.finditer(value):
+        token = _clean_catalog_candidate(_strip_leading_lowercase_ocr_prefix(match.group(0)))
+        if token is None:
+            continue
+        token = token.upper()
+        if len(token) < 4 or token.lower() in seen:
+            continue
+        seen.add(token.lower())
+        tokens.append(token)
+
+    return tuple(tokens)
+
+
+def _line_starts_with_catalog_token(value: str) -> bool:
+    cleaned_value = _clean_catalog_candidate(value)
+    if cleaned_value is None:
+        return False
+
+    first_token = cleaned_value.split()[0]
+    return bool(CATALOG_TOKEN_PATTERN.fullmatch(first_token.upper()))
+
+
+def _strip_leading_lowercase_ocr_prefix(value: str) -> str:
+    if len(value) >= 2 and value[0].islower() and value[1].isupper():
+        return value[1:]
+    return value
+
+
+def _looks_like_track_listing(value: str) -> bool:
+    if SIDE_PREFIX_PATTERN.match(value):
+        return True
+
+    tokens = TOKEN_PATTERN.findall(value)
+    if len(tokens) >= 2 and tokens[0].isdigit() and all(token.isalpha() for token in tokens[1:]):
+        return True
+
+    return len(tokens) >= 3 and tokens[-1].isdigit() and all(token.isalpha() for token in tokens[:-1])
+
+
 def _correct_catalog_number_ocr(value: str) -> str | None:
     corrected_characters: list[str] = []
     changed = False
@@ -464,6 +646,8 @@ def _neighboring_digit(value: str, index: int, *, step: int) -> bool:
         character = value[cursor]
         if character.isdigit():
             return True
+        if character.isspace():
+            return False
         if character not in {" ", "-", "/", "."}:
             return False
         cursor += step
