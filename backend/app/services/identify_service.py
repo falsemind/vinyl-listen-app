@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,29 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALLOWED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 DEFAULT_MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024
 DEFAULT_CANDIDATE_LIMIT = 5
+MAX_RAW_CONTEXT_SEARCHES = 8
+CATALOG_CONTEXT_LIMIT = 4
+PHRASE_CONTEXT_LIMIT = 5
+QUERY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9#./-]+")
+CREDIT_PREFIXES = (
+    "all tracks",
+    "mastered",
+    "mixed",
+    "produced",
+    "written",
+    "published",
+    "copyright",
+    "licensed",
+)
+LOW_VALUE_QUERY_LINES = {
+    "45 rpm",
+    "33 rpm",
+    "rpm",
+    "this side",
+    "other side",
+    "side a",
+    "side b",
+}
 
 
 class IdentifyValidationError(Exception):
@@ -211,7 +235,10 @@ class IdentifyService:
             if normalized_fragment:
                 search_steps.append(_SearchStep(strategy="free_text", params={"query": normalized_fragment}))
 
-        return search_steps
+        for query in _build_raw_context_queries(identifiers):
+            search_steps.append(_SearchStep(strategy="raw_context", params={"query": query}))
+
+        return _dedupe_search_steps(search_steps)
 
     def _execute_search_step(self, search_step: _SearchStep) -> dict[str, Any]:
         if search_step.strategy == "barcode":
@@ -271,6 +298,125 @@ class IdentifyService:
 class _SearchStep:
     strategy: str
     params: dict[str, str]
+
+
+def _dedupe_search_steps(search_steps: list[_SearchStep]) -> list[_SearchStep]:
+    deduped_steps: list[_SearchStep] = []
+    seen: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
+
+    for search_step in search_steps:
+        key = (search_step.strategy, tuple(sorted(search_step.params.items())))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_steps.append(search_step)
+
+    return deduped_steps
+
+
+def _build_raw_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
+    if not identifiers.raw_text.strip():
+        return ()
+
+    raw_lines = _extract_raw_search_lines(identifiers.raw_text)
+    if not raw_lines:
+        return ()
+
+    catalog_lines = _dedupe_strings(
+        [
+            *identifiers.catalog_numbers,
+            *(line for line in raw_lines if _looks_like_catalog_query_line(line)),
+        ]
+    )
+    phrase_lines = _dedupe_strings(
+        [line for line in raw_lines if not _looks_like_catalog_query_line(line) and _looks_like_context_phrase(line)]
+    )
+
+    queries: list[str] = []
+    for catalog_line in catalog_lines[:CATALOG_CONTEXT_LIMIT]:
+        for phrase in phrase_lines[:PHRASE_CONTEXT_LIMIT]:
+            if _normalize_query_key(catalog_line) == _normalize_query_key(phrase):
+                continue
+            queries.append(f"{catalog_line} {phrase}")
+
+    for left, right in zip(phrase_lines, phrase_lines[1:], strict=False):
+        queries.append(f"{left} {right}")
+
+    queries.extend(phrase_lines[:PHRASE_CONTEXT_LIMIT])
+    return tuple(_dedupe_strings(queries)[:MAX_RAW_CONTEXT_SEARCHES])
+
+
+def _extract_raw_search_lines(raw_text: str) -> list[str]:
+    lines: list[str] = []
+
+    for raw_line in raw_text.splitlines():
+        line = _clean_query_line(raw_line)
+        if line is None or not _has_query_value(line):
+            continue
+        lines.append(line)
+
+    return _dedupe_strings(lines)
+
+
+def _clean_query_line(value: str) -> str | None:
+    tokens = QUERY_TOKEN_PATTERN.findall(value)
+    if not tokens:
+        return None
+
+    line = " ".join(tokens).strip(" -./#")
+    normalized_line = " ".join(line.split())
+    return normalized_line or None
+
+
+def _has_query_value(line: str) -> bool:
+    lowered_line = line.lower()
+    if lowered_line in LOW_VALUE_QUERY_LINES:
+        return False
+    if lowered_line.startswith(CREDIT_PREFIXES):
+        return False
+
+    alphanumeric_count = sum(character.isalnum() for character in line)
+    return alphanumeric_count >= 4
+
+
+def _looks_like_catalog_query_line(line: str) -> bool:
+    if not any(character.isalpha() for character in line) or not any(character.isdigit() for character in line):
+        return False
+
+    tokens = line.split()
+    if len(tokens) > 3:
+        return False
+
+    return not (len(tokens) == 2 and tokens[1].isdigit() and len(tokens[1]) == 4)
+
+
+def _looks_like_context_phrase(line: str) -> bool:
+    if any(character.isdigit() for character in line):
+        return False
+
+    tokens = [token for token in line.split() if token]
+    if not (1 <= len(tokens) <= 5):
+        return False
+
+    return not all(len(token) <= 2 for token in tokens)
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped_values: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        key = _normalize_query_key(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped_values.append(value)
+
+    return deduped_values
+
+
+def _normalize_query_key(value: str) -> str:
+    return "".join(character.lower() for character in value if character.isalnum())
 
 
 def _parse_discogs_title(value: str | None) -> tuple[str | None, str | None]:

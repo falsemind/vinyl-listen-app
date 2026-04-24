@@ -358,3 +358,60 @@ def test_identify_service_ranks_aggregated_non_barcode_discogs_results() -> None
         {"limit": 5, "catalog_number": "BAD001"},
         {"limit": 5, "catalog_number": "LIONCHGX003"},
     ]
+
+
+def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wrong() -> None:
+    repository = StubReleasesRepository()
+    discogs_service = StubDiscogsService(
+        payloads=[
+            {"results": []},
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "DJ Kane - Just Jungle",
+                        "label": ["Trouble On Vinyl"],
+                        "catno": "TOVRI 001",
+                    }
+                ]
+            },
+        ]
+    )
+    service = IdentifyService(
+        repository=repository,
+        discogs_service=discogs_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(
+            ExtractedIdentifiers(
+                artist="All tracks mixed and produced by",
+                title="Justin Richardson at Mixing Lab Studio",
+                raw_text="\n".join(
+                    [
+                        "DJ KANE PRESENTS",
+                        "JUST JUNGLE",
+                        "TOVRI 001",
+                        "This Side",
+                        "A. SKY",
+                        "Other Side",
+                        "AA. NEXT SOUND",
+                    ]
+                ),
+            )
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert {
+        "limit": 5,
+        "artist": "All tracks mixed and produced by",
+        "title": "Justin Richardson at Mixing Lab Studio",
+    } in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "TOVRI 001 DJ KANE PRESENTS"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "TOVRI 001 JUST JUNGLE"} in discogs_service.search_release_calls
