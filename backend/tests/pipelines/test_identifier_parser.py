@@ -177,6 +177,23 @@ def test_identifier_parser_corrects_catalog_letter_o_before_digits() -> None:
     assert identifiers.title is None
 
 
+def test_identifier_parser_recovers_terminal_question_mark_catalog_number() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "THE",
+                "ESSENTIALS EP",
+                "FMROO?",
+                "DEE CYPHER memories",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("FMROO?", "FMR007")
+
+
 def test_identifier_parser_strips_lowercase_ocr_prefix_before_catalog_token() -> None:
     parser = IdentifierParser()
 

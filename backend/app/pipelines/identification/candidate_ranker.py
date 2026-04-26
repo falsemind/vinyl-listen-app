@@ -40,7 +40,7 @@ STOPWORDS = frozenset(
 
 
 class CandidateRanker:
-    _MAX_SCORE = 325.0
+    _MAX_SCORE = 385.0
 
     def rank(
         self,
@@ -109,6 +109,14 @@ class CandidateRanker:
             score += 10
             matched_on.append("text")
 
+        if _role_matches_field(identifiers, role="release_title", value=candidate.title):
+            score += 40
+            matched_on.append("ocr_release_title")
+
+        if _role_matches_field(identifiers, role="label", value=candidate.label):
+            score += 20
+            matched_on.append("ocr_layout_label")
+
         evidence_tokens = _identifier_evidence_tokens(identifiers)
         artist_overlap = _field_overlap(candidate.artist, evidence_tokens)
         if artist_overlap.matches and artist_overlap.ratio >= 0.6 and "artist" not in matched_on:
@@ -172,6 +180,7 @@ def _identifier_evidence_tokens(identifiers: ExtractedIdentifiers) -> set[str]:
         identifiers.title,
         identifiers.label,
         *identifiers.text_fragments,
+        *(role.text for role in identifiers.ocr_roles),
     ]
     return {
         token
@@ -194,6 +203,29 @@ def _field_overlap(value: str | None, evidence_tokens: set[str]) -> _Overlap:
 
     matches = sum(1 for token in field_tokens if token in evidence_tokens)
     return _Overlap(matches=matches, ratio=matches / len(field_tokens))
+
+
+def _role_matches_field(identifiers: ExtractedIdentifiers, *, role: str, value: str | None) -> bool:
+    if value is None:
+        return False
+
+    field_tokens = {token for token in _tokenize(value) if token not in STOPWORDS and len(token) >= 2}
+    if not field_tokens:
+        return False
+
+    for evidence in identifiers.ocr_roles:
+        if evidence.role != role:
+            continue
+
+        evidence_tokens = {token for token in _tokenize(evidence.text) if token not in STOPWORDS and len(token) >= 2}
+        if not evidence_tokens:
+            continue
+
+        matches = field_tokens & evidence_tokens
+        if len(matches) / len(field_tokens) >= 0.6:
+            return True
+
+    return False
 
 
 @dataclass(frozen=True)

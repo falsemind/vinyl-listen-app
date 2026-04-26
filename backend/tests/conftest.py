@@ -7,6 +7,9 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 pytest_plugins = [
+    "tests.fixtures.api_stubs",
     "tests.fixtures.discogs_service",
+    "tests.fixtures.identify_service",
+    "tests.fixtures.release_import_service",
     "tests.fixtures.sessions_service",
 ]

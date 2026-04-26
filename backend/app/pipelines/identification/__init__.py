@@ -6,8 +6,12 @@ from app.pipelines.identification.models import (
     ExtractedIdentifiers,
     IdentifyCandidate,
     ImageVariant,
+    OcrResult,
+    OcrRoleEvidence,
+    OcrTextLine,
     PreparedImage,
 )
+from app.pipelines.identification.ocr_backends import EasyOcrBackend, OcrBackend, OcrCascade, TesseractOcrBackend
 from app.pipelines.identification.ocr_extractor import OcrExtractor
 from app.pipelines.identification.preprocess import ImageProcessor
 
@@ -20,6 +24,13 @@ __all__ = [
     "IdentifierExtractor",
     "ImageProcessor",
     "ImageVariant",
+    "EasyOcrBackend",
+    "OcrBackend",
+    "OcrCascade",
     "OcrExtractor",
+    "OcrRoleEvidence",
+    "OcrResult",
+    "OcrTextLine",
     "PreparedImage",
+    "TesseractOcrBackend",
 ]

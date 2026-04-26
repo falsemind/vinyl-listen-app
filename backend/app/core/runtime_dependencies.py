@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 import shutil
 from dataclasses import dataclass
+from importlib.util import find_spec
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,7 @@ def get_runtime_dependency_statuses() -> tuple[RuntimeDependencyStatus, ...]:
     return (
         _check_tesseract(),
         _check_zbar(),
+        _check_easyocr(),
     )
 
 
@@ -67,4 +71,19 @@ def _check_zbar() -> RuntimeDependencyStatus:
         name="zbar",
         available=True,
         detail="pyzbar decode loaded successfully.",
+    )
+
+
+def _check_easyocr() -> RuntimeDependencyStatus:
+    if find_spec("easyocr") is None:
+        return RuntimeDependencyStatus(
+            name="easyocr",
+            available=False,
+            detail="Optional EasyOCR fallback is not installed.",
+        )
+
+    return RuntimeDependencyStatus(
+        name="easyocr",
+        available=True,
+        detail=f"module installed; enabled={settings.identify_easyocr_enabled}",
     )

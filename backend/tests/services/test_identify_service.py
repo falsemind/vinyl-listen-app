@@ -1,137 +1,21 @@
-from dataclasses import dataclass
-from datetime import UTC, datetime
-
-from app.pipelines.identification import ExtractedIdentifiers, IdentifierExtractor, ImageVariant, PreparedImage
-from app.services.identify_service import IdentifyService, IdentifyValidationError
+from app.pipelines.identification import ExtractedIdentifiers, OcrRoleEvidence
+from app.services.identify_service import IdentifyValidationError
 
 
-@dataclass
-class ReleaseStub:
-    id: str
-    discogs_release_id: int
-    artist: str
-    title: str
-    year: int | None
-    label: str | None
-    catalog_number: str | None
-    barcode: str | None
-    genres: list[str] | None
-    styles: list[str] | None
-    cover_image_url: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class StubIdentifierExtractor(IdentifierExtractor):
-    def __init__(self, identifiers: ExtractedIdentifiers) -> None:
-        self.identifiers = identifiers
-
-    def extract(self, _prepared_image: PreparedImage) -> ExtractedIdentifiers:
-        return self.identifiers
-
-
-class StubImageProcessor:
-    def prepare(self, *, filename: str, content_type: str, data: bytes) -> PreparedImage:
-        return PreparedImage(
-            filename=filename,
-            content_type=content_type,
-            data=data,
-            size_bytes=len(data),
-            digest="digest",
-            width=1200,
-            height=1200,
-            variants=(ImageVariant(name="normalized", data=b"normalized-image"),),
-        )
-
-
-class StubReleasesRepository:
-    def __init__(
-        self,
-        *,
-        barcode_matches: list[ReleaseStub] | None = None,
-        catalog_matches: list[ReleaseStub] | None = None,
-        artist_title_matches: list[ReleaseStub] | None = None,
-    ) -> None:
-        self.barcode_matches = barcode_matches or []
-        self.catalog_matches = catalog_matches or []
-        self.artist_title_matches = artist_title_matches or []
-        self.barcode_calls: list[str] = []
-        self.catalog_calls: list[str] = []
-        self.artist_title_calls: list[tuple[str, str, int]] = []
-
-    def get_by_barcode(self, _db, barcode: str) -> list[ReleaseStub]:
-        self.barcode_calls.append(barcode)
-        return self.barcode_matches
-
-    def get_by_catalog_number(self, _db, catalog_number: str) -> list[ReleaseStub]:
-        self.catalog_calls.append(catalog_number)
-        return self.catalog_matches
-
-    def search_by_artist_and_title(self, _db, *, artist: str, title: str, limit: int) -> list[ReleaseStub]:
-        self.artist_title_calls.append((artist, title, limit))
-        return self.artist_title_matches
-
-
-class StubDiscogsService:
-    def __init__(self, payload: dict | None = None, *, payloads: list[dict] | None = None) -> None:
-        self.payload = payload or {"results": []}
-        self.payloads = payloads or []
-        self.search_by_barcode_calls: list[tuple[str, int]] = []
-        self.search_release_calls: list[dict] = []
-
-    def search_by_barcode(self, barcode: str, *, limit: int = 10) -> dict:
-        self.search_by_barcode_calls.append((barcode, limit))
-        return self._next_payload()
-
-    def search_releases(self, *, limit: int = 10, **kwargs) -> dict:
-        self.search_release_calls.append({"limit": limit, **kwargs})
-        return self._next_payload()
-
-    def _next_payload(self) -> dict:
-        if self.payloads:
-            return self.payloads.pop(0)
-        return self.payload
-
-
-def build_release_stub(
-    *,
-    release_id: str = "release-1",
-    discogs_release_id: int = 123,
-    artist: str = "Air",
-    title: str = "Moon Safari",
-    catalog_number: str | None = "7243 8 44978 1 8",
-    barcode: str | None = "724384497818",
-) -> ReleaseStub:
-    timestamp = datetime(2026, 4, 20, tzinfo=UTC)
-    return ReleaseStub(
-        id=release_id,
-        discogs_release_id=discogs_release_id,
-        artist=artist,
-        title=title,
-        year=1998,
-        label="Source",
-        catalog_number=catalog_number,
-        barcode=barcode,
-        genres=["Electronic"],
-        styles=["Downtempo"],
-        cover_image_url="https://img.discogs.com/cover.jpg",
-        created_at=timestamp,
-        updated_at=timestamp,
-    )
-
-
-def test_identify_service_returns_local_match_before_discogs_lookup() -> None:
-    repository = StubReleasesRepository(barcode_matches=[build_release_stub()])
-    discogs_service = StubDiscogsService(
+def test_identify_service_returns_local_match_before_discogs_lookup(
+    releases_repository_factory,
+    build_release_stub,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory(barcode_matches=[build_release_stub()])
+    discogs_service = discogs_service_factory(
         payload={"results": [{"id": 999, "title": "Should Not - Be Called", "year": 2000}]}
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(
-            ExtractedIdentifiers(barcodes=("724384497818",), catalog_numbers=(), artist=None, title=None)
-        ),
+        identifiers=ExtractedIdentifiers(barcodes=("724384497818",), catalog_numbers=(), artist=None, title=None),
     )
 
     result = service.identify(
@@ -148,9 +32,13 @@ def test_identify_service_returns_local_match_before_discogs_lookup() -> None:
     assert discogs_service.search_release_calls == []
 
 
-def test_identify_service_falls_back_to_discogs_search_in_priority_order() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService(
+def test_identify_service_falls_back_to_discogs_search_in_priority_order(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
         payload={
             "results": [
                 {
@@ -164,17 +52,14 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order() -> No
             ]
         }
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(
-            ExtractedIdentifiers(
-                barcodes=("724384497818",),
-                catalog_numbers=("7243 8 44978 1 8",),
-                artist="Air",
-                title="Moon Safari",
-            )
+        identifiers=ExtractedIdentifiers(
+            barcodes=("724384497818",),
+            catalog_numbers=("7243 8 44978 1 8",),
+            artist="Air",
+            title="Moon Safari",
         ),
     )
 
@@ -192,8 +77,8 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order() -> No
     assert discogs_service.search_release_calls == []
 
 
-def test_identify_service_rejects_unsupported_image_type() -> None:
-    service = IdentifyService(discogs_service=StubDiscogsService())
+def test_identify_service_rejects_unsupported_image_type(build_identify_service) -> None:
+    service = build_identify_service()
 
     try:
         service.identify(
@@ -210,14 +95,17 @@ def test_identify_service_rejects_unsupported_image_type() -> None:
         raise AssertionError("Expected IdentifyValidationError for unsupported media type")
 
 
-def test_identify_service_returns_empty_candidates_when_no_signals_are_available() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService()
-    service = IdentifyService(
+def test_identify_service_returns_empty_candidates_when_no_signals_are_available(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory()
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(ExtractedIdentifiers()),
+        identifiers=ExtractedIdentifiers(),
     )
 
     result = service.identify(
@@ -232,9 +120,13 @@ def test_identify_service_returns_empty_candidates_when_no_signals_are_available
     assert discogs_service.search_release_calls == []
 
 
-def test_identify_service_uses_label_fragment_for_free_text_search() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService(
+def test_identify_service_uses_label_fragment_for_free_text_search(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
         payload={
             "results": [
                 {
@@ -247,16 +139,13 @@ def test_identify_service_uses_label_fragment_for_free_text_search() -> None:
             ]
         }
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(
-            ExtractedIdentifiers(
-                year=2019,
-                label="Scotch Bonnet Records",
-                text_fragments=("Scotch Bonnet Records",),
-            )
+        identifiers=ExtractedIdentifiers(
+            year=2019,
+            label="Scotch Bonnet Records",
+            text_fragments=("Scotch Bonnet Records",),
         ),
     )
 
@@ -272,9 +161,13 @@ def test_identify_service_uses_label_fragment_for_free_text_search() -> None:
     assert discogs_service.search_release_calls == [{"limit": 5, "query": "Scotch Bonnet Records"}]
 
 
-def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_query() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService(
+def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_query(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
         payloads=[
             {"results": []},
             {
@@ -290,13 +183,10 @@ def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_quer
             },
         ]
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(
-            ExtractedIdentifiers(catalog_numbers=("SCRUBO19", "SCRUB019", "SCRUBO19 8"))
-        ),
+        identifiers=ExtractedIdentifiers(catalog_numbers=("SCRUBO19", "SCRUB019", "SCRUBO19 8")),
     )
 
     result = service.identify(
@@ -314,9 +204,13 @@ def test_identify_service_tries_trimmed_catalog_variant_after_noisy_catalog_quer
     ]
 
 
-def test_identify_service_ranks_aggregated_non_barcode_discogs_results() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService(
+def test_identify_service_ranks_aggregated_non_barcode_discogs_results(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
         payloads=[
             {
                 "results": [
@@ -339,11 +233,10 @@ def test_identify_service_ranks_aggregated_non_barcode_discogs_results() -> None
             },
         ]
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(ExtractedIdentifiers(catalog_numbers=("BAD001", "LIONCHGX003"))),
+        identifiers=ExtractedIdentifiers(catalog_numbers=("BAD001", "LIONCHGX003")),
     )
 
     result = service.identify(
@@ -360,9 +253,13 @@ def test_identify_service_ranks_aggregated_non_barcode_discogs_results() -> None
     ]
 
 
-def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wrong() -> None:
-    repository = StubReleasesRepository()
-    discogs_service = StubDiscogsService(
+def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wrong(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
         payloads=[
             {"results": []},
             {
@@ -377,26 +274,23 @@ def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wr
             },
         ]
     )
-    service = IdentifyService(
+    service = build_identify_service(
         repository=repository,
         discogs_service=discogs_service,
-        image_processor=StubImageProcessor(),
-        identifier_extractor=StubIdentifierExtractor(
-            ExtractedIdentifiers(
-                artist="All tracks mixed and produced by",
-                title="Justin Richardson at Mixing Lab Studio",
-                raw_text="\n".join(
-                    [
-                        "DJ KANE PRESENTS",
-                        "JUST JUNGLE",
-                        "TOVRI 001",
-                        "This Side",
-                        "A. SKY",
-                        "Other Side",
-                        "AA. NEXT SOUND",
-                    ]
-                ),
-            )
+        identifiers=ExtractedIdentifiers(
+            artist="All tracks mixed and produced by",
+            title="Justin Richardson at Mixing Lab Studio",
+            raw_text="\n".join(
+                [
+                    "DJ KANE PRESENTS",
+                    "JUST JUNGLE",
+                    "TOVRI 001",
+                    "This Side",
+                    "A. SKY",
+                    "Other Side",
+                    "AA. NEXT SOUND",
+                ]
+            ),
         ),
     )
 
@@ -415,3 +309,86 @@ def test_identify_service_searches_raw_ocr_context_when_structured_fields_are_wr
     } in discogs_service.search_release_calls
     assert {"limit": 5, "query": "TOVRI 001 DJ KANE PRESENTS"} in discogs_service.search_release_calls
     assert {"limit": 5, "query": "TOVRI 001 JUST JUNGLE"} in discogs_service.search_release_calls
+
+
+def test_identify_service_searches_catalog_number_with_ocr_role_context(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
+        payloads=[
+            {"results": []},
+            {"results": []},
+            {"results": []},
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "Various - Essentials EP",
+                        "label": ["Fresh Milk Records"],
+                        "catno": "FMR007",
+                    }
+                ]
+            },
+        ]
+    )
+    service = build_identify_service(
+        repository=repository,
+        discogs_service=discogs_service,
+        identifiers=ExtractedIdentifiers(
+            catalog_numbers=("FMROO?", "FMR007"),
+            ocr_roles=(
+                OcrRoleEvidence(role="release_title", text="ESSENTIALS EP", confidence=None, source="tesseract"),
+                OcrRoleEvidence(role="label", text="Fresh Milk Records", confidence=None, source="tesseract"),
+            ),
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert {"limit": 5, "query": "FMR007 ESSENTIALS EP"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "FMR007 Fresh Milk Records"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "FMROO? ESSENTIALS EP"} not in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "A RECORDS"} not in discogs_service.search_release_calls
+
+
+def test_identify_service_filters_low_quality_text_fragments_before_free_text_search(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory()
+    service = build_identify_service(
+        repository=repository,
+        discogs_service=discogs_service,
+        identifiers=ExtractedIdentifiers(
+            text_fragments=(
+                "eat CJ bin",
+                "RRM nor govz",
+                "Fresh Milk Records",
+                "ESSENTIALS EP",
+            ),
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert result.candidates == ()
+    assert {"limit": 5, "query": "Fresh Milk Records"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "ESSENTIALS EP"} in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "eat CJ bin"} not in discogs_service.search_release_calls
+    assert {"limit": 5, "query": "RRM nor govz"} not in discogs_service.search_release_calls
