@@ -25,6 +25,10 @@ CATALOG_TOKEN_PATTERN = re.compile(
     r"(?![A-Z0-9])",
     re.IGNORECASE,
 )
+OCR_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])([A-Z]{2,}[A-Z0-9OQDIL?]{2,}\?)(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 SPACED_CATALOG_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{3,5})(?![A-Z0-9])", re.IGNORECASE)
 SIDE_PREFIX_PATTERN = re.compile(r"^\s*[A-H][.)]\s+")
 SEPARATOR_PATTERNS = (" - ", " / ", " – ", " — ", ": ")
@@ -78,6 +82,13 @@ CATALOG_OCR_CORRECTIONS = {
     "d": "0",
     "i": "1",
     "l": "1",
+}
+CATALOG_TERMINAL_OCR_CORRECTIONS = {
+    "?": "7",
+}
+CATALOG_SUFFIX_OCR_CORRECTIONS = {
+    **CATALOG_OCR_CORRECTIONS,
+    **CATALOG_TERMINAL_OCR_CORRECTIONS,
 }
 
 
@@ -166,6 +177,7 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
 
     for line in cleaned_lines:
         catalog_tokens = _extract_catalog_number_tokens(line)
+        catalog_tokens = (*catalog_tokens, *_extract_ocr_confused_catalog_number_tokens(line))
         for token in catalog_tokens:
             _append_catalog_number_candidates(token, detected_catalog_numbers, seen)
 
@@ -578,6 +590,29 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def _extract_ocr_confused_catalog_number_tokens(value: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    for match in OCR_CONFUSED_CATALOG_TOKEN_PATTERN.finditer(value):
+        token = _clean_catalog_candidate(match.group(1))
+        if token is None:
+            continue
+
+        corrected_token = _correct_catalog_number_ocr(token)
+        if corrected_token is None or not _looks_like_catalog_number(corrected_token):
+            continue
+
+        lowered_token = token.lower()
+        if lowered_token in seen:
+            continue
+
+        seen.add(lowered_token)
+        tokens.append(token)
+
+    return tuple(tokens)
+
+
 def _line_starts_with_catalog_token(value: str) -> bool:
     cleaned_value = _clean_catalog_candidate(value)
     if cleaned_value is None:
@@ -609,7 +644,7 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
     changed = False
 
     for index, character in enumerate(value):
-        replacement = CATALOG_OCR_CORRECTIONS.get(character.lower())
+        replacement = CATALOG_OCR_CORRECTIONS.get(character.lower()) or CATALOG_TERMINAL_OCR_CORRECTIONS.get(character)
         if replacement is None or not _has_adjacent_digit(value, index):
             corrected_characters.append(character)
             continue
@@ -618,8 +653,30 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
         changed = True
 
     if not changed:
-        return None
+        return _correct_terminal_catalog_suffix(value)
     return "".join(corrected_characters)
+
+
+def _correct_terminal_catalog_suffix(value: str) -> str | None:
+    if not value.endswith("?"):
+        return None
+
+    suffix_start = len(value)
+    while suffix_start > 0 and value[suffix_start - 1].lower() in CATALOG_SUFFIX_OCR_CORRECTIONS:
+        suffix_start -= 1
+
+    prefix = value[:suffix_start]
+    suffix = value[suffix_start:]
+    if not (2 <= len(prefix) <= 8 and 2 <= len(suffix) <= 4):
+        return None
+    if not prefix.isalpha():
+        return None
+
+    corrected_suffix = "".join(CATALOG_SUFFIX_OCR_CORRECTIONS[character.lower()] for character in suffix)
+    corrected_value = f"{prefix.upper()}{corrected_suffix}"
+    if corrected_value == value:
+        return None
+    return corrected_value
 
 
 def _trim_catalog_trailing_token(value: str) -> str | None:

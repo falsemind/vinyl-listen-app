@@ -15,6 +15,7 @@ from app.pipelines.identification import (
     IdentifyCandidate,
     ImageProcessor,
 )
+from app.pipelines.identification.search_evidence import score_search_evidence
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
 
@@ -26,6 +27,8 @@ DEFAULT_CANDIDATE_LIMIT = 5
 MAX_RAW_CONTEXT_SEARCHES = 8
 CATALOG_CONTEXT_LIMIT = 4
 PHRASE_CONTEXT_LIMIT = 5
+ROLE_CONTEXT_CATALOG_LIMIT = 1
+ROLE_CONTEXT_LABEL_LIMIT = 2
 QUERY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9#./-]+")
 CREDIT_PREFIXES = (
     "all tracks",
@@ -123,7 +126,6 @@ class IdentifyService:
             bool(identifiers.label),
             len(identifiers.text_fragments),
         )
-
         local_candidates = self._find_local_candidates(db, identifiers)
         if local_candidates:
             logger.info("Returning local identify matches filename=%s count=%s", filename, len(local_candidates))
@@ -222,7 +224,11 @@ class IdentifyService:
         for catalog_number in identifiers.catalog_numbers:
             search_steps.append(_SearchStep(strategy="catalog_number", params={"catalog_number": catalog_number}))
 
-        if identifiers.artist and identifiers.title:
+        ocr_role_context_queries = _build_ocr_role_context_queries(identifiers)
+        for query in ocr_role_context_queries:
+            search_steps.append(_SearchStep(strategy="ocr_role_context", params={"query": query}))
+
+        if identifiers.artist and identifiers.title and not ocr_role_context_queries:
             search_steps.append(
                 _SearchStep(
                     strategy="artist_title",
@@ -230,13 +236,14 @@ class IdentifyService:
                 )
             )
 
-        for fragment in identifiers.text_fragments:
-            normalized_fragment = fragment.strip()
-            if normalized_fragment:
-                search_steps.append(_SearchStep(strategy="free_text", params={"query": normalized_fragment}))
+        if not ocr_role_context_queries:
+            for fragment in identifiers.text_fragments:
+                normalized_fragment = fragment.strip()
+                if normalized_fragment and _should_search_free_text_fragment(normalized_fragment):
+                    search_steps.append(_SearchStep(strategy="free_text", params={"query": normalized_fragment}))
 
-        for query in _build_raw_context_queries(identifiers):
-            search_steps.append(_SearchStep(strategy="raw_context", params={"query": query}))
+            for query in _build_raw_context_queries(identifiers):
+                search_steps.append(_SearchStep(strategy="raw_context", params={"query": query}))
 
         return _dedupe_search_steps(search_steps)
 
@@ -314,6 +321,40 @@ def _dedupe_search_steps(search_steps: list[_SearchStep]) -> list[_SearchStep]:
     return deduped_steps
 
 
+def _build_ocr_role_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
+    if not identifiers.catalog_numbers or not identifiers.ocr_roles:
+        return ()
+
+    title_values = _role_texts(identifiers, "release_title")
+    label_values = _role_texts(identifiers, "label")
+    if not title_values and not label_values:
+        return ()
+
+    queries: list[str] = []
+    catalog_numbers = _rank_catalog_context_values(identifiers.catalog_numbers)
+    for catalog_number in catalog_numbers[:ROLE_CONTEXT_CATALOG_LIMIT]:
+        for title in title_values[:PHRASE_CONTEXT_LIMIT]:
+            queries.append(f"{catalog_number} {title}")
+        for label in label_values[:ROLE_CONTEXT_LABEL_LIMIT]:
+            queries.append(f"{catalog_number} {label}")
+
+    return tuple(_dedupe_strings(queries)[:MAX_RAW_CONTEXT_SEARCHES])
+
+
+def _role_texts(identifiers: ExtractedIdentifiers, role: str) -> list[str]:
+    return _dedupe_strings([evidence.text for evidence in identifiers.ocr_roles if evidence.role == role])
+
+
+def _rank_catalog_context_values(catalog_numbers: tuple[str, ...]) -> list[str]:
+    return sorted(catalog_numbers, key=_catalog_context_sort_key)
+
+
+def _catalog_context_sort_key(value: str) -> tuple[int, int, int, str]:
+    digit_count = sum(character.isdigit() for character in value)
+    suspicious_count = sum(character in "?|" for character in value)
+    return suspicious_count, -digit_count, len(value), value
+
+
 def _build_raw_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
     if not identifiers.raw_text.strip():
         return ()
@@ -379,6 +420,15 @@ def _has_query_value(line: str) -> bool:
     return alphanumeric_count >= 4
 
 
+def _should_search_free_text_fragment(fragment: str) -> bool:
+    line = _clean_query_line(fragment)
+    if line is None or not _has_query_value(line):
+        return False
+    if not _looks_like_context_phrase(line):
+        return False
+    return score_search_evidence(line).is_query_worthy
+
+
 def _looks_like_catalog_query_line(line: str) -> bool:
     if not any(character.isalpha() for character in line) or not any(character.isdigit() for character in line):
         return False
@@ -398,7 +448,7 @@ def _looks_like_context_phrase(line: str) -> bool:
     if not (1 <= len(tokens) <= 5):
         return False
 
-    return not all(len(token) <= 2 for token in tokens)
+    return not all(len(token) <= 2 for token in tokens) and score_search_evidence(line).is_query_worthy
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

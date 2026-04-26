@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     api_rate_limit_per_minute: int = 60
 
+    identify_easyocr_enabled: bool = False
+    identify_easyocr_gpu: bool = False
+    identify_easyocr_min_confidence: float = 0.35
+    identify_easyocr_max_image_dimension: int = 800
+
     log_level: str = "INFO"
 
 

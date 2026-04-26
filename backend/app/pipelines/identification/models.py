@@ -44,6 +44,32 @@ class PreparedImage:
 
 
 @dataclass(frozen=True)
+class OcrTextLine:
+    text: str
+    confidence: float | None
+    source: str
+    box: tuple[tuple[float, float], ...] | None = None
+
+
+@dataclass(frozen=True)
+class OcrResult:
+    source: str
+    raw_text: str
+    lines: tuple[OcrTextLine, ...] = ()
+
+    def has_text(self) -> bool:
+        return bool(self.raw_text.strip() or self.lines)
+
+
+@dataclass(frozen=True)
+class OcrRoleEvidence:
+    role: Literal["release_title", "label", "track_text", "catalog_number"]
+    text: str
+    confidence: float | None
+    source: str
+
+
+@dataclass(frozen=True)
 class ExtractedIdentifiers:
     barcodes: tuple[str, ...] = ()
     catalog_numbers: tuple[str, ...] = ()
@@ -53,6 +79,8 @@ class ExtractedIdentifiers:
     label: str | None = None
     text_fragments: tuple[str, ...] = ()
     raw_text: str = ""
+    ocr_evidence: tuple[OcrTextLine, ...] = ()
+    ocr_roles: tuple[OcrRoleEvidence, ...] = ()
 
     def has_signals(self) -> bool:
         return bool(
