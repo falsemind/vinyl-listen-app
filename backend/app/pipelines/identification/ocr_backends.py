@@ -7,7 +7,6 @@ from typing import Any, Protocol
 
 from PIL import Image
 
-from app.core.config import settings
 from app.pipelines.identification.models import ImageVariant, OcrResult, OcrTextLine, PreparedImage
 from app.pipelines.identification.ocr_extractor import OcrExtractor
 
@@ -142,6 +141,8 @@ class OcrCascade:
 
 
 def build_default_ocr_cascade(ocr_extractor: OcrExtractor | None = None) -> OcrCascade:
+    from app.core.config import settings
+
     fallback_backend: OcrBackend | None = None
     if settings.identify_easyocr_enabled:
         fallback_backend = EasyOcrBackend(
