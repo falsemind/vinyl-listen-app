@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
     )
-    op.add_column("releases", sa.Column("discogs_release_id", sa.BigInteger(), nullable=False))
+    op.add_column("releases", sa.Column("discogs_release_id", sa.BigInteger(), nullable=True))
     op.add_column("releases", sa.Column("year", sa.Integer(), nullable=True))
     op.add_column("releases", sa.Column("label", sa.String(), nullable=True))
     op.add_column("releases", sa.Column("catalog_number", sa.String(), nullable=True))
@@ -59,19 +59,64 @@ def upgrade() -> None:
     op.add_column(
         "releases", sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False)
     )
-    op.alter_column("releases", "id", existing_type=sa.INTEGER(), type_=sa.String(), existing_nullable=False)
+    op.execute("UPDATE releases SET discogs_release_id = -id::bigint WHERE discogs_release_id IS NULL")
+    op.alter_column("releases", "discogs_release_id", existing_type=sa.BigInteger(), nullable=False)
+    op.alter_column(
+        "releases",
+        "id",
+        existing_type=sa.INTEGER(),
+        type_=sa.String(),
+        existing_nullable=False,
+        postgresql_using="id::text",
+    )
     op.drop_index(op.f("ix_releases_id"), table_name="releases")
     op.create_unique_constraint("uq_releases_discogs_release_id", "releases", ["discogs_release_id"])
     op.create_index("idx_releases_artist", "releases", ["artist"], unique=False)
     op.create_index("idx_releases_title", "releases", ["title"], unique=False)
     op.create_index("idx_releases_genres", "releases", ["genres"], unique=False, postgresql_using="gin")
     op.create_index("idx_releases_styles", "releases", ["styles"], unique=False, postgresql_using="gin")
-    op.add_column("sessions", sa.Column("release_id", sa.String(), nullable=False))
+    op.add_column("sessions", sa.Column("release_id", sa.String(), nullable=True))
     op.add_column("sessions", sa.Column("rating", sa.Integer(), nullable=True))
     op.add_column("sessions", sa.Column("mood", sa.String(), nullable=True))
     op.add_column("sessions", sa.Column("notes", sa.String(), nullable=True))
     op.add_column("sessions", sa.Column("played_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("sessions", sa.Column("vinyl_side", sa.String(), nullable=True))
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM sessions WHERE release_id IS NULL) THEN
+                INSERT INTO releases (
+                    id,
+                    discogs_release_id,
+                    artist,
+                    title,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    'legacy-migrated-release',
+                    0,
+                    'Unknown Artist',
+                    'Unknown Release',
+                    now(),
+                    now()
+                )
+                ON CONFLICT (discogs_release_id) DO NOTHING;
+
+                UPDATE sessions
+                SET release_id = (
+                    SELECT id
+                    FROM releases
+                    WHERE discogs_release_id = 0
+                    LIMIT 1
+                )
+                WHERE release_id IS NULL;
+            END IF;
+        END $$;
+        """
+    )
+    op.alter_column("sessions", "release_id", existing_type=sa.String(), nullable=False)
     op.create_foreign_key("fk_sessions_release_id_releases", "sessions", "releases", ["release_id"], ["id"])
     op.create_index("idx_sessions_release_id", "sessions", ["release_id"], unique=False)
     op.create_index("idx_sessions_played_at", "sessions", ["played_at"], unique=False)
