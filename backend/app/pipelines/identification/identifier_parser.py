@@ -7,6 +7,12 @@ from datetime import UTC, datetime
 from app.pipelines.identification.models import ExtractedIdentifiers
 
 BARCODE_PATTERN = re.compile(r"(?<!\d)(?:\d[\s-]?){8,14}(?!\d)")
+BARCODE_CONTEXT_PATTERN = re.compile(r"\b(?:barcode|ean|upc)\b", re.IGNORECASE)
+CONTACT_NUMBER_CONTEXT_PATTERN = re.compile(
+    r"^\s*(?:tel(?:ephone)?|phone|fax|info|mobile|contact|booking)\b|"
+    r"\b(?:tel(?:ephone)?|phone|fax|info|mobile|contact|booking)\s*[:+]",
+    re.IGNORECASE,
+)
 LABELED_CATALOG_PATTERN = re.compile(
     r"(?:cat(?:alog)?(?:\s*(?:no|number|#))?[:#\s-]+)([A-Z0-9][A-Z0-9 ./-]{2,31})",
     re.IGNORECASE,
@@ -20,6 +26,7 @@ TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])"
     r"(?:[A-Z]{3,}[A-Z0-9]*#[A-Z0-9]*\d[A-Z0-9]*"
+    r"|\d[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*"
     r"|[A-Z]{2,}[A-Z0-9]*(?:[-/.]?[A-Z0-9]+)*\d[A-Z0-9]*(?:[-/.]?[A-Z0-9]+)*"
     r"|[A-Z0-9]*\d[A-Z0-9]*(?:[-/.#][A-Z0-9]+)+)"
     r"(?![A-Z0-9])",
@@ -30,6 +37,10 @@ OCR_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SPACED_CATALOG_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{3,5})(?![A-Z0-9])", re.IGNORECASE)
+SPACED_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])([A-Z]{2,})\s+([OQDI0-9]{2,6}(?:LP|EP)?)\b",
+    re.IGNORECASE,
+)
 SIDE_PREFIX_PATTERN = re.compile(r"^\s*[A-H][.)]\s+")
 SEPARATOR_PATTERNS = (" - ", " / ", " – ", " — ", ": ")
 EDGE_JUNK_CHARACTERS = " \t\r\n'\"“”‘’`-:#*/.,;|\\"
@@ -144,12 +155,16 @@ def _extract_barcodes(raw_text: str) -> tuple[str, ...]:
     detected_barcodes: list[str] = []
     seen: set[str] = set()
 
-    for match in BARCODE_PATTERN.finditer(raw_text):
-        barcode = "".join(character for character in match.group(0) if character.isdigit())
-        if not (8 <= len(barcode) <= 14) or barcode in seen:
+    for line in raw_text.splitlines():
+        if _looks_like_contact_number_line(line):
             continue
-        seen.add(barcode)
-        detected_barcodes.append(barcode)
+
+        for match in BARCODE_PATTERN.finditer(line):
+            barcode = "".join(character for character in match.group(0) if character.isdigit())
+            if not _is_valid_ocr_barcode_candidate(barcode, line=line) or barcode in seen:
+                continue
+            seen.add(barcode)
+            detected_barcodes.append(barcode)
 
     return tuple(detected_barcodes)
 
@@ -524,8 +539,9 @@ def _catalog_number_variants(value: str) -> tuple[str, ...]:
     variants: list[str] = []
     seen: set[str] = set()
     trimmed_value = _trim_catalog_trailing_token(normalized_value)
+    unwrapped_value = _unwrap_catalog_junk_token(normalized_value)
 
-    for base_variant in (trimmed_value, normalized_value):
+    for base_variant in (trimmed_value, normalized_value, unwrapped_value):
         if base_variant is None:
             continue
 
@@ -567,6 +583,7 @@ def _normalize_catalog_sort_token(value: str) -> str:
 def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
     tokens: list[str] = []
     seen: set[str] = set()
+    spaced_catalog_spans: list[tuple[int, int]] = []
 
     for match in SPACED_CATALOG_TOKEN_PATTERN.finditer(value):
         token = _clean_catalog_candidate(match.group(1))
@@ -575,9 +592,25 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         if _extract_year_from_value(token) is not None:
             continue
         seen.add(token.lower())
+        spaced_catalog_spans.append(match.span(1))
+        tokens.append(token)
+
+    for match in SPACED_CONFUSED_CATALOG_TOKEN_PATTERN.finditer(value):
+        token = _clean_catalog_candidate(f"{match.group(1)} {match.group(2)}")
+        if token is None or token.lower() in seen:
+            continue
+        corrected_token = _correct_catalog_number_ocr(token)
+        if corrected_token is None or not (
+            _looks_like_catalog_number(corrected_token) or _looks_like_spaced_label_code_catalog_number(corrected_token)
+        ):
+            continue
+        seen.add(token.lower())
+        spaced_catalog_spans.append(match.span(0))
         tokens.append(token)
 
     for match in CATALOG_TOKEN_PATTERN.finditer(value):
+        if _is_span_inside_spaced_catalog(match.span(0), spaced_catalog_spans):
+            continue
         token = _clean_catalog_candidate(_strip_leading_lowercase_ocr_prefix(match.group(0)))
         if token is None:
             continue
@@ -588,6 +621,11 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         tokens.append(token)
 
     return tuple(tokens)
+
+
+def _is_span_inside_spaced_catalog(span: tuple[int, int], spaced_catalog_spans: Iterable[tuple[int, int]]) -> bool:
+    start, end = span
+    return any(start >= spaced_start and end <= spaced_end for spaced_start, spaced_end in spaced_catalog_spans)
 
 
 def _extract_ocr_confused_catalog_number_tokens(value: str) -> tuple[str, ...]:
@@ -622,6 +660,10 @@ def _line_starts_with_catalog_token(value: str) -> bool:
     return bool(CATALOG_TOKEN_PATTERN.fullmatch(first_token.upper()))
 
 
+def _looks_like_spaced_label_code_catalog_number(value: str) -> bool:
+    return re.fullmatch(r"[A-Z]{2,}\s+\d{2,6}(?:LP|EP)?", value, re.IGNORECASE) is not None
+
+
 def _strip_leading_lowercase_ocr_prefix(value: str) -> str:
     if len(value) >= 2 and value[0].islower() and value[1].isupper():
         return value[1:]
@@ -640,6 +682,10 @@ def _looks_like_track_listing(value: str) -> bool:
 
 
 def _correct_catalog_number_ocr(value: str) -> str | None:
+    corrected_suffix_value = _correct_catalog_suffix(value)
+    if corrected_suffix_value is not None:
+        return corrected_suffix_value
+
     corrected_characters: list[str] = []
     changed = False
 
@@ -655,6 +701,22 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
     if not changed:
         return _correct_terminal_catalog_suffix(value)
     return "".join(corrected_characters)
+
+
+def _correct_catalog_suffix(value: str) -> str | None:
+    match = re.fullmatch(r"([A-Z]{2,}?)([ -]?)([OQDIL0-9]{2,6}?)(LP|EP)?", value, re.IGNORECASE)
+    if match is None:
+        return None
+
+    prefix, separator, suffix, release_type = match.groups()
+    if not any(character.isdigit() for character in suffix):
+        return None
+
+    corrected_suffix = "".join(CATALOG_OCR_CORRECTIONS.get(character.lower(), character) for character in suffix)
+    corrected_value = f"{prefix.upper()}{separator}{corrected_suffix}{(release_type or '').upper()}"
+    if corrected_value == value:
+        return None
+    return corrected_value
 
 
 def _correct_terminal_catalog_suffix(value: str) -> str | None:
@@ -693,6 +755,24 @@ def _trim_catalog_trailing_token(value: str) -> str | None:
     return leading_value
 
 
+def _unwrap_catalog_junk_token(value: str) -> str | None:
+    if " " in value or not value.isalnum() or len(value) < 7:
+        return None
+
+    if not value[0].isalpha() or not value[-1].isalpha():
+        return None
+
+    inner_value = value[1:-1]
+    if not any(character.isdigit() for character in inner_value):
+        return None
+
+    corrected_inner_value = _correct_catalog_number_ocr(inner_value) or inner_value
+    if not re.fullmatch(r"[A-Z]{2,}\d{3,}(?:LP|EP)?", corrected_inner_value, re.IGNORECASE):
+        return None
+
+    return corrected_inner_value.upper()
+
+
 def _has_adjacent_digit(value: str, index: int) -> bool:
     return _neighboring_digit(value, index, step=-1) or _neighboring_digit(value, index, step=1)
 
@@ -709,6 +789,38 @@ def _neighboring_digit(value: str, index: int, *, step: int) -> bool:
             return False
         cursor += step
     return False
+
+
+def _looks_like_contact_number_line(value: str) -> bool:
+    if BARCODE_CONTEXT_PATTERN.search(value):
+        return False
+    return CONTACT_NUMBER_CONTEXT_PATTERN.search(value) is not None
+
+
+def _is_valid_ocr_barcode_candidate(barcode: str, *, line: str) -> bool:
+    if not (8 <= len(barcode) <= 14):
+        return False
+    if BARCODE_CONTEXT_PATTERN.search(line):
+        return True
+    if len(barcode) in {12, 13}:
+        return _has_valid_upc_ean_checksum(barcode)
+    return not _looks_like_contact_number_line(line)
+
+
+def _has_valid_upc_ean_checksum(value: str) -> bool:
+    if len(value) == 12:
+        return _has_valid_gtin_checksum(f"0{value}")
+    if len(value) == 13:
+        return _has_valid_gtin_checksum(value)
+    return False
+
+
+def _has_valid_gtin_checksum(value: str) -> bool:
+    digits = [int(character) for character in value]
+    check_digit = digits[-1]
+    body = digits[:-1]
+    total = sum(digit if index % 2 == 0 else digit * 3 for index, digit in enumerate(body))
+    return (10 - (total % 10)) % 10 == check_digit
 
 
 def _extract_year_from_value(value: str) -> int | None:

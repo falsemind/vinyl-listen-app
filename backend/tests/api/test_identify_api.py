@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.identify_service import IdentifyValidationError
+from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
 
 
 def test_identify_endpoint_returns_ranked_candidates(
@@ -64,3 +64,27 @@ def test_identify_endpoint_returns_structured_validation_errors(
             "message": "Unsupported image type. Supported types: image/jpeg, image/png, image/webp.",
         }
     }
+
+
+def test_identify_endpoint_rejects_oversized_upload_before_service_call(
+    build_stub_identify_service,
+    override_identify_service,
+) -> None:
+    service = build_stub_identify_service()
+    override_identify_service(service)
+    oversized_image = b"x" * (DEFAULT_MAX_UPLOAD_SIZE_BYTES + 1)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify",
+            files={"image": ("cover.jpg", oversized_image, "image/jpeg")},
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "error": {
+            "code": "image_too_large",
+            "message": f"Uploaded image exceeds the {DEFAULT_MAX_UPLOAD_SIZE_BYTES} byte limit.",
+        }
+    }
+    assert service.calls == []

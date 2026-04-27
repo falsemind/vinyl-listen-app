@@ -86,7 +86,7 @@ def test_discogs_client_builds_ssl_context_from_certifi_bundle(
     build_discogs_client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = build_discogs_client(lambda url, headers, timeout: {})
+    client = build_discogs_client(lambda _url, _headers, _timeout: {})
     create_default_context_calls: list[str] = []
 
     def fake_where() -> str:

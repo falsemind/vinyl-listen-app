@@ -25,6 +25,30 @@ def test_identifier_parser_extracts_catalog_artist_title_and_text_fragments() ->
     assert identifiers.text_fragments == ("Source / Virgin",)
 
 
+def test_identifier_parser_rejects_contact_numbers_as_ocr_barcodes() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "TEL: 020 1234 5678",
+                "FAX: 020 8765 4321",
+                "INFO: 724384497818",
+            ]
+        )
+    )
+
+    assert identifiers.barcodes == ()
+
+
+def test_identifier_parser_keeps_detector_barcodes_without_contact_context_filtering() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse("TEL: 020 1234 5678", barcodes=("724384497818",))
+
+    assert identifiers.barcodes == ("724384497818",)
+
+
 def test_identifier_parser_can_split_artist_and_title_from_single_line() -> None:
     parser = IdentifierParser()
 
@@ -175,6 +199,26 @@ def test_identifier_parser_corrects_catalog_letter_o_before_digits() -> None:
     assert identifiers.catalog_numbers == ("SYSTMO22", "SYSTM022")
     assert identifiers.artist is None
     assert identifiers.title is None
+
+
+def test_identifier_parser_corrects_confused_catalog_suffixes() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "RUPLDN OO2LP",
+                "#TOSOO7",
+                "GTOSOO7S",
+                "7EVEN06",
+            ]
+        )
+    )
+
+    assert "RUPLDN 002LP" in identifiers.catalog_numbers
+    assert "OO2LP" not in identifiers.catalog_numbers
+    assert "TOS007" in identifiers.catalog_numbers
+    assert "7EVEN06" in identifiers.catalog_numbers
 
 
 def test_identifier_parser_recovers_terminal_question_mark_catalog_number() -> None:

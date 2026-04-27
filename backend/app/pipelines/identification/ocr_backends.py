@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Iterable
 from io import BytesIO
 from typing import Any, Protocol
@@ -15,6 +16,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_EASYOCR_MAX_IMAGE_DIMENSION = 800
 DEFAULT_EASYOCR_VARIANT_NAMES = ("grayscale", "threshold", "threshold_low", "sharpened")
 NOISY_TESSERACT_LINE_LIMIT = 40
+SUSPICIOUS_CATALOG_PATTERN = re.compile(
+    r"(?<![A-Z0-9])(?:[A-Z]{2,}\s+)?[A-Z0-9]*[OQDI]{2,}\d[A-Z0-9]*(?:LP|EP)?(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 
 
 class OcrBackend(Protocol):
@@ -190,6 +195,8 @@ def _should_run_fallback(primary_result: OcrResult, detected_barcodes: Iterable[
         return True
     if _is_noisy_tesseract_text(lines):
         return True
+    if _has_suspicious_catalog_evidence(lines):
+        return True
 
     return not any(_looks_like_catalog_evidence(line) for line in lines)
 
@@ -203,6 +210,10 @@ def _is_weak_ocr_text(lines: tuple[str, ...]) -> bool:
 
 def _is_noisy_tesseract_text(lines: tuple[str, ...]) -> bool:
     return len(lines) > NOISY_TESSERACT_LINE_LIMIT
+
+
+def _has_suspicious_catalog_evidence(lines: tuple[str, ...]) -> bool:
+    return any(SUSPICIOUS_CATALOG_PATTERN.search(line) is not None for line in lines)
 
 
 def _looks_like_catalog_evidence(line: str) -> bool:
