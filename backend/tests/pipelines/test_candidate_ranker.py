@@ -84,6 +84,43 @@ def test_candidate_ranker_matches_catalog_numbers_with_ocr_shadow_forms() -> Non
     assert "+60 catalog_number" in ranked_candidates[0].score_trace
 
 
+def test_candidate_ranker_prioritizes_higher_ranked_catalog_reading() -> None:
+    ranker = CandidateRanker()
+    identifiers = ExtractedIdentifiers(catalog_numbers=("LIONCHGX003", "LIONCHGX008", "LIONCHGX005"))
+    candidates = [
+        IdentifyCandidate(
+            discogs_release_id=123,
+            release_id=None,
+            artist="Sub Basics",
+            title="Walk & Skank",
+            year=None,
+            label="Lion Charge Records",
+            catalog_number="LIONCHGX008",
+            barcode=None,
+            cover_image_url=None,
+            match_source="discogs",
+        ),
+        IdentifyCandidate(
+            discogs_release_id=456,
+            release_id=None,
+            artist="Sub Basics",
+            title="Walk & Skank",
+            year=None,
+            label="Lion Charge Records",
+            catalog_number="LIONCHGX003",
+            barcode=None,
+            cover_image_url=None,
+            match_source="discogs",
+        ),
+    ]
+
+    ranked_candidates = ranker.rank(candidates, identifiers, limit=5)
+
+    assert ranked_candidates[0].catalog_number == "LIONCHGX003"
+    assert "+60 catalog_number" in ranked_candidates[0].score_trace
+    assert "+45 catalog_number_ranked" in ranked_candidates[1].score_trace
+
+
 def test_candidate_ranker_does_not_shadow_normal_catalog_letters() -> None:
     ranker = CandidateRanker()
     identifiers = ExtractedIdentifiers(catalog_numbers=("BASS001",))

@@ -152,6 +152,42 @@ def test_identifier_parser_extracts_embedded_catalog_tokens_from_noisy_label_ocr
     assert identifiers.text_fragments == ("FORWARD",)
 
 
+def test_identifier_parser_prioritizes_repeated_catalog_reading_over_noisy_variants() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "'- LIONCHGX008",
+                "'- LIONCHEX005",
+                "a - LIONCHGX003 -",
+                '"-LIONCHGX003',
+                "A. WALK & SKANK",
+                "B. FORWARD",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers[:3] == ("LIONCHGX003", "LIONCHGX008", "LIONCHEX005")
+
+
+def test_identifier_parser_prefers_full_catalog_over_prefix_dropped_suffix() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "CHEX003",
+                "CHGX003",
+                "a - LIONCHGX003 -",
+                '"- LIONCHGX003',
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers[0] == "LIONCHGX003"
+
+
 def test_identifier_parser_does_not_promote_track_lines_with_stray_digits_to_catalogs() -> None:
     parser = IdentifierParser()
 
