@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 
@@ -22,7 +20,7 @@ def analyze_ocr_layout(lines: tuple[OcrTextLine, ...]) -> tuple[OcrRoleEvidence,
     return tuple(_dedupe_roles(roles))
 
 
-def _release_title_roles(lines: list[_AnalyzedLine]) -> tuple[OcrRoleEvidence, ...]:
+def _release_title_roles(lines: list["_AnalyzedLine"]) -> tuple[OcrRoleEvidence, ...]:
     candidates: list[tuple[float, _AnalyzedLine]] = []
 
     for line in lines:
@@ -50,7 +48,7 @@ def _release_title_roles(lines: list[_AnalyzedLine]) -> tuple[OcrRoleEvidence, .
     )
 
 
-def _label_roles(lines: list[_AnalyzedLine]) -> tuple[OcrRoleEvidence, ...]:
+def _label_roles(lines: list["_AnalyzedLine"]) -> tuple[OcrRoleEvidence, ...]:
     roles: list[OcrRoleEvidence] = []
 
     for index, line in enumerate(lines):
@@ -146,7 +144,7 @@ class _AnalyzedLine:
     height: float | None
 
     @classmethod
-    def from_ocr_line(cls, line: OcrTextLine, *, index: int) -> _AnalyzedLine | None:
+    def from_ocr_line(cls, line: OcrTextLine, *, index: int) -> "_AnalyzedLine | None":
         text = " ".join(line.text.strip(" |\\/.,:;\"'‘’“”`").split())
         if not text:
             return None

@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Literal
 
 BARCODE_VARIANT_NAMES = ("normalized", "grayscale", "threshold")
 OCR_VARIANT_NAMES = (
     "grayscale",
+    "adaptive_threshold",
+    "adaptive_threshold_inverted",
     "threshold",
     "threshold_low",
     "inverted_threshold",
