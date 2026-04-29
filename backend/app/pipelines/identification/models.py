@@ -70,6 +70,16 @@ class OcrRoleEvidence:
 
 
 @dataclass(frozen=True)
+class IdentifierEvidence:
+    kind: Literal["barcode", "catalog_number", "artist", "title", "year", "label", "text_fragment"]
+    value: str
+    source: str
+    confidence: float | None = None
+    role: str | None = None
+    box: tuple[tuple[float, float], ...] | None = None
+
+
+@dataclass(frozen=True)
 class ExtractedIdentifiers:
     barcodes: tuple[str, ...] = ()
     catalog_numbers: tuple[str, ...] = ()
@@ -81,6 +91,7 @@ class ExtractedIdentifiers:
     raw_text: str = ""
     ocr_evidence: tuple[OcrTextLine, ...] = ()
     ocr_roles: tuple[OcrRoleEvidence, ...] = ()
+    identifier_evidence: tuple[IdentifierEvidence, ...] = ()
 
     def has_signals(self) -> bool:
         return bool(
@@ -109,3 +120,4 @@ class IdentifyCandidate:
     match_source: Literal["local", "discogs"]
     matched_on: tuple[str, ...] = ()
     confidence: float = 0.0
+    score_trace: tuple[str, ...] = ()

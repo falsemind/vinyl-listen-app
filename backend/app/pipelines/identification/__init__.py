@@ -4,6 +4,7 @@ from app.pipelines.identification.extractor import IdentifierExtractor
 from app.pipelines.identification.identifier_parser import IdentifierParser
 from app.pipelines.identification.models import (
     ExtractedIdentifiers,
+    IdentifierEvidence,
     IdentifyCandidate,
     ImageVariant,
     OcrResult,
@@ -19,6 +20,7 @@ __all__ = [
     "BarcodeDetector",
     "CandidateRanker",
     "ExtractedIdentifiers",
+    "IdentifierEvidence",
     "IdentifierParser",
     "IdentifyCandidate",
     "IdentifierExtractor",

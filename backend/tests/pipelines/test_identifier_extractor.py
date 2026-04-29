@@ -90,6 +90,9 @@ def test_identifier_extractor_runs_easyocr_fallback_without_barcode() -> None:
 
     assert identifiers.catalog_numbers == ("TOVRI 001",)
     assert [line.source for line in identifiers.ocr_evidence] == ["easyocr"]
+    assert identifiers.identifier_evidence[0].value == "TOVRI 001"
+    assert identifiers.identifier_evidence[0].source == "easyocr"
+    assert identifiers.identifier_evidence[0].confidence == 0.91
     assert primary.calls == 1
     assert fallback.calls == 1
 

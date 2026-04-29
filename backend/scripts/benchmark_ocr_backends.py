@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import os
 import statistics
@@ -9,7 +7,14 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from app.core.config import settings
-from app.pipelines.identification import EasyOcrBackend, ImageProcessor, OcrBackend, OcrCascade, TesseractOcrBackend
+from app.pipelines.identification import (
+    EasyOcrBackend,
+    IdentifierParser,
+    ImageProcessor,
+    OcrBackend,
+    OcrCascade,
+    TesseractOcrBackend,
+)
 
 BACKEND_CHOICES = ("cascade", "tesseract", "easyocr", "all")
 
@@ -52,6 +57,7 @@ def main() -> None:
     )
 
     timings: dict[str, list[float]] = defaultdict(list)
+    identifier_parser = IdentifierParser()
     for image_path in image_paths:
         image_bytes = image_path.read_bytes()
         prepared = processor.prepare(filename=image_path.name, content_type=args.content_type, data=image_bytes)
@@ -60,7 +66,13 @@ def main() -> None:
             result = backend.extract(prepared)
             elapsed = time.perf_counter() - start
             timings[backend_name].append(elapsed)
-            print(f"{image_path.name}\t{backend_name}\t{result.source}\t{elapsed:.3f}s\t{len(result.lines)} lines")
+            identifiers = identifier_parser.parse(result.raw_text)
+            print(
+                f"{image_path.name}\t{backend_name}\t{result.source}\t{elapsed:.3f}s\t"
+                f"{len(result.lines)} lines\tbarcodes={','.join(identifiers.barcodes) or '-'}\t"
+                f"catalogs={','.join(identifiers.catalog_numbers) or '-'}\t"
+                f"artist={identifiers.artist or '-'}\ttitle={identifiers.title or '-'}"
+            )
 
     for backend_name, backend_timings in timings.items():
         print(

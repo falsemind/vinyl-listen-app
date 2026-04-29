@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,9 +28,12 @@ CATALOG_CONTEXT_LIMIT = 4
 PHRASE_CONTEXT_LIMIT = 5
 ROLE_CONTEXT_CATALOG_LIMIT = 1
 ROLE_CONTEXT_LABEL_LIMIT = 2
+IDENTITY_CONTEXT_LIMIT = 6
 QUERY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9#./-]+")
 CREDIT_PREFIXES = (
     "all tracks",
+    "additional production",
+    "production",
     "mastered",
     "mixed",
     "produced",
@@ -39,6 +41,15 @@ CREDIT_PREFIXES = (
     "published",
     "copyright",
     "licensed",
+)
+CREDIT_QUERY_TERMS = (
+    " written ",
+    " produced ",
+    " produc ",
+    " production ",
+    " mastered ",
+    " mixed ",
+    " engineered ",
 )
 LOW_VALUE_QUERY_LINES = {
     "45 rpm",
@@ -49,6 +60,13 @@ LOW_VALUE_QUERY_LINES = {
     "side a",
     "side b",
 }
+SIDE_MARKER_PATTERN = r"(?:[A-H]{1,2}|[A-H](?:\d{1,2}|[IL]{1,3}|IV|V))"
+TRACK_QUERY_PREFIX_PATTERN = re.compile(rf"^{SIDE_MARKER_PATTERN}[.)]?\s+", re.IGNORECASE)
+TRACK_QUERY_DOTTED_PREFIX_PATTERN = re.compile(
+    rf"^{SIDE_MARKER_PATTERN}\s*[.),]\s*(?=[A-Za-z0-9])",
+    re.IGNORECASE,
+)
+SIDE_QUALIFIER_PREFIXES = ("there ", "here ")
 
 
 class IdentifyValidationError(Exception):
@@ -112,10 +130,11 @@ class IdentifyService:
             len(prepared_image.variants),
         )
         identifiers = self._identifier_extractor.extract(prepared_image)
+
         logger.info(
             (
                 "Identify pipeline extracted signals filename=%s barcodes=%s "
-                "catalog_numbers=%s has_artist=%s has_title=%s has_year=%s has_label=%s text_fragments=%s"
+                "catalog_numbers=%s has_artist=%s has_title=%s has_year=%s has_label=%s text_fragments=%s evidence=%s"
             ),
             filename,
             len(identifiers.barcodes),
@@ -125,6 +144,7 @@ class IdentifyService:
             identifiers.year is not None,
             bool(identifiers.label),
             len(identifiers.text_fragments),
+            len(identifiers.identifier_evidence),
         )
         local_candidates = self._find_local_candidates(db, identifiers)
         if local_candidates:
@@ -197,6 +217,18 @@ class IdentifyService:
         candidate_map: dict[int, IdentifyCandidate] = {}
 
         for search_step in self._build_search_plan(identifiers):
+            if candidate_map and search_step.strategy not in {"catalog_number", "ocr_role_context"}:
+                should_continue_to_identity = search_step.strategy in {
+                    "artist_title",
+                    "identity_context",
+                } and not _candidates_contain_identity_context(candidate_map.values(), identifiers)
+                if not should_continue_to_identity:
+                    logger.info(
+                        "Skipping lower-priority Discogs identify strategy=%s after candidate hit",
+                        search_step.strategy,
+                    )
+                    break
+
             logger.info("Searching Discogs identify strategy=%s", search_step.strategy)
             payload = self._execute_search_step(search_step)
             candidates = self._map_external_candidates(payload.get("results", []))
@@ -213,9 +245,18 @@ class IdentifyService:
         candidates: list[IdentifyCandidate],
         identifiers: ExtractedIdentifiers,
     ) -> list[IdentifyCandidate]:
-        return self._ranker.rank(candidates, identifiers, limit=self._candidate_limit)
+        ranked_candidates = self._ranker.rank(candidates, identifiers, limit=self._candidate_limit)
+        if ranked_candidates:
+            logger.info(
+                "Identify top candidate release_id=%s confidence=%s matched_on=%s score_trace=%s",
+                ranked_candidates[0].discogs_release_id,
+                ranked_candidates[0].confidence,
+                ranked_candidates[0].matched_on,
+                ranked_candidates[0].score_trace,
+            )
+        return ranked_candidates
 
-    def _build_search_plan(self, identifiers: ExtractedIdentifiers) -> list[_SearchStep]:
+    def _build_search_plan(self, identifiers: ExtractedIdentifiers) -> list["_SearchStep"]:
         search_steps: list[_SearchStep] = []
 
         for barcode in identifiers.barcodes:
@@ -228,26 +269,31 @@ class IdentifyService:
         for query in ocr_role_context_queries:
             search_steps.append(_SearchStep(strategy="ocr_role_context", params={"query": query}))
 
-        if identifiers.artist and identifiers.title and not ocr_role_context_queries:
+        identity_context_queries: tuple[str, ...] = ()
+        has_plausible_identity = _has_plausible_identity(identifiers)
+        if identifiers.artist and identifiers.title and not ocr_role_context_queries and has_plausible_identity:
             search_steps.append(
                 _SearchStep(
                     strategy="artist_title",
                     params={"artist": identifiers.artist, "title": identifiers.title},
                 )
             )
+            identity_context_queries = _build_identity_context_queries(identifiers)
+            for query in identity_context_queries:
+                search_steps.append(_SearchStep(strategy="identity_context", params={"query": query}))
 
-        if not ocr_role_context_queries:
-            for fragment in identifiers.text_fragments:
-                normalized_fragment = fragment.strip()
-                if normalized_fragment and _should_search_free_text_fragment(normalized_fragment):
-                    search_steps.append(_SearchStep(strategy="free_text", params={"query": normalized_fragment}))
-
+        should_run_loose_text_searches = not identity_context_queries or bool(identifiers.catalog_numbers)
+        if not ocr_role_context_queries and should_run_loose_text_searches:
             for query in _build_raw_context_queries(identifiers):
                 search_steps.append(_SearchStep(strategy="raw_context", params={"query": query}))
 
+            for fragment in identifiers.text_fragments:
+                for query in _free_text_fragment_queries(fragment):
+                    search_steps.append(_SearchStep(strategy="free_text", params={"query": query}))
+
         return _dedupe_search_steps(search_steps)
 
-    def _execute_search_step(self, search_step: _SearchStep) -> dict[str, Any]:
+    def _execute_search_step(self, search_step: "_SearchStep") -> dict[str, Any]:
         if search_step.strategy == "barcode":
             return self._discogs_service.search_by_barcode(
                 str(search_step.params["barcode"]),
@@ -321,6 +367,37 @@ def _dedupe_search_steps(search_steps: list[_SearchStep]) -> list[_SearchStep]:
     return deduped_steps
 
 
+def _candidates_contain_identity_context(
+    candidates: Iterable[IdentifyCandidate],
+    identifiers: ExtractedIdentifiers,
+) -> bool:
+    if not identifiers.artist or not identifiers.title:
+        return False
+
+    normalized_artist = _normalize_query_key(identifiers.artist)
+    normalized_title = _normalize_query_key(identifiers.title)
+    if not normalized_artist or not normalized_title:
+        return False
+
+    for candidate in candidates:
+        candidate_key = _normalize_query_key(
+            " ".join(
+                value
+                for value in (
+                    candidate.artist,
+                    candidate.title,
+                    candidate.label,
+                    candidate.catalog_number,
+                )
+                if value
+            )
+        )
+        if normalized_artist in candidate_key and normalized_title in candidate_key:
+            return True
+
+    return False
+
+
 def _build_ocr_role_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
     if not identifiers.catalog_numbers or not identifiers.ocr_roles:
         return ()
@@ -339,6 +416,204 @@ def _build_ocr_role_context_queries(identifiers: ExtractedIdentifiers) -> tuple[
             queries.append(f"{catalog_number} {label}")
 
     return tuple(_dedupe_strings(queries)[:MAX_RAW_CONTEXT_SEARCHES])
+
+
+def _build_identity_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
+    if not identifiers.artist or not identifiers.title:
+        return ()
+
+    raw_lines = [
+        line
+        for line in _extract_raw_search_lines(identifiers.raw_text)
+        if not _looks_like_catalog_query_line(line)
+        and not _contains_catalog_value(line, identifiers.catalog_numbers)
+        and not _looks_like_credit_query(line)
+    ]
+    values = [identifiers.artist, identifiers.title, *identifiers.text_fragments, *raw_lines]
+    artist_values = _rank_artist_identity_values(
+        [value for value in values if _looks_like_artist_variant(value, identifiers.artist)],
+        identifiers.artist,
+    )
+    title_values = _rank_identity_values(_identity_title_values(values, identifiers.title))
+    supporting_fragments = _identity_supporting_fragments(
+        identifiers.text_fragments,
+        artist=identifiers.artist,
+        title=identifiers.title,
+    )
+
+    queries: list[str] = []
+    for artist in artist_values[:3]:
+        for title in title_values[:3]:
+            if _normalize_query_key(artist) == _normalize_query_key(title):
+                continue
+            queries.append(f"{artist} {title}")
+            for fragment in supporting_fragments[:2]:
+                queries.append(f"{artist} {title} {fragment}")
+                queries.append(f"{title} {fragment}")
+
+    return tuple(_dedupe_strings(queries)[:IDENTITY_CONTEXT_LIMIT])
+
+
+def _has_plausible_identity(identifiers: ExtractedIdentifiers) -> bool:
+    if not identifiers.artist or not identifiers.title:
+        return False
+    return not (_looks_like_credit_query(identifiers.artist) or _looks_like_credit_query(identifiers.title))
+
+
+def _looks_like_credit_query(value: str) -> bool:
+    lowered_value = _normalize_credit_query(value)
+    stripped_value = lowered_value.strip()
+    if stripped_value.startswith(CREDIT_PREFIXES):
+        return True
+    if stripped_value.endswith(" by"):
+        return True
+    return any(term in f" {lowered_value} " for term in CREDIT_QUERY_TERMS)
+
+
+def _normalize_credit_query(value: str) -> str:
+    return " ".join(token.lower() for token in QUERY_TOKEN_PATTERN.findall(value))
+
+
+def _rank_identity_values(values: list[str]) -> list[str]:
+    return sorted(_dedupe_strings(values), key=lambda value: (-len(_normalize_query_key(value)), value))
+
+
+def _rank_artist_identity_values(values: list[str], artist: str) -> list[str]:
+    normalized_artist = _normalize_query_key(artist)
+    return sorted(
+        _dedupe_strings(values),
+        key=lambda value: (
+            _normalize_query_key(value) != normalized_artist,
+            -len(_normalize_query_key(value)),
+            value,
+        ),
+    )
+
+
+def _contains_catalog_value(value: str, catalog_numbers: tuple[str, ...]) -> bool:
+    normalized_value = _normalize_query_key(value)
+    return any(_normalize_query_key(catalog_number) in normalized_value for catalog_number in catalog_numbers)
+
+
+def _identity_title_values(values: list[str | None], title: str) -> list[str]:
+    release_type = _extract_release_type_hint(values)
+    title_values: list[str] = []
+    for value in values:
+        if not _looks_like_title_variant(value, title):
+            continue
+        title_values.extend(_title_search_variants(value, release_type=release_type))
+    return title_values
+
+
+def _identity_supporting_fragments(
+    values: tuple[str, ...],
+    *,
+    artist: str,
+    title: str,
+) -> list[str]:
+    fragments: list[str] = []
+    for value in values:
+        line = _clean_query_line(value)
+        if line is None:
+            continue
+        if _looks_like_credit_query(line) or _looks_like_catalog_query_line(line):
+            continue
+        if _looks_like_artist_variant(line, artist) or _looks_like_title_variant(line, title):
+            continue
+        if not _looks_like_identity_supporting_fragment(line):
+            continue
+        fragments.append(line)
+
+    return _rank_identity_values(fragments)
+
+
+def _looks_like_identity_supporting_fragment(value: str) -> bool:
+    tokens = QUERY_TOKEN_PATTERN.findall(value)
+    if not (1 <= len(tokens) <= 3):
+        return False
+    if any(token.isdigit() for token in tokens):
+        return False
+    if len(tokens) == 1:
+        token = tokens[0]
+        return len(token) >= 5 and token.upper() == token
+    return score_search_evidence(value).score >= 2
+
+
+def _title_search_variants(value: str | None, *, release_type: str | None) -> tuple[str, ...]:
+    line = _clean_query_line(value or "")
+    if line is None:
+        return ()
+
+    variants = [line]
+    tokens = line.split()
+    if tokens and _release_type_from_token(tokens[-1]) is not None:
+        tokens[-1] = _release_type_from_token(tokens[-1]) or tokens[-1]
+        variants.append(" ".join(tokens))
+
+    if len(tokens) == 1 and len(tokens[0]) >= 5 and tokens[0].isupper() and not tokens[0].lower().endswith("y"):
+        variants.append(f"{tokens[0]}Y")
+
+    if release_type is not None and all(token.upper() not in {"EP", "LP"} for token in tokens):
+        variants.extend(f"{variant} {release_type}" for variant in tuple(variants))
+
+    return tuple(_dedupe_strings(variants))
+
+
+def _extract_release_type_hint(values: list[str | None]) -> str | None:
+    for value in values:
+        tokens = QUERY_TOKEN_PATTERN.findall(value or "")
+        if not tokens:
+            continue
+
+        release_type = _release_type_from_token(tokens[-1])
+        if release_type is not None:
+            return release_type
+
+    return None
+
+
+def _release_type_from_token(value: str) -> str | None:
+    normalized_value = value.upper()
+    if normalized_value in {"EP", "LP"}:
+        return normalized_value
+    if normalized_value in {"FE", "EF", "EIP"}:
+        return "EP"
+    return None
+
+
+def _looks_like_artist_variant(value: str | None, artist: str) -> bool:
+    if value is None:
+        return False
+
+    normalized_artist = _normalize_query_key(artist)
+    normalized_value = _normalize_query_key(value)
+    if not normalized_artist or not normalized_value:
+        return False
+    if normalized_value.startswith("dj") and normalized_artist.startswith("dj"):
+        return True
+    return normalized_artist in normalized_value or normalized_value in normalized_artist
+
+
+def _looks_like_title_variant(value: str | None, title: str) -> bool:
+    if value is None:
+        return False
+
+    normalized_title = _normalize_query_key(title)
+    normalized_value = _normalize_query_key(value)
+    if len(normalized_title) < 4 or len(normalized_value) < 4:
+        return False
+    if normalized_title in normalized_value or normalized_value in normalized_title:
+        return True
+    return _common_prefix_length(normalized_title, normalized_value) >= 3
+
+
+def _common_prefix_length(left: str, right: str) -> int:
+    count = 0
+    for left_character, right_character in zip(left, right, strict=False):
+        if left_character != right_character:
+            break
+        count += 1
+    return count
 
 
 def _role_texts(identifiers: ExtractedIdentifiers, role: str) -> list[str]:
@@ -392,9 +667,12 @@ def _extract_raw_search_lines(raw_text: str) -> list[str]:
 
     for raw_line in raw_text.splitlines():
         line = _clean_query_line(raw_line)
-        if line is None or not _has_query_value(line):
-            continue
-        lines.append(line)
+        if line is not None and _has_query_value(line):
+            lines.append(line)
+
+        for credit_name in _extract_credit_name_queries(raw_line):
+            if _has_query_value(credit_name):
+                lines.append(credit_name)
 
     return _dedupe_strings(lines)
 
@@ -405,6 +683,12 @@ def _clean_query_line(value: str) -> str | None:
         return None
 
     line = " ".join(tokens).strip(" -./#")
+    line = _strip_track_query_prefix(line)
+    lowered_line = line.lower()
+    for prefix in SIDE_QUALIFIER_PREFIXES:
+        if lowered_line.startswith(prefix) and len(line.split()) > 1:
+            line = line[len(prefix) :].strip()
+            lowered_line = line.lower()
     normalized_line = " ".join(line.split())
     return normalized_line or None
 
@@ -413,7 +697,7 @@ def _has_query_value(line: str) -> bool:
     lowered_line = line.lower()
     if lowered_line in LOW_VALUE_QUERY_LINES:
         return False
-    if lowered_line.startswith(CREDIT_PREFIXES):
+    if _looks_like_credit_query(line):
         return False
 
     alphanumeric_count = sum(character.isalnum() for character in line)
@@ -427,6 +711,42 @@ def _should_search_free_text_fragment(fragment: str) -> bool:
     if not _looks_like_context_phrase(line):
         return False
     return score_search_evidence(line).is_query_worthy
+
+
+def _free_text_fragment_queries(fragment: str) -> tuple[str, ...]:
+    line = _clean_query_line(fragment)
+    if line is None or not _should_search_free_text_fragment(line):
+        return ()
+
+    return (line,)
+
+
+def _extract_credit_name_queries(value: str) -> tuple[str, ...]:
+    line = _clean_query_line(value)
+    if line is None or " by " not in f" {line.lower()} ":
+        return ()
+
+    lowered_line = line.lower()
+    if lowered_line.startswith("by "):
+        original_credit_value = line[len("by ") :]
+    elif " by " in lowered_line:
+        _, credit_value = lowered_line.split(" by ", maxsplit=1)
+        original_start = len(line) - len(credit_value)
+        original_credit_value = line[original_start:]
+    else:
+        return ()
+
+    names = re.split(r"\s+(?:and|&|x)\s+|,", original_credit_value)
+
+    queries: list[str] = []
+    for name in names:
+        cleaned_name = _clean_query_line(name)
+        if cleaned_name is None or _looks_like_credit_query(cleaned_name):
+            continue
+        if _looks_like_context_phrase(cleaned_name):
+            queries.append(cleaned_name)
+
+    return tuple(_dedupe_strings(queries))
 
 
 def _looks_like_catalog_query_line(line: str) -> bool:
@@ -467,6 +787,15 @@ def _dedupe_strings(values: list[str]) -> list[str]:
 
 def _normalize_query_key(value: str) -> str:
     return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _strip_track_query_prefix(value: str) -> str:
+    stripped_value = value.strip()
+    for pattern in (TRACK_QUERY_DOTTED_PREFIX_PATTERN, TRACK_QUERY_PREFIX_PATTERN):
+        match = pattern.match(stripped_value)
+        if match is not None:
+            return stripped_value[match.end() :].strip(" -./#")
+    return stripped_value
 
 
 def _parse_discogs_title(value: str | None) -> tuple[str | None, str | None]:

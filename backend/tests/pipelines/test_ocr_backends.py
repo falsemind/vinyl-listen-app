@@ -89,6 +89,37 @@ def test_ocr_cascade_runs_fallback_when_tesseract_catalog_looks_suspicious() -> 
     assert fallback.calls == 1
 
 
+def test_ocr_cascade_merged_output_preserves_line_metadata() -> None:
+    primary = StubOcrBackend(
+        OcrResult(
+            source="tesseract",
+            raw_text="RUPLDN OO2LP",
+            lines=(OcrTextLine(text="RUPLDN OO2LP", confidence=None, source="tesseract"),),
+        )
+    )
+    fallback = StubOcrBackend(
+        OcrResult(
+            source="easyocr",
+            raw_text="RUPLDN 002LP",
+            lines=(
+                OcrTextLine(
+                    text="RUPLDN 002LP",
+                    confidence=0.9,
+                    source="easyocr",
+                    box=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)),
+                ),
+            ),
+        )
+    )
+    cascade = OcrCascade(primary_backend=primary, fallback_backend=fallback)
+
+    result = cascade.extract(_build_prepared_image(width=1200, height=800))
+
+    assert result.lines[1].source == "easyocr"
+    assert result.lines[1].confidence == 0.9
+    assert result.lines[1].box == ((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))
+
+
 def _build_prepared_image(*, width: int, height: int) -> PreparedImage:
     return PreparedImage(
         filename="label.jpg",
