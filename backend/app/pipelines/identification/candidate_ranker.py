@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, replace
 
@@ -196,7 +194,7 @@ def _tokenize(value: str | None) -> tuple[str, ...]:
     return tuple(match.group(0).lower() for match in TOKEN_PATTERN.finditer(value))
 
 
-def _field_overlap(value: str | None, evidence_tokens: set[str]) -> _Overlap:
+def _field_overlap(value: str | None, evidence_tokens: set[str]) -> "_Overlap":
     field_tokens = [token for token in _tokenize(value) if token not in STOPWORDS and len(token) >= 2]
     if not field_tokens:
         return _Overlap(matches=0, ratio=0.0)

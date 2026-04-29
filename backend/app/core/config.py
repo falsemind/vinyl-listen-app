@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     identify_easyocr_gpu: bool = False
     identify_easyocr_min_confidence: float = 0.35
     identify_easyocr_max_image_dimension: int = 800
+    identify_debug_preprocess_images_enabled: bool = False
+    identify_debug_preprocess_images_dir: str = "identify_ocr_images"
 
     log_level: str = "INFO"
 

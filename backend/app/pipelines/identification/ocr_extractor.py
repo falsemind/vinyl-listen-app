@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from io import BytesIO
 
@@ -22,6 +20,9 @@ except ImportError:
 DEFAULT_FAST_CONFIGS = ("--psm 6", "--psm 11")
 CATALOG_OCR_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-./# "
 DEFAULT_ESCALATION_CONFIGS = {
+    "adaptive_threshold": ("--psm 6", "--psm 11"),
+    "adaptive_threshold_inverted": ("--psm 6", "--psm 11"),
+    "threshold": ("--psm 6", "--psm 11"),
     "threshold_low": ("--psm 6", "--psm 11"),
     "sharpened": ("--psm 7", "--psm 13"),
     "inverted_threshold": ("--psm 7", "--psm 13"),
@@ -46,9 +47,11 @@ DEFAULT_ESCALATION_CONFIGS = {
         f"--psm 7 -c tessedit_char_whitelist={CATALOG_OCR_WHITELIST}",
     ),
 }
-FAST_VARIANT_NAMES = ("grayscale", "threshold")
+FAST_VARIANT_NAMES = ("grayscale", "sharpened")
 BOX_OCR_CONFIGS = {
     "grayscale": ("--psm 11",),
+    "adaptive_threshold": ("--psm 11",),
+    "adaptive_threshold_inverted": ("--psm 11",),
     "threshold": ("--psm 11",),
     "color_red_center_band": ("--psm 11",),
     "color_blue_center_band": ("--psm 11",),

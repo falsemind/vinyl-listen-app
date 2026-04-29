@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import re
 from collections.abc import Callable, Iterable
@@ -14,7 +12,7 @@ from app.pipelines.identification.ocr_extractor import OcrExtractor
 logger = logging.getLogger(__name__)
 
 DEFAULT_EASYOCR_MAX_IMAGE_DIMENSION = 800
-DEFAULT_EASYOCR_VARIANT_NAMES = ("grayscale", "threshold", "threshold_low", "sharpened")
+DEFAULT_EASYOCR_VARIANT_NAMES = ("grayscale", "adaptive_threshold", "adaptive_threshold_inverted", "sharpened")
 NOISY_TESSERACT_LINE_LIMIT = 40
 SUSPICIOUS_CATALOG_PATTERN = re.compile(
     r"(?<![A-Z0-9])(?:[A-Z]{2,}\s+)?[A-Z0-9]*[OQDI]{2,}\d[A-Z0-9]*(?:LP|EP)?(?![A-Z0-9])",

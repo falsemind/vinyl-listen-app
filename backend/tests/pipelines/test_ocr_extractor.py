@@ -38,7 +38,7 @@ def test_ocr_extractor_stays_on_fast_path_when_initial_output_is_strong() -> Non
     extracted_text = extractor.extract(_build_prepared_image())
 
     assert extracted_text == "SCOTCH BONNET\nSCRUB019\n2019"
-    assert all(variant_name in {"grayscale", "threshold"} for variant_name, _config in extractor.calls)
+    assert all(variant_name in {"grayscale", "sharpened"} for variant_name, _config in extractor.calls)
 
 
 def test_ocr_extractor_runs_escalation_passes_when_fast_path_is_weak() -> None:
@@ -87,6 +87,8 @@ def test_ocr_extractor_adds_box_grouped_lines_after_weak_fast_path() -> None:
 def _build_prepared_image() -> PreparedImage:
     variant_names = (
         "grayscale",
+        "adaptive_threshold",
+        "adaptive_threshold_inverted",
         "threshold",
         "threshold_low",
         "inverted_threshold",

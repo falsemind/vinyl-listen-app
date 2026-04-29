@@ -21,6 +21,8 @@ def test_image_processor_normalizes_and_resizes_images() -> None:
     assert [variant.name for variant in prepared_image.variants] == [
         "normalized",
         "grayscale",
+        "adaptive_threshold",
+        "adaptive_threshold_inverted",
         "threshold",
         "threshold_low",
         "inverted_threshold",
@@ -62,6 +64,24 @@ def test_image_processor_handles_tiny_valid_images() -> None:
     assert prepared_image.width == 1
     assert prepared_image.height == 1
     assert all(variant.data for variant in prepared_image.variants)
+
+
+def test_image_processor_writes_named_debug_preprocess_images(tmp_path) -> None:
+    image_processor = ImageProcessor(debug_output_dir=tmp_path)
+
+    prepared_image = image_processor.prepare(
+        filename="Label Scan.JPG",
+        content_type="image/jpeg",
+        data=_build_test_image(width=10, height=10),
+    )
+
+    output_dir = tmp_path / f"label_scan_{prepared_image.digest[:12]}"
+    assert (output_dir / "01_normalized.png").exists()
+    assert (output_dir / "02_grayscale_raw.png").exists()
+    assert (output_dir / "04_grayscale.png").exists()
+    assert (output_dir / "12_upscaled_threshold.png").exists()
+    assert (output_dir / "variants" / "02_grayscale.png").exists()
+    assert (output_dir / "variants" / "14_color_blue_right_mid.png").exists()
 
 
 def _build_test_image(*, width: int, height: int) -> bytes:
