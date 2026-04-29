@@ -754,7 +754,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.11"
 groups = ["main"]
-markers = "extra == \"easyocr\""
+markers = "extra == \"easyocr\" or extra == \"opencv\""
 files = [
     {file = "numpy-2.4.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:f983334aea213c99992053ede6168500e5f086ce74fbc4acc3f2b00f5762e9db"},
     {file = "numpy-2.4.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:72944b19f2324114e9dc86a159787333b77874143efcf89a5167ef83cfee8af0"},
@@ -1059,7 +1059,7 @@ description = "Wrapper package for OpenCV python bindings."
 optional = true
 python-versions = ">=3.6"
 groups = ["main"]
-markers = "extra == \"easyocr\""
+markers = "extra == \"easyocr\" or extra == \"opencv\""
 files = [
     {file = "opencv_python_headless-4.13.0.92-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:1a7d040ac656c11b8c38677cc8cccdc149f98535089dbe5b081e80a4e5903209"},
     {file = "opencv_python_headless-4.13.0.92-cp37-abi3-macosx_14_0_x86_64.whl", hash = "sha256:3e0a6f0a37994ec6ce5f59e936be21d5d6384a4556f2d2da9c2f9c5dc948394c"},
@@ -2593,8 +2593,9 @@ python-discovery = ">=1.2.2"
 
 [extras]
 easyocr = ["easyocr"]
+opencv = ["numpy", "opencv-python-headless"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13"
-content-hash = "d7b2d86e3183c641c6e53159b44d94845366115a490d7cf7f1fb976e6dcdec0c"
+content-hash = "baff8d374a5f9393ccad9e47f1b373c34844ada6717ae19e2895ae8566db65dc"

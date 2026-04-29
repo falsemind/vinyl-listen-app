@@ -13,6 +13,7 @@ class RuntimeDependencyStatus:
     name: str
     available: bool
     detail: str
+    warn_when_unavailable: bool = True
 
 
 def get_runtime_dependency_statuses() -> tuple[RuntimeDependencyStatus, ...]:
@@ -20,6 +21,7 @@ def get_runtime_dependency_statuses() -> tuple[RuntimeDependencyStatus, ...]:
         _check_tesseract(),
         _check_zbar(),
         _check_easyocr(),
+        _check_opencv(),
     )
 
 
@@ -29,7 +31,11 @@ def log_runtime_dependency_statuses() -> None:
             logger.info("Runtime dependency available name=%s detail=%s", status.name, status.detail)
             continue
 
-        logger.warning("Runtime dependency unavailable name=%s detail=%s", status.name, status.detail)
+        if status.warn_when_unavailable:
+            logger.warning("Runtime dependency unavailable name=%s detail=%s", status.name, status.detail)
+            continue
+
+        logger.info("Runtime dependency unavailable name=%s detail=%s", status.name, status.detail)
 
 
 def _check_tesseract() -> RuntimeDependencyStatus:
@@ -78,10 +84,27 @@ def _check_easyocr() -> RuntimeDependencyStatus:
             name="easyocr",
             available=False,
             detail="Optional EasyOCR fallback is not installed.",
+            warn_when_unavailable=settings.identify_easyocr_enabled,
         )
 
     return RuntimeDependencyStatus(
         name="easyocr",
         available=True,
         detail=f"module installed; enabled={settings.identify_easyocr_enabled}",
+    )
+
+
+def _check_opencv() -> RuntimeDependencyStatus:
+    if find_spec("cv2") is None:
+        return RuntimeDependencyStatus(
+            name="opencv",
+            available=False,
+            detail="Optional OpenCV geometry preprocessing is not installed.",
+            warn_when_unavailable=settings.identify_geometry_preprocess_enabled,
+        )
+
+    return RuntimeDependencyStatus(
+        name="opencv",
+        available=True,
+        detail=f"module installed; enabled={settings.identify_geometry_preprocess_enabled}",
     )

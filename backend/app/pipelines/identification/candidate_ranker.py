@@ -92,16 +92,13 @@ class CandidateRanker:
             score -= 80
             score_trace.append("-80 barcode_contradiction")
 
-        if candidate.catalog_number and any(
-            catalog_numbers_match(
-                candidate.catalog_number,
-                catalog_number,
-                allow_right_ocr_shadow=True,
-            )
-            for catalog_number in identifiers.catalog_numbers
-        ):
-            score += 60
-            score_trace.append("+60 catalog_number")
+        catalog_match_score = _catalog_match_score(candidate.catalog_number, identifiers.catalog_numbers)
+        if catalog_match_score:
+            score += catalog_match_score
+            if catalog_match_score == 60:
+                score_trace.append("+60 catalog_number")
+            else:
+                score_trace.append(f"+{catalog_match_score} catalog_number_ranked")
             matched_on.append("catalog_number")
         elif (
             candidate.catalog_number
@@ -206,6 +203,24 @@ def _fragment_matches_candidate(fragment: str, candidate: IdentifyCandidate) -> 
         _normalize_token(candidate.label),
     ]
     return any(normalized_fragment in haystack for haystack in haystacks if haystack)
+
+
+def _catalog_match_score(candidate_catalog_number: str | None, identifier_catalog_numbers: tuple[str, ...]) -> int:
+    if not candidate_catalog_number:
+        return 0
+
+    normalized_candidate_catalog_number = _normalize_token(candidate_catalog_number)
+    for index, catalog_number in enumerate(identifier_catalog_numbers):
+        if catalog_numbers_match(
+            candidate_catalog_number,
+            catalog_number,
+            allow_right_ocr_shadow=True,
+        ):
+            if len(_normalize_token(catalog_number)) < len(normalized_candidate_catalog_number):
+                return 60
+            return max(30, 60 - (index * 15))
+
+    return 0
 
 
 def _normalize_token(value: str | None) -> str:

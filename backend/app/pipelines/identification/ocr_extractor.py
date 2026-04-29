@@ -46,8 +46,26 @@ DEFAULT_ESCALATION_CONFIGS = {
         "--psm 7",
         f"--psm 7 -c tessedit_char_whitelist={CATALOG_OCR_WHITELIST}",
     ),
+    "label_catalog_band": (
+        "--psm 6",
+        "--psm 11",
+        f"--psm 7 -c tessedit_char_whitelist={CATALOG_OCR_WHITELIST}",
+    ),
+    "label_catalog_band_threshold": (
+        "--psm 6",
+        f"--psm 7 -c tessedit_char_whitelist={CATALOG_OCR_WHITELIST}",
+    ),
+    "label_catalog_band_threshold_low": (
+        "--psm 6",
+        f"--psm 7 -c tessedit_char_whitelist={CATALOG_OCR_WHITELIST}",
+    ),
+    "deskewed": ("--psm 6", "--psm 11"),
+    "perspective_corrected": ("--psm 6", "--psm 11"),
+    "label_crop": ("--psm 6", "--psm 11"),
+    "otsu_threshold": ("--psm 6", "--psm 11"),
+    "morph_threshold": ("--psm 6", "--psm 11"),
 }
-FAST_VARIANT_NAMES = ("grayscale", "sharpened")
+FAST_VARIANT_NAMES = ("grayscale", "sharpened", "label_catalog_band_threshold", "label_catalog_band_threshold_low")
 BOX_OCR_CONFIGS = {
     "grayscale": ("--psm 11",),
     "adaptive_threshold": ("--psm 11",),
@@ -57,6 +75,12 @@ BOX_OCR_CONFIGS = {
     "color_blue_center_band": ("--psm 11",),
     "color_red_right_mid": ("--psm 11",),
     "color_blue_right_mid": ("--psm 11",),
+    "label_catalog_band": ("--psm 11",),
+    "label_catalog_band_threshold": ("--psm 11",),
+    "label_catalog_band_threshold_low": ("--psm 11",),
+    "deskewed": ("--psm 11",),
+    "perspective_corrected": ("--psm 11",),
+    "label_crop": ("--psm 11",),
 }
 MIN_BOX_CONFIDENCE = 35.0
 MAX_BOX_LINES_PER_PASS = 16

@@ -16,6 +16,14 @@ OCR_VARIANT_NAMES = (
     "color_blue_center_band",
     "color_red_right_mid",
     "color_blue_right_mid",
+    "label_catalog_band",
+    "label_catalog_band_threshold",
+    "label_catalog_band_threshold_low",
+    "deskewed",
+    "perspective_corrected",
+    "label_crop",
+    "otsu_threshold",
+    "morph_threshold",
 )
 
 
@@ -23,6 +31,19 @@ OCR_VARIANT_NAMES = (
 class ImageVariant:
     name: str
     data: bytes
+
+
+@dataclass(frozen=True)
+class ImageQualityMetrics:
+    width: int
+    height: int
+    min_dimension: int
+    blur_score: float
+    mean_luminance: float
+    dark_pixel_ratio: float
+    bright_pixel_ratio: float
+    glare_ratio: float
+    contrast: float
 
 
 @dataclass(frozen=True)
@@ -35,6 +56,7 @@ class PreparedImage:
     width: int
     height: int
     variants: tuple[ImageVariant, ...]
+    quality: ImageQualityMetrics | None = None
 
     def barcode_variants(self) -> tuple[ImageVariant, ...]:
         return tuple(variant for variant in self.variants if variant.name in BARCODE_VARIANT_NAMES)

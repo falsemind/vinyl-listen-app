@@ -274,23 +274,24 @@ def _build_parser_evidence(
 def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[str, ...]:
     detected_catalog_numbers: list[str] = []
     seen: set[str] = set()
+    scores: dict[str, int] = {}
 
     for match in LABELED_CATALOG_PATTERN.finditer(raw_text):
-        _append_catalog_number_candidates(match.group(1), detected_catalog_numbers, seen)
+        _append_catalog_number_candidates(match.group(1), detected_catalog_numbers, seen, scores)
 
     for line in cleaned_lines:
         catalog_tokens = _extract_catalog_number_tokens(line)
         catalog_tokens = (*catalog_tokens, *_extract_ocr_confused_catalog_number_tokens(line))
         for token in catalog_tokens:
-            _append_catalog_number_candidates(token, detected_catalog_numbers, seen)
+            _append_catalog_number_candidates(token, detected_catalog_numbers, seen, scores)
 
         if catalog_tokens and not _line_starts_with_catalog_token(line):
             continue
 
         if _looks_like_catalog_number(line):
-            _append_catalog_number_candidates(line, detected_catalog_numbers, seen)
+            _append_catalog_number_candidates(line, detected_catalog_numbers, seen, scores)
 
-    return tuple(_sort_catalog_number_candidates(detected_catalog_numbers))
+    return tuple(_sort_catalog_number_candidates(detected_catalog_numbers, scores=scores))
 
 
 def _extract_year(cleaned_lines: list[str]) -> tuple[int | None, set[str]]:
@@ -722,9 +723,11 @@ def _append_catalog_number_candidates(
     value: str,
     detected_catalog_numbers: list[str],
     seen: set[str],
+    scores: dict[str, int],
 ) -> None:
     for candidate in _catalog_number_variants(value):
         lowered_candidate = candidate.lower()
+        scores[lowered_candidate] = scores.get(lowered_candidate, 0) + 1
         if lowered_candidate in seen:
             continue
         seen.add(lowered_candidate)
@@ -758,20 +761,26 @@ def _catalog_number_variants(value: str) -> tuple[str, ...]:
     return tuple(variants)
 
 
-def _sort_catalog_number_candidates(candidates: list[str]) -> list[str]:
+def _sort_catalog_number_candidates(candidates: list[str], *, scores: dict[str, int] | None = None) -> list[str]:
     normalized_candidates = [_normalize_catalog_sort_token(candidate) for candidate in candidates]
+    scores = scores or {}
 
-    def sort_key(indexed_candidate: tuple[int, str]) -> tuple[int, int]:
+    def sort_key(indexed_candidate: tuple[int, str]) -> tuple[int, int, int, int]:
         index, candidate = indexed_candidate
         normalized_candidate = normalized_candidates[index]
+        candidate_score = scores.get(candidate.lower(), 0)
         suffix_penalty = int(
             any(
-                other and normalized_candidate.endswith(other) and len(normalized_candidate) > len(other)
-                for other in normalized_candidates
+                other
+                and normalized_candidate.endswith(other)
+                and len(normalized_candidate) > len(other)
+                and candidate_score <= scores.get(candidates[other_index].lower(), 0)
+                for other_index, other in enumerate(normalized_candidates)
             )
         )
         space_penalty = int(" " in candidate and SPACED_CATALOG_TOKEN_PATTERN.fullmatch(candidate) is None)
-        return suffix_penalty, space_penalty
+        frequency_score = scores.get(candidate.lower(), 0)
+        return suffix_penalty, space_penalty, -frequency_score, index
 
     return [candidate for _, candidate in sorted(enumerate(candidates), key=sort_key)]
 

@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_18_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vinyl -d vinyl"]
       interval: 10s
@@ -21,6 +21,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        POETRY_EXTRAS: ${BACKEND_POETRY_EXTRAS:-}
     container_name: vinyl_backend
     depends_on:
       postgres:
@@ -30,7 +32,12 @@ services:
       DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
       DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
       API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-60}
+      IDENTIFY_GEOMETRY_PREPROCESS_ENABLED: ${IDENTIFY_GEOMETRY_PREPROCESS_ENABLED:-false}
+      IDENTIFY_DEBUG_PREPROCESS_IMAGES_ENABLED: ${IDENTIFY_DEBUG_PREPROCESS_IMAGES_ENABLED:-false}
+      IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR: ${IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR:-identify_ocr_images}
       LOG_LEVEL: ${LOG_LEVEL:-}
+    volumes:
+      - ./backend/identify_ocr_images:/app/backend/identify_ocr_images
     ports:
       - "8000:8000"
     command:
@@ -52,4 +59,4 @@ services:
       start_period: 20s
 
 volumes:
-  postgres_data:
+  postgres_18_data:
