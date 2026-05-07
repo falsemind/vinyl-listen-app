@@ -65,9 +65,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-easyocr = [
-    "easyocr>=1.7.0",
-]
 opencv = [
     "opencv-python-headless>=4.10.0",
     "numpy>=1.26.0",

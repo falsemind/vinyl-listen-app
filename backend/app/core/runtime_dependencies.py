@@ -20,7 +20,7 @@ def get_runtime_dependency_statuses() -> tuple[RuntimeDependencyStatus, ...]:
     return (
         _check_tesseract(),
         _check_zbar(),
-        _check_easyocr(),
+        _check_paddleocr(),
         _check_opencv(),
     )
 
@@ -45,6 +45,7 @@ def _check_tesseract() -> RuntimeDependencyStatus:
             name="tesseract",
             available=False,
             detail="The tesseract binary is not on PATH.",
+            warn_when_unavailable=_warn_when_tesseract_unavailable(),
         )
 
     return RuntimeDependencyStatus(
@@ -78,20 +79,24 @@ def _check_zbar() -> RuntimeDependencyStatus:
     )
 
 
-def _check_easyocr() -> RuntimeDependencyStatus:
-    if find_spec("easyocr") is None:
+def _check_paddleocr() -> RuntimeDependencyStatus:
+    if find_spec("paddleocr") is None:
         return RuntimeDependencyStatus(
-            name="easyocr",
+            name="paddleocr",
             available=False,
-            detail="Optional EasyOCR fallback is not installed.",
-            warn_when_unavailable=settings.identify_easyocr_enabled,
+            detail="Optional PaddleOCR-VL backend package is not installed.",
+            warn_when_unavailable=settings.identify_ocr_backend in {"auto", "paddleocr_vl"},
         )
 
     return RuntimeDependencyStatus(
-        name="easyocr",
+        name="paddleocr",
         available=True,
-        detail=f"module installed; enabled={settings.identify_easyocr_enabled}",
+        detail=f"module installed; backend={settings.identify_ocr_backend}",
     )
+
+
+def _warn_when_tesseract_unavailable() -> bool:
+    return settings.identify_ocr_backend == "tesseract" or settings.identify_ocr_tesseract_fallback_enabled
 
 
 def _check_opencv() -> RuntimeDependencyStatus:

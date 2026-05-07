@@ -1,8 +1,18 @@
 from io import BytesIO
 
+import pytest
 from PIL import Image
 
-from app.pipelines.identification import EasyOcrBackend, ImageVariant, OcrCascade, OcrResult, OcrTextLine, PreparedImage
+from app.pipelines.identification import (
+    ImageVariant,
+    OcrBackendUnavailableError,
+    OcrCascade,
+    OcrResult,
+    OcrTextLine,
+    PaddleOcrVlBackend,
+    PreparedImage,
+)
+from app.pipelines.identification.ocr_backends import build_default_ocr_cascade
 
 
 class StubOcrBackend:
@@ -15,32 +25,28 @@ class StubOcrBackend:
         return self.result
 
 
-class RecordingEasyOcrReader:
+class FailingOcrBackend:
     def __init__(self) -> None:
-        self.image_sizes: list[tuple[int, int]] = []
+        self.calls = 0
 
-    def readtext(self, image_array, *, detail: int, paragraph: bool) -> list:
-        del detail, paragraph
-        height, width = image_array.shape[:2]
-        self.image_sizes.append((width, height))
-        return [([[0, 0], [10, 0], [10, 10], [0, 10]], "CAT 001", 0.9)]
+    def extract(self, _prepared_image: PreparedImage) -> OcrResult:
+        self.calls += 1
+        raise OcrBackendUnavailableError("primary unavailable")
 
 
-def test_easyocr_backend_downscales_large_variants_before_reading() -> None:
-    reader = RecordingEasyOcrReader()
-    backend = EasyOcrBackend(
-        max_image_dimension=320,
-        variant_names=("grayscale",),
-        reader_factory=lambda: reader,
-    )
-
-    result = backend.extract(_build_prepared_image(width=1200, height=800))
-
-    assert result.raw_text == "CAT 001"
-    assert reader.image_sizes == [(320, 213)]
+class StubOcrExtractor:
+    def extract(self, _prepared_image: PreparedImage) -> str:
+        return "Cat No: TOVRI 001"
 
 
-def test_ocr_cascade_runs_fallback_when_tesseract_output_is_noisy() -> None:
+def test_paddleocr_backend_is_placeholder_until_phase_2() -> None:
+    backend = PaddleOcrVlBackend()
+
+    with pytest.raises(OcrBackendUnavailableError):
+        backend.extract(_build_prepared_image(width=1200, height=800))
+
+
+def test_ocr_cascade_returns_primary_result_without_evidence_based_fallback() -> None:
     noisy_lines = tuple(
         OcrTextLine(text=f"NOISE {index} CAT001", confidence=None, source="tesseract") for index in range(41)
     )
@@ -53,71 +59,55 @@ def test_ocr_cascade_runs_fallback_when_tesseract_output_is_noisy() -> None:
     )
     fallback = StubOcrBackend(
         OcrResult(
-            source="easyocr",
+            source="paddleocr_vl",
             raw_text="REAL LABEL CAT002",
-            lines=(OcrTextLine(text="REAL LABEL CAT002", confidence=0.9, source="easyocr"),),
+            lines=(OcrTextLine(text="REAL LABEL CAT002", confidence=0.9, source="paddleocr_vl"),),
         )
     )
     cascade = OcrCascade(primary_backend=primary, fallback_backend=fallback)
 
     result = cascade.extract(_build_prepared_image(width=1200, height=800))
 
-    assert result.source == "tesseract+easyocr"
+    assert result.source == "tesseract"
+    assert fallback.calls == 0
+
+
+def test_ocr_cascade_runs_fallback_when_primary_backend_is_unavailable() -> None:
+    primary = FailingOcrBackend()
+    fallback = StubOcrBackend(
+        OcrResult(
+            source="tesseract",
+            raw_text="Cat No: TOVRI 001",
+            lines=(OcrTextLine(text="Cat No: TOVRI 001", confidence=None, source="tesseract"),),
+        )
+    )
+    cascade = OcrCascade(primary_backend=primary, fallback_backend=fallback)
+
+    result = cascade.extract(_build_prepared_image(width=1200, height=800))
+
+    assert result.source == "tesseract"
+    assert primary.calls == 1
     assert fallback.calls == 1
 
 
-def test_ocr_cascade_runs_fallback_when_tesseract_catalog_looks_suspicious() -> None:
-    primary = StubOcrBackend(
-        OcrResult(
-            source="tesseract",
-            raw_text="RUPLDN OO2LP",
-            lines=(OcrTextLine(text="RUPLDN OO2LP", confidence=None, source="tesseract"),),
-        )
-    )
-    fallback = StubOcrBackend(
-        OcrResult(
-            source="easyocr",
-            raw_text="RUPLDN 002LP",
-            lines=(OcrTextLine(text="RUPLDN 002LP", confidence=0.9, source="easyocr"),),
-        )
-    )
-    cascade = OcrCascade(primary_backend=primary, fallback_backend=fallback)
+def test_ocr_cascade_reraises_primary_error_without_fallback() -> None:
+    cascade = OcrCascade(primary_backend=FailingOcrBackend())
+
+    with pytest.raises(OcrBackendUnavailableError):
+        cascade.extract(_build_prepared_image(width=1200, height=800))
+
+
+def test_build_default_ocr_cascade_routes_paddleocr_to_tesseract_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "identify_ocr_backend", "paddleocr_vl")
+    monkeypatch.setattr(settings, "identify_ocr_tesseract_fallback_enabled", True)
+    cascade = build_default_ocr_cascade(StubOcrExtractor())
 
     result = cascade.extract(_build_prepared_image(width=1200, height=800))
 
-    assert result.source == "tesseract+easyocr"
-    assert fallback.calls == 1
-
-
-def test_ocr_cascade_merged_output_preserves_line_metadata() -> None:
-    primary = StubOcrBackend(
-        OcrResult(
-            source="tesseract",
-            raw_text="RUPLDN OO2LP",
-            lines=(OcrTextLine(text="RUPLDN OO2LP", confidence=None, source="tesseract"),),
-        )
-    )
-    fallback = StubOcrBackend(
-        OcrResult(
-            source="easyocr",
-            raw_text="RUPLDN 002LP",
-            lines=(
-                OcrTextLine(
-                    text="RUPLDN 002LP",
-                    confidence=0.9,
-                    source="easyocr",
-                    box=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)),
-                ),
-            ),
-        )
-    )
-    cascade = OcrCascade(primary_backend=primary, fallback_backend=fallback)
-
-    result = cascade.extract(_build_prepared_image(width=1200, height=800))
-
-    assert result.lines[1].source == "easyocr"
-    assert result.lines[1].confidence == 0.9
-    assert result.lines[1].box == ((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))
+    assert result.source == "tesseract"
+    assert result.raw_text == "Cat No: TOVRI 001"
 
 
 def _build_prepared_image(*, width: int, height: int) -> PreparedImage:

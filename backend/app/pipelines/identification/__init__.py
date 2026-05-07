@@ -13,7 +13,15 @@ from app.pipelines.identification.models import (
     OcrTextLine,
     PreparedImage,
 )
-from app.pipelines.identification.ocr_backends import EasyOcrBackend, OcrBackend, OcrCascade, TesseractOcrBackend
+from app.pipelines.identification.ocr_backends import (
+    OcrBackend,
+    OcrBackendError,
+    OcrBackendTimeoutError,
+    OcrBackendUnavailableError,
+    OcrCascade,
+    PaddleOcrVlBackend,
+    TesseractOcrBackend,
+)
 from app.pipelines.identification.ocr_extractor import OcrExtractor
 from app.pipelines.identification.preprocess import ImageProcessor
 
@@ -28,13 +36,16 @@ __all__ = [
     "ImageProcessor",
     "ImageQualityMetrics",
     "ImageVariant",
-    "EasyOcrBackend",
     "OcrBackend",
+    "OcrBackendError",
+    "OcrBackendTimeoutError",
+    "OcrBackendUnavailableError",
     "OcrCascade",
     "OcrExtractor",
     "OcrRoleEvidence",
     "OcrResult",
     "OcrTextLine",
+    "PaddleOcrVlBackend",
     "PreparedImage",
     "TesseractOcrBackend",
 ]
