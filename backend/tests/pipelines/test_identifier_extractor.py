@@ -106,6 +106,53 @@ def test_identifier_extractor_runs_tesseract_fallback_when_primary_backend_fails
     assert fallback.calls == 1
 
 
+def test_identifier_parser_does_not_use_side_headings_as_identity() -> None:
+    identifiers = IdentifierParser().parse(
+        "\n".join(
+            [
+                "HARMONY & KID LIB",
+                "33 RPM",
+                "THIS SIDE",
+                "Future",
+                "OTHER SIDE",
+                "Fire Feeler · Dressback",
+                "Fire Feeler written & produced by Kid Lib",
+                "Dressback written & produced by",
+                "Future written & produced by",
+            ]
+        )
+    )
+
+    assert identifiers.artist == "HARMONY & KID LIB"
+    assert identifiers.title == "Future"
+    assert "THIS SIDE" not in identifiers.text_fragments
+    assert "OTHER SIDE" not in identifiers.text_fragments
+
+
+def test_identifier_parser_rejects_edition_and_production_year_noise() -> None:
+    identifiers = IdentifierParser().parse(
+        "\n".join(
+            [
+                "Limited Edition",
+                "BAILEY",
+                "A Shaka",
+                "(Nebula Remix)",
+                "B1 Shaka",
+                "(Double O Remix)",
+                "B2 Shaka",
+                "(Original Mix)",
+                "Written & produced by M. Bailey",
+                "for SU Productions 2025",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist == "BAILEY"
+    assert identifiers.title == "Shaka"
+    assert "for SU Productions" not in identifiers.text_fragments
+
+
 def _build_prepared_image() -> PreparedImage:
     return PreparedImage(
         filename="cover.jpg",

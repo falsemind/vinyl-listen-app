@@ -36,6 +36,9 @@ def test_image_processor_normalizes_and_resizes_images() -> None:
         "label_catalog_band",
         "label_catalog_band_threshold",
         "label_catalog_band_threshold_low",
+        "label_bottom_band",
+        "label_bottom_band_threshold",
+        "label_bottom_band_threshold_low",
     ]
     assert all(variant.data for variant in prepared_image.variants)
     assert prepared_image.quality is not None
@@ -89,9 +92,12 @@ def test_image_processor_writes_named_debug_preprocess_images(tmp_path) -> None:
     assert (output_dir / "12_upscaled_threshold.png").exists()
     assert (output_dir / "13_label_catalog_band.png").exists()
     assert (output_dir / "15_label_catalog_band_threshold_low.png").exists()
+    assert (output_dir / "16_label_bottom_band.png").exists()
+    assert (output_dir / "18_label_bottom_band_threshold_low.png").exists()
     assert (output_dir / "variants" / "02_grayscale.png").exists()
     assert (output_dir / "variants" / "14_color_blue_right_mid.png").exists()
     assert (output_dir / "variants" / "15_label_catalog_band.png").exists()
+    assert (output_dir / "variants" / "18_label_bottom_band.png").exists()
 
 
 def test_image_processor_skips_geometry_variants_when_opencv_is_unavailable(monkeypatch) -> None:
@@ -106,9 +112,9 @@ def test_image_processor_skips_geometry_variants_when_opencv_is_unavailable(monk
 
     variant_names = [variant.name for variant in prepared_image.variants]
     assert variant_names[-3:] == [
-        "label_catalog_band",
-        "label_catalog_band_threshold",
-        "label_catalog_band_threshold_low",
+        "label_bottom_band",
+        "label_bottom_band_threshold",
+        "label_bottom_band_threshold_low",
     ]
     assert "deskewed" not in variant_names
 

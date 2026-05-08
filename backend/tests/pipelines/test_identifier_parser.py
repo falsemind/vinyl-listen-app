@@ -294,6 +294,28 @@ def test_identifier_parser_corrects_confused_catalog_suffixes() -> None:
     assert "7EVEN06" in identifiers.catalog_numbers
 
 
+def test_identifier_parser_extracts_spaced_catalog_suffix_without_track_identity() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "A1. FIRM MEDITATION",
+                "A2. REPATRIATION FT THEORY",
+                "B1. STRETCHY BIZZ",
+                "B2. CORSICA GROOVE",
+                "RUPLDN 002LP",
+                "A1. FIRM MEDITATION REPATRIATION FT THEOF",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("RUPLDN 002LP",)
+    assert identifiers.artist is None
+    assert identifiers.title is None
+    assert "CORSICA GROOVE" in identifiers.text_fragments
+
+
 def test_identifier_parser_repairs_edge_confused_catalog_token() -> None:
     parser = IdentifierParser()
 
@@ -340,6 +362,60 @@ def test_identifier_parser_treats_side_markers_as_track_titles_not_catalogs() ->
     assert "JUNCTION" not in identifiers.catalog_numbers
     assert "A2.JUNCTION" not in identifiers.catalog_numbers
     assert {"OBSERVATORY", "JUNCTION", "BUNKER", "QUANTUM ZONE"}.issubset(identifiers.text_fragments)
+
+
+def test_identifier_parser_merges_adjacent_label_code_and_number_catalog() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "PLANTPOWER",
+                "012",
+                "FOAMPLATE",
+                "THIS SIDE",
+                "SUBNORMAL PLATEAU",
+                "ROTOSCOPE QUAVE STEPPA",
+                "RESTORE",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers[:2] == ("PLANTPOWER012", "PLANTPOWER 012")
+    assert identifiers.artist == "FOAMPLATE"
+    assert identifiers.title == "SUBNORMAL PLATEAU"
+    assert "ROTOSCOPE QUAVE STEPPA" in identifiers.text_fragments
+
+
+def test_identifier_parser_ignores_legal_rim_text_when_selecting_identity() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "ALL RIGHTS RESERVED. UNAUTHORISED.",
+                "DEEP ORMANCE & BROADCASTING OF THE",
+                "JUNGLE",
+                "HARMONY",
+                "& KID LIB",
+                "33 RPM",
+                "THIS SIDE",
+                "Future",
+                "OTHER SIDE",
+                "Fire Feeler · Dressback",
+                "Fire Feeler written & produced by Kid Lib",
+                "Dressback written & produced by",
+                "Harmony & Kid Lib",
+                "Future written & produced by",
+                "DURING ALL RIGHTS RESERVED. UNAUTHORISED.",
+                "DURING ALL RIGHTS RESERVED. UNA",
+            ]
+        )
+    )
+
+    assert identifiers.artist == "Harmony & Kid Lib"
+    assert identifiers.title == "Future"
+    assert "DURING ALL RIGHTS RESERVED. UNAUTHORISED" not in identifiers.text_fragments
 
 
 def test_identifier_parser_filters_credit_lines_before_artist_title_selection() -> None:

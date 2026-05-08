@@ -1,7 +1,15 @@
 from fastapi.testclient import TestClient
 
+from app.api.routes.identify import get_identify_service
 from app.main import app
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
+
+
+def test_identify_dependency_reuses_service_instance() -> None:
+    first_service = get_identify_service()
+    second_service = get_identify_service()
+
+    assert first_service is second_service
 
 
 def test_identify_endpoint_returns_ranked_candidates(

@@ -321,3 +321,34 @@ def test_candidate_ranker_uses_ocr_role_evidence_to_break_generic_catalog_ties()
     assert [candidate.discogs_release_id for candidate in ranked_candidates] == [456, 111]
     assert "ocr_release_title" in ranked_candidates[0].matched_on
     assert "ocr_layout_label" in ranked_candidates[0].matched_on
+
+
+def test_candidate_ranker_penalizes_artist_title_contradictions_from_strong_paddleocr_evidence() -> None:
+    ranker = CandidateRanker()
+    identifiers = ExtractedIdentifiers(
+        artist="Boards of Canada",
+        title="Hi Scores",
+        identifier_evidence=(
+            IdentifierEvidence(kind="artist", value="Boards of Canada", source="paddleocr_vl", confidence=0.96),
+            IdentifierEvidence(kind="title", value="Hi Scores", source="paddleocr_vl", confidence=0.94),
+        ),
+    )
+    candidates = [
+        IdentifyCandidate(
+            discogs_release_id=111,
+            release_id=None,
+            artist="Autechre",
+            title="Amber",
+            year=None,
+            label=None,
+            catalog_number=None,
+            barcode=None,
+            cover_image_url=None,
+            match_source="discogs",
+        )
+    ]
+
+    ranked_candidates = ranker.rank(candidates, identifiers, limit=5)
+
+    assert "-20 artist_contradiction" in ranked_candidates[0].score_trace
+    assert "-25 title_contradiction" in ranked_candidates[0].score_trace

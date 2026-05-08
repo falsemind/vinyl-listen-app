@@ -292,9 +292,115 @@ def test_identify_service_skips_loose_searches_after_catalog_candidates(
     )
 
     assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert discogs_service.search_release_calls == [{"limit": 5, "catalog_number": "DAT 095"}]
+
+
+def test_identify_service_stops_after_confident_catalog_identity_candidate(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
+        payloads=[
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "Bailey - Shaka",
+                        "catno": "SCI LIMITED 012",
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "id": 999,
+                        "title": "Wrong Artist - Wrong Title",
+                        "catno": "SCI LIMITED 999",
+                    }
+                ]
+            },
+        ]
+    )
+    service = build_identify_service(
+        repository=repository,
+        discogs_service=discogs_service,
+        identifiers=ExtractedIdentifiers(
+            catalog_numbers=("SCI LIMITED 012", "SCI LIMITED 999"),
+            artist="BAILEY",
+            title="Shaka",
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="label-crop.png",
+        content_type="image/png",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert discogs_service.search_release_calls == [{"limit": 5, "catalog_number": "SCI LIMITED 012"}]
+
+
+def test_identify_service_stops_after_title_candidate_validated_by_label_context(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
+        payloads=[
+            {"results": []},
+            {
+                "results": [
+                    {
+                        "id": 456,
+                        "title": "Various - The Essentials EP",
+                        "label": ["Fresh Milk Records"],
+                        "catno": "FMR007",
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "id": 999,
+                        "title": "Wrong Artist - Wrong Title",
+                        "label": ["Wrong Label"],
+                    }
+                ]
+            },
+        ]
+    )
+    service = build_identify_service(
+        repository=repository,
+        discogs_service=discogs_service,
+        identifiers=ExtractedIdentifiers(
+            artist="ESSENTIALS EP",
+            title="KRM HOT BOYZ",
+            label="Fresh Milk RECORDS",
+            text_fragments=(
+                "Fresh Milk RECORDS",
+                "DEE CYPHER MEMORIES",
+                "NURELIC NEVER SORRY",
+            ),
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="essentialsep.jpg",
+        content_type="image/jpeg",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert set(result.candidates[0].matched_on) >= {"label", "text", "ocr_title"}
     assert discogs_service.search_release_calls == [
-        {"limit": 5, "catalog_number": "DAT 095"},
-        {"limit": 5, "catalog_number": "DAT O95"},
+        {"limit": 5, "artist": "ESSENTIALS EP", "title": "KRM HOT BOYZ"},
+        {"limit": 5, "query": "ESSENTIALS EP KRM HOT BOYZ"},
     ]
 
 
@@ -664,7 +770,7 @@ def test_identify_service_uses_credit_names_as_supporting_raw_context(
         content_type="image/png",
     )
 
-    assert {"limit": 5, "query": "Jeep Head"} in credit_context_discogs_service.search_release_calls
+    assert {"limit": 5, "query": "Jeep Head"} not in credit_context_discogs_service.search_release_calls
 
 
 def test_identify_service_continues_to_ocr_role_context_after_catalog_hits(
