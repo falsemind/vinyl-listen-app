@@ -1,519 +1,257 @@
-# Vinyl Listening App - Repository Structure Specification (MVP)
+# Vinyl Listen App Repository Structure
 
-## Purpose
+This document describes the current monorepo layout. All project documentation lives under `docs/`.
 
-Define a clear repository structure for both:
+## Top-Level Layout
 
-* **Backend service (FastAPI)**
-* **Android application (Kotlin + Jetpack Compose)**
-
-A consistent structure ensures:
-
-* maintainable codebase
-* predictable module boundaries
-* easier onboarding
-* simpler testing
-* scalable architecture as the project grows
-
-
----
-
-# Top-Level Repository Structure
-
-```
-vinyl-listening-app/
-│
-├── backend/
-│
-├── android-app/
-│
-├── docs/
-│
-├── scripts/
-│
-├── .gitignore
+```text
+.
+├── AGENTS.md
 ├── README.md
-└── docker-compose.yml
+├── android-app/
+├── backend/
+├── docker-compose.yml
+├── docs/
+└── scripts/
 ```
 
-### Directory Purpose
+| Path | Purpose |
+| --- | --- |
+| `android-app/` | Android client project. Currently a Gradle/Kotlin app with a starter Compose activity and theme resources. |
+| `backend/` | FastAPI backend, database models, repositories, service layer, identification pipeline, migrations, tests, and backend scripts. |
+| `docs/` | Product, architecture, implementation, research, and feature documentation. |
+| `scripts/` | Repository-level helper scripts. |
+| `docker-compose.yml` | Local container orchestration entry point. |
+| `AGENTS.md` | Agent workflow and repository guidance. |
 
-| Directory   | Purpose                              |
-| ----------- | ------------------------------------ |
-| backend     | FastAPI backend service              |
-| android-app | Android mobile application           |
-| docs        | Architecture specs and planning docs |
-| scripts     | Dev utilities and helper scripts     |
+Local artifacts such as `.DS_Store`, `.ruff_cache/`, `backend/.venv/`, `backend/venv/`, `__pycache__/`, and generated OCR debug images may exist in a working tree. They are not part of the intended source layout.
 
----
+## Documentation
 
-# Documentation Folder
-
-All planning artifacts live here.
-
-```
+```text
 docs/
-│
-├── repository-structure.md  # this document
-│
 ├── architecture/
 │   ├── api-spec.md
 │   ├── database-schema.md
-│   ├── navigation-graph.md
 │   ├── matching-pipeline.md
+│   ├── navigation-graph.md
 │   └── roadmap.md
-│
-└── product/
-    ├── mvp-screen-spec.md
-    └── feature-notes.md
+├── features/
+│   ├── backend-services.md
+│   └── identification-pipeline.md
+├── implementation-plans/
+│   ├── discogs-integration-plan.md
+│   ├── image-identify-ocr-backend-upgrade-plan.md
+│   ├── image-identify-pipeline-plan.md
+│   ├── listening-session-api-plan.md
+│   └── release-import-metadata-api-plan.md
+├── product/
+│   └── mvp-screen-spec.md
+├── research/
+│   └── image-identification-pipeline-improvements.md
+└── repository-structure.md
 ```
 
-This keeps **engineering documentation versioned with code**.
+| Folder | Purpose |
+| --- | --- |
+| `architecture/` | Stable system design references: API, database, matching, navigation, roadmap. |
+| `features/` | Current behavior docs for implemented backend features and pipelines. |
+| `implementation-plans/` | Planning docs for completed or upcoming backend/product work. |
+| `product/` | Product-facing screen and MVP specifications. |
+| `research/` | Investigation notes and improvement ideas. |
 
----
+## Backend
 
-# Backend Project Structure
-
-Backend uses:
-
-```
-Python
-FastAPI
-SQLAlchemy
-Alembic
-PostgreSQL
-```
-
-Structure:
-
-```
+```text
 backend/
-│
-├── app/
-│
-│   ├── main.py
-│
-│   ├── core/
-│   │   ├── config.py
-│   │   ├── logging.py
-│   │   └── rate_limiter.py
-│
-│   ├── api/
-│   │   ├── routes/
-│   │   │   ├── identify.py
-│   │   │   ├── releases.py
-│   │   │   ├── sessions.py
-│   │   │   ├── health.py
-│   │   │   └── analytics.py
-│   │   │
-│   │   └── router.py
-│
-│   ├── services/
-│   │   ├── discogs_service.py
-│   │   ├── identification_service.py
-│   │   ├── release_service.py
-│   │   ├── session_service.py
-│   │   └── analytics_service.py
-│
-│   ├── pipelines/
-│   │   └── identification/
-│   │       ├── preprocess.py
-│   │       ├── barcode_detector.py
-│   │       ├── ocr_extractor.py
-│   │       ├── identifier_parser.py
-│   │       └── candidate_ranker.py
-│
-│   ├── models/
-│   │   ├── releases.py
-│   │   ├── sessions.py
-│   │   ├── sessions_moods.py
-│   │   └── discogs_release_cache.py
-│
-│   ├── schemas/
-│   │   ├── releases_schema.py
-│   │   ├── sessions_schema.py
-│   │   └── analytics_schema.py
-│
-│   ├── repositories/
-│   │   ├── releases_repository.py
-│   │   ├── sessions_repository.py
-│   │   └── discogs_release_repository.py
-│
-│   ├── database/
-│   │   ├── db.py
-│   │   └── base.py
-│
-│   └── utils/
-│       ├── image_utils.py
-│       └── text_utils.py
-│
-├── alembic/
-│
-├── tests/
-│
-├── requirements.txt
-├── requirements-dev.txt
+├── Dockerfile
+├── alembic.ini
 ├── pyproject.toml
-└── Dockerfile
-```
-
----
-
-# Backend Layer Responsibilities
-
-### API Layer
-
-```
-api/routes
-```
-
-Responsible for:
-
-```
-HTTP request handling
-validation
-response formatting
-```
-
-Example endpoints:
-
-```
-POST /identify
-POST /releases/import
-POST /sessions
-GET /analytics/summary
-```
-
----
-
-### Service Layer
-
-```
-services/
-```
-
-Contains business logic:
-
-```
-Discogs integration
-release import
-session creation
-analytics computation
-```
-
-Services coordinate:
-
-```
-repositories
-external APIs
-pipelines
-```
-
----
-
-### Repository Layer
-
-```
-repositories/
-```
-
-Responsible for:
-
-```
-database operations
-query abstraction
-```
-
-Example:
-
-```
-release_repository
-session_repository
-```
-
----
-
-### Pipeline Layer
-
-```
-pipelines/identification/
-```
-
-Encapsulates the image identification system.
-
-Modules:
-
-```
-preprocess.py
-barcode_detector.py
-ocr_extractor.py
-identifier_parser.py
-candidate_ranker.py
-```
-
-This keeps the **image processing pipeline modular**.
-
----
-
-# Android Application Structure
-
-Technology stack:
-
-```
-Kotlin
-Jetpack Compose
-Compose Navigation
-CameraX
-Retrofit
-```
-
-Structure:
-
-```
-android-app/
-│
 ├── app/
-│
-│   └── src/main/java/com/vinylapp/
-│
-│       ├── MainActivity.kt
-│
-│       ├── navigation/
-│       │   ├── NavGraph.kt
-│       │   └── Routes.kt
-│
-│       ├── network/
-│       │   ├── ApiClient.kt
-│       │   ├── VinylApiService.kt
-│       │   └── models/
-│       │
-│       ├── repository/
-│       │   └── VinylRepository.kt
-│
-│       ├── viewmodel/
-│       │   ├── CaptureViewModel.kt
-│       │   ├── MatchViewModel.kt
-│       │   ├── SessionViewModel.kt
-│       │   ├── RecordViewModel.kt
-│       │   └── AnalyticsViewModel.kt
-│
-│       ├── ui/
-│       │   ├── screens/
-│       │   │   ├── home/
-│       │   │   ├── capture/
-│       │   │   ├── processing/
-│       │   │   ├── match/
-│       │   │   ├── session/
-│       │   │   ├── record/
-│       │   │   ├── analytics/
-│       │   │   └── settings/
-│       │   │
-│       │   └── components/
-│       │
-│       ├── camera/
-│       │   └── CameraManager.kt
-│
-│       ├── charts/
-│       │   └── ComposeCharts.kt
-│
-│       └── util/
-│           └── Extensions.kt
-│
-└── build.gradle
+├── alembic/
+├── scripts/
+└── tests/
 ```
 
----
+`backend/pyproject.toml` defines the Python backend package, tooling, and test configuration. The current backend requires Python `>=3.13` and uses Black, Ruff, Pytest, and Pytest Asyncio.
 
-# Android Architecture Pattern
+### Backend Application
 
-Flow:
-
-```
-UI (Compose Screen)
-      ↓
-ViewModel
-      ↓
-Repository
-      ↓
-API Service
-      ↓
-Backend
-```
-
-Example:
-
-```
-SessionLoggingScreen
-      ↓
-SessionViewModel
-      ↓
-VinylRepository
-      ↓
-POST /sessions
-```
-
----
-
-# Network Layer
-
-```
-network/
-```
-
-Contains:
-
-```
-Retrofit client
-API interfaces
-network models
-```
-
-Example API:
-
-```
-identifyRecord()
-createSession()
-getRecordDetails()
-getAnalytics()
+```text
+backend/app/
+├── main.py
+├── api/
+│   ├── router.py
+│   └── routes/
+│       ├── analytics.py
+│       ├── health.py
+│       ├── identify.py
+│       ├── releases.py
+│       └── sessions.py
+├── core/
+│   ├── config.py
+│   ├── logging.py
+│   └── runtime_dependencies.py
+├── database/
+│   ├── base.py
+│   ├── db.py
+│   └── session.py
+├── models/
+│   ├── discogs_release_cache.py
+│   ├── releases.py
+│   ├── sessions.py
+│   └── sessions_moods.py
+├── pipelines/
+│   └── identification/
+├── repositories/
+│   ├── discogs_release_repository.py
+│   ├── releases_repository.py
+│   ├── sessions_moods_repository.py
+│   └── sessions_repository.py
+├── schemas/
+│   ├── identify.py
+│   ├── releases.py
+│   └── sessions.py
+├── services/
+│   ├── discogs_service.py
+│   ├── identify_service.py
+│   ├── release_import_service.py
+│   ├── release_mapper.py
+│   └── sessions_service.py
+└── utils/
 ```
 
----
+| Layer | Responsibility |
+| --- | --- |
+| `main.py` | Creates the FastAPI app, attaches `/api/v1`, handles validation errors, and logs runtime dependency status during startup. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, and `/analytics`. |
+| `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
+| `core/` | Configuration, logging, and optional runtime dependency checks. |
+| `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, listening sessions, and moods. |
+| `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
+| `schemas/` | Pydantic request/response models exposed by the API. |
+| `services/` | Business workflows: identification, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
-# Camera Integration
+### API Route Map
 
-Camera functionality isolated in:
+All routes are nested under `/api/v1`.
 
+| Route | Handler module | Main service |
+| --- | --- | --- |
+| `GET /health` | `api/routes/health.py` | Runtime/database health checks. |
+| `GET /health/runtime` | `api/routes/health.py` | Optional dependency status. |
+| `POST /identify` | `api/routes/identify.py` | `IdentifyService`. |
+| `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
+| `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
+| `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
+| `GET /sessions/{session_id}` | `api/routes/sessions.py` | `SessionsService`. |
+| `GET /analytics` | `api/routes/analytics.py` | Analytics endpoint placeholder/current route behavior. |
+
+### Identification Pipeline Package
+
+```text
+backend/app/pipelines/identification/
+├── __init__.py
+├── barcode_detector.py
+├── candidate_ranker.py
+├── extractor.py
+├── identifier_parser.py
+├── models.py
+├── normalization.py
+├── ocr_backends.py
+├── ocr_extractor.py
+├── ocr_layout_analyzer.py
+├── preprocess.py
+├── search_evidence.py
+└── search_planner.py
 ```
-camera/
-```
 
-Contains:
+This package is used by `IdentifyService`. It turns an uploaded image into structured identifiers and ranked release candidates. See `docs/features/identification-pipeline.md` for the detailed flow.
 
-```
-CameraX setup
-image capture
-image file conversion
-```
+## Backend Tests
 
-Captured image is sent to:
-
-```
-POST /identify
-```
-
----
-
-# UI Layer
-
-```
-ui/screens/
-```
-
-Each screen has its own folder.
-
-Example:
-
-```
-ui/screens/session/
-```
-
-Contains:
-
-```
-SessionLoggingScreen.kt
-SessionLoggingView.kt
-SessionLoggingState.kt
-```
-
-This keeps UI modules **self-contained**.
-
----
-
-# Testing Structure
-
-Backend tests:
-
-```
+```text
 backend/tests/
+├── api/
+├── core/
+├── data/
+│   ├── discogs_responses/
+│   └── images/
+├── fixtures/
+├── migrations/
+├── pipelines/
+├── services/
+├── conftest.py
+├── pytest.ini
+└── test-automation-structure.md
 ```
 
-Types:
+| Folder | Coverage |
+| --- | --- |
+| `api/` | FastAPI route behavior and versioned paths. |
+| `core/` | Runtime dependency reporting. |
+| `fixtures/` | Test clients, database fixtures, and service stubs. |
+| `migrations/` | Alembic/schema expectations. |
+| `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
+| `services/` | Discogs client/service, identify service, release import, release mapper, and sessions service. |
+| `data/` | Static image and Discogs response fixtures. |
 
-```
-API tests
-service tests
-pipeline tests
-```
+## Backend Migrations And Scripts
 
-Android tests:
+```text
+backend/alembic/
+├── env.py
+├── script.py.mako
+└── versions/
+    ├── 1a8551e314b6_create_models_releases_sessions_.py
+    ├── a5427b530a12_latest_db_revision.py
+    └── eed6974773b8_init.py
 
-```
-android-app/app/src/test/
-```
-
-Types:
-
-```
-ViewModel tests
-UI tests
-integration tests
-```
-
----
-
-# Environment Configuration
-
-Backend environment variables:
-
-```
-DATABASE_URL
-DISCOGS_TOKEN
-API_RATE_LIMIT
-IMAGE_UPLOAD_MAX_SIZE
+backend/scripts/
+└── benchmark_ocr_backends.py
 ```
 
-Use:
+Alembic owns schema migrations. `benchmark_ocr_backends.py` supports local comparison of OCR backend behavior.
 
-```
-.env file
-```
+## Android App
 
-Loaded by:
-
-```
-pydantic settings
-```
-
----
-
-# Deployment (Future)
-
-Possible deployment setup:
-
-```
-backend → Docker container
-database → PostgreSQL
-hosting → cloud VM or container platform
-```
-
-Android app distributed via:
-
-```
-APK builds (initial testing)
-Play Store (later)
-```
-
----
-
-# Summary
-
-This repository structure provides:
-
-```
-clear backend layering
-modular image pipeline
-clean Android architecture
-scalable project layout
+```text
+android-app/
+├── build.gradle.kts
+├── gradle.properties
+├── gradlew
+├── gradlew.bat
+├── settings.gradle.kts
+├── app/
+│   ├── build.gradle.kts
+│   ├── proguard-rules.pro
+│   └── src/
+│       ├── main/
+│       │   ├── AndroidManifest.xml
+│       │   ├── java/com/example/vinyllistenapp/
+│       │   │   ├── MainActivity.kt
+│       │   │   └── ui/theme/
+│       │   │       ├── Color.kt
+│       │   │       ├── Theme.kt
+│       │   │       └── Type.kt
+│       │   └── res/
+│       ├── test/
+│       └── androidTest/
+└── gradle/
+    ├── libs.versions.toml
+    └── wrapper/
 ```
 
-It supports the complete MVP feature set while remaining **simple enough for rapid development**.
+The Android app is still small compared with the backend. It contains a single main activity, Compose theme files, launcher resources, unit test scaffold, and instrumentation test scaffold.
+
+## Source Of Truth
+
+- API behavior: `backend/app/api/routes/` and `backend/app/schemas/`.
+- Business workflows: `backend/app/services/`.
+- Identification internals: `backend/app/pipelines/identification/`.
+- Database schema intent: `backend/app/models/`, `backend/alembic/`, and `docs/architecture/database-schema.md`.
+- Current feature explanations: `docs/features/`.
