@@ -18,6 +18,7 @@ class RuntimeDependencyStatus:
 
 def get_runtime_dependency_statuses() -> tuple[RuntimeDependencyStatus, ...]:
     return (
+        _check_mlx_vlm_service_config(),
         _check_tesseract(),
         _check_zbar(),
         _check_paddleocr(),
@@ -79,19 +80,43 @@ def _check_zbar() -> RuntimeDependencyStatus:
     )
 
 
+def _check_mlx_vlm_service_config() -> RuntimeDependencyStatus:
+    if not settings.identify_mlx_vlm_service_url:
+        return RuntimeDependencyStatus(
+            name="mlx_vlm_service",
+            available=False,
+            detail="IDENTIFY_MLX_VLM_SERVICE_URL is not configured.",
+            warn_when_unavailable=settings.identify_ocr_backend in {"auto", "mlx_vlm"},
+        )
+
+    return RuntimeDependencyStatus(
+        name="mlx_vlm_service",
+        available=True,
+        detail=f"url={settings.identify_mlx_vlm_service_url}; backend={settings.identify_ocr_backend}",
+    )
+
+
 def _check_paddleocr() -> RuntimeDependencyStatus:
     if find_spec("paddleocr") is None:
         return RuntimeDependencyStatus(
             name="paddleocr",
             available=False,
             detail="Optional PaddleOCR-VL backend package is not installed.",
-            warn_when_unavailable=settings.identify_ocr_backend in {"auto", "paddleocr_vl"},
+            warn_when_unavailable=settings.identify_ocr_backend == "paddleocr_vl",
+        )
+
+    if find_spec("paddle") is None:
+        return RuntimeDependencyStatus(
+            name="paddleocr",
+            available=False,
+            detail="PaddleOCR-VL backend package is installed, but paddlepaddle runtime is missing.",
+            warn_when_unavailable=settings.identify_ocr_backend == "paddleocr_vl",
         )
 
     return RuntimeDependencyStatus(
         name="paddleocr",
         available=True,
-        detail=f"module installed; backend={settings.identify_ocr_backend}",
+        detail=f"modules installed; backend={settings.identify_ocr_backend}",
     )
 
 

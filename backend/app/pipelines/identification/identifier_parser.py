@@ -43,7 +43,10 @@ EDGE_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([T][A-Z0-9OQDIL]{3,14}[G])(?![A-Z0-9])",
     re.IGNORECASE,
 )
-SPACED_CATALOG_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{3,5})(?![A-Z0-9])", re.IGNORECASE)
+SPACED_CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{2,5}(?:LP|EP)?)(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 SPACED_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([A-Z]{2,})\s+([OQDI0-9]{2,6}(?:LP|EP)?)\b",
     re.IGNORECASE,
@@ -75,6 +78,8 @@ LABEL_SUFFIX_TERMS = frozenset(
 NOISE_TERMS = {
     "stereo",
     "mono",
+    "this side",
+    "other side",
     "side a",
     "side b",
     "33 rpm",
@@ -82,6 +87,7 @@ NOISE_TERMS = {
     "rpm",
     "lp",
     "vinyl",
+    "limited edition",
     "records",
     "made in",
     "barcode",
@@ -94,9 +100,13 @@ COPYRIGHT_YEAR_RANGE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 NOISE_PREFIXES = (
+    "all rights",
     "all tracks",
     "additional production",
+    "broadcasting",
     "production",
+    "productions",
+    "for ",
     "by ",
     "mastered by",
     "pressed by",
@@ -108,12 +118,31 @@ NOISE_PREFIXES = (
     "recorded by",
     "published by",
     "licensed from",
+    "unauthorised",
+    "unauthorized",
+)
+LEGAL_RIGHTS_TERMS = frozenset(
+    {
+        "authorised",
+        "authorized",
+        "broadcasting",
+        "copyright",
+        "copying",
+        "performance",
+        "prohibited",
+        "reserved",
+        "rights",
+        "unauthorised",
+        "unauthorized",
+    }
 )
 CREDIT_LINE_TERMS = (
     " written ",
     " produced ",
     " produc ",
     " production ",
+    " productions ",
+    " remixed ",
     " mixed ",
     " mastered ",
     " engineered ",
@@ -146,7 +175,8 @@ class IdentifierParser:
         catalog_numbers = _extract_catalog_numbers(raw_text, cleaned_lines)
         year, blocked_year_lines = _extract_year(cleaned_lines)
         label, blocked_label_lines = _extract_label(cleaned_lines)
-        blocked_lines = blocked_year_lines | blocked_label_lines
+        blocked_catalog_lines = _catalog_source_lines(cleaned_lines, catalog_numbers)
+        blocked_lines = blocked_year_lines | blocked_label_lines | blocked_catalog_lines
         artist, title = _extract_artist_and_title(cleaned_lines, blocked_values=blocked_lines)
         text_fragments = _extract_text_fragments(
             cleaned_lines,
@@ -279,6 +309,9 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
     for match in LABELED_CATALOG_PATTERN.finditer(raw_text):
         _append_catalog_number_candidates(match.group(1), detected_catalog_numbers, seen, scores)
 
+    for token in _extract_adjacent_catalog_number_tokens(cleaned_lines):
+        _append_catalog_number_candidates(token, detected_catalog_numbers, seen, scores)
+
     for line in cleaned_lines:
         catalog_tokens = _extract_catalog_number_tokens(line)
         catalog_tokens = (*catalog_tokens, *_extract_ocr_confused_catalog_number_tokens(line))
@@ -292,6 +325,84 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
             _append_catalog_number_candidates(line, detected_catalog_numbers, seen, scores)
 
     return tuple(_sort_catalog_number_candidates(detected_catalog_numbers, scores=scores))
+
+
+def _extract_adjacent_catalog_number_tokens(cleaned_lines: list[str]) -> tuple[str, ...]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    for index, line in enumerate(cleaned_lines[:-1]):
+        next_line = cleaned_lines[index + 1]
+        for token in _adjacent_catalog_number_token_variants(line, next_line):
+            lowered_token = token.lower()
+            if lowered_token in seen:
+                continue
+            seen.add(lowered_token)
+            tokens.append(token)
+
+    return tuple(tokens)
+
+
+def _adjacent_catalog_number_token_variants(left: str, right: str) -> tuple[str, ...]:
+    prefix = _clean_catalog_candidate(left)
+    suffix = _clean_catalog_candidate(right)
+    if prefix is None or suffix is None:
+        return ()
+    if not _looks_like_adjacent_catalog_prefix(prefix) or not _looks_like_adjacent_catalog_suffix(suffix):
+        return ()
+
+    compact_token = f"{prefix}{suffix}"
+    spaced_token = f"{prefix} {suffix}"
+    if not _looks_like_catalog_number(compact_token):
+        return ()
+    return compact_token, spaced_token
+
+
+def _looks_like_adjacent_catalog_prefix(value: str) -> bool:
+    tokens = TOKEN_PATTERN.findall(value)
+    if len(tokens) != 1:
+        return False
+
+    token = tokens[0]
+    lowered_value = value.lower()
+    return (
+        len(token) >= 2
+        and token.upper() == token
+        and any(character.isalpha() for character in token)
+        and not any(character.isdigit() for character in token)
+        and lowered_value not in NOISE_TERMS
+        and not _is_side_heading(value)
+        and not _looks_like_credit_line(value)
+        and not _looks_like_legal_rights_line(value)
+    )
+
+
+def _looks_like_adjacent_catalog_suffix(value: str) -> bool:
+    return re.fullmatch(r"\d{2,5}(?:LP|EP)?", value, re.IGNORECASE) is not None
+
+
+def _catalog_source_lines(cleaned_lines: list[str], catalog_numbers: tuple[str, ...]) -> set[str]:
+    if not catalog_numbers:
+        return set()
+
+    normalized_catalog_numbers = {_normalize_catalog_sort_token(value) for value in catalog_numbers}
+    blocked_lines: set[str] = set()
+
+    for line in cleaned_lines:
+        normalized_line = _normalize_catalog_sort_token(line)
+        if normalized_line in normalized_catalog_numbers:
+            blocked_lines.add(line.lower())
+
+    for index, line in enumerate(cleaned_lines[:-1]):
+        next_line = cleaned_lines[index + 1]
+        for token in _adjacent_catalog_number_token_variants(line, next_line):
+            if _normalize_catalog_sort_token(token) not in normalized_catalog_numbers:
+                continue
+            blocked_lines.add(line.lower())
+            blocked_lines.add(next_line.lower())
+            break
+
+    return blocked_lines
 
 
 def _extract_year(cleaned_lines: list[str]) -> tuple[int | None, set[str]]:
@@ -372,6 +483,14 @@ def _extract_artist_and_title(
     if dj_pair is not None:
         return dj_pair
 
+    uppercase_track_pair = _select_uppercase_artist_track_title_pair(candidate_entries)
+    if uppercase_track_pair is not None:
+        return uppercase_track_pair
+
+    track_artist_pair = _select_nontrack_artist_with_track_title(candidate_entries)
+    if track_artist_pair is not None:
+        return track_artist_pair
+
     scored_pair = _select_artist_title_pair(candidate_entries)
     if scored_pair is not None:
         return scored_pair
@@ -432,14 +551,17 @@ def _candidate_metadata_lines(cleaned_lines: list[str], *, blocked_values: set[s
 def _candidate_metadata_entries(cleaned_lines: list[str], *, blocked_values: set[str]) -> list[tuple[str, bool]]:
     candidate_entries: list[tuple[str, bool]] = []
     seen: set[str] = set()
+    previous_line_was_side_heading = False
 
     for line in cleaned_lines:
         lowered_line = line.lower()
         if lowered_line in blocked_values:
+            previous_line_was_side_heading = False
             continue
 
-        is_track_listing = _extract_track_listing_title(line) is not None
+        is_track_listing = previous_line_was_side_heading or _extract_track_listing_title(line) is not None
         candidate = _clean_candidate_line(line)
+        previous_line_was_side_heading = _is_side_heading(line)
         if candidate is None or candidate.lower() in blocked_values:
             continue
         if candidate.lower() in seen or not _is_strict_metadata_line(candidate):
@@ -458,6 +580,8 @@ def _looks_like_catalog_number(value: str) -> bool:
     if len(cleaned_value) < 4 or len(cleaned_value) > 24:
         return False
     if _looks_like_track_listing(cleaned_value):
+        return False
+    if _looks_like_credit_line(cleaned_value) or _looks_like_company_year_catalog_noise(cleaned_value):
         return False
     if cleaned_value.isdigit():
         return False
@@ -483,6 +607,8 @@ def _is_candidate_metadata_line(value: str) -> bool:
     if len(value) < 3 or len(value) > 80:
         return False
     if lowered_value in NOISE_TERMS:
+        return False
+    if _looks_like_legal_rights_line(value):
         return False
     if _looks_like_track_listing(value):
         return False
@@ -510,7 +636,32 @@ def _looks_like_credit_line(value: str) -> bool:
         return True
     if normalized_value.startswith(NOISE_PREFIXES):
         return True
+    if normalized_value.startswith("for ") and " production" in lowered_value:
+        return True
     return any(term in lowered_value for term in CREDIT_LINE_TERMS)
+
+
+def _looks_like_legal_rights_line(value: str) -> bool:
+    tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
+    if not tokens:
+        return False
+
+    if {"rights", "reserved"} <= tokens:
+        return True
+    if tokens & {"unauthorised", "unauthorized"}:
+        return True
+    if "broadcasting" in tokens and len(tokens) >= 3:
+        return True
+
+    return len(tokens & LEGAL_RIGHTS_TERMS) >= 2
+
+
+def _looks_like_company_year_catalog_noise(value: str) -> bool:
+    if _extract_year_from_value(value) is None:
+        return False
+
+    tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
+    return bool(tokens & {"production", "productions", "records", "recordings", "copyright"})
 
 
 def _normalize_credit_line(value: str) -> str:
@@ -572,6 +723,9 @@ def _select_artist_title_pair(candidate_entries: list[tuple[str, bool]]) -> tupl
     for index, ((artist, artist_is_track), (title, title_is_track)) in enumerate(
         zip(candidate_entries, candidate_entries[1:], strict=False)
     ):
+        if artist_is_track and title_is_track:
+            continue
+
         score = _metadata_line_quality(artist) + _metadata_line_quality(title) - min(index, 10) * 0.25
         if artist_is_track:
             score -= 8
@@ -603,6 +757,47 @@ def _select_dj_artist_title_pair(candidate_lines: list[str]) -> tuple[str, str] 
             return artist, title
 
     return None
+
+
+def _select_uppercase_artist_track_title_pair(candidate_entries: list[tuple[str, bool]]) -> tuple[str, str] | None:
+    for index, ((artist, artist_is_track), (title, title_is_track)) in enumerate(
+        zip(
+            candidate_entries,
+            candidate_entries[1:],
+            strict=False,
+        )
+    ):
+        if index > 0:
+            return None
+        if artist_is_track or not title_is_track:
+            continue
+        if not _looks_like_uppercase_artist_candidate(artist):
+            continue
+        return artist, title
+
+    return None
+
+
+def _select_nontrack_artist_with_track_title(candidate_entries: list[tuple[str, bool]]) -> tuple[str, str] | None:
+    track_titles = [value for value, is_track in candidate_entries if is_track]
+    if not track_titles:
+        return None
+
+    artist_candidates = [
+        value
+        for value, is_track in candidate_entries
+        if not is_track and "&" in value and _metadata_line_quality(value) >= 6
+    ]
+    if not artist_candidates:
+        return None
+
+    return artist_candidates[-1], track_titles[0]
+
+
+def _looks_like_uppercase_artist_candidate(value: str) -> bool:
+    tokens = TOKEN_PATTERN.findall(value)
+    alpha_tokens = [token for token in tokens if any(character.isalpha() for character in token)]
+    return bool(alpha_tokens) and value.upper() == value and len(alpha_tokens) <= 4 and max(map(len, alpha_tokens)) >= 4
 
 
 def _normalize_dj_artist_line(value: str) -> str | None:
@@ -799,7 +994,7 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         token = _clean_catalog_candidate(match.group(1))
         if token is None or token.lower() in seen:
             continue
-        if _extract_year_from_value(token) is not None:
+        if _extract_year_from_value(token) is not None or _looks_like_company_year_catalog_noise(token):
             continue
         seen.add(token.lower())
         spaced_catalog_spans.append(match.span(1))
@@ -813,6 +1008,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         if corrected_token is None or not (
             _looks_like_catalog_number(corrected_token) or _looks_like_spaced_label_code_catalog_number(corrected_token)
         ):
+            continue
+        if _looks_like_company_year_catalog_noise(token) or _looks_like_company_year_catalog_noise(corrected_token):
             continue
         seen.add(token.lower())
         spaced_catalog_spans.append(match.span(0))
@@ -925,6 +1122,10 @@ def _looks_like_track_listing(value: str) -> bool:
     return len(tokens) >= 3 and tokens[-1].isdigit() and all(token.isalpha() for token in tokens[:-1])
 
 
+def _is_side_heading(value: str) -> bool:
+    return value.strip().lower() in {"this side", "other side"}
+
+
 def _extract_track_listing_title(value: str) -> str | None:
     stripped_value = value.strip()
     match = TRACK_LISTING_PREFIX_PATTERN.match(stripped_value)
@@ -979,11 +1180,16 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
         return corrected_suffix_value
 
     corrected_characters: list[str] = []
+    protected_release_type_start = _catalog_release_type_suffix_start(value)
     changed = False
 
     for index, character in enumerate(value):
         replacement = CATALOG_OCR_CORRECTIONS.get(character.lower()) or CATALOG_TERMINAL_OCR_CORRECTIONS.get(character)
-        if replacement is None or not _has_adjacent_digit(value, index):
+        if (
+            replacement is None
+            or (protected_release_type_start is not None and index >= protected_release_type_start)
+            or not _has_adjacent_digit(value, index)
+        ):
             corrected_characters.append(character)
             continue
 
@@ -993,6 +1199,13 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
     if not changed:
         return _correct_terminal_catalog_suffix(value)
     return "".join(corrected_characters)
+
+
+def _catalog_release_type_suffix_start(value: str) -> int | None:
+    match = re.search(r"\d(?:LP|EP)$", value, re.IGNORECASE)
+    if match is None:
+        return None
+    return len(value) - 2
 
 
 def _correct_edge_confused_catalog_number(value: str) -> str | None:

@@ -15,6 +15,7 @@ from app.pipelines.identification import (
     ImageProcessor,
 )
 from app.pipelines.identification.search_evidence import score_search_evidence
+from app.pipelines.identification.search_planner import SearchStep, build_search_plan
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
 
@@ -238,6 +239,13 @@ class IdentifyService:
             for candidate in candidates:
                 candidate_map.setdefault(candidate.discogs_release_id, candidate)
 
+            if self._has_confident_external_candidate(candidate_map.values(), identifiers):
+                logger.info(
+                    "Stopping Discogs identify search after confident candidate strategy=%s",
+                    search_step.strategy,
+                )
+                break
+
         return list(candidate_map.values())
 
     def _rank_candidates(
@@ -256,44 +264,43 @@ class IdentifyService:
             )
         return ranked_candidates
 
-    def _build_search_plan(self, identifiers: ExtractedIdentifiers) -> list["_SearchStep"]:
-        search_steps: list[_SearchStep] = []
+    def _has_confident_external_candidate(
+        self,
+        candidates: Iterable[IdentifyCandidate],
+        identifiers: ExtractedIdentifiers,
+    ) -> bool:
+        ranked_candidates = self._ranker.rank(list(candidates), identifiers, limit=1)
+        if not ranked_candidates:
+            return False
 
-        for barcode in identifiers.barcodes:
-            search_steps.append(_SearchStep(strategy="barcode", params={"barcode": barcode}))
+        top_candidate = ranked_candidates[0]
+        matched_on = set(top_candidate.matched_on)
+        if "barcode" in matched_on:
+            return True
+        if {"artist", "title"}.issubset(matched_on):
+            return True
+        if {"ocr_artist", "ocr_title"}.issubset(matched_on):
+            return True
+        if "ocr_title" in matched_on and bool(matched_on & {"label", "ocr_label", "text", "discogs_validated_text"}):
+            return True
+        return "catalog_number" in matched_on and bool(
+            matched_on
+            & {
+                "artist",
+                "title",
+                "ocr_artist",
+                "ocr_title",
+                "ocr_release_title",
+                "label",
+                "year",
+                "text",
+            }
+        )
 
-        for catalog_number in identifiers.catalog_numbers:
-            search_steps.append(_SearchStep(strategy="catalog_number", params={"catalog_number": catalog_number}))
+    def _build_search_plan(self, identifiers: ExtractedIdentifiers) -> list[SearchStep]:
+        return build_search_plan(identifiers)
 
-        ocr_role_context_queries = _build_ocr_role_context_queries(identifiers)
-        for query in ocr_role_context_queries:
-            search_steps.append(_SearchStep(strategy="ocr_role_context", params={"query": query}))
-
-        identity_context_queries: tuple[str, ...] = ()
-        has_plausible_identity = _has_plausible_identity(identifiers)
-        if identifiers.artist and identifiers.title and not ocr_role_context_queries and has_plausible_identity:
-            search_steps.append(
-                _SearchStep(
-                    strategy="artist_title",
-                    params={"artist": identifiers.artist, "title": identifiers.title},
-                )
-            )
-            identity_context_queries = _build_identity_context_queries(identifiers)
-            for query in identity_context_queries:
-                search_steps.append(_SearchStep(strategy="identity_context", params={"query": query}))
-
-        should_run_loose_text_searches = not identity_context_queries or bool(identifiers.catalog_numbers)
-        if not ocr_role_context_queries and should_run_loose_text_searches:
-            for query in _build_raw_context_queries(identifiers):
-                search_steps.append(_SearchStep(strategy="raw_context", params={"query": query}))
-
-            for fragment in identifiers.text_fragments:
-                for query in _free_text_fragment_queries(fragment):
-                    search_steps.append(_SearchStep(strategy="free_text", params={"query": query}))
-
-        return _dedupe_search_steps(search_steps)
-
-    def _execute_search_step(self, search_step: "_SearchStep") -> dict[str, Any]:
+    def _execute_search_step(self, search_step: SearchStep) -> dict[str, Any]:
         if search_step.strategy == "barcode":
             return self._discogs_service.search_by_barcode(
                 str(search_step.params["barcode"]),

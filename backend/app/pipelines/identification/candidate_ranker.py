@@ -112,11 +112,27 @@ class CandidateRanker:
             score += 25
             score_trace.append("+25 artist")
             matched_on.append("artist")
+        elif (
+            identifiers.artist
+            and candidate.artist
+            and _has_strong_identifier_evidence(identifiers, "artist")
+            and _fields_contradict(candidate.artist, identifiers.artist)
+        ):
+            score -= 20
+            score_trace.append("-20 artist_contradiction")
 
         if identifiers.title and _normalize_token(candidate.title) == _normalize_token(identifiers.title):
             score += 25
             score_trace.append("+25 title")
             matched_on.append("title")
+        elif (
+            identifiers.title
+            and candidate.title
+            and _has_strong_identifier_evidence(identifiers, "title")
+            and _fields_contradict(candidate.title, identifiers.title)
+        ):
+            score -= 25
+            score_trace.append("-25 title_contradiction")
 
         if "artist" in matched_on and "title" in matched_on:
             score += 20
@@ -272,6 +288,18 @@ def _field_overlap(value: str | None, evidence_tokens: set[str]) -> "_Overlap":
 
     matches = sum(1 for token in field_tokens if token in evidence_tokens)
     return _Overlap(matches=matches, ratio=matches / len(field_tokens))
+
+
+def _fields_contradict(candidate_value: str, identifier_value: str) -> bool:
+    candidate_tokens = {
+        token for token in _tokenize(candidate_value) if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+    }
+    identifier_tokens = {
+        token
+        for token in _tokenize(identifier_value)
+        if token not in STOPWORDS and (len(token) >= 2 or token.isdigit())
+    }
+    return bool(candidate_tokens and identifier_tokens and not candidate_tokens & identifier_tokens)
 
 
 def _role_matches_field(identifiers: ExtractedIdentifiers, *, role: str, value: str | None) -> bool:

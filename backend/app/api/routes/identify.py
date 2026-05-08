@@ -11,10 +11,14 @@ from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, Identif
 
 router = APIRouter()
 UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
+_identify_service: IdentifyService | None = None
 
 
 def get_identify_service() -> IdentifyService:
-    return IdentifyService()
+    global _identify_service  # noqa: PLW0603
+    if _identify_service is None:
+        _identify_service = IdentifyService()
+    return _identify_service
 
 
 @router.post(

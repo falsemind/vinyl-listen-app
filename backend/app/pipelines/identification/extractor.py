@@ -24,7 +24,7 @@ class IdentifierExtractor:
 
     def extract(self, prepared_image: PreparedImage) -> ExtractedIdentifiers:
         detected_barcodes = self._barcode_detector.detect(prepared_image)
-        ocr_result = self._ocr_backend.extract(prepared_image, detected_barcodes=detected_barcodes)
+        ocr_result = self._ocr_backend.extract(prepared_image)
         identifiers = self._identifier_parser.parse(ocr_result.raw_text, barcodes=detected_barcodes)
         ocr_roles = analyze_ocr_layout(ocr_result.lines)
         return replace(

@@ -19,6 +19,9 @@ OCR_VARIANT_NAMES = (
     "label_catalog_band",
     "label_catalog_band_threshold",
     "label_catalog_band_threshold_low",
+    "label_bottom_band",
+    "label_bottom_band_threshold",
+    "label_bottom_band_threshold_low",
     "deskewed",
     "perspective_corrected",
     "label_crop",
@@ -71,6 +74,7 @@ class OcrTextLine:
     confidence: float | None
     source: str
     box: tuple[tuple[float, float], ...] | None = None
+    variant_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,9 @@ class OcrResult:
     source: str
     raw_text: str
     lines: tuple[OcrTextLine, ...] = ()
+    selected_variant_names: tuple[str, ...] = ()
+    model_name: str | None = None
+    elapsed_seconds: float | None = None
 
     def has_text(self) -> bool:
         return bool(self.raw_text.strip() or self.lines)

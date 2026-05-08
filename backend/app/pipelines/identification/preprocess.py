@@ -23,6 +23,7 @@ OCR_CROP_REGIONS = {
     "right_mid": (0.48, 0.28, 0.92, 0.68),
 }
 LABEL_CATALOG_BAND_REGION = (0.18, 0.50, 0.86, 0.74)
+LABEL_BOTTOM_BAND_REGION = (0.18, 0.68, 0.88, 0.90)
 OCR_COLOR_CHANNELS = {
     "red": 0,
     "blue": 2,
@@ -111,7 +112,7 @@ class ImageProcessor:
         )
         geometry_intermediate_images = tuple(
             (f"{index:02d}_geometry_{name}", image)
-            for index, (name, image) in enumerate(geometry_variant_images, start=16)
+            for index, (name, image) in enumerate(geometry_variant_images, start=13 + len(label_catalog_band_variants))
         )
         _write_debug_preprocess_images(
             output_dir=self._resolve_debug_output_dir(),
@@ -245,7 +246,29 @@ def _build_color_channel_variants(image: Image.Image) -> tuple[ImageVariant, ...
 
 
 def _build_label_catalog_band_variants(image: Image.Image, *, threshold: int) -> tuple[ImageVariant, ...]:
-    crop = _crop_region(image, LABEL_CATALOG_BAND_REGION)
+    catalog_band_variants = _build_label_band_variants(
+        image,
+        region=LABEL_CATALOG_BAND_REGION,
+        base_name="label_catalog_band",
+        threshold=threshold,
+    )
+    bottom_band_variants = _build_label_band_variants(
+        image,
+        region=LABEL_BOTTOM_BAND_REGION,
+        base_name="label_bottom_band",
+        threshold=threshold,
+    )
+    return (*catalog_band_variants, *bottom_band_variants)
+
+
+def _build_label_band_variants(
+    image: Image.Image,
+    *,
+    region: tuple[float, float, float, float],
+    base_name: str,
+    threshold: int,
+) -> tuple[ImageVariant, ...]:
+    crop = _crop_region(image, region)
     grayscale_image = ImageOps.autocontrast(ImageOps.grayscale(crop))
     grayscale_image = grayscale_image.filter(ImageFilter.UnsharpMask(radius=1, percent=250, threshold=1))
     grayscale_image = _upscale_crop_for_ocr(grayscale_image)
@@ -253,9 +276,9 @@ def _build_label_catalog_band_variants(image: Image.Image, *, threshold: int) ->
     threshold_low_image = _threshold_image(grayscale_image, threshold=max(1, threshold - LOW_THRESHOLD_OFFSET))
 
     return (
-        ImageVariant(name="label_catalog_band", data=_serialize_png(grayscale_image)),
-        ImageVariant(name="label_catalog_band_threshold", data=_serialize_png(threshold_image)),
-        ImageVariant(name="label_catalog_band_threshold_low", data=_serialize_png(threshold_low_image)),
+        ImageVariant(name=base_name, data=_serialize_png(grayscale_image)),
+        ImageVariant(name=f"{base_name}_threshold", data=_serialize_png(threshold_image)),
+        ImageVariant(name=f"{base_name}_threshold_low", data=_serialize_png(threshold_low_image)),
     )
 
 

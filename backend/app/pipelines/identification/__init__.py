@@ -14,6 +14,7 @@ from app.pipelines.identification.models import (
     PreparedImage,
 )
 from app.pipelines.identification.ocr_backends import (
+    MlxVlmOcrBackend,
     OcrBackend,
     OcrBackendError,
     OcrBackendTimeoutError,
@@ -36,6 +37,7 @@ __all__ = [
     "ImageProcessor",
     "ImageQualityMetrics",
     "ImageVariant",
+    "MlxVlmOcrBackend",
     "OcrBackend",
     "OcrBackendError",
     "OcrBackendTimeoutError",
