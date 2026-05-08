@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,7 +8,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(REPO_ROOT / ".env", BACKEND_ROOT / ".env"))
+    model_config = SettingsConfigDict(env_file=(REPO_ROOT / ".env", BACKEND_ROOT / ".env"), extra="ignore")
 
     database_url: str
 
@@ -21,10 +22,37 @@ class Settings(BaseSettings):
 
     api_rate_limit_per_minute: int = 60
 
-    identify_easyocr_enabled: bool = False
-    identify_easyocr_gpu: bool = False
-    identify_easyocr_min_confidence: float = 0.35
-    identify_easyocr_max_image_dimension: int = 800
+    identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
+    identify_ocr_tesseract_fallback_enabled: bool = True
+    identify_mlx_vlm_service_url: str | None = None
+    identify_mlx_vlm_endpoint_path: str = "/v1/chat/completions"
+    identify_mlx_vlm_model_name: str = "PaddlePaddle/PaddleOCR-VL-1.5"
+    identify_mlx_vlm_api_key: str | None = None
+    identify_mlx_vlm_timeout_seconds: float = 30.0
+    identify_mlx_vlm_max_image_dimension: int = 2048
+    identify_mlx_vlm_max_tokens: int = 768
+    identify_mlx_vlm_variant_names: str = "normalized,label_catalog_band,label_bottom_band,grayscale,sharpened"
+    identify_mlx_vlm_max_variants: int = 3
+    identify_mlx_vlm_prompt: str = (
+        "Read only visible text from this vinyl record label image. Return compact JSON only. "
+        "Use keys visible_lines, fields, catalog_numbers, and best_discogs_queries. "
+        "visible_lines must contain exact visible OCR lines. fields may contain artist, title, label, barcode, and "
+        "year only when visible. catalog_numbers must include visible catalog numbers such as DAT 095 or "
+        "SCI LIMITED 012. best_discogs_queries should contain 1-3 concise Discogs search queries combining the "
+        "strongest visible artist/title/catalog/label/track-title evidence. Do not use credit, copyright, mastering, "
+        "manufacturing, or production text in fields or best_discogs_queries, but keep those lines in visible_lines "
+        "when readable. Use null or [] for unknown values. Do not infer, guess, or add database metadata."
+    )
+    identify_paddleocr_device: str = "cpu"
+    identify_paddleocr_vl_rec_backend: str | None = "mlx-vlm-server"
+    identify_paddleocr_vl_rec_server_url: str | None = None
+    identify_paddleocr_vl_rec_api_model_name: str = "PaddlePaddle/PaddleOCR-VL-1.5"
+    identify_paddleocr_vl_rec_api_key: str | None = None
+    identify_paddleocr_vl_rec_max_concurrency: int | None = None
+    identify_paddleocr_timeout_seconds: float = 30.0
+    identify_paddleocr_max_image_dimension: int = 1280
+    identify_geometry_preprocess_enabled: bool = True
+    identify_geometry_preprocess_max_variants: int = 5
     identify_debug_preprocess_images_enabled: bool = False
     identify_debug_preprocess_images_dir: str = "identify_ocr_images"
 

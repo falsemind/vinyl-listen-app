@@ -218,7 +218,7 @@ Recommended libraries:
 
 ```
 Tesseract OCR
-EasyOCR
+PaddleOCR-VL
 ```
 
 Typical extracted text example:

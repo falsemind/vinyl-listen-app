@@ -9,14 +9,23 @@ WORKDIR /app/backend
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libzbar0 \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
         tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/pyproject.toml backend/poetry.lock /app/backend/
 
+ARG POETRY_EXTRAS=""
+
 RUN pip install --upgrade pip poetry \
     && poetry config virtualenvs.create false \
-    && poetry install --only main --no-root --no-interaction --no-ansi
+    && if [ -n "$POETRY_EXTRAS" ]; then \
+        poetry install --only main --extras "$POETRY_EXTRAS" --no-root --no-interaction --no-ansi; \
+    else \
+        poetry install --only main --no-root --no-interaction --no-ansi; \
+    fi
 
 COPY backend /app/backend
 

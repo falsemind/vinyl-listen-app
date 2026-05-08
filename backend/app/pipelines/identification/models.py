@@ -16,6 +16,17 @@ OCR_VARIANT_NAMES = (
     "color_blue_center_band",
     "color_red_right_mid",
     "color_blue_right_mid",
+    "label_catalog_band",
+    "label_catalog_band_threshold",
+    "label_catalog_band_threshold_low",
+    "label_bottom_band",
+    "label_bottom_band_threshold",
+    "label_bottom_band_threshold_low",
+    "deskewed",
+    "perspective_corrected",
+    "label_crop",
+    "otsu_threshold",
+    "morph_threshold",
 )
 
 
@@ -23,6 +34,19 @@ OCR_VARIANT_NAMES = (
 class ImageVariant:
     name: str
     data: bytes
+
+
+@dataclass(frozen=True)
+class ImageQualityMetrics:
+    width: int
+    height: int
+    min_dimension: int
+    blur_score: float
+    mean_luminance: float
+    dark_pixel_ratio: float
+    bright_pixel_ratio: float
+    glare_ratio: float
+    contrast: float
 
 
 @dataclass(frozen=True)
@@ -35,6 +59,7 @@ class PreparedImage:
     width: int
     height: int
     variants: tuple[ImageVariant, ...]
+    quality: ImageQualityMetrics | None = None
 
     def barcode_variants(self) -> tuple[ImageVariant, ...]:
         return tuple(variant for variant in self.variants if variant.name in BARCODE_VARIANT_NAMES)
@@ -49,6 +74,7 @@ class OcrTextLine:
     confidence: float | None
     source: str
     box: tuple[tuple[float, float], ...] | None = None
+    variant_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +82,9 @@ class OcrResult:
     source: str
     raw_text: str
     lines: tuple[OcrTextLine, ...] = ()
+    selected_variant_names: tuple[str, ...] = ()
+    model_name: str | None = None
+    elapsed_seconds: float | None = None
 
     def has_text(self) -> bool:
         return bool(self.raw_text.strip() or self.lines)
@@ -70,6 +99,16 @@ class OcrRoleEvidence:
 
 
 @dataclass(frozen=True)
+class IdentifierEvidence:
+    kind: Literal["barcode", "catalog_number", "artist", "title", "year", "label", "text_fragment"]
+    value: str
+    source: str
+    confidence: float | None = None
+    role: str | None = None
+    box: tuple[tuple[float, float], ...] | None = None
+
+
+@dataclass(frozen=True)
 class ExtractedIdentifiers:
     barcodes: tuple[str, ...] = ()
     catalog_numbers: tuple[str, ...] = ()
@@ -81,6 +120,7 @@ class ExtractedIdentifiers:
     raw_text: str = ""
     ocr_evidence: tuple[OcrTextLine, ...] = ()
     ocr_roles: tuple[OcrRoleEvidence, ...] = ()
+    identifier_evidence: tuple[IdentifierEvidence, ...] = ()
 
     def has_signals(self) -> bool:
         return bool(
@@ -109,3 +149,4 @@ class IdentifyCandidate:
     match_source: Literal["local", "discogs"]
     matched_on: tuple[str, ...] = ()
     confidence: float = 0.0
+    score_trace: tuple[str, ...] = ()

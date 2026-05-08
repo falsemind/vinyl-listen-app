@@ -338,3 +338,6 @@ site/
 
 # local database files (if any)
 *.db
+
+# project related local research
+docs/research/

@@ -65,8 +65,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-easyocr = [
-    "easyocr>=1.7.0",
+paddleocr = [
+    "paddlepaddle>=3.3.0,<4.0.0",
+    "paddleocr[doc-parser]>=3.3.0",
+]
+opencv = [
+    "opencv-python-headless>=4.10.0",
+    "numpy>=1.26.0",
 ]
 
 [tool.poetry.group.dev.dependencies]
