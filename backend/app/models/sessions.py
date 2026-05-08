@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -15,6 +15,10 @@ class Sessions(Base):
     """
 
     __tablename__ = "sessions"
+    __table_args__ = (
+        Index("idx_sessions_release_id", "release_id"),
+        Index("idx_sessions_played_at", "played_at"),
+    )
 
     # Primary key – a UUID stored as a string.
     id: Mapped[str] = mapped_column(
@@ -24,7 +28,7 @@ class Sessions(Base):
     )
 
     # Foreign key to releases table.
-    release_id: Mapped[str] = mapped_column(String, nullable=False)
+    release_id: Mapped[str] = mapped_column(String, ForeignKey("releases.id"), nullable=False)
 
     # Optional rating (1-5).
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import ARRAY, BigInteger, DateTime, Integer, String, func
+from sqlalchemy import ARRAY, BigInteger, DateTime, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -17,6 +17,12 @@ class Releases(Base):
     """
 
     __tablename__ = "releases"
+    __table_args__ = (
+        Index("idx_releases_artist", "artist"),
+        Index("idx_releases_title", "title"),
+        Index("idx_releases_genres", "genres", postgresql_using="gin"),
+        Index("idx_releases_styles", "styles", postgresql_using="gin"),
+    )
 
     # Primary key – a UUID stored as a string for portability.
     id: Mapped[str] = mapped_column(
@@ -26,7 +32,7 @@ class Releases(Base):
     )
 
     # Discogs identifier – unique.
-    discogs_release_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    discogs_release_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
 
     # Core metadata.
     artist: Mapped[str] = mapped_column(String, nullable=False)

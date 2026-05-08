@@ -474,6 +474,74 @@ Design considerations to explore:
 - lightweight analytics visuals
     
 - clear record identification confirmation
-    
+
+# High Level Color Design Considearations
+
+## Quick Reference: iOS vs Android Standard Colors
+
+| Color Type | iOS (HIG) | Android (Material 3) |
+| :--- | :--- | :--- |
+| **System Blue**| `#007AFF`| `#2196F3` |
+| **System Green**| `#34C759` | `#4CAF50` |
+| **System Red** | `#FF3B30` | `#F44336` |
+| **Dark Mode BG**| `#000000` | `#121212` |
+
+## Dark Mode 2.0: Optimization for AMOLED Screens
+
+### True Black vs. Rich Gray
+
+Pure black (#000000) behaves differently on AMOLED displays.
+
+| Pure Black | Rich Charcoal |
+| :--- | :--- |
+| Black pixels consume no power on OLED screens| Reduces eye strain while maintaining efficiency |
+
+Modern apps prefer charcoal tones like `#1E1E1E` or `#333333` to balance comfort and battery savings.
+
+### Avoiding Visual Smearing
+High-contrast transitions on pure black backgrounds can cause motion blur during scrolling.
+
+Using controlled grays and softened highlights maintains smooth visual performance.
+
+### Functional & Semantic Color Mapping
+
+#### Success — Confirmation
+
+Why Mint Green `#98FF98` over pure green color:
+- Feels modern and lightweight
+- Reduces neon glare in dark mode
+- Communicates without aggression
+
+#### Error — Intervention
+
+Compared to pure red, Coral Red(orange undertone):
+
+- Still captures attention immediately
+- Feels more constructive, less punitive
+- Reduces emotional friction
+
+#### Warning — Attention
+
+High-luminance Amber color:
+
+- Pair with black text on light backgrounds
+- Ensure WCAG contrast compliance
+- Alert without inducing panic
+
+#### Interactive — Action
+
+Consistent brand color builds muscle memory:
+
+- Users learn "this color = clickable"
+- Reduces cognitive load
+- Increases interaction speed
+
+### The 60-30-10 Rule for Mobile Palettes
+
+A professional mobile palette follows a proven structure that maintains clarity while allowing emphasis.
+
+| 60% | 30% | 10% |
+| :--- | :--- | :--- |
+| **Primary Neutrals (60%)** Backgrounds, surfaces, structure | **Secondary Color (30%)** Supporting UI, headers, cards | **Accent Color (10%)** CTAs, highlights, focal points |
 
 The MVP prioritizes **speed of logging a listening session** over deep record management features.

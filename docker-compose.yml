@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: vinyl_postgres
+    environment:
+      POSTGRES_DB: vinyl
+      POSTGRES_USER: vinyl
+      POSTGRES_PASSWORD: vinyl
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_18_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vinyl -d vinyl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        POETRY_EXTRAS: ${BACKEND_DOCKER_POETRY_EXTRAS:-}
+    container_name: vinyl_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl
+      DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-60}
+      IDENTIFY_OCR_BACKEND: ${IDENTIFY_OCR_BACKEND:-auto}
+      IDENTIFY_MLX_VLM_SERVICE_URL: ${IDENTIFY_MLX_VLM_SERVICE_URL:-http://host.docker.internal:8111}
+      IDENTIFY_MLX_VLM_ENDPOINT_PATH: ${IDENTIFY_MLX_VLM_ENDPOINT_PATH:-/v1/chat/completions}
+      IDENTIFY_MLX_VLM_MODEL_NAME: ${IDENTIFY_MLX_VLM_MODEL_NAME:-PaddlePaddle/PaddleOCR-VL-1.5}
+      IDENTIFY_MLX_VLM_API_KEY: ${IDENTIFY_MLX_VLM_API_KEY:-}
+      IDENTIFY_MLX_VLM_TIMEOUT_SECONDS: ${IDENTIFY_MLX_VLM_TIMEOUT_SECONDS:-30}
+      IDENTIFY_MLX_VLM_MAX_IMAGE_DIMENSION: ${IDENTIFY_MLX_VLM_MAX_IMAGE_DIMENSION:-2048}
+      IDENTIFY_MLX_VLM_MAX_TOKENS: ${IDENTIFY_MLX_VLM_MAX_TOKENS:-768}
+      IDENTIFY_MLX_VLM_VARIANT_NAMES: ${IDENTIFY_MLX_VLM_VARIANT_NAMES:-normalized,label_catalog_band,label_bottom_band,grayscale,sharpened}
+      IDENTIFY_MLX_VLM_MAX_VARIANTS: ${IDENTIFY_MLX_VLM_MAX_VARIANTS:-3}
+      IDENTIFY_GEOMETRY_PREPROCESS_ENABLED: ${IDENTIFY_GEOMETRY_PREPROCESS_ENABLED:-false}
+      IDENTIFY_DEBUG_PREPROCESS_IMAGES_ENABLED: ${IDENTIFY_DEBUG_PREPROCESS_IMAGES_ENABLED:-false}
+      IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR: ${IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR:-identify_ocr_images}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: ${PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK:-True}
+    volumes:
+      - ./backend/identify_ocr_images:/app/backend/identify_ocr_images
+    ports:
+      - "8000:8000"
+    command:
+      - /bin/sh
+      - -c
+      - alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug --access-log
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/').read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres_18_data:

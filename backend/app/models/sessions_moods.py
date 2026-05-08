@@ -25,7 +25,7 @@ class SessionsMoods(Base):
     )
 
     # Mood label – unique.
-    name: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
     # Indicates if this mood was defined by a user.
     is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
