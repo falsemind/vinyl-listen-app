@@ -339,5 +339,6 @@ site/
 # local database files (if any)
 *.db
 
-# project related local research
+# project related local data
 docs/research/
+docs/product/app-screens-mockups/
