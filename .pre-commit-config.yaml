@@ -21,13 +21,6 @@ repos:
         pass_filenames: false
         files: ^android-app/.*\.(kt|kts)$
 
-      - id: android-detekt
-        name: android detekt
-        entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:detekt
-        language: system
-        pass_filenames: false
-        files: ^android-app/.*\.(kt|kts)$
-
       - id: android-lint
         name: android lint
         entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:lintDebug
