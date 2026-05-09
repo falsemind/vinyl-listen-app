@@ -66,6 +66,39 @@ def test_identifier_parser_adds_corrected_catalog_variant_for_common_ocr_confusi
     assert identifiers.catalog_numbers == ("SCRUBO19", "SCRUB019")
 
 
+def test_identifier_parser_adds_known_label_catalog_prefix_variant() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "SYSTEM",
+                "MUSIC",
+                "SYSTEM022",
+                "SLEEPER",
+                "A. ORAM MODE",
+                "B. LEVEL UP",
+                "Written & produced by A. Fox",
+                "Mastered by Beau Thomas at Ten Eight Seven Mastering © System Music 2016",
+                "Mastered by Beau Thomas at Ten Eight Seven Mastering © System Music 2018",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("SYSTEM022", "SYSTM022")
+    assert identifiers.artist == "SLEEPER"
+    assert identifiers.title == "ORAM MODE"
+    assert "LEVEL UP" in identifiers.text_fragments
+
+
+def test_identifier_parser_combines_known_prefix_and_suffix_catalog_repairs() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse("SYSTEMO22")
+
+    assert identifiers.catalog_numbers == ("SYSTEMO22", "SYSTEM022", "SYSTM022")
+
+
 def test_identifier_parser_extracts_year_and_combined_label_from_screenshot_style_ocr() -> None:
     parser = IdentifierParser()
 

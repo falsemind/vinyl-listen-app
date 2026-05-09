@@ -149,12 +149,21 @@ class IdentifyService:
         )
         local_candidates = self._find_local_candidates(db, identifiers)
         if local_candidates:
-            logger.info("Returning local identify matches filename=%s count=%s", filename, len(local_candidates))
+            logger.info(
+                "Returning local identify matches filename=%s count=%s discogs_query_count=0",
+                filename,
+                len(local_candidates),
+            )
             return IdentifyResult(candidates=tuple(self._rank_candidates(local_candidates, identifiers)))
 
-        external_candidates = self._find_external_candidates(identifiers)
-        logger.info("Returning Discogs identify matches filename=%s count=%s", filename, len(external_candidates))
-        return IdentifyResult(candidates=tuple(self._rank_candidates(external_candidates, identifiers)))
+        external_result = self._find_external_candidates(identifiers)
+        logger.info(
+            "Returning Discogs identify matches filename=%s count=%s discogs_query_count=%s",
+            filename,
+            len(external_result.candidates),
+            external_result.query_count,
+        )
+        return IdentifyResult(candidates=tuple(self._rank_candidates(external_result.candidates, identifiers)))
 
     def _validate_upload(
         self,
@@ -214,8 +223,9 @@ class IdentifyService:
 
         return [self._map_local_release(release) for release in release_map.values()]
 
-    def _find_external_candidates(self, identifiers: ExtractedIdentifiers) -> list[IdentifyCandidate]:
+    def _find_external_candidates(self, identifiers: ExtractedIdentifiers) -> "_ExternalSearchResult":
         candidate_map: dict[int, IdentifyCandidate] = {}
+        query_count = 0
 
         for search_step in self._build_search_plan(identifiers):
             if candidate_map and search_step.strategy not in {"catalog_number", "ocr_role_context"}:
@@ -231,10 +241,11 @@ class IdentifyService:
                     break
 
             logger.info("Searching Discogs identify strategy=%s", search_step.strategy)
+            query_count += 1
             payload = self._execute_search_step(search_step)
             candidates = self._map_external_candidates(payload.get("results", []))
             if candidates and search_step.strategy == "barcode":
-                return candidates
+                return _ExternalSearchResult(candidates=candidates, query_count=query_count)
 
             for candidate in candidates:
                 candidate_map.setdefault(candidate.discogs_release_id, candidate)
@@ -246,7 +257,7 @@ class IdentifyService:
                 )
                 break
 
-        return list(candidate_map.values())
+        return _ExternalSearchResult(candidates=list(candidate_map.values()), query_count=query_count)
 
     def _rank_candidates(
         self,
@@ -352,6 +363,12 @@ class IdentifyService:
             cover_image_url=_clean_string(result.get("cover_image")) or _clean_string(result.get("thumb")),
             match_source="discogs",
         )
+
+
+@dataclass(frozen=True)
+class _ExternalSearchResult:
+    candidates: list[IdentifyCandidate]
+    query_count: int
 
 
 @dataclass(frozen=True)
