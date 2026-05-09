@@ -191,6 +191,8 @@ The optional `paddleocr_vl` path may keep heavier Paddle dependencies, but those
 
 *(Goal: use image similarity to verify top candidates later, not to replace OCR search.)*
 
+Status: deferred for now. Do not include Phase 5 visual verification in the Phase 4 implementation pass.
+
 | Task ID | Module/Component | Description | Dependencies | Deliverable |
 | :--- | :--- | :--- | :--- | :--- |
 | **5.1** | Candidate Image Fetch/Cache | Reuse Discogs cover image URLs for top candidates with bounded caching. | Discogs result data | Candidate images available for verification. |
