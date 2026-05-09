@@ -143,6 +143,17 @@ def test_mlx_vlm_backend_posts_openai_request_and_normalizes_json_response() -> 
     assert image_url.startswith("data:image/png;base64,")
 
 
+def test_tesseract_backend_records_elapsed_time() -> None:
+    backend = ocr_backends.TesseractOcrBackend(StubOcrExtractor())
+
+    result = backend.extract(_build_prepared_image(width=100, height=100))
+
+    assert result.source == "tesseract"
+    assert result.raw_text == "Cat No: TOVRI 001"
+    assert result.elapsed_seconds is not None
+    assert result.elapsed_seconds >= 0
+
+
 def test_mlx_vlm_backend_sweeps_bounded_variants_and_merges_structured_identity() -> None:
     calls: list[str] = []
 

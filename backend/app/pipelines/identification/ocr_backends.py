@@ -64,11 +64,16 @@ class TesseractOcrBackend:
         self._extractor = extractor or OcrExtractor()
 
     def extract(self, prepared_image: PreparedImage) -> OcrResult:
+        started_at = time.perf_counter()
         raw_text = self._extractor.extract(prepared_image)
+        elapsed = time.perf_counter() - started_at
+        lines = tuple(OcrTextLine(text=line, confidence=None, source="tesseract") for line in _clean_lines(raw_text))
+        logger.info("Tesseract OCR extraction complete lines=%s elapsed=%.3fs", len(lines), elapsed)
         return OcrResult(
             source="tesseract",
             raw_text=raw_text,
-            lines=tuple(OcrTextLine(text=line, confidence=None, source="tesseract") for line in _clean_lines(raw_text)),
+            lines=lines,
+            elapsed_seconds=elapsed,
         )
 
 
@@ -353,14 +358,32 @@ class OcrCascade:
             if self._fallback_backend is None:
                 raise
 
-            logger.info("Running OCR fallback because primary backend failed: %s", error)
-            return self._fallback_backend.extract(prepared_image)
+            fallback_reason = f"primary_failed:{type(error).__name__}"
+            logger.info("Running OCR fallback reason=%s detail=%s", fallback_reason, error)
+            fallback_result = self._fallback_backend.extract(prepared_image)
+            _log_ocr_selection(fallback_result, fallback_reason=fallback_reason)
+            return fallback_result
 
         if result.has_text() or self._fallback_backend is None:
+            _log_ocr_selection(result, fallback_reason=None)
             return result
 
-        logger.info("Running OCR fallback because primary backend returned no text.")
-        return self._fallback_backend.extract(prepared_image)
+        fallback_reason = "primary_empty_text"
+        logger.info("Running OCR fallback reason=%s", fallback_reason)
+        fallback_result = self._fallback_backend.extract(prepared_image)
+        _log_ocr_selection(fallback_result, fallback_reason=fallback_reason)
+        return fallback_result
+
+
+def _log_ocr_selection(result: OcrResult, *, fallback_reason: str | None) -> None:
+    logger.info(
+        "OCR backend selected source=%s model=%s elapsed=%.3fs fallback_reason=%s selected_variants=%s",
+        result.source,
+        result.model_name or "-",
+        result.elapsed_seconds if result.elapsed_seconds is not None else -1.0,
+        fallback_reason or "-",
+        ",".join(result.selected_variant_names) or "-",
+    )
 
 
 def build_default_ocr_cascade(ocr_extractor: OcrExtractor | None = None) -> OcrCascade:

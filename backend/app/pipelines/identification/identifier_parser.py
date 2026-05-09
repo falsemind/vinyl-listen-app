@@ -166,6 +166,9 @@ CATALOG_SUFFIX_OCR_CORRECTIONS = {
     **CATALOG_OCR_CORRECTIONS,
     **CATALOG_TERMINAL_OCR_CORRECTIONS,
 }
+KNOWN_CATALOG_PREFIX_OCR_CORRECTIONS = {
+    "SYSTEM": "SYSTM",
+}
 
 
 class IdentifierParser:
@@ -661,7 +664,7 @@ def _looks_like_company_year_catalog_noise(value: str) -> bool:
         return False
 
     tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
-    return bool(tokens & {"production", "productions", "records", "recordings", "copyright"})
+    return bool(tokens & {"music", "production", "productions", "records", "recordings", "copyright"})
 
 
 def _normalize_credit_line(value: str) -> str:
@@ -943,7 +946,17 @@ def _catalog_number_variants(value: str) -> tuple[str, ...]:
         if base_variant is None:
             continue
 
-        for candidate in (base_variant, _correct_catalog_number_ocr(base_variant)):
+        candidate_variants = [base_variant]
+        corrected_catalog = _correct_catalog_number_ocr(base_variant)
+        if corrected_catalog is not None:
+            candidate_variants.append(corrected_catalog)
+
+        for candidate in tuple(candidate_variants):
+            corrected_prefix = _correct_known_catalog_prefix_ocr(candidate)
+            if corrected_prefix is not None:
+                candidate_variants.append(corrected_prefix)
+
+        for candidate in candidate_variants:
             if candidate is None:
                 continue
 
@@ -1199,6 +1212,18 @@ def _correct_catalog_number_ocr(value: str) -> str | None:
     if not changed:
         return _correct_terminal_catalog_suffix(value)
     return "".join(corrected_characters)
+
+
+def _correct_known_catalog_prefix_ocr(value: str) -> str | None:
+    match = re.fullmatch(r"([A-Z]+)(\d{2,6}(?:LP|EP)?)", value, re.IGNORECASE)
+    if match is None:
+        return None
+
+    prefix, suffix = match.groups()
+    corrected_prefix = KNOWN_CATALOG_PREFIX_OCR_CORRECTIONS.get(prefix.upper())
+    if corrected_prefix is None:
+        return None
+    return f"{corrected_prefix}{suffix.upper()}"
 
 
 def _catalog_release_type_suffix_start(value: str) -> int | None:

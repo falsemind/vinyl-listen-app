@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "name": "harmonyLib",
+      "image": "images/harmonyLib.png",
+      "content_type": "image/png",
+      "expected": {
+        "artist": "Harmony & Kid Lib",
+        "catalog_numbers": ["DAT 095"],
+        "query_fragments": ["HARMONY KID LIB DAT 095"]
+      }
+    },
+    {
+      "name": "SCILIMITED012",
+      "image": "images/SCILIMITED012.png",
+      "content_type": "image/png",
+      "expected": {
+        "artist": "BAILEY",
+        "title": "Shaka",
+        "catalog_numbers": ["SCI LIMITED 012"]
+      }
+    }
+  ]
+}
