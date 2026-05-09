@@ -946,11 +946,17 @@ def _catalog_number_variants(value: str) -> tuple[str, ...]:
         if base_variant is None:
             continue
 
-        for candidate in (
-            base_variant,
-            _correct_catalog_number_ocr(base_variant),
-            _correct_known_catalog_prefix_ocr(base_variant),
-        ):
+        candidate_variants = [base_variant]
+        corrected_catalog = _correct_catalog_number_ocr(base_variant)
+        if corrected_catalog is not None:
+            candidate_variants.append(corrected_catalog)
+
+        for candidate in tuple(candidate_variants):
+            corrected_prefix = _correct_known_catalog_prefix_ocr(candidate)
+            if corrected_prefix is not None:
+                candidate_variants.append(corrected_prefix)
+
+        for candidate in candidate_variants:
             if candidate is None:
                 continue
 
