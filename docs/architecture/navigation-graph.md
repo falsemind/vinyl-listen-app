@@ -28,11 +28,9 @@ Home
  │
  ├── RecordDetail
  │      └── SessionLogging
- │
- ├── Analytics
- │
- └── Settings
 ```
+
+Analytics and Settings are not active MVP routes in the current Android prototype scope. Bottom navigation may show placeholder tabs for future work, but those tabs should not imply implemented screens or backend support yet.
 
 ---
 
@@ -47,9 +45,50 @@ Home
 |Manual Search|`manual_search`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
-|Analytics|`analytics`|
-|Settings|`settings`|
 ---
+
+## Backend API Alignment
+
+Navigation routes are client-side Compose routes. They are not backend endpoint paths.
+
+`releaseId` means the backend's internal release identifier, returned as `release_id`. It is not the Discogs release id.
+
+Current backend endpoints used by these routes:
+
+|Client flow|Backend API|
+|---|---|
+|Identify uploaded/captured image|`POST /api/v1/identify`|
+|Import a Discogs release before logging|`POST /api/v1/releases/import`|
+|Load record detail metadata|`GET /api/v1/releases/{release_id}`|
+|Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
+|Create listening session|`POST /api/v1/sessions`|
+|Load one session by id|`GET /api/v1/sessions/{session_id}`|
+
+`POST /api/v1/identify` returns candidates with both:
+
+```
+discogs_release_id
+release_id
+```
+
+If `release_id` is present, the app can navigate to:
+
+```
+session_logging/{releaseId}
+record_detail/{releaseId}
+```
+
+If only `discogs_release_id` is available, the app must import the release first:
+
+```
+POST /api/v1/releases/import
+then
+release_id returned
+then
+session_logging/{releaseId}
+```
+
+Manual Search is part of the Android prototype UI, but the backend does not currently expose a dedicated manual Discogs search endpoint. Until that endpoint exists, Manual Search should use mocked results, local prototype data, or a later backend route.
 
 # Screen Navigation Details
 
@@ -70,8 +109,8 @@ home
 |Log Listening Session|`capture_record`|
 |Tap recent session|`record_detail/{releaseId}`|
 |Tap record|`record_detail/{releaseId}`|
-|Open analytics|`analytics`|
-|Open settings|`settings`|
+|Tap future Analytics/Stats tab|placeholder / no-op|
+|Tap future Settings tab|placeholder / no-op|
 ---
 
 # 2. Capture Record Screen
@@ -234,7 +273,7 @@ session history
 
 ---
 
-# 8. Analytics Screen
+# Future Placeholder: Analytics Screen
 
 ### Route
 
@@ -244,7 +283,9 @@ analytics
 
 ### Purpose
 
-Display listening statistics and charts.
+Future screen for listening statistics and charts.
+
+Analytics is not part of the current Android prototype scope. Add this route after the backend analytics work is ready.
 
 ### Navigation
 
@@ -255,7 +296,7 @@ Display listening statistics and charts.
 
 ---
 
-# 9. Settings Screen
+# Future Placeholder: Settings Screen
 
 ### Route
 
@@ -265,7 +306,9 @@ settings
 
 ### Purpose
 
-Placeholder screen included in MVP for basic application information.
+Future screen for app configuration and basic application information.
+
+Settings is not part of the current Android prototype scope.
 
 ### Displays
 
@@ -294,7 +337,7 @@ Back | home
 
 |Argument|Type|Description|
 |---|---|---|
-|releaseId|String|Discogs release identifier|
+|releaseId|String|Internal backend release identifier returned as `release_id`|
 |image_uri|String|Local URI of captured photo|
 
 ---
