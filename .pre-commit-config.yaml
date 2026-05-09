@@ -1,17 +1,43 @@
 repos:
-
   - repo: https://github.com/psf/black
     rev: 24.4.2
     hooks:
       - id: black
+        files: ^backend/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.4
     hooks:
       - id: ruff
         args: ["--fix"]
-        
-exclude: |
-  (?x)^(
-      android-app/
-  )
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: android-ktlint
+        name: android ktlint
+        entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:ktlintCheck
+        language: system
+        pass_filenames: false
+        files: ^android-app/.*\.(kt|kts)$
+
+      - id: android-detekt
+        name: android detekt
+        entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:detekt
+        language: system
+        pass_filenames: false
+        files: ^android-app/.*\.(kt|kts)$
+
+      - id: android-lint
+        name: android lint
+        entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:lintDebug
+        language: system
+        pass_filenames: false
+        files: ^android-app/.*\.(kt|kts|java|xml|gradle|properties|toml|pro)$
+
+      - id: android-typecheck
+        name: android typecheck
+        entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:compileDebugKotlin
+        language: system
+        pass_filenames: false
+        files: ^android-app/.*\.(kt|kts|java|gradle|properties|toml)$
