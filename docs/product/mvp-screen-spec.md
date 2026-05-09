@@ -132,8 +132,7 @@ Example messages:
 ```
 Uploading image
 Extracting text
-Searching Discogs
-Ranking matches
+Searching candidates
 ```
 
 ## Navigation
@@ -475,7 +474,7 @@ Design considerations to explore:
     
 - clear record identification confirmation
 
-# High Level Color Design Considearations
+# High Level Color Design Considerations
 
 ## Quick Reference: iOS vs Android Standard Colors
 
