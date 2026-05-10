@@ -22,7 +22,7 @@ Use a true dark UI with muted, record-collection style accents. The design is no
 
 | Token | Hex / RGBA | Use |
 | --- | --- | --- |
-| `AppBackground` | `#121212` | Main screen background |
+| `AppBackground` | `#161616` | Main screen background |
 | `SurfacePrimary` | `#1e1e1e` | Cards, inputs, result rows, primary dark panels |
 | `SurfaceSecondary` | `#252525` | Bottom nav, secondary fills, inactive pills |
 | `BorderDefault` | `#3a3a3a` | Card/input/button outlines |
