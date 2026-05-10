@@ -73,7 +73,7 @@ fun RecordDetailScreen(
                 RecordDetailStatsRow(record = record)
                 SectionTitle("Mood Summary")
                 RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId))
-                SectionTitle("Listening History")
+                SectionTitle("Recent Sessions")
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
                     recordDetailHistory(record.releaseId).forEach { history ->
                         RecordHistoryCard(history = history)
@@ -472,7 +472,9 @@ private fun recordDetailMoodData(releaseId: String): List<RecordMoodSummary> =
             listOf(
                 RecordMoodSummary("Late night", 4, VinylColors.AccentPurple),
                 RecordMoodSummary("Focused", 3, VinylColors.AccentGreen),
+                RecordMoodSummary("Calm", 2, VinylColors.AccentGreen),
                 RecordMoodSummary("Social", 1, VinylColors.AccentOrange),
+                RecordMoodSummary("Background", 1, VinylColors.AccentPurple),
             )
 
         "release-003" ->
@@ -480,6 +482,8 @@ private fun recordDetailMoodData(releaseId: String): List<RecordMoodSummary> =
                 RecordMoodSummary("Calm", 4, VinylColors.AccentGreen),
                 RecordMoodSummary("Nostalgic", 4, VinylColors.AccentPurple),
                 RecordMoodSummary("Relaxed", 2, VinylColors.AccentOrange),
+                RecordMoodSummary("Focused", 2, VinylColors.AccentGreen),
+                RecordMoodSummary("Melancholic", 1, VinylColors.AccentPurple),
             )
 
         else ->
@@ -487,6 +491,8 @@ private fun recordDetailMoodData(releaseId: String): List<RecordMoodSummary> =
                 RecordMoodSummary("Calm", 5, VinylColors.AccentGreen),
                 RecordMoodSummary("Focused", 3, VinylColors.AccentOrange),
                 RecordMoodSummary("Nostalgic", 2, VinylColors.AccentPurple),
+                RecordMoodSummary("Energetic", 2, VinylColors.AccentOrange),
+                RecordMoodSummary("Background", 1, VinylColors.AccentGreen),
             )
     }
 
