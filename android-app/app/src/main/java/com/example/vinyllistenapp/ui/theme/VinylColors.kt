@@ -3,7 +3,7 @@ package com.example.vinyllistenapp.ui.theme
 import androidx.compose.ui.graphics.Color
 
 object VinylColors {
-    val AppBackground = Color(0xFF121212)
+    val AppBackground = Color(0xFF161616)
     val SurfacePrimary = Color(0xFF1E1E1E)
     val SurfaceSecondary = Color(0xFF252525)
     val BorderDefault = Color(0xFF3A3A3A)

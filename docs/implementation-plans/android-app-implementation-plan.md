@@ -118,7 +118,7 @@ Manual Search is UI-only for the current prototype because the backend does not 
 | **4.1** | Home | Implement recent sessions, collection snapshot, top records, bottom nav, and floating `Log Session` glass button. | Phase 2, 3 | Home matches mockups |
 | **4.2** | Capture Record | Implement camera-preview layout shell, hint card, `Take Photo`, `Upload`, and `Manual Search`. | Phase 2, 3 | Capture screen matches mockup |
 | **4.3** | Processing | Implement progress states: uploading image, extracting text, searching candidates. | Phase 2, 3 | Processing screen matches mockup |
-| **4.4** | Match Confirmation | Implement candidate cards, confidence chips, confirm buttons, details affordance, show more, manual search. | Phase 2, 3 | Match screen matches mockup |
+| **4.4** | Match Confirmation | Implement candidate cards, confidence chips, confirm buttons, details affordance placeholder, show more, manual search. The details affordance should represent pre-confirmation candidate/release details, not the saved record detail screen. | Phase 2, 3 | Match screen matches mockup |
 | **4.5** | Manual Search | Implement fields, search CTA, and mock result list. | Phase 2, 3 | Manual search screen matches mockup |
 | **4.6** | Session Logging | Implement release summary, side selector, rating stars, mood chips, custom mood affordance, notes, cancel/save actions. | Phase 2, 3 | Logging screen matches mockup |
 | **4.7** | Record Detail | Implement record metadata, Discogs button, stats cards, mood bars, history list, floating `Add Session`, bottom home action. | Phase 2, 3 | Record detail screen matches mockups |
@@ -137,6 +137,7 @@ Manual Search is UI-only for the current prototype because the backend does not 
 | **5.5** | Release Import Flow | If identify candidate has no `release_id`, call `POST /api/v1/releases/import` before navigating to logging/detail. | 5.4 | Correct Discogs-to-internal ID flow |
 | **5.6** | Session Flow | Create session with `POST /api/v1/sessions`; then navigate to `record_detail/{releaseId}`. | 5.3, 5.5 | Real session logging |
 | **5.7** | Record Detail Flow | Load release metadata and session history via release endpoints. | 5.3 | Detail screen shows backend data |
+| **5.8** | Candidate Detail Flow | Replace the Match Confirmation details placeholder with candidate release details before confirmation: Discogs metadata, catalog/format data, and match evidence from identify/OCR. Keep this separate from saved Record Detail, which includes listening stats and session history. | 5.3, 5.4, 5.5 | Candidate details clarify a match before import/logging |
 
 ### Phase 6: Error, Empty, And Loading States
 
