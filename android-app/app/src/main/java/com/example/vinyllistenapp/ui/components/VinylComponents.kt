@@ -21,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.domain.ConfidenceLevel
 import com.example.vinyllistenapp.domain.confidenceLevel
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -98,11 +100,19 @@ fun FloatingGlassButton(
                 VinylColors.AccentGreen.copy(alpha = 0.60f),
             ),
         )
+    val glassModifier =
+        modifier
+            .height(56.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = VinylShapes.Floating,
+                ambientColor = VinylColors.ShadowBlack,
+                spotColor = VinylColors.ShadowBlack,
+            )
 
     Box(
         modifier =
-            modifier
-                .height(56.dp)
+            glassModifier
                 .clip(VinylShapes.Floating)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
@@ -228,16 +238,24 @@ fun RatingStars(
     rating: Int,
     modifier: Modifier = Modifier,
     maxRating: Int = 5,
+    compact: Boolean = false,
 ) {
+    val starStyle =
+        if (compact) {
+            MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 16.sp)
+        } else {
+            MaterialTheme.typography.titleMedium
+        }
+
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else VinylSpacing.SpaceXs),
     ) {
         repeat(maxRating) { index ->
             Text(
                 text = if (index < rating) "★" else "☆",
                 color = if (index < rating) VinylColors.AccentOrange else VinylColors.TextSecondary,
-                style = MaterialTheme.typography.titleMedium,
+                style = starStyle,
             )
         }
     }

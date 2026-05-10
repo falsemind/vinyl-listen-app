@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,10 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.MaterialTheme
@@ -28,8 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -67,33 +73,54 @@ fun HomeScreen(
             FloatingGlassButton(
                 label = "Log Session",
                 onClick = onLogSession,
-                modifier = Modifier.padding(bottom = VinylSpacing.SpaceLg),
+                modifier =
+                    Modifier.padding(
+                        end = VinylSpacing.SpaceXl,
+                        bottom = VinylSpacing.SpaceLg,
+                    ),
             )
         },
-        floatingActionButtonPosition = FabPosition.Center,
+        floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
         ScreenContent(
             title = "Vinyl Listen",
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
         ) {
-            SectionTitle("Collection")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-            ) {
-                SnapshotCard("Records", MockVinylData.records.size.toString(), Modifier.weight(1f))
-                SnapshotCard("Sessions", MockVinylData.recentSessions.size.toString(), Modifier.weight(1f))
-            }
-
-            SectionTitle("Recent Sessions")
+            SectionHeader("Recent Sessions", action = "View All")
             MockVinylData.recentSessions.forEach { session ->
                 SessionRow(session, onClick = { onOpenRecord(session.releaseId) })
             }
 
+            SectionTitle("Collection Snapshot")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            ) {
+                SnapshotCard(
+                    label = "Total Sessions",
+                    value = "128",
+                    modifier = Modifier.weight(1f),
+                    accentColor = VinylColors.AccentGreen,
+                )
+                SnapshotCard(
+                    label = "Records This Month",
+                    value = "24",
+                    modifier = Modifier.weight(1f),
+                    accentColor = VinylColors.AccentOrange,
+                )
+            }
+
             SectionTitle("Top Records")
-            MockVinylData.records.forEach { record ->
-                RecordRow(record, onClick = { onOpenRecord(record.releaseId) })
+            MockVinylData.records.take(2).forEachIndexed { index, record ->
+                TopRecordRow(
+                    record = record,
+                    plays = if (index == 0) 12 else 2,
+                    averageRating = if (index == 0) "4.8" else "4.0",
+                    badge = if (index == 0) "Most Played" else "Least Played",
+                    badgeColor = if (index == 0) VinylColors.AccentGreen else VinylColors.AccentOrange,
+                    onClick = { onOpenRecord(record.releaseId) },
+                )
             }
         }
     }
@@ -360,13 +387,49 @@ private fun SectionTitle(label: String) {
 }
 
 @Composable
+private fun SectionHeader(
+    label: String,
+    action: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionTitle(label)
+        Text(
+            text = action,
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 private fun SnapshotCard(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    accentColor: androidx.compose.ui.graphics.Color = VinylColors.AccentGreen,
 ) {
-    AccentCard(modifier = modifier) {
-        Text(value, color = VinylColors.AccentGreen, style = MaterialTheme.typography.titleLarge)
+    AccentCard(
+        modifier = modifier.height(128.dp),
+        borderColor = accentColor.copy(alpha = 0.35f),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(accentColor.copy(alpha = 0.45f)),
+        )
+        Text(
+            text = value,
+            color = accentColor,
+            fontSize = 40.sp,
+            lineHeight = 44.sp,
+            fontWeight = FontWeight.Bold,
+        )
         Text(label, color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -394,24 +457,221 @@ private fun RecordRow(
 }
 
 @Composable
+private fun TopRecordRow(
+    record: RecordSummary,
+    plays: Int,
+    averageRating: String,
+    badge: String,
+    badgeColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+) {
+    val compact = LocalConfiguration.current.screenWidthDp < COMPACT_HOME_BREAKPOINT_DP
+
+    AccentCard(
+        modifier = Modifier.clickable(onClick = onClick),
+        borderColor = badgeColor.copy(alpha = 0.35f),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumArtBlock(accentColor = badgeColor, compact = compact)
+            Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            ) {
+                Text(
+                    text = record.title,
+                    color = VinylColors.TextPrimary,
+                    style = if (compact) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = record.artist,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "$plays plays",
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = if (compact) "Avg $averageRating" else "Avg Rating: $averageRating",
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (compact) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TopRecordBadge(badge = badge, badgeColor = badgeColor, compact = true)
+                    }
+                }
+            }
+            if (!compact) {
+                TopRecordBadge(badge = badge, badgeColor = badgeColor, compact = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopRecordBadge(
+    badge: String,
+    badgeColor: androidx.compose.ui.graphics.Color,
+    compact: Boolean,
+) {
+    Text(
+        modifier =
+            Modifier
+                .padding(start = if (compact) 0.dp else VinylSpacing.SpaceMd)
+                .background(badgeColor.copy(alpha = 0.16f), VinylColorsChipShape)
+                .border(1.dp, badgeColor.copy(alpha = 0.35f), VinylColorsChipShape)
+                .padding(
+                    horizontal = if (compact) VinylSpacing.SpaceSm else VinylSpacing.SpaceMd,
+                    vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm,
+                ),
+        text = badge,
+        color = badgeColor,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun SessionRow(
     session: ListeningSession,
     onClick: () -> Unit,
 ) {
+    val compact = LocalConfiguration.current.screenWidthDp < COMPACT_HOME_BREAKPOINT_DP
+
     AccentCard(
         modifier = Modifier.clickable(onClick = onClick),
         borderColor = VinylColors.BorderDefault,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(session.title, color = VinylColors.TextPrimary, style = MaterialTheme.typography.titleMedium)
-                Text(session.artist, color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                Text(session.playedAt, color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumArtBlock(accentColor = VinylColors.AccentGreen, compact = compact)
+            Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            ) {
+                Text(
+                    text = session.title,
+                    color = VinylColors.TextPrimary,
+                    style = if (compact) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = session.artist,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SidePlayedChip(compact = compact)
+                    RatingStars(session.rating, compact = compact)
+                }
             }
-            MoodChip(label = session.mood, selected = true, onClick = {})
+            Text(
+                modifier = Modifier.padding(start = VinylSpacing.SpaceSm),
+                text = session.playedAt,
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
+
+@Composable
+private fun SidePlayedChip(compact: Boolean) {
+    Text(
+        modifier =
+            Modifier
+                .background(VinylColors.AccentGreen, VinylColorsChipShape)
+                .padding(
+                    horizontal = if (compact) VinylSpacing.SpaceSm else VinylSpacing.SpaceMd,
+                    vertical = if (compact) 2.dp else VinylSpacing.SpaceXs,
+                ),
+        text = "Side A",
+        color = VinylColors.TextOnSolidAccent,
+        style =
+            if (compact) {
+                MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp)
+            } else {
+                MaterialTheme.typography.bodyMedium
+            },
+    )
+}
+
+@Composable
+private fun AlbumArtBlock(
+    accentColor: androidx.compose.ui.graphics.Color,
+    compact: Boolean = false,
+) {
+    val outerSize = if (compact) 54.dp else 64.dp
+    val recordSize = if (compact) 32.dp else 38.dp
+    val dotSize = if (compact) 8.dp else 9.dp
+    val dotOffset = if (compact) 10.dp else 12.dp
+
+    Box(
+        modifier =
+            Modifier
+                .size(outerSize)
+                .background(VinylColors.SurfaceSecondary)
+                .border(1.dp, VinylColors.BorderDefault),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(recordSize)
+                    .background(accentColor.copy(alpha = 0.2f), CircleShape)
+                    .border(1.dp, accentColor.copy(alpha = 0.45f), CircleShape),
+        )
+        Box(
+            modifier =
+                Modifier
+                    .size(dotSize)
+                    .offset(x = dotOffset, y = -dotOffset)
+                    .background(accentColor, CircleShape),
+        )
+    }
+}
+
+private val VinylColorsChipShape = com.example.vinyllistenapp.ui.theme.VinylShapes.Chip
+
+private const val COMPACT_HOME_BREAKPOINT_DP = 430
 
 @Composable
 private fun ProcessingStep(
