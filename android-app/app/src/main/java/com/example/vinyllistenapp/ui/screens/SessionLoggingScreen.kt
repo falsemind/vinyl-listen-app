@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -56,10 +58,10 @@ fun SessionLoggingScreen(
 ) {
     val record = MockVinylData.record(releaseId)
     val moods = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
-    var selectedSide by remember { mutableStateOf("Side A") }
-    var selectedMood by remember { mutableStateOf("Calm") }
-    var rating by remember { mutableStateOf(record.rating) }
-    var notes by remember { mutableStateOf("") }
+    var selectedSide by rememberSaveable { mutableStateOf("Side A") }
+    var selectedMood by rememberSaveable { mutableStateOf("Calm") }
+    var rating by rememberSaveable { mutableStateOf(record.rating) }
+    var notes by rememberSaveable { mutableStateOf("") }
 
     Column(
         modifier =
@@ -208,6 +210,7 @@ private fun SessionSideSelector(
     var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
     val sideOptions = listOf("Side A", "Side B")
     val density = LocalDensity.current
+    val sideSelectorActionLabel = if (expanded) "Close side selector" else "Open side selector"
     val anchorModifier =
         Modifier
             .fillMaxWidth()
@@ -221,8 +224,11 @@ private fun SessionSideSelector(
             .clip(VinylShapes.Card)
             .background(VinylColors.SurfacePrimary)
             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-            .clickable(onClick = { expanded = !expanded })
-            .padding(horizontal = VinylSpacing.SpaceMd)
+            .clickable(
+                onClickLabel = sideSelectorActionLabel,
+                role = Role.Button,
+                onClick = { expanded = !expanded },
+            ).padding(horizontal = VinylSpacing.SpaceMd)
 
     Box(modifier = anchorModifier) {
         Row(
@@ -267,8 +273,11 @@ private fun SessionSideSelector(
                                 .fillMaxWidth()
                                 .height(48.dp)
                                 .background(rowColor)
-                                .clickable(onClick = selectSide)
-                                .padding(horizontal = VinylSpacing.SpaceMd)
+                                .clickable(
+                                    onClickLabel = "Select $side",
+                                    role = Role.Button,
+                                    onClick = selectSide,
+                                ).padding(horizontal = VinylSpacing.SpaceMd)
 
                         Row(
                             modifier = rowModifier,
@@ -350,8 +359,11 @@ private fun SessionMoodChip(
                 .clip(VinylShapes.Chip)
                 .background(fill)
                 .border(1.dp, border, VinylShapes.Chip)
-                .clickable(onClick = onClick)
-                .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceSm),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceSm),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -415,7 +427,11 @@ private fun SessionCancelButton(
                 .clip(VinylShapes.Card)
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                .clickable(onClick = onClick),
+                .clickable(
+                    onClickLabel = "Cancel",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -446,7 +462,11 @@ private fun SessionSaveButton(
                 .clip(VinylShapes.Card)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Card)
-                .clickable(onClick = onClick),
+                .clickable(
+                    onClickLabel = "Save session",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Text(

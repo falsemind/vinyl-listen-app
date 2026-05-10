@@ -21,12 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,10 +47,10 @@ fun ManualSearchScreen(
     onSelectRecord: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var artistQuery by remember { mutableStateOf("") }
-    var titleQuery by remember { mutableStateOf("") }
-    var catalogQuery by remember { mutableStateOf("") }
-    var yearQuery by remember { mutableStateOf("") }
+    var artistQuery by rememberSaveable { mutableStateOf("") }
+    var titleQuery by rememberSaveable { mutableStateOf("") }
+    var catalogQuery by rememberSaveable { mutableStateOf("") }
+    var yearQuery by rememberSaveable { mutableStateOf("") }
 
     Column(
         modifier =
@@ -207,7 +208,12 @@ private fun ManualSearchResultRow(
     onClick: () -> Unit,
 ) {
     AccentCard(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier =
+            Modifier.clickable(
+                onClickLabel = "Select ${record.title}",
+                role = Role.Button,
+                onClick = onClick,
+            ),
     ) {
         Row(
             modifier =

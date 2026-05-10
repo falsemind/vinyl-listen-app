@@ -24,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -78,6 +81,8 @@ internal fun CaptureCircleButton(
     label: String,
     onClick: () -> Unit,
 ) {
+    val accessibilityLabel = accessibleControlLabel(label)
+
     Box(
         modifier =
             Modifier
@@ -85,7 +90,12 @@ internal fun CaptureCircleButton(
                 .clip(CircleShape)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault, CircleShape)
-                .clickable(onClick = onClick),
+                .semantics { contentDescription = accessibilityLabel }
+                .clickable(
+                    onClickLabel = accessibilityLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Text(

@@ -29,6 +29,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -84,7 +88,11 @@ fun GlassPrimaryButton(
                 .clip(VinylShapes.Button)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Button)
-                .clickable(onClick = onClick),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -124,8 +132,11 @@ fun FloatingGlassButton(
                 .clip(VinylShapes.Floating)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
-                .clickable(onClick = onClick)
-                .padding(horizontal = VinylSpacing.SpaceXl),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceXl),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -149,8 +160,11 @@ fun SecondaryButton(
                 .clip(VinylShapes.Button)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
-                .clickable(onClick = onClick)
-                .padding(horizontal = VinylSpacing.SpaceLg),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceLg),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -167,6 +181,8 @@ fun IconCircleButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val accessibilityLabel = accessibleControlLabel(label)
+
     Box(
         modifier =
             modifier
@@ -174,7 +190,12 @@ fun IconCircleButton(
                 .clip(CircleShape)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault, CircleShape)
-                .clickable(onClick = onClick),
+                .semantics { contentDescription = accessibilityLabel }
+                .clickable(
+                    onClickLabel = accessibilityLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -233,8 +254,11 @@ fun MoodChip(
                 .clip(VinylShapes.Chip)
                 .background(fill)
                 .border(1.dp, border, VinylShapes.Chip)
-                .clickable(onClick = onClick)
-                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         text = label,
         color = textColor,
         style = MaterialTheme.typography.bodyMedium,
@@ -261,6 +285,7 @@ fun RatingStars(
                 filled = index < rating,
                 starSize = starSize,
                 strokeWidth = strokeWidth,
+                onClickLabel = "Set rating to ${index + 1}",
                 onClick = onRatingChange?.let { callback -> { callback(index + 1) } },
             )
         }
@@ -272,6 +297,7 @@ private fun RoundedRatingStar(
     filled: Boolean,
     starSize: Dp,
     strokeWidth: Dp,
+    onClickLabel: String,
     onClick: (() -> Unit)?,
 ) {
     val color = if (filled) VinylColors.AccentOrange else VinylColors.BorderDefault
@@ -279,7 +305,13 @@ private fun RoundedRatingStar(
         if (onClick == null) {
             Modifier
         } else {
-            Modifier.clickable(onClick = onClick)
+            Modifier
+                .semantics { contentDescription = onClickLabel }
+                .clickable(
+                    onClickLabel = onClickLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
         }
 
     Canvas(
@@ -366,8 +398,12 @@ private fun RowScope.BottomNavLabel(item: BottomNavItem) {
             Modifier
                 .weight(1f)
                 .clip(VinylShapes.Chip)
-                .clickable(onClick = item.onClick)
-                .padding(vertical = VinylSpacing.SpaceSm),
+                .semantics { selected = item.selected }
+                .clickable(
+                    onClickLabel = "Open ${item.label}",
+                    role = Role.Tab,
+                    onClick = item.onClick,
+                ).padding(vertical = VinylSpacing.SpaceSm),
         text = item.label,
         color = if (item.selected) VinylColors.AccentGreen else VinylColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
@@ -375,3 +411,12 @@ private fun RowScope.BottomNavLabel(item: BottomNavItem) {
         overflow = TextOverflow.Ellipsis,
     )
 }
+
+internal fun accessibleControlLabel(label: String): String =
+    when (label) {
+        "X" -> "Close"
+        "<" -> "Back"
+        ">" -> "Next"
+        "i" -> "Show information"
+        else -> label
+    }

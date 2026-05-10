@@ -21,13 +21,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -48,7 +49,7 @@ fun CaptureRecordScreen(
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var showCaptureInfo by remember { mutableStateOf(false) }
+    var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier =
@@ -242,7 +243,11 @@ private fun CaptureSecondaryButton(
                 .clip(VinylShapes.Button)
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
-                .clickable(onClick = onClick),
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         CardTopAccentLine(
