@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,14 +25,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.domain.ConfidenceLevel
 import com.example.vinyllistenapp.domain.confidenceLevel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun AccentCard(
@@ -96,8 +104,8 @@ fun FloatingGlassButton(
     val brush =
         Brush.linearGradient(
             listOf(
-                VinylColors.AccentGreen.copy(alpha = 0.75f),
-                VinylColors.AccentGreen.copy(alpha = 0.60f),
+                VinylColors.AccentGreen.copy(alpha = 0.85f),
+                VinylColors.AccentGreen.copy(alpha = 0.70f),
             ),
         )
     val glassModifier =
@@ -239,25 +247,81 @@ fun RatingStars(
     modifier: Modifier = Modifier,
     maxRating: Int = 5,
     compact: Boolean = false,
+    starSize: Dp = if (compact) 14.dp else 20.dp,
+    strokeWidth: Dp = if (compact) 1.5.dp else 2.dp,
+    spacing: Dp = if (compact) 2.dp else VinylSpacing.SpaceXs,
+    onRatingChange: ((Int) -> Unit)? = null,
 ) {
-    val starStyle =
-        if (compact) {
-            MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 16.sp)
-        } else {
-            MaterialTheme.typography.titleMedium
-        }
-
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
     ) {
         repeat(maxRating) { index ->
-            Text(
-                text = if (index < rating) "★" else "☆",
-                color = if (index < rating) VinylColors.AccentOrange else VinylColors.TextSecondary,
-                style = starStyle,
+            RoundedRatingStar(
+                filled = index < rating,
+                starSize = starSize,
+                strokeWidth = strokeWidth,
+                onClick = onRatingChange?.let { callback -> { callback(index + 1) } },
             )
         }
+    }
+}
+
+@Composable
+private fun RoundedRatingStar(
+    filled: Boolean,
+    starSize: Dp,
+    strokeWidth: Dp,
+    onClick: (() -> Unit)?,
+) {
+    val color = if (filled) VinylColors.AccentOrange else VinylColors.BorderDefault
+    val interactionModifier =
+        if (onClick == null) {
+            Modifier
+        } else {
+            Modifier.clickable(onClick = onClick)
+        }
+
+    Canvas(
+        modifier =
+            Modifier
+                .size(starSize)
+                .then(interactionModifier),
+    ) {
+        val strokeWidthPx = strokeWidth.toPx()
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+        val outerRadius = (minOf(size.width, size.height) - strokeWidthPx) / 2f
+        val innerRadius = outerRadius * 0.48f
+        val path = Path()
+
+        repeat(10) { point ->
+            val radius = if (point % 2 == 0) outerRadius else innerRadius
+            val angle = -PI / 2.0 + point * PI / 5.0
+            val x = centerX + cos(angle).toFloat() * radius
+            val y = centerY + sin(angle).toFloat() * radius
+
+            if (point == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+        path.close()
+
+        if (filled) {
+            drawPath(path = path, color = color)
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style =
+                Stroke(
+                    width = strokeWidthPx,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                ),
+        )
     }
 }
 

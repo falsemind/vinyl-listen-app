@@ -38,6 +38,11 @@ fun VinylNavHost(
                 onTakePhoto = { navController.navigate(VinylRoutes.PROCESSING) },
                 onUpload = { navController.navigate(VinylRoutes.PROCESSING) },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                onDismiss = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
             )
         }
         composable(VinylRoutes.PROCESSING) {
@@ -50,12 +55,22 @@ fun VinylNavHost(
                 candidates = MockVinylData.matchCandidates,
                 onConfirm = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                onDismiss = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
             )
         }
         composable(VinylRoutes.MANUAL_SEARCH) {
             ManualSearchScreen(
                 records = MockVinylData.records,
                 onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
+                onDismiss = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
             )
         }
         composable(
