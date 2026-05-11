@@ -47,6 +47,8 @@ docs/
 │   ├── listening-session-api-plan.md
 │   └── release-import-metadata-api-plan.md
 ├── product/
+│   ├── app-design-system.md
+│   ├── app-screens-mockups/
 │   └── mvp-screen-spec.md
 ├── research/
 │   └── image-identification-pipeline-improvements.md
@@ -58,7 +60,7 @@ docs/
 | `architecture/` | Stable system design references: API, database, matching, navigation, roadmap. |
 | `features/` | Current behavior docs for implemented backend features and pipelines. |
 | `implementation-plans/` | Planning docs for completed or upcoming backend/product work. |
-| `product/` | Product-facing screen and MVP specifications. |
+| `product/` | Product-facing screen specs, design tokens, and mockup references. |
 | `research/` | Investigation notes and improvement ideas. |
 
 ## Backend
@@ -105,15 +107,18 @@ backend/app/
 ├── pipelines/
 │   └── identification/
 ├── repositories/
+│   ├── analytics_repository.py
 │   ├── discogs_release_repository.py
 │   ├── releases_repository.py
 │   ├── sessions_moods_repository.py
 │   └── sessions_repository.py
 ├── schemas/
+│   ├── analytics.py
 │   ├── identify.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
+│   ├── analytics_service.py
 │   ├── discogs_service.py
 │   ├── identify_service.py
 │   ├── release_import_service.py
@@ -132,7 +137,7 @@ backend/app/
 | `models/` | SQLAlchemy tables for releases, Discogs cache rows, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: identification, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `services/` | Business workflows: analytics, identification, Discogs access/cache, release import, release mapping, and listening sessions. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -151,7 +156,10 @@ All routes are nested under `/api/v1`.
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
 | `GET /sessions/{session_id}` | `api/routes/sessions.py` | `SessionsService`. |
-| `GET /analytics` | `api/routes/analytics.py` | Analytics endpoint placeholder/current route behavior. |
+| `GET /analytics/plays/monthly` | `api/routes/analytics.py` | `AnalyticsService` monthly play counts. |
+| `GET /analytics/top-records` | `api/routes/analytics.py` | `AnalyticsService` top record aggregation. |
+| `GET /analytics/rating-distribution` | `api/routes/analytics.py` | `AnalyticsService` rating frequency aggregation. |
+| `GET /analytics/mood-distribution` | `api/routes/analytics.py` | `AnalyticsService` mood frequency aggregation. |
 
 ### Identification Pipeline Package
 
@@ -186,10 +194,11 @@ backend/tests/
 ├── fixtures/
 ├── migrations/
 ├── pipelines/
+├── repositories/
 ├── services/
+├── utils/
 ├── conftest.py
-├── pytest.ini
-└── test-automation-structure.md
+└── pytest.ini
 ```
 
 | Folder | Coverage |
@@ -199,7 +208,9 @@ backend/tests/
 | `fixtures/` | Test clients, database fixtures, and service stubs. |
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
-| `services/` | Discogs client/service, identify service, release import, release mapper, sessions service, and Home summary aggregation. |
+| `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
+| `services/` | Analytics, Discogs client/service, identify service, release import, release mapper, sessions service, and Home summary aggregation. |
+| `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 
 ## Backend Migrations And Scripts
@@ -291,6 +302,18 @@ android-app/
 │       │   │   └── ui/
 │       │   │       ├── components/
 │       │   │       ├── screens/
+│       │   │       │   ├── AnalyticsScreen.kt
+│       │   │       │   ├── CaptureRecordScreen.kt
+│       │   │       │   ├── HomeScreen.kt
+│       │   │       │   ├── ManualSearchScreen.kt
+│       │   │       │   ├── MatchConfirmationScreen.kt
+│       │   │       │   ├── PlaceholderScreen.kt
+│       │   │       │   ├── ProcessingScreen.kt
+│       │   │       │   ├── RecordDetailScreen.kt
+│       │   │       │   ├── RecordDisplayFormatters.kt
+│       │   │       │   ├── RelativeDateFormatter.kt
+│       │   │       │   ├── ScreenPreviews.kt
+│       │   │       │   └── SessionLoggingScreen.kt
 │       │   │       └── theme/
 │       │   └── res/
 │       │       └── xml/
@@ -309,19 +332,21 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify, release import/detail/history, session create, and Home summary calls. |
-| `domain/` | UI-facing domain models for records, sessions, candidates, and Home summaries. |
+| `data/api/` | Lightweight HTTP client for identify, release import/detail/history, session create, Home summary, and analytics calls. |
+| `domain/` | UI-facing domain models for records, sessions, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host and route helpers. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
-| `ui/screens/` | Home, capture, processing, match confirmation, manual search, session logging, record detail, placeholders, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, capture, processing, match confirmation, manual search, session logging, record detail, placeholders, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
 
 - Camera capture uses `androidx.core.content.FileProvider` with `res/xml/file_paths.xml` for temporary image URIs.
 - The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
+- The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - `RelativeDateFormatter.kt` formats backend date strings for compact UI labels such as `Today`, `1d`, `1w`, and `1m`.
 - Local Android unit tests live under `android-app/app/src/test/`; current formatter coverage is in `ui/screens/RelativeDateFormatterTest.kt`.
+- Android navigation smoke coverage lives under `android-app/app/src/androidTest/`.
 
 ## Source Of Truth
 
