@@ -1,0 +1,324 @@
+package com.example.vinyllistenapp.data.api
+
+import android.content.Context
+import android.net.Uri
+import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.domain.HomeSummary
+import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.TopRecordSummary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.io.OutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.time.Instant
+import java.util.Locale
+import kotlin.math.roundToInt
+
+class VinylApiClient(
+    private val baseUrl: String = BuildConfig.VINYL_API_BASE_URL,
+) {
+    suspend fun identifyImage(
+        context: Context,
+        imageUri: Uri,
+    ): List<MatchCandidate> =
+        apiCall {
+            val resolver = context.contentResolver
+            val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
+            val filename = imageUri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "record.jpg"
+            val imageBytes =
+                resolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    ?: throw ApiException("Could not read selected image.")
+            val boundary = "VinylListenBoundary${System.currentTimeMillis()}"
+            val connection = openConnection("identify")
+
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            connection.outputStream.use { output ->
+                output.writeUtf8("--$boundary\r\n")
+                output.writeUtf8("Content-Disposition: form-data; name=\"image\"; filename=\"$filename\"\r\n")
+                output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
+                output.write(imageBytes)
+                output.writeUtf8("\r\n--$boundary--\r\n")
+            }
+
+            val response = readJsonResponse(connection)
+            response.optJSONArray("candidates").orEmpty().mapObjects { candidate ->
+                MatchCandidate(
+                    releaseId = candidate.optNullableString("release_id"),
+                    discogsReleaseId = candidate.optLong("discogs_release_id"),
+                    artist = candidate.optString("artist", "Unknown artist"),
+                    title = candidate.optString("title", "Unknown title"),
+                    label = candidate.optNullableString("label") ?: "Unknown label",
+                    confidence = candidate.optConfidence(),
+                    year = candidate.optNullableInt("year"),
+                    catalogNumber = candidate.optNullableString("catalog_number"),
+                    barcode = candidate.optNullableString("barcode"),
+                    coverImageUrl = candidate.optNullableString("cover_image_url"),
+                    matchSource = candidate.optNullableString("match_source"),
+                    matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
+                )
+            }
+        }
+
+    suspend fun importRelease(discogsReleaseId: Long): String =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("discogs_release_id", discogsReleaseId)
+                    .put("force_refresh", false)
+            val response = postJson("releases/import", body)
+            response.getString("release_id")
+        }
+
+    suspend fun getRelease(releaseId: String): RecordSummary =
+        apiCall {
+            val response = getJson("releases/${Uri.encode(releaseId)}")
+            response.toRecordSummary()
+        }
+
+    suspend fun getReleaseSessions(releaseId: String): List<ListeningSession> =
+        apiCall {
+            val response = getJson("releases/${Uri.encode(releaseId)}/sessions")
+            response.optJSONArray("sessions").orEmpty().mapObjects { item ->
+                ListeningSession(
+                    releaseId = releaseId,
+                    artist = "",
+                    title = "",
+                    playedAt = item.optNullableString("date") ?: "Unknown date",
+                    mood = item.optNullableString("mood") ?: "Unspecified",
+                    rating = item.optNullableInt("rating") ?: 0,
+                    side = item.optNullableString("side"),
+                    hasNotes = item.optBoolean("has_notes", false),
+                )
+            }
+        }
+
+    suspend fun getHomeSummary(): HomeSummary =
+        apiCall {
+            val response = getJson("sessions/summary")
+            HomeSummary(
+                recentSessions =
+                    response.optJSONArray("recent_sessions").orEmpty().mapObjects { item ->
+                        ListeningSession(
+                            releaseId = item.getString("release_id"),
+                            artist = item.optString("artist", "Unknown artist"),
+                            title = item.optString("title", "Unknown title"),
+                            playedAt = item.optNullableString("date") ?: "Unknown date",
+                            mood = item.optNullableString("mood") ?: "Unspecified",
+                            rating = item.optNullableInt("rating") ?: 0,
+                            side = item.optNullableString("side"),
+                            hasNotes = item.optBoolean("has_notes", false),
+                        )
+                    },
+                totalSessions = response.optInt("total_sessions", 0),
+                recordsThisMonth = response.optInt("records_this_month", 0),
+                topRecords =
+                    response.optJSONArray("top_records").orEmpty().mapObjects { item ->
+                        TopRecordSummary(
+                            record =
+                                RecordSummary(
+                                    releaseId = item.getString("release_id"),
+                                    discogsReleaseId = 0,
+                                    artist = item.optString("artist", "Unknown artist"),
+                                    title = item.optString("title", "Unknown title"),
+                                    label = "",
+                                    year = null,
+                                    format = "Vinyl",
+                                    rating = 0,
+                                    lastPlayed = "",
+                                ),
+                            plays = item.optInt("plays", 0),
+                            averageRating = item.optNullableDouble("average_rating")?.let { String.format(Locale.US, "%.1f", it) } ?: "-",
+                        )
+                    },
+            )
+        }
+
+    suspend fun createSession(
+        releaseId: String,
+        side: String?,
+        rating: Int?,
+        mood: String?,
+        notes: String?,
+    ): String =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("release_id", releaseId)
+                    .put("played_at", Instant.now().toString())
+                    .putNullable("side", side)
+                    .putNullable("rating", rating)
+                    .putNullable("mood", mood)
+                    .putNullable("notes", notes?.takeIf { it.isNotBlank() })
+            postJson("sessions/", body).getString("session_id")
+        }
+
+    private suspend fun <T> apiCall(block: () -> T): T =
+        withContext(Dispatchers.IO) {
+            try {
+                block()
+            } catch (error: ApiException) {
+                throw error
+            } catch (error: IOException) {
+                throw ApiException(
+                    message = "Backend unavailable. Start the local API and retry.",
+                    kind = ApiErrorKind.Offline,
+                    cause = error,
+                )
+            }
+        }
+
+    private fun getJson(path: String): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "GET"
+        return readJsonResponse(connection)
+    }
+
+    private fun postJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
+    private fun openConnection(path: String): HttpURLConnection =
+        URL("${baseUrl.trimEnd('/')}/${path.trimStart('/')}").openConnection().let { connection ->
+            (connection as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 60_000
+                setRequestProperty("Accept", "application/json")
+            }
+        }
+
+    private fun readJsonResponse(connection: HttpURLConnection): JSONObject {
+        val status = connection.responseCode
+        val body =
+            if (status in 200..299) {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                connection.errorStream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+            }
+        if (status !in 200..299) {
+            val errorBody = runCatching { JSONObject(body) }.getOrNull()
+            val errorObject = errorBody?.optJSONObject("error")
+            val code = errorObject?.optNullableString("code")
+            val rawMessage =
+                errorObject?.optNullableString("message")
+                    ?: errorBody?.optNullableString("detail")
+                    ?: body.takeIf { it.isNotBlank() }
+            val kind = status.toApiErrorKind()
+            throw ApiException(
+                message = apiErrorMessage(status, code, rawMessage),
+                kind = kind,
+            )
+        }
+        return JSONObject(body.ifBlank { "{}" })
+    }
+}
+
+enum class ApiErrorKind {
+    Offline,
+    Validation,
+    NotFound,
+    Server,
+    Unknown,
+}
+
+class ApiException(
+    message: String,
+    val kind: ApiErrorKind = ApiErrorKind.Unknown,
+    cause: Throwable? = null,
+) : Exception(message, cause)
+
+fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
+
+private fun OutputStream.writeUtf8(value: String) {
+    write(value.toByteArray(Charsets.UTF_8))
+}
+
+private fun JSONObject.toRecordSummary(): RecordSummary =
+    RecordSummary(
+        releaseId = getString("id"),
+        discogsReleaseId = optLong("discogs_release_id"),
+        artist = optString("artist", "Unknown artist"),
+        title = optString("title", "Unknown title"),
+        label = optNullableString("label") ?: "Unknown label",
+        year = optNullableInt("year"),
+        format = "Vinyl",
+        rating = 0,
+        lastPlayed = "Not logged yet",
+        catalogNumber = optNullableString("catalog_number"),
+        barcode = optNullableString("barcode"),
+        genres = optJSONArray("genres").orEmpty().mapStrings(),
+        styles = optJSONArray("styles").orEmpty().mapStrings(),
+        coverImageUrl = optNullableString("cover_image_url"),
+    )
+
+private fun JSONObject.putNullable(
+    name: String,
+    value: Any?,
+): JSONObject =
+    apply {
+        if (value == null) {
+            put(name, JSONObject.NULL)
+        } else {
+            put(name, value)
+        }
+    }
+
+private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
+
+private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) null else optInt(name)
+
+private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
+
+private fun Int.toApiErrorKind(): ApiErrorKind =
+    when (this) {
+        404 -> ApiErrorKind.NotFound
+        422 -> ApiErrorKind.Validation
+        in 500..599 -> ApiErrorKind.Server
+        else -> ApiErrorKind.Unknown
+    }
+
+private fun apiErrorMessage(
+    status: Int,
+    code: String?,
+    rawMessage: String?,
+): String =
+    when {
+        code == "invalid_side" -> "That side is not available for this release."
+        code == "invalid_rating" -> "Rating must be between 1 and 5."
+        code == "invalid_played_at" -> "Session time was invalid. Try saving again."
+        code == "release_not_found" -> "This release is not available locally yet."
+        status == 404 -> "Could not find that record."
+        status in 500..599 -> "Backend error. Retry in a moment."
+        !rawMessage.isNullOrBlank() -> rawMessage
+        else -> "Request failed. Retry in a moment."
+    }
+
+private fun JSONObject.optConfidence(): Int {
+    val rawConfidence = optDouble("confidence", 0.0)
+    val percent = if (rawConfidence <= 1.0) rawConfidence * 100.0 else rawConfidence
+    return percent.roundToInt().coerceIn(0, 100)
+}
+
+private fun JSONArray?.orEmpty(): JSONArray = this ?: JSONArray()
+
+private fun JSONArray.mapStrings(): List<String> = List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
+
+private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = List(length()) { index -> transform(getJSONObject(index)) }

@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.data
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.TopRecordSummary
 
 object MockVinylData {
     val records =
@@ -17,6 +18,7 @@ object MockVinylData {
                 format = "LP",
                 rating = 5,
                 lastPlayed = "Yesterday",
+                catalogNumber = "AS-9203",
             ),
             RecordSummary(
                 releaseId = "release-002",
@@ -28,6 +30,7 @@ object MockVinylData {
                 format = "2xLP",
                 rating = 4,
                 lastPlayed = "Last week",
+                catalogNumber = "FPLP01",
             ),
             RecordSummary(
                 releaseId = "release-003",
@@ -39,6 +42,7 @@ object MockVinylData {
                 format = "LP",
                 rating = 5,
                 lastPlayed = "2 weeks ago",
+                catalogNumber = "FE 39581",
             ),
         )
 
@@ -51,12 +55,20 @@ object MockVinylData {
 
     val matchCandidates =
         listOf(
-            MatchCandidate("release-001", "Alice Coltrane", "Journey in Satchidananda", "Impulse!", 92),
-            MatchCandidate("release-003", "Sade", "Diamond Life", "Epic", 71),
-            MatchCandidate("release-002", "Floating Points", "Elaenia", "Pluto", 58),
+            MatchCandidate("release-001", 249504, "Alice Coltrane", "Journey in Satchidananda", "Impulse!", 92, 1971, "AS-9203"),
+            MatchCandidate("release-003", 527549, "Sade", "Diamond Life", "Epic", 71, 1984, "FE 39581"),
+            MatchCandidate("release-002", 1191434, "Floating Points", "Elaenia", "Pluto", 58, 2015, "FPLP01"),
         )
 
     val moods = listOf("Focused", "Relaxed", "Late night", "Social", "Deep listen")
 
+    val topRecords =
+        listOf(
+            TopRecordSummary(records[0], 12, "4.8"),
+            TopRecordSummary(records[1], 2, "4.0"),
+        )
+
     fun record(releaseId: String?): RecordSummary = records.firstOrNull { it.releaseId == releaseId } ?: records.first()
+
+    fun recordByDiscogsId(discogsReleaseId: Long): RecordSummary? = records.firstOrNull { it.discogsReleaseId == discogsReleaseId }
 }

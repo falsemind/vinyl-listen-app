@@ -19,12 +19,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
@@ -34,14 +43,32 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import java.util.Locale
 
 @Composable
 fun RecordDetailScreen(
     releaseId: String?,
+    apiClient: VinylApiClient,
     onAddSession: (String) -> Unit,
     onHome: () -> Unit,
 ) {
-    val record = MockVinylData.record(releaseId)
+    val fallbackRecord = MockVinylData.record(releaseId)
+    var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
+    var sessions by remember(releaseId) { mutableStateOf<List<ListeningSession>>(emptyList()) }
+    var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(releaseId, retryKey) {
+        releaseId?.let { id ->
+            runCatching {
+                record = apiClient.getRelease(id)
+                sessions = apiClient.getReleaseSessions(id)
+                detailError = null
+            }.onFailure { error ->
+                detailError = error.toUserMessage("Could not load record details. Showing local prototype data.")
+            }
+        }
+    }
 
     Box(
         modifier =
@@ -69,13 +96,19 @@ fun RecordDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
             ) {
                 RecordDetailHeroCard(record = record)
+                detailError?.let { message ->
+                    RecordDetailRecoveryCard(
+                        message = message,
+                        onRetry = { retryKey += 1 },
+                    )
+                }
                 SectionTitle("Listening Stats")
-                RecordDetailStatsRow(record = record)
+                RecordDetailStatsRow(record = record, sessions = sessions)
                 SectionTitle("Mood Summary")
-                RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId))
+                RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId, sessions))
                 SectionTitle("Recent Sessions")
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                    recordDetailHistory(record.releaseId).forEach { history ->
+                    recordDetailHistory(record.releaseId, sessions).forEach { history ->
                         RecordHistoryCard(history = history)
                     }
                 }
@@ -139,14 +172,14 @@ private fun RecordDetailHeroCard(record: RecordSummary) {
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${record.year} - ${record.label}",
+                        text = "${record.year?.toString() ?: "Unknown year"} - ${record.label}",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "Cat# ${matchCatalogNumber(record.releaseId, 0)}",
+                        text = "Cat# ${record.catalogNumber ?: matchCatalogNumber(record.releaseId, 0)}",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
@@ -181,25 +214,51 @@ private fun RecordDiscogsButton() {
 }
 
 @Composable
-private fun RecordDetailStatsRow(record: RecordSummary) {
+private fun RecordDetailRecoveryCard(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentOrange.copy(alpha = 0.35f), VinylShapes.Card)
+                .clickable(onClick = onRetry)
+                .padding(VinylSpacing.SpaceLg),
+    ) {
+        Text(
+            text = "$message Tap to retry.",
+            color = VinylColors.AccentOrange,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun RecordDetailStatsRow(
+    record: RecordSummary,
+    sessions: List<ListeningSession>,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
         RecordStatCard(
-            value = recordDetailTotalPlays(record.releaseId).toString(),
+            value = recordDetailTotalPlays(record.releaseId, sessions).toString(),
             label = "Total Plays",
             accentColor = VinylColors.AccentGreen,
             modifier = Modifier.weight(1f),
         )
         RecordStatCard(
-            value = recordDetailAverageRating(record.releaseId),
+            value = recordDetailAverageRating(record.releaseId, sessions),
             label = "Avg Rating",
             accentColor = VinylColors.AccentOrange,
             modifier = Modifier.weight(1f),
         )
         RecordStatCard(
-            value = recordDetailLastPlayed(record.releaseId),
+            value = recordDetailLastPlayed(record.releaseId, sessions),
             label = "Last Played",
             accentColor = VinylColors.AccentPurple,
             modifier = Modifier.weight(1f),
@@ -442,32 +501,59 @@ private data class RecordHistoryEntry(
     val hasNotes: Boolean,
 )
 
-private fun recordDetailTotalPlays(releaseId: String): Int =
-    when (releaseId) {
-        "release-001" -> 12
-        "release-002" -> 8
-        "release-003" -> 10
-        else -> 6
-    }
+private fun recordDetailTotalPlays(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): Int =
+    sessions.takeIf { it.isNotEmpty() }?.size
+        ?: when (releaseId) {
+            "release-001" -> 12
+            "release-002" -> 8
+            "release-003" -> 10
+            else -> 6
+        }
 
-private fun recordDetailAverageRating(releaseId: String): String =
-    when (releaseId) {
+private fun recordDetailAverageRating(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): String =
+    sessions.filter { it.rating > 0 }.takeIf { it.isNotEmpty() }?.let { ratedSessions ->
+        String.format(Locale.US, "%.1f", ratedSessions.map { it.rating }.average())
+    } ?: when (releaseId) {
         "release-001" -> "4.8"
         "release-002" -> "4.2"
         "release-003" -> "4.7"
         else -> "4.0"
     }
 
-private fun recordDetailLastPlayed(releaseId: String): String =
-    when (releaseId) {
-        "release-001" -> "5d ago"
-        "release-002" -> "1w ago"
-        "release-003" -> "2w ago"
-        else -> "Recent"
-    }
+private fun recordDetailLastPlayed(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): String =
+    sessions.firstOrNull()?.playedAt?.let(::relativeLastPlayedLabel)
+        ?: when (releaseId) {
+            "release-001" -> "5d ago"
+            "release-002" -> "1w ago"
+            "release-003" -> "2w ago"
+            else -> "Recent"
+        }
 
-private fun recordDetailMoodData(releaseId: String): List<RecordMoodSummary> =
-    when (releaseId) {
+private fun recordDetailMoodData(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): List<RecordMoodSummary> {
+    val colors = listOf(VinylColors.AccentGreen, VinylColors.AccentOrange, VinylColors.AccentPurple)
+    val sessionMoodData =
+        sessions
+            .filter { it.mood.isNotBlank() }
+            .groupingBy { it.mood }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .mapIndexed { index, entry -> RecordMoodSummary(entry.key, entry.value, colors[index % colors.size]) }
+    if (sessionMoodData.isNotEmpty()) return sessionMoodData
+
+    return when (releaseId) {
         "release-002" ->
             listOf(
                 RecordMoodSummary("Late night", 4, VinylColors.AccentPurple),
@@ -495,9 +581,25 @@ private fun recordDetailMoodData(releaseId: String): List<RecordMoodSummary> =
                 RecordMoodSummary("Background", 1, VinylColors.AccentGreen),
             )
     }
+}
 
-private fun recordDetailHistory(releaseId: String): List<RecordHistoryEntry> =
-    when (releaseId) {
+private fun recordDetailHistory(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): List<RecordHistoryEntry> {
+    val sessionHistory =
+        sessions.map { session ->
+            RecordHistoryEntry(
+                date = session.playedAt,
+                side = session.side?.removePrefix("Side ") ?: "-",
+                rating = session.rating,
+                mood = session.mood,
+                hasNotes = session.hasNotes,
+            )
+        }
+    if (sessionHistory.isNotEmpty()) return sessionHistory
+
+    return when (releaseId) {
         "release-002" ->
             listOf(
                 RecordHistoryEntry("Apr 25, 2026", "A", 4, "Late night", true),
@@ -519,3 +621,4 @@ private fun recordDetailHistory(releaseId: String): List<RecordHistoryEntry> =
                 RecordHistoryEntry("Apr 15, 2026", "A", 4, "Nostalgic", true),
             )
     }
+}

@@ -21,9 +21,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.RatingStars
@@ -49,19 +54,62 @@ import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun SessionLoggingScreen(
     releaseId: String?,
+    apiClient: VinylApiClient,
     onSave: (String) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val record = MockVinylData.record(releaseId)
+    val scope = rememberCoroutineScope()
+    val fallbackRecord = MockVinylData.record(releaseId)
+    var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
+    val record = loadedRecord ?: fallbackRecord
     val moods = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
     var selectedSide by rememberSaveable { mutableStateOf("Side A") }
     var selectedMood by rememberSaveable { mutableStateOf("Calm") }
     var rating by rememberSaveable { mutableStateOf(record.rating) }
     var notes by rememberSaveable { mutableStateOf("") }
+    var isSaving by rememberSaveable { mutableStateOf(false) }
+    var saveError by rememberSaveable { mutableStateOf<String?>(null) }
+    var loadRetryKey by remember { mutableIntStateOf(0) }
+    var loadError by remember(releaseId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(releaseId, loadRetryKey) {
+        releaseId?.let { id ->
+            runCatching { apiClient.getRelease(id) }
+                .onSuccess {
+                    loadedRecord = it
+                    loadError = null
+                }.onFailure { error ->
+                    loadError = error.toUserMessage("Could not load record details. Using local prototype data.")
+                }
+        }
+    }
+
+    fun saveSession() {
+        val targetReleaseId = releaseId ?: record.releaseId
+        isSaving = true
+        saveError = null
+        scope.launch {
+            runCatching {
+                apiClient.createSession(
+                    releaseId = targetReleaseId,
+                    side = selectedSide.removePrefix("Side "),
+                    rating = rating,
+                    mood = selectedMood,
+                    notes = notes,
+                )
+            }.onSuccess {
+                onSave(targetReleaseId)
+            }.onFailure { error ->
+                saveError = error.toUserMessage("Session could not be saved. Check the form and retry.")
+                isSaving = false
+            }
+        }
+    }
 
     Column(
         modifier =
@@ -79,6 +127,19 @@ fun SessionLoggingScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
         ) {
             SessionRecordCard(record = record)
+            loadError?.let { message ->
+                Text(
+                    modifier =
+                        Modifier
+                            .clip(VinylShapes.Chip)
+                            .background(VinylColors.SurfacePrimary)
+                            .clickable { loadRetryKey += 1 }
+                            .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceMd),
+                    text = "$message Tap to retry.",
+                    color = VinylColors.AccentOrange,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             SessionFieldLabel("Side Played")
             SessionSideSelector(
                 selectedSide = selectedSide,
@@ -94,6 +155,13 @@ fun SessionLoggingScreen(
             )
             SessionFieldLabel("Notes (Optional)")
             SessionNotesField(notes = notes, onNotesChange = { notes = it })
+            saveError?.let { message ->
+                Text(
+                    text = message,
+                    color = VinylColors.AccentOrange,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
         }
         Row(
@@ -104,7 +172,11 @@ fun SessionLoggingScreen(
             horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
         ) {
             SessionCancelButton(onClick = onCancel, modifier = Modifier.weight(1f))
-            SessionSaveButton(onClick = { onSave(record.releaseId) }, modifier = Modifier.weight(1f))
+            SessionSaveButton(
+                label = if (isSaving) "Saving..." else "Save Session",
+                onClick = { if (!isSaving) saveSession() },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -444,6 +516,7 @@ private fun SessionCancelButton(
 
 @Composable
 private fun SessionSaveButton(
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -470,7 +543,7 @@ private fun SessionSaveButton(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "Save Session",
+            text = label,
             color = VinylColors.TextOnAccent,
             style = MaterialTheme.typography.labelLarge,
         )
