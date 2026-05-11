@@ -238,7 +238,7 @@ Logs a listening session.
   "release_id": "internal_id",
   "side": "A",
   "rating": 1,
-  "moods": ["Calm", "Nostalgic"],
+  "mood": "Calm",
   "notes": "Amazing pressing, deep bass.",
   "played_at": "ISO8601 datetime"
 }
@@ -323,7 +323,9 @@ The Android app formats `date` into display text such as `Today`, `1d`, `1w`, or
 
 Used by the **Record Detail screen**.
 
-## GET /releases/{release_id}/stats
+Record metadata comes from `GET /releases/{release_id}`. Listening history comes from `GET /releases/{release_id}/sessions`.
+
+## GET /releases/{release_id}
 
 ### Response
 
@@ -335,17 +337,7 @@ Used by the **Record Detail screen**.
   "title": "...",
   "catalog_number": "...",
   "barcode": "...",
-  "cover_image_url": "...",
-  "sessions": [
-    {
-      "session_id": "...",
-      "side": "A",
-      "rating": 5,
-      "moods": ["Energetic", "Happy"],
-      "notes": "...",
-      "played_at": "2026-03-13T14:23:00Z"
-    }
-  ]
+  "cover_image_url": "..."
 }
 ```
 
@@ -374,7 +366,7 @@ Used for listening history.
       "date": "2026-03-10",
       "side": "B",
       "rating": 4,
-      "moods": ["Calm"],
+      "mood": "Calm",
       "has_notes": true
     }
   ]
@@ -410,9 +402,9 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
 
 ### Query Parameters
 
-| Parameter | Description       |
-| --------- | ----------------- |
-| limit     | number of records |
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| limit | Number of records. Must be 1-50. | 10 |
 
 ### Response
 
@@ -424,9 +416,28 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
       "discogs_release_id": "555123",
       "artist": "Boards of Canada",
       "title": "Music Has The Right To Children",
-      "plays": 12
+      "plays": 12,
+      "average_rating": 4.5
     }
   ]
+}
+```
+
+---
+
+## GET /analytics/rating-distribution
+
+### Response
+
+```json
+{
+  "ratings": {
+    "1": 0,
+    "2": 1,
+    "3": 2,
+    "4": 8,
+    "5": 11
+  }
 }
 ```
 

@@ -43,6 +43,8 @@ session_moods
 discogs_release_cache
 ```
 
+Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP.
+
 Relationships:
 
 ```
