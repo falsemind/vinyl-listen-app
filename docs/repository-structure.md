@@ -1,12 +1,13 @@
-# Vinyl Listen App Repository Structure
-
-This document describes the current monorepo layout. All project documentation lives under `docs/`.
+---
+name: repository-structure
+description: This document describes the current monorepo layout. Use this when need a quick reference when need to find a specific file or directory.
+---
 
 ## Top-Level Layout
 
 ```text
 .
-├── AGENTS.md
+├── .agents/
 ├── README.md
 ├── android-app/
 ├── backend/
@@ -22,7 +23,7 @@ This document describes the current monorepo layout. All project documentation l
 | `docs/` | Product, architecture, implementation, research, and feature documentation. |
 | `scripts/` | Repository-level helper scripts. |
 | `docker-compose.yml` | Local container orchestration entry point. |
-| `AGENTS.md` | Agent workflow and repository guidance. |
+| `.agents/` | Agent workflows and repository guidance. |
 
 Local artifacts such as `.DS_Store`, `.ruff_cache/`, `backend/.venv/`, `backend/venv/`, `__pycache__/`, and generated OCR debug images may exist in a working tree. They are not part of the intended source layout.
 

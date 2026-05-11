@@ -1,3 +1,8 @@
+---
+name: mvp-screen-spec
+description: This document explains UI client's MVP Screen Specification.
+---
+
 # Vinyl Listening App — MVP Screen Specification
 
 ## Purpose
