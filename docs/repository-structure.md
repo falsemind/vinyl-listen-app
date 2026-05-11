@@ -1,6 +1,6 @@
 ---
 name: repository-structure
-description: This document describes the current monorepo layout. Use this when need a quick reference when need to find a specific file or directory.
+description: This document describes the current monorepo layout. Use this when need a quick reference to find a specific file or directory.
 ---
 
 ## Top-Level Layout

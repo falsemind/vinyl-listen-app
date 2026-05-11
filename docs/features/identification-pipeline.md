@@ -1,5 +1,5 @@
 ---
-name: backend-services
+name: identification-pipeline
 description: This document explains the identification pipeline that turns an uploaded vinyl image into ranked release candidates. It lives in `backend/app/pipelines/identification/` and is orchestrated by `IdentifyService`.
 ---
 
