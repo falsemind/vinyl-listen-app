@@ -27,10 +27,17 @@ def test_sessions_route_is_versioned() -> None:
 
 
 def test_analytics_route_is_versioned() -> None:
-    response = client.get("/api/v1/analytics")
+    class StubAnalyticsService:
+        def get_monthly_plays(self, _db):
+            return []
+
+    from app.api.routes.analytics import get_analytics_service
+
+    app.dependency_overrides[get_analytics_service] = lambda: StubAnalyticsService()
+    response = client.get("/api/v1/analytics/plays/monthly")
+    app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Some analytics insight"}
 
 
 def test_identify_route_is_versioned() -> None:
