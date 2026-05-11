@@ -53,3 +53,30 @@ class ReleaseSessionHistoryItem(BaseModel):
 
 class ReleaseSessionsResponse(BaseModel):
     sessions: list[ReleaseSessionHistoryItem]
+
+
+class HomeRecentSessionItem(BaseModel):
+    session_id: str
+    release_id: str
+    artist: str
+    title: str
+    date: str | None
+    side: str | None
+    rating: int | None
+    mood: str | None
+    has_notes: bool
+
+
+class HomeTopRecordItem(BaseModel):
+    release_id: str
+    artist: str
+    title: str
+    plays: int
+    average_rating: float | None
+
+
+class HomeSummaryResponse(BaseModel):
+    recent_sessions: list[HomeRecentSessionItem]
+    total_sessions: int
+    records_this_month: int
+    top_records: list[HomeTopRecordItem]

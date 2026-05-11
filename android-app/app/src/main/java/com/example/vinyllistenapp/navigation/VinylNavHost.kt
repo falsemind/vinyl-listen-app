@@ -1,6 +1,10 @@
 package com.example.vinyllistenapp.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -8,6 +12,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
@@ -22,6 +28,9 @@ fun VinylNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
+    val apiClient = remember { VinylApiClient() }
+    var latestCandidates by remember { mutableStateOf<List<MatchCandidate>>(MockVinylData.matchCandidates) }
+
     NavHost(
         navController = navController,
         startDestination = VinylRoutes.HOME,
@@ -29,14 +38,14 @@ fun VinylNavHost(
     ) {
         composable(VinylRoutes.HOME) {
             HomeScreen(
+                apiClient = apiClient,
                 onLogSession = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
         composable(VinylRoutes.CAPTURE_RECORD) {
             CaptureRecordScreen(
-                onTakePhoto = { navController.navigate(VinylRoutes.PROCESSING) },
-                onUpload = { navController.navigate(VinylRoutes.PROCESSING) },
+                onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri)) },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
                 onDismiss = {
                     navController.navigate(VinylRoutes.HOME) {
@@ -45,14 +54,33 @@ fun VinylNavHost(
                 },
             )
         }
-        composable(VinylRoutes.PROCESSING) {
+        composable(
+            route = VinylRoutes.PROCESSING_PATTERN,
+            arguments =
+                listOf(
+                    navArgument(VinylRoutes.IMAGE_URI) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+        ) { backStackEntry ->
             ProcessingScreen(
-                onComplete = { navController.navigate(VinylRoutes.MATCH_CONFIRMATION) },
+                imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
+                apiClient = apiClient,
+                onComplete = { candidates ->
+                    latestCandidates = candidates
+                    navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {
+                        popUpTo(backStackEntry.destination.id) { inclusive = true }
+                    }
+                },
+                onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
             )
         }
         composable(VinylRoutes.MATCH_CONFIRMATION) {
             MatchConfirmationScreen(
-                candidates = MockVinylData.matchCandidates,
+                candidates = latestCandidates,
+                apiClient = apiClient,
                 onConfirm = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
                 onDismiss = {
@@ -79,6 +107,7 @@ fun VinylNavHost(
         ) { backStackEntry ->
             SessionLoggingScreen(
                 releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
+                apiClient = apiClient,
                 onSave = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onCancel = { navController.popBackStack() },
             )
@@ -89,6 +118,7 @@ fun VinylNavHost(
         ) { backStackEntry ->
             RecordDetailScreen(
                 releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
+                apiClient = apiClient,
                 onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                 onHome = {
                     navController.navigate(VinylRoutes.HOME) {

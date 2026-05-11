@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,21 +37,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun MatchConfirmationScreen(
     candidates: List<MatchCandidate>,
+    apiClient: VinylApiClient,
     onConfirm: (String) -> Unit,
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var detailCandidate by remember { mutableStateOf<MatchCandidate?>(null) }
+    var confirmingDiscogsId by remember { mutableStateOf<Long?>(null) }
+    var confirmError by remember { mutableStateOf<String?>(null) }
+
+    fun confirmCandidate(candidate: MatchCandidate) {
+        candidate.releaseId?.let {
+            onConfirm(it)
+            return
+        }
+        confirmingDiscogsId = candidate.discogsReleaseId
+        confirmError = null
+        scope.launch {
+            runCatching { apiClient.importRelease(candidate.discogsReleaseId) }
+                .onSuccess { releaseId -> onConfirm(releaseId) }
+                .onFailure { error ->
+                    confirmError = error.toUserMessage("Could not prepare this release. Retry or use Manual Search.")
+                    confirmingDiscogsId = null
+                }
+        }
+    }
 
     Box(
         modifier =
@@ -82,13 +107,26 @@ fun MatchConfirmationScreen(
                         .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
             ) {
+                confirmError?.let { message ->
+                    Text(
+                        text = message,
+                        color = VinylColors.AccentOrange,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 candidates.forEachIndexed { index, candidate ->
-                    val record = MockVinylData.record(candidate.releaseId)
+                    val record =
+                        candidate.releaseId?.let { MockVinylData.record(it) }
+                            ?: MockVinylData.recordByDiscogsId(candidate.discogsReleaseId)
                     MatchCandidateCard(
                         candidate = candidate,
-                        year = record.year,
-                        catalogNumber = matchCatalogNumber(candidate.releaseId, index),
-                        onConfirm = { onConfirm(candidate.releaseId) },
+                        year = candidate.year ?: record?.year,
+                        catalogNumber =
+                            candidate.catalogNumber
+                                ?: record?.catalogNumber
+                                ?: matchCatalogNumber(candidate.releaseId ?: candidate.discogsReleaseId.toString(), index),
+                        isConfirming = confirmingDiscogsId == candidate.discogsReleaseId,
+                        onConfirm = { confirmCandidate(candidate) },
                         onDetails = { detailCandidate = candidate },
                     )
                 }
@@ -147,8 +185,9 @@ private fun MatchConfirmationHeader(onDismiss: () -> Unit) {
 @Composable
 private fun MatchCandidateCard(
     candidate: MatchCandidate,
-    year: Int,
+    year: Int?,
     catalogNumber: String,
+    isConfirming: Boolean,
     onConfirm: () -> Unit,
     onDetails: () -> Unit,
 ) {
@@ -201,7 +240,7 @@ private fun MatchCandidateCard(
                         MatchConfidenceBadge(confidence = candidate.confidence)
                     }
                     Spacer(Modifier.height(VinylSpacing.SpaceSm))
-                    MatchMetadataRow(label = "Year:", value = year.toString())
+                    MatchMetadataRow(label = "Year:", value = year?.toString() ?: "Unknown")
                     MatchMetadataRow(label = "Label:", value = candidate.label)
                     MatchMetadataRow(label = "Cat#:", value = catalogNumber)
                 }
@@ -213,6 +252,8 @@ private fun MatchCandidateCard(
             ) {
                 MatchConfirmButton(
                     onClick = onConfirm,
+                    enabled = !isConfirming,
+                    label = if (isConfirming) "Importing" else "Confirm",
                     modifier = Modifier.weight(1f),
                 )
                 MatchDetailsButton(onClick = onDetails, modifier = Modifier.width(64.dp))
@@ -253,8 +294,13 @@ private fun MatchDetailsPlaceholderPopup(
                 )
                 Text(
                     text =
-                        "Placeholder for Discogs metadata and match evidence. " +
-                            "This will become candidate release details before confirmation.",
+                        listOfNotNull(
+                            candidate.year?.let { "Year: $it" },
+                            candidate.catalogNumber?.let { "Cat#: $it" },
+                            candidate.barcode?.let { "Barcode: $it" },
+                            candidate.matchSource?.let { "Source: $it" },
+                            candidate.matchedOn.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Matched: "),
+                        ).ifEmpty { listOf("No extra metadata returned for this candidate.") }.joinToString("\n"),
                     color = VinylColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -344,6 +390,8 @@ private fun MatchMetadataRow(
 @Composable
 private fun MatchConfirmButton(
     onClick: () -> Unit,
+    enabled: Boolean,
+    label: String,
     modifier: Modifier = Modifier,
 ) {
     val brush =
@@ -361,7 +409,7 @@ private fun MatchConfirmButton(
                 .clip(VinylShapes.Button)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Button)
-                .clickable(onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -374,7 +422,7 @@ private fun MatchConfirmButton(
                 style = MaterialTheme.typography.labelLarge,
             )
             Text(
-                text = "Confirm",
+                text = label,
                 color = VinylColors.TextOnAccent,
                 style = MaterialTheme.typography.labelLarge,
             )

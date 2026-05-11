@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -24,7 +25,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,15 +37,55 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.delay
 
 @Composable
-fun ProcessingScreen(onComplete: () -> Unit) {
+fun ProcessingScreen(
+    imageUri: String?,
+    apiClient: VinylApiClient,
+    onComplete: (List<MatchCandidate>) -> Unit,
+    onManualSearch: () -> Unit,
+) {
+    val context = LocalContext.current
+    var retryKey by remember { mutableIntStateOf(0) }
+    var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading) }
+
+    LaunchedEffect(imageUri, retryKey) {
+        state = IdentifyUiState.Loading
+        val candidates =
+            if (imageUri == null) {
+                MockVinylData.matchCandidates
+            } else {
+                runCatching { apiClient.identifyImage(context, Uri.parse(imageUri)) }
+                    .getOrElse { error ->
+                        state =
+                            IdentifyUiState.Error(
+                                error.toUserMessage("Identify failed. Retry or use Manual Search."),
+                                ProcessingFailureStep.Upload,
+                            )
+                        return@LaunchedEffect
+                    }
+            }
+        if (candidates.isEmpty()) {
+            state = IdentifyUiState.Empty
+        } else {
+            state = IdentifyUiState.Success(candidates)
+            delay(450)
+            onComplete(candidates)
+        }
+    }
+
     Column(
         modifier =
             Modifier
@@ -61,7 +106,7 @@ fun ProcessingScreen(onComplete: () -> Unit) {
                 style = MaterialTheme.typography.headlineLarge,
             )
             Text(
-                text = "Please wait while we search our database",
+                text = processingSubtitle(state),
                 color = VinylColors.TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -82,23 +127,135 @@ fun ProcessingScreen(onComplete: () -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
                 ) {
-                    ProcessingStatusCard("Uploading image", ProcessingStatus.Complete)
-                    ProcessingStatusCard("Extracting text", ProcessingStatus.Complete)
+                    ProcessingStatusCard("Uploading image", uploadStatus(state))
+                    ProcessingStatusCard(
+                        label = "Extracting text",
+                        status = extractingStatus(state),
+                    )
                     ProcessingStatusCard(
                         label = "Searching candidates",
-                        status = ProcessingStatus.Active,
-                        onClick = onComplete,
+                        status = searchingStatus(state),
                     )
+                    when (val currentState = state) {
+                        IdentifyUiState.Empty ->
+                            ProcessingRecoveryActions(
+                                message = "No matches found.",
+                                onRetry = { retryKey += 1 },
+                                onManualSearch = onManualSearch,
+                            )
+
+                        is IdentifyUiState.Error ->
+                            ProcessingRecoveryActions(
+                                message = currentState.message,
+                                onRetry = { retryKey += 1 },
+                                onManualSearch = onManualSearch,
+                            )
+
+                        IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
+                    }
                 }
             }
         }
     }
 }
 
+private sealed interface IdentifyUiState {
+    data object Loading : IdentifyUiState
+
+    data class Success(
+        val candidates: List<MatchCandidate>,
+    ) : IdentifyUiState
+
+    data object Empty : IdentifyUiState
+
+    data class Error(
+        val message: String,
+        val failedStep: ProcessingFailureStep,
+    ) : IdentifyUiState
+}
+
+private enum class ProcessingFailureStep {
+    Upload,
+    Extract,
+    Search,
+}
+
+private fun processingSubtitle(state: IdentifyUiState): String =
+    when (state) {
+        IdentifyUiState.Loading -> "Please wait while we search our database"
+        is IdentifyUiState.Success -> "Matches found"
+        IdentifyUiState.Empty -> "Try another image or search manually"
+        is IdentifyUiState.Error -> "The identify request could not finish"
+    }
+
 private enum class ProcessingStatus {
     Complete,
     Active,
+    Error,
     Pending,
+}
+
+private fun uploadStatus(state: IdentifyUiState): ProcessingStatus =
+    when (state) {
+        IdentifyUiState.Loading -> ProcessingStatus.Active
+        is IdentifyUiState.Error ->
+            if (state.failedStep == ProcessingFailureStep.Upload) ProcessingStatus.Error else ProcessingStatus.Complete
+
+        IdentifyUiState.Empty,
+        is IdentifyUiState.Success,
+        -> ProcessingStatus.Complete
+    }
+
+private fun extractingStatus(state: IdentifyUiState): ProcessingStatus =
+    when (state) {
+        IdentifyUiState.Loading -> ProcessingStatus.Pending
+        is IdentifyUiState.Error ->
+            if (state.failedStep == ProcessingFailureStep.Extract) ProcessingStatus.Error else ProcessingStatus.Pending
+
+        IdentifyUiState.Empty,
+        is IdentifyUiState.Success,
+        -> ProcessingStatus.Complete
+    }
+
+private fun searchingStatus(state: IdentifyUiState): ProcessingStatus =
+    when (state) {
+        IdentifyUiState.Loading -> ProcessingStatus.Pending
+        IdentifyUiState.Empty -> ProcessingStatus.Error
+        is IdentifyUiState.Error ->
+            if (state.failedStep == ProcessingFailureStep.Search) ProcessingStatus.Error else ProcessingStatus.Pending
+
+        is IdentifyUiState.Success -> ProcessingStatus.Active
+    }
+
+@Composable
+private fun ProcessingRecoveryActions(
+    message: String,
+    onRetry: () -> Unit,
+    onManualSearch: () -> Unit,
+) {
+    Text(
+        modifier = Modifier.width(260.dp),
+        text = message,
+        color = VinylColors.AccentOrange,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+    )
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+    ) {
+        ProcessingStatusCard(
+            label = "Retry",
+            status = ProcessingStatus.Active,
+            onClick = onRetry,
+        )
+        ProcessingStatusCard(
+            label = "Manual Search",
+            status = ProcessingStatus.Active,
+            onClick = onManualSearch,
+        )
+    }
 }
 
 @Composable
@@ -144,10 +301,13 @@ private fun ProcessingStatusCard(
     val accent =
         when (status) {
             ProcessingStatus.Complete -> VinylColors.AccentGreen
-            ProcessingStatus.Active -> VinylColors.AccentOrange
+            ProcessingStatus.Active,
+            ProcessingStatus.Error,
+            -> VinylColors.AccentOrange
+
             ProcessingStatus.Pending -> VinylColors.BorderDefault
         }
-    val active = status == ProcessingStatus.Active
+    val active = status == ProcessingStatus.Active || status == ProcessingStatus.Error
     val emphasized = status != ProcessingStatus.Pending
     var cardModifier =
         Modifier
@@ -217,6 +377,13 @@ private fun ProcessingStatusDot(
                             ),
                     )
                 }
+
+            ProcessingStatus.Error ->
+                Text(
+                    text = "!",
+                    color = VinylColors.TextOnSolidAccent,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
 
             ProcessingStatus.Pending -> Unit
         }

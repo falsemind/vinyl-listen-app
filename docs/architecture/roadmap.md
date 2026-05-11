@@ -192,8 +192,9 @@ Endpoints:
 
 ```
 POST /sessions
-GET /sessions
+GET /sessions/summary
 GET /sessions/{session_id}
+GET /releases/{release_id}/sessions
 ```
 
 Tasks:
@@ -203,6 +204,7 @@ Create session service
 Validate release references
 Implement mood handling
 Store session notes
+Implement Home summary aggregation
 ```
 
 Example issues:
@@ -212,12 +214,13 @@ Create sessions API endpoint
 Add rating validation
 Add mood support
 Implement session retrieval
+Implement sessions summary endpoint for Android Home
 ```
 
 Deliverable:
 
 ```
-Listening sessions can be stored and retrieved
+Listening sessions can be stored, retrieved, and summarized for Home
 ```
 
 ---
@@ -336,6 +339,7 @@ Implement CameraX capture
 Integrate identify endpoint
 Display candidate matches
 Implement session logging UI
+Load Home data from /sessions/summary
 Display record detail screen
 ```
 
@@ -346,6 +350,7 @@ Implement CaptureRecord screen
 Implement MatchConfirmation screen
 Implement SessionLogging screen
 Implement RecordDetail screen
+Wire Home screen to real session summary data
 ```
 
 Deliverable:
@@ -453,6 +458,7 @@ take photo of record
 identify Discogs release
 confirm correct match
 log listening session
+see logged sessions on Home
 view listening history
 see basic analytics
 ```

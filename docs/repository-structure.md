@@ -17,7 +17,7 @@ This document describes the current monorepo layout. All project documentation l
 
 | Path | Purpose |
 | --- | --- |
-| `android-app/` | Android client project. Currently a Gradle/Kotlin app with a starter Compose activity and theme resources. |
+| `android-app/` | Android client project. Gradle/Kotlin Compose app with navigation, prototype screens, backend API integration, camera/gallery input, and Android tests. |
 | `backend/` | FastAPI backend, database models, repositories, service layer, identification pipeline, migrations, tests, and backend scripts. |
 | `docs/` | Product, architecture, implementation, research, and feature documentation. |
 | `scripts/` | Repository-level helper scripts. |
@@ -148,6 +148,7 @@ All routes are nested under `/api/v1`.
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
+| `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
 | `GET /sessions/{session_id}` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /analytics` | `api/routes/analytics.py` | Analytics endpoint placeholder/current route behavior. |
 
@@ -197,7 +198,7 @@ backend/tests/
 | `fixtures/` | Test clients, database fixtures, and service stubs. |
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
-| `services/` | Discogs client/service, identify service, release import, release mapper, and sessions service. |
+| `services/` | Discogs client/service, identify service, release import, release mapper, sessions service, and Home summary aggregation. |
 | `data/` | Static image and Discogs response fixtures. |
 
 ## Backend Migrations And Scripts
@@ -219,9 +220,51 @@ Alembic owns schema migrations. `benchmark_ocr_backends.py` supports local compa
 
 ## Android App
 
+High-level Android layout:
+
+```text
+android-app/
+├── app/
+│   ├── build.gradle.kts
+│   └── src/
+│       ├── main/
+│       │   ├── AndroidManifest.xml
+│       │   ├── java/com/example/vinyllistenapp/
+│       │   └── res/
+│       ├── test/
+│       └── androidTest/
+├── gradle/
+├── build.gradle.kts
+├── gradle.properties
+├── gradlew
+├── gradlew.bat
+├── local.properties
+└── settings.gradle.kts
+```
+
+Main Android package layout:
+
+```text
+com/example/vinyllistenapp/
+├── MainActivity.kt
+├── VinylListenApp.kt
+├── data/
+│   ├── MockVinylData.kt
+│   └── api/
+├── domain/
+├── navigation/
+└── ui/
+    ├── components/
+    ├── screens/
+    └── theme/
+```
+
+Detailed Android layout:
+
 ```text
 android-app/
 ├── build.gradle.kts
+├── local.properties
 ├── gradle.properties
 ├── gradlew
 ├── gradlew.bat
@@ -234,11 +277,23 @@ android-app/
 │       │   ├── AndroidManifest.xml
 │       │   ├── java/com/example/vinyllistenapp/
 │       │   │   ├── MainActivity.kt
-│       │   │   └── ui/theme/
-│       │   │       ├── Color.kt
-│       │   │       ├── Theme.kt
-│       │   │       └── Type.kt
+│       │   │   ├── VinylListenApp.kt
+│       │   │   ├── data/
+│       │   │   │   ├── MockVinylData.kt
+│       │   │   │   └── api/
+│       │   │   │       └── VinylApiClient.kt
+│       │   │   ├── domain/
+│       │   │   │   └── RecordModels.kt
+│       │   │   ├── navigation/
+│       │   │   │   ├── VinylNavHost.kt
+│       │   │   │   └── VinylRoutes.kt
+│       │   │   └── ui/
+│       │   │       ├── components/
+│       │   │       ├── screens/
+│       │   │       └── theme/
 │       │   └── res/
+│       │       └── xml/
+│       │           └── file_paths.xml
 │       ├── test/
 │       └── androidTest/
 └── gradle/
@@ -246,7 +301,26 @@ android-app/
     └── wrapper/
 ```
 
-The Android app is still small compared with the backend. It contains a single main activity, Compose theme files, launcher resources, unit test scaffold, and instrumentation test scaffold.
+`android-app/local.properties` is local-only and ignored by Git. It can override `vinylApiBaseUrl` for non-emulator testing. The default debug base URL remains `http://10.0.2.2:8000/api/v1`, which targets the host machine from the Android emulator.
+
+### Android Source Packages
+
+| Package | Responsibility |
+| --- | --- |
+| `data/` | Prototype fallback data and backend API client code. |
+| `data/api/` | Lightweight HTTP client for identify, release import/detail/history, session create, and Home summary calls. |
+| `domain/` | UI-facing domain models for records, sessions, candidates, and Home summaries. |
+| `navigation/` | Compose navigation host and route helpers. |
+| `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
+| `ui/screens/` | Home, capture, processing, match confirmation, manual search, session logging, record detail, placeholders, and small screen-specific formatters. |
+| `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
+
+### Android Runtime Notes
+
+- Camera capture uses `androidx.core.content.FileProvider` with `res/xml/file_paths.xml` for temporary image URIs.
+- The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
+- `RelativeDateFormatter.kt` formats backend date strings for compact UI labels such as `Today`, `1d`, `1w`, and `1m`.
+- Local Android unit tests live under `android-app/app/src/test/`; current formatter coverage is in `ui/screens/RelativeDateFormatterTest.kt`.
 
 ## Source Of Truth
 

@@ -1,7 +1,9 @@
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.releases import Releases
 from app.models.sessions import Sessions
 
 
@@ -23,6 +25,54 @@ class SessionsRepository:
             .filter(Sessions.release_id == release_id)
             .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
             .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def get_recent_with_releases(
+        db: Session,
+        *,
+        limit: int,
+    ):
+        return (
+            db.query(Sessions, Releases)
+            .join(Releases, Sessions.release_id == Releases.id)
+            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_all(db: Session) -> int:
+        return db.query(func.count(Sessions.id)).scalar() or 0
+
+    @staticmethod
+    def count_distinct_releases_since(
+        db: Session,
+        *,
+        since: datetime,
+    ) -> int:
+        return (
+            db.query(func.count(func.distinct(Sessions.release_id)))
+            .filter(Sessions.played_at >= since)
+            .scalar()
+            or 0
+        )
+
+    @staticmethod
+    def get_top_release_stats(
+        db: Session,
+        *,
+        limit: int,
+    ):
+        plays = func.count(Sessions.id).label("plays")
+        average_rating = func.avg(Sessions.rating).label("average_rating")
+        return (
+            db.query(Releases, plays, average_rating)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .group_by(Releases.id)
+            .order_by(plays.desc(), average_rating.desc())
             .limit(limit)
             .all()
         )

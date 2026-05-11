@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.models.releases import Releases
 from app.models.sessions import Sessions
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
@@ -57,6 +58,27 @@ class CreateSessionResult:
     session_id: str
     timestamp: datetime
     status: str = "success"
+
+
+@dataclass(frozen=True)
+class SessionReleaseSummary:
+    session: Sessions
+    release: Releases
+
+
+@dataclass(frozen=True)
+class TopReleaseSummary:
+    release: Releases
+    plays: int
+    average_rating: float | None
+
+
+@dataclass(frozen=True)
+class HomeSummary:
+    recent_sessions: list[SessionReleaseSummary]
+    total_sessions: int
+    records_this_month: int
+    top_records: list[TopReleaseSummary]
 
 
 class SessionsService:
@@ -139,6 +161,41 @@ class SessionsService:
             offset=offset,
         )
 
+    def get_home_summary(
+        self,
+        db: Session,
+        *,
+        recent_limit: int = 5,
+        top_limit: int = 3,
+    ) -> HomeSummary:
+        if recent_limit < 1 or recent_limit > 20:
+            logger.info("Rejecting home summary invalid_recent_limit=%s", recent_limit)
+            raise SessionValidationError("invalid_limit", "recent_limit must be between 1 and 20.")
+        if top_limit < 1 or top_limit > 20:
+            logger.info("Rejecting home summary invalid_top_limit=%s", top_limit)
+            raise SessionValidationError("invalid_limit", "top_limit must be between 1 and 20.")
+
+        now = datetime.now(UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        recent_sessions = [
+            SessionReleaseSummary(session=session, release=release)
+            for session, release in self._sessions_repository.get_recent_with_releases(db, limit=recent_limit)
+        ]
+        top_records = [
+            TopReleaseSummary(
+                release=release,
+                plays=int(plays),
+                average_rating=float(average_rating) if average_rating else None,
+            )
+            for release, plays, average_rating in self._sessions_repository.get_top_release_stats(db, limit=top_limit)
+        ]
+        return HomeSummary(
+            recent_sessions=recent_sessions,
+            total_sessions=self._sessions_repository.count_all(db),
+            records_this_month=self._sessions_repository.count_distinct_releases_since(db, since=month_start),
+            top_records=top_records,
+        )
+
     def _validate_create_input(
         self,
         db: Session,
@@ -169,7 +226,7 @@ class SessionsService:
             available_sides = self._extract_release_sides(
                 cache_entry.raw_discogs_json if cache_entry is not None else None
             )
-            if normalized_side not in available_sides:
+            if available_sides and normalized_side not in available_sides:
                 logger.info(
                     "Rejecting session create release_id=%s invalid_side=%s available_sides=%s",
                     release_id,

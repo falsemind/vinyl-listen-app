@@ -1,3 +1,18 @@
+import java.util.Properties
+
+val localProperties =
+    Properties().apply {
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use(::load)
+        }
+    }
+val vinylApiBaseUrl =
+    providers.gradleProperty("vinylApiBaseUrl").orNull
+        ?: providers.environmentVariable("VINYL_API_BASE_URL").orNull
+        ?: localProperties.getProperty("vinylApiBaseUrl")
+        ?: "http://10.0.2.2:8000/api/v1"
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -19,6 +34,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "VINYL_API_BASE_URL", "\"$vinylApiBaseUrl\"")
     }
 
     buildTypes {
@@ -36,6 +52,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

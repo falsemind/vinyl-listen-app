@@ -282,6 +282,7 @@ android-app/app/build/
 
 *.class
 *.jar
+!android-app/gradle/wrapper/gradle-wrapper.jar
 *.war
 *.dex
 

@@ -7,7 +7,7 @@ import pytest
 from app.pipelines.identification import IdentifyCandidate
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.sessions_service import CreateSessionResult
+from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
 
 
 class StubIdentifyService:
@@ -115,9 +115,11 @@ class StubSessionsService:
         self.create_error: Exception | None = None
         self.get_error: Exception | None = None
         self.list_error: Exception | None = None
+        self.summary_error: Exception | None = None
         self.create_calls: list[dict] = []
         self.get_calls: list[str] = []
         self.list_calls: list[tuple[str, int, int]] = []
+        self.summary_calls: list[tuple[int, int]] = []
         self.created_result = CreateSessionResult(
             session_id="session-123",
             timestamp=datetime(2026, 4, 19, 8, 30, tzinfo=UTC),
@@ -154,6 +156,21 @@ class StubSessionsService:
                 created_at=datetime(2026, 4, 18, 8, 30, tzinfo=UTC),
             ),
         ]
+        self.release = ReleaseStub(
+            id="release-123",
+            discogs_release_id=555123,
+            artist="Boards of Canada",
+            title="Music Has The Right To Children",
+            year=1998,
+            label="Warp Records",
+            catalog_number="WARPLP55",
+            barcode="5021603065515",
+            genres=["Electronic"],
+            styles=["IDM"],
+            cover_image_url="https://img.discogs.com/cover.jpg",
+            created_at=datetime(2026, 4, 19, tzinfo=UTC),
+            updated_at=datetime(2026, 4, 19, tzinfo=UTC),
+        )
 
     def create_session(self, _db, **kwargs) -> CreateSessionResult:
         self.create_calls.append(kwargs)
@@ -172,6 +189,21 @@ class StubSessionsService:
         if self.list_error is not None:
             raise self.list_error
         return self.release_sessions[offset : offset + limit]
+
+    def get_home_summary(self, _db, *, recent_limit: int, top_limit: int) -> HomeSummary:
+        self.summary_calls.append((recent_limit, top_limit))
+        if self.summary_error is not None:
+            raise self.summary_error
+        return HomeSummary(
+            recent_sessions=[
+                SessionReleaseSummary(session=self.release_sessions[0], release=self.release),
+            ],
+            total_sessions=2,
+            records_this_month=1,
+            top_records=[
+                TopReleaseSummary(release=self.release, plays=2, average_rating=4.5),
+            ],
+        )
 
 
 @pytest.fixture
