@@ -18,8 +18,8 @@ All project's documantion lives in - `docs/` directory where you can find and us
 
 ### Backend
 
-Backend directory `backend/` contains all the server side business logic of the project.
+Directory `backend/` contains all the server side business logic with: Python, FastAPI, PostgreSQL.
 
 ### Android UI Client
 
-Directory `android-app/` contains code implementation of the Android client for this project.
+Directory `android-app/` contains code implementation of the Android client with: Kotlin, Jetpack Compose.
