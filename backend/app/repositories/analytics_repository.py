@@ -8,7 +8,7 @@ from app.models.sessions import Sessions
 class AnalyticsRepository:
     @staticmethod
     def get_monthly_play_counts(db: Session):
-        month = func.to_char(Sessions.played_at, "YYYY-MM").label("month")
+        month = AnalyticsRepository._month_expression(db)
         plays = func.count(Sessions.id).label("plays")
         return db.query(month, plays).filter(Sessions.played_at.isnot(None)).group_by(month).order_by(month.asc()).all()
 
@@ -47,3 +47,11 @@ class AnalyticsRepository:
             .order_by(plays.desc(), Sessions.mood.asc())
             .all()
         )
+
+    @staticmethod
+    def _month_expression(db: Session):
+        dialect_name = db.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            return func.strftime("%Y-%m", Sessions.played_at).label("month")
+
+        return func.to_char(Sessions.played_at, "YYYY-MM").label("month")
