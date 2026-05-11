@@ -328,7 +328,7 @@ Match Confirmation
 Manual Search
 Session Logging
 Record Detail
-Analytics
+Analytics (placeholder until M9 backend is ready)
 Settings (placeholder)
 ```
 
@@ -368,32 +368,35 @@ Goal: implement listening statistics.
 Endpoints:
 
 ```
-GET /analytics/summary
-GET /analytics/records
+GET /analytics/plays/monthly
+GET /analytics/top-records
+GET /analytics/rating-distribution
+GET /analytics/mood-distribution
 ```
 
 Tasks:
 
 ```
-Calculate play counts
+Calculate monthly play counts
 Calculate most played records
-Calculate least played records
-Compute average ratings
+Compute rating frequency
+Compute mood frequency
 ```
 
 Example issues:
 
 ```
 Create analytics service
-Add most played query
-Add least played query
-Add rating averages
+Add monthly plays query
+Add top records query
+Add rating distribution query
+Add mood distribution query
 ```
 
 Deliverable:
 
 ```
-Analytics dashboard working
+Backend analytics API ready for the Analytics dashboard
 ```
 
 ---

@@ -390,6 +390,8 @@ Provide visual insights into listening habits.
 
 Charts use Compose-compatible chart components.
 
+Backend analytics is implemented before the Android screen. Android can use a mockup screen until the chart UI is built.
+
 ## Charts
 
 ### Plays Over Time
@@ -400,12 +402,24 @@ Line chart showing:
 Sessions per month
 ```
 
+Backend source:
+
+```
+GET /analytics/plays/monthly
+```
+
 ### Top Records
 
 Bar chart:
 
 ```
 Most played records
+```
+
+Backend source:
+
+```
+GET /analytics/top-records
 ```
 
 ### Rating Distribution
@@ -416,12 +430,24 @@ Histogram or bar chart:
 Rating frequency
 ```
 
+Backend source:
+
+```
+GET /analytics/rating-distribution
+```
+
 ### Mood Distribution
 
 Pie or bar chart:
 
 ```
 Mood counts
+```
+
+Backend source:
+
+```
+GET /analytics/mood-distribution
 ```
 
 ## Actions
