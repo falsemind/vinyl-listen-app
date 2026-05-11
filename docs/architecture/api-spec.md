@@ -264,14 +264,62 @@ Logs a listening session.
 
 ```
 rating must be 1–5
-side must exist for the release
+side must exist for the release when Discogs side metadata is known
 notes optional
 played_at required
 ```
 
 ---
 
-# 5. Get Record Details
+# 5. Home Summary
+
+Used by the **Home screen** to show real listening data after sessions are logged.
+
+## GET /sessions/summary
+
+### Query Parameters
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| recent_limit | Maximum recent sessions to return. Must be 1-20. | 5 |
+| top_limit | Maximum top records to return. Must be 1-20. | 3 |
+
+### Response
+
+```json
+{
+  "recent_sessions": [
+    {
+      "session_id": "session-123",
+      "release_id": "release-123",
+      "artist": "DJ Harmony & Kid Lib",
+      "title": "Future / Fire Feeler / Dressback",
+      "date": "2026-05-10",
+      "side": "A",
+      "rating": 5,
+      "mood": "Focused",
+      "has_notes": true
+    }
+  ],
+  "total_sessions": 1,
+  "records_this_month": 1,
+  "top_records": [
+    {
+      "release_id": "release-123",
+      "artist": "DJ Harmony & Kid Lib",
+      "title": "Future / Fire Feeler / Dressback",
+      "plays": 1,
+      "average_rating": 5.0
+    }
+  ]
+}
+```
+
+The Android app formats `date` into display text such as `Today`, `1d`, `1w`, or `1m`.
+
+---
+
+# 6. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -303,7 +351,7 @@ Used by the **Record Detail screen**.
 
 ---
 
-# 6. Session History
+# 7. Session History
 
 Used for listening history.
 
@@ -335,7 +383,7 @@ Used for listening history.
 
 ---
 
-# 7. Analytics
+# 8. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -400,7 +448,7 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
 
 ---
 
-# 8. System Endpoint
+# 9. System Endpoint
 
 Used by the **Settings screen**.
 
@@ -541,6 +589,7 @@ record identification
 manual search
 release metadata retrieval
 listening session logging
+home dashboard summary
 session history
 analytics charts
 system information
