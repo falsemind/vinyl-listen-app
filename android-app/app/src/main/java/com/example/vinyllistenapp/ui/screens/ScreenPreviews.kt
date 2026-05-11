@@ -42,3 +42,16 @@ private fun PlaceholderScreenPreview() {
         )
     }
 }
+
+@Preview(name = "Analytics", showBackground = true, backgroundColor = 0xFF101010, widthDp = 390, heightDp = 844)
+@Composable
+private fun AnalyticsScreenPreview() {
+    VinylListenAppTheme {
+        AnalyticsScreen(
+            apiClient = VinylApiClient(),
+            onHome = {},
+            onOpenRecord = {},
+            onSettings = {},
+        )
+    }
+}

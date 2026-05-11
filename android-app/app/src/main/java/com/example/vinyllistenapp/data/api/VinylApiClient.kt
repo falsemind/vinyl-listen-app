@@ -3,9 +3,14 @@ package com.example.vinyllistenapp.data.api
 import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.domain.AnalyticsDashboard
+import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.domain.MonthlyPlayCount
+import com.example.vinyllistenapp.domain.MoodDistributionItem
+import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
@@ -138,6 +143,63 @@ class VinylApiClient(
                             averageRating = item.optNullableDouble("average_rating")?.let { String.format(Locale.US, "%.1f", it) } ?: "-",
                         )
                     },
+            )
+        }
+
+    suspend fun getAnalyticsDashboard(): AnalyticsDashboard =
+        apiCall {
+            AnalyticsDashboard(
+                monthlyPlays =
+                    getJson("analytics/plays/monthly")
+                        .optJSONArray("data")
+                        .orEmpty()
+                        .mapObjects { item ->
+                            MonthlyPlayCount(
+                                month = item.optString("month", "Unknown"),
+                                plays = item.optInt("plays", 0),
+                            )
+                        },
+                topRecords =
+                    getJson("analytics/top-records")
+                        .optJSONArray("records")
+                        .orEmpty()
+                        .mapObjects { item ->
+                            AnalyticsTopRecordSummary(
+                                record =
+                                    RecordSummary(
+                                        releaseId = item.getString("release_id"),
+                                        discogsReleaseId = item.optLong("discogs_release_id"),
+                                        artist = item.optString("artist", "Unknown artist"),
+                                        title = item.optString("title", "Unknown title"),
+                                        label = "",
+                                        year = null,
+                                        format = "Vinyl",
+                                        rating = 0,
+                                        lastPlayed = "",
+                                    ),
+                                plays = item.optInt("plays", 0),
+                                averageRating =
+                                    item
+                                        .optNullableDouble("average_rating")
+                                        ?.let { String.format(Locale.US, "%.1f", it) }
+                                        ?: "-",
+                            )
+                        },
+                ratingDistribution =
+                    getJson("analytics/rating-distribution")
+                        .optJSONObject("ratings")
+                        .orEmpty()
+                        .intEntries()
+                        .mapNotNull { (rating, count) ->
+                            rating.toIntOrNull()?.let { RatingDistributionItem(rating = it, count = count) }
+                        }.sortedByDescending { it.rating },
+                moodDistribution =
+                    getJson("analytics/mood-distribution")
+                        .optJSONObject("moods")
+                        .orEmpty()
+                        .intEntries()
+                        .map { (mood, count) -> MoodDistributionItem(mood = mood, count = count) }
+                        .sortedByDescending { it.count },
             )
         }
 
@@ -319,6 +381,17 @@ private fun JSONObject.optConfidence(): Int {
 
 private fun JSONArray?.orEmpty(): JSONArray = this ?: JSONArray()
 
+private fun JSONObject?.orEmpty(): JSONObject = this ?: JSONObject()
+
 private fun JSONArray.mapStrings(): List<String> = List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
 
 private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = List(length()) { index -> transform(getJSONObject(index)) }
+
+private fun JSONObject.intEntries(): List<Pair<String, Int>> =
+    buildList {
+        val keys = keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            add(key to optInt(key, 0))
+        }
+    }

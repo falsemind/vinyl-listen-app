@@ -54,6 +54,8 @@ fun HomeScreen(
     apiClient: VinylApiClient,
     onLogSession: () -> Unit,
     onOpenRecord: (String) -> Unit,
+    onOpenAnalytics: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -76,8 +78,8 @@ fun HomeScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", selected = true, onClick = {}),
-                        BottomNavItem("Stats", selected = false, onClick = {}),
-                        BottomNavItem("Settings", selected = false, onClick = {}),
+                        BottomNavItem("Stats", selected = false, onClick = onOpenAnalytics),
+                        BottomNavItem("Settings", selected = false, onClick = onOpenSettings),
                     ),
             )
         },
