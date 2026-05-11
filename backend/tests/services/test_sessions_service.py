@@ -94,6 +94,27 @@ def test_create_session_rejects_invalid_side(build_sessions_service) -> None:
     assert exc_info.value.code == "invalid_side"
 
 
+def test_create_session_accepts_side_when_release_sides_are_unknown(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    service = build_sessions_service(sessions_repository=repository)
+
+    service.create_session(
+        db=object(),
+        release_id="release-123",
+        rating=4,
+        mood=None,
+        notes=None,
+        played_at="2026-03-14T19:21:00Z",
+        side="A",
+    )
+
+    assert repository.created_payload is not None
+    assert repository.created_payload["vinyl_side"] == "A"
+
+
 def test_create_session_rejects_invalid_played_at(build_sessions_service) -> None:
     service = build_sessions_service()
 

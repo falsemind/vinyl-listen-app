@@ -116,6 +116,46 @@ def test_get_session_endpoint_returns_404_when_missing(
     }
 
 
+def test_get_home_summary_endpoint_returns_real_session_data(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/sessions/summary")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "recent_sessions": [
+            {
+                "session_id": "session-123",
+                "release_id": "release-123",
+                "artist": "Boards of Canada",
+                "title": "Music Has The Right To Children",
+                "date": "2026-03-14",
+                "side": "A",
+                "rating": 5,
+                "mood": "Calm",
+                "has_notes": True,
+            }
+        ],
+        "total_sessions": 2,
+        "records_this_month": 1,
+        "top_records": [
+            {
+                "release_id": "release-123",
+                "artist": "Boards of Canada",
+                "title": "Music Has The Right To Children",
+                "plays": 2,
+                "average_rating": 4.5,
+            }
+        ],
+    }
+    assert service.summary_calls == [(5, 3)]
+
+
 def test_get_release_sessions_endpoint_returns_paginated_history(
     build_stub_sessions_service,
     override_sessions_service,
