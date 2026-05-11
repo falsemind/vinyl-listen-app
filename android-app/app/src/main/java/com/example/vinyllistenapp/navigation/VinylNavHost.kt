@@ -70,7 +70,9 @@ fun VinylNavHost(
                 apiClient = apiClient,
                 onComplete = { candidates ->
                     latestCandidates = candidates
-                    navController.navigate(VinylRoutes.MATCH_CONFIRMATION)
+                    navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {
+                        popUpTo(backStackEntry.destination.id) { inclusive = true }
+                    }
                 },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
             )
