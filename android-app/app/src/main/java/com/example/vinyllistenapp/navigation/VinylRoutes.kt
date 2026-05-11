@@ -6,6 +6,8 @@ object VinylRoutes {
     const val HOME = "home"
     const val CAPTURE_RECORD = "capture_record"
     const val PROCESSING = "processing"
+    const val PROCESSING_PATTERN = "processing?imageUri={imageUri}"
+    const val IMAGE_URI = "imageUri"
     const val MATCH_CONFIRMATION = "match_confirmation"
     const val MANUAL_SEARCH = "manual_search"
     const val RELEASE_ID = "releaseId"
@@ -17,4 +19,6 @@ object VinylRoutes {
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"
 
     fun recordDetail(releaseId: String): String = "record_detail/${Uri.encode(releaseId)}"
+
+    fun processing(imageUri: Uri): String = "processing?imageUri=${Uri.encode(imageUri.toString())}"
 }

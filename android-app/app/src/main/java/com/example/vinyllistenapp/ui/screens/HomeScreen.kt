@@ -16,6 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -24,8 +30,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.TopRecordSummary
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
@@ -41,9 +51,24 @@ import com.example.vinyllistenapp.ui.theme.VinylSpacing
 
 @Composable
 fun HomeScreen(
+    apiClient: VinylApiClient,
     onLogSession: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
+    var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(retryKey) {
+        runCatching { apiClient.getHomeSummary() }
+            .onSuccess {
+                homeSummary = it
+                loadError = null
+            }.onFailure { error ->
+                loadError = error.toUserMessage("Could not load latest sessions. Showing local prototype data.")
+            }
+    }
+
     Scaffold(
         containerColor = VinylColors.AppBackground,
         bottomBar = {
@@ -75,8 +100,15 @@ fun HomeScreen(
             innerPadding = innerPadding,
         ) {
             SectionHeader("Recent Sessions", action = "View All")
-            MockVinylData.recentSessions.forEach { session ->
-                SessionRow(session, onClick = { onOpenRecord(session.releaseId) })
+            loadError?.let { message ->
+                HomeRecoveryCard(message = message, onRetry = { retryKey += 1 })
+            }
+            if (homeSummary.recentSessions.isEmpty()) {
+                EmptyHomeState("No sessions logged yet.")
+            } else {
+                homeSummary.recentSessions.forEach { session ->
+                    SessionRow(session, onClick = { onOpenRecord(session.releaseId) })
+                }
             }
 
             SectionTitle("Collection Snapshot")
@@ -86,27 +118,25 @@ fun HomeScreen(
             ) {
                 SnapshotCard(
                     label = "Total Sessions",
-                    value = "128",
+                    value = homeSummary.totalSessions.toString(),
                     modifier = Modifier.weight(1f),
                     accentColor = VinylColors.AccentGreen,
                 )
                 SnapshotCard(
                     label = "Records This Month",
-                    value = "24",
+                    value = homeSummary.recordsThisMonth.toString(),
                     modifier = Modifier.weight(1f),
                     accentColor = VinylColors.AccentOrange,
                 )
             }
 
             SectionTitle("Top Records")
-            MockVinylData.records.take(2).forEachIndexed { index, record ->
+            homeSummary.topRecords.forEachIndexed { index, topRecord ->
                 TopRecordRow(
-                    record = record,
-                    plays = if (index == 0) 12 else 2,
-                    averageRating = if (index == 0) "4.8" else "4.0",
+                    topRecord = topRecord,
                     badge = if (index == 0) "Most Played" else "Least Played",
                     badgeColor = if (index == 0) VinylColors.AccentGreen else VinylColors.AccentOrange,
-                    onClick = { onOpenRecord(record.releaseId) },
+                    onClick = { onOpenRecord(topRecord.record.releaseId) },
                 )
             }
         }
@@ -116,6 +146,14 @@ fun HomeScreen(
 private const val COMPACT_HOME_BREAKPOINT_DP = 430
 
 private val VinylColorsChipShape = VinylShapes.Chip
+
+private fun mockHomeSummary(): HomeSummary =
+    HomeSummary(
+        recentSessions = MockVinylData.recentSessions,
+        totalSessions = 128,
+        recordsThisMonth = 24,
+        topRecords = MockVinylData.topRecords,
+    )
 
 @Composable
 private fun SectionHeader(
@@ -160,6 +198,34 @@ private fun SnapshotCard(
 }
 
 @Composable
+private fun HomeRecoveryCard(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    AccentCard(
+        modifier = Modifier.clickable(onClick = onRetry),
+        borderColor = VinylColors.AccentOrange.copy(alpha = 0.35f),
+    ) {
+        Text(
+            text = "$message Tap to retry.",
+            color = VinylColors.AccentOrange,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun EmptyHomeState(message: String) {
+    AccentCard(borderColor = VinylColors.BorderDefault) {
+        Text(
+            text = message,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 private fun RecordRow(
     record: RecordSummary,
     onClick: () -> Unit,
@@ -183,14 +249,13 @@ private fun RecordRow(
 
 @Composable
 private fun TopRecordRow(
-    record: RecordSummary,
-    plays: Int,
-    averageRating: String,
+    topRecord: TopRecordSummary,
     badge: String,
     badgeColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
 ) {
     val compact = LocalConfiguration.current.screenWidthDp < COMPACT_HOME_BREAKPOINT_DP
+    val record = topRecord.record
 
     AccentCard(
         modifier = Modifier.clickable(onClick = onClick),
@@ -228,12 +293,12 @@ private fun TopRecordRow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "$plays plays",
+                        text = "${topRecord.plays} plays",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = if (compact) "Avg $averageRating" else "Avg Rating: $averageRating",
+                        text = if (compact) "Avg ${topRecord.averageRating}" else "Avg Rating: ${topRecord.averageRating}",
                         color = VinylColors.TextPrimary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
@@ -322,7 +387,7 @@ private fun SessionRow(
                     horizontalArrangement = Arrangement.spacedBy(if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SidePlayedChip(compact = compact)
+                    SidePlayedChip(side = session.side, compact = compact)
                     RatingStars(
                         rating = session.rating,
                         compact = compact,
@@ -333,7 +398,7 @@ private fun SessionRow(
             }
             Text(
                 modifier = Modifier.padding(start = VinylSpacing.SpaceSm),
-                text = session.playedAt,
+                text = relativeLastPlayedLabel(session.playedAt),
                 color = VinylColors.TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
@@ -344,7 +409,10 @@ private fun SessionRow(
 }
 
 @Composable
-private fun SidePlayedChip(compact: Boolean) {
+private fun SidePlayedChip(
+    side: String?,
+    compact: Boolean,
+) {
     Text(
         modifier =
             Modifier
@@ -353,7 +421,7 @@ private fun SidePlayedChip(compact: Boolean) {
                     horizontal = if (compact) VinylSpacing.SpaceSm else VinylSpacing.SpaceMd,
                     vertical = if (compact) 2.dp else VinylSpacing.SpaceXs,
                 ),
-        text = "Side A",
+        text = side?.let { "Side $it" } ?: "Side -",
         color = VinylColors.TextOnSolidAccent,
         style =
             if (compact) {

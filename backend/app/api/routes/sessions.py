@@ -1,12 +1,20 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.schemas.sessions import CreateSessionRequest, ErrorResponse, SessionCreateResponse, SessionResponse
+from app.schemas.sessions import (
+    CreateSessionRequest,
+    ErrorResponse,
+    HomeRecentSessionItem,
+    HomeSummaryResponse,
+    HomeTopRecordItem,
+    SessionCreateResponse,
+    SessionResponse,
+)
 from app.services.sessions_service import (
     ReleaseNotFoundError,
     SessionNotFoundError,
@@ -62,6 +70,55 @@ def log_session(
         session_id=result.session_id,
         timestamp=result.timestamp,
         status=result.status,
+    )
+
+
+@router.get(
+    "/summary",
+    response_model=HomeSummaryResponse,
+    responses={422: {"model": ErrorResponse}},
+)
+def get_home_summary(
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+    recent_limit: int = Query(default=5),
+    top_limit: int = Query(default=3),
+):
+    try:
+        summary = service.get_home_summary(db, recent_limit=recent_limit, top_limit=top_limit)
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+
+    return HomeSummaryResponse(
+        recent_sessions=[
+            HomeRecentSessionItem(
+                session_id=item.session.id,
+                release_id=item.release.id,
+                artist=item.release.artist,
+                title=item.release.title,
+                date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
+                side=item.session.vinyl_side,
+                rating=item.session.rating,
+                mood=item.session.mood,
+                has_notes=bool(item.session.notes and item.session.notes.strip()),
+            )
+            for item in summary.recent_sessions
+        ],
+        total_sessions=summary.total_sessions,
+        records_this_month=summary.records_this_month,
+        top_records=[
+            HomeTopRecordItem(
+                release_id=item.release.id,
+                artist=item.release.artist,
+                title=item.release.title,
+                plays=item.plays,
+                average_rating=round(item.average_rating, 1) if item.average_rating is not None else None,
+            )
+            for item in summary.top_records
+        ],
     )
 
 

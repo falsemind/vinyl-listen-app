@@ -14,10 +14,11 @@ To implement all endpoints necessary to create, retrieve, and manage listening s
 
 | Task ID | Module/Component | Description | Dependencies | Deliverable |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.1** | `Sessions Service Interface` | Define the public interface of the service layer (e.g., `create_session()`, `get_sessions_by_release(id, limit, offset)`). This separates persistence logic from API handling. | M2 DB Models | Clean service class ready to handle business operations. |
+| **1.1** | `Sessions Service Interface` | Define the public interface of the service layer (e.g., `create_session()`, `get_session()`, `get_sessions_by_release(id, limit, offset)`, `get_home_summary()`). This separates persistence logic from API handling. | M2 DB Models | Clean service class ready to handle business operations. |
 | **1.2** | `Session Input Validation` | Implement a validation function that checks all incoming POST data fields: Rating must be 1-5; `played_at` must be valid ISO8601 datetime format. | API Spec (Validation Rules) | Function that throws specific, standardized exceptions if input constraints are violated. |
-| **1.3** | `Reference Validation Logic` | Implement a crucial validation check: Given a `release_id` and a specified `side` ("A", "B"), query the local `releases` metadata to confirm that this side exists for the given release. | M2 DB Models, 1.2 | Function that throws a specific error (e.g., `invalid_side`) if the side doesn't match the release data. |
+| **1.3** | `Reference Validation Logic` | Implement a validation check: Given a `release_id` and a specified `side` ("A", "B"), query cached Discogs release metadata when available to confirm that the side exists. If side metadata is unknown, accept the normalized side instead of rejecting all side values. | M2 DB Models, 1.2 | Function that throws a specific error (e.g., `invalid_side`) only when known side metadata contradicts the request. |
 | **1.4** | `Session Persistence Logic` | Implement the database transaction to insert the validated session record into the `sessions` table. This should handle generating and returning the new unique `session_id`. | M2 DB Models, 1.3 | Function: `save_new_session(validated_data) -> SessionID`. |
+| **1.5** | `Home Summary Aggregation` | Add aggregation for the Android Home screen: recent sessions joined to release metadata, total session count, distinct records played this month, and top records by play count/rating. | M2 DB Models, 1.4 | Function: `get_home_summary(recent_limit, top_limit) -> HomeSummary`. |
 
 ### Phase 2: API Endpoint Implementation (The Interface)
 *(Goal: Build the public-facing routes that handle client interaction.)*
@@ -27,6 +28,7 @@ To implement all endpoints necessary to create, retrieve, and manage listening s
 | **2.1** | `POST /sessions` Endpoint | Implement the API handler. This route orchestrates: Input Validation (1.2) $\to$ Reference Validation (1.3) $\to$ Service Creation (1.4). Returns 201 Created upon success. | 1.1, 1.2, 1.3, 1.4 | Fully functional POST endpoint for logging new sessions. |
 | **2.2** | `GET /sessions/{session_id}` Endpoint | Implement the handler to retrieve a single session by its internal ID, ensuring the record exists before querying and returning it. | M2 DB Models | API endpoint providing detailed information for one specific listening event. |
 | **2.3** | `GET /releases/{release_id}/sessions` Endpoint | Implement the history endpoint. This must handle query parameters (`limit`, `offset`) correctly to provide proper database pagination. | 1.1, M2 DB Models | API endpoint that returns a paginated list of sessions for a given release. |
+| **2.4** | `GET /sessions/summary` Endpoint | Implement the Android Home summary endpoint. This route returns recent sessions, total sessions, records played this month, and top record summaries. | 1.5 | API endpoint that replaces Home prototype data with backend data. |
 
 ### Phase 3: Review and Polish (Stability)
 *(Goal: Ensure the system is reliable in production scenarios.)*
@@ -35,6 +37,7 @@ To implement all endpoints necessary to create, retrieve, and manage listening s
 | :--- | :--- | :--- | :--- | :--- |
 | **3.1** | `Error Response Standardization` | Review all validation points (M5) and ensure that specific errors (e.g., `Rating too high`, `Side not found`) are returned using the mandated error response format (`{"error": {"code": ..., "message": ...}}`). | 1.2, 1.3, API Spec | Consistent and informative error handling across all M5 endpoints. |
 | **3.2** | `Unit Testing` | Write unit tests focused heavily on edge cases: attempts to create sessions with invalid ratings (0 or 6), non-existent side inputs, and boundary conditions for pagination. | All previous tasks | Test suite proving the robustness of session creation and retrieval logic. |
+| **3.3** | `Home Summary Tests` | Add API and service tests for `GET /sessions/summary`, including recent session serialization and aggregate counts. | 1.5, 2.4 | Test coverage for the Android Home data contract. |
 
 ---
 ### Summary of Logic Flow (M5 Focus)
@@ -42,3 +45,7 @@ To implement all endpoints necessary to create, retrieve, and manage listening s
 The process is straightforward but rigorous:
 
 **`Client POST /sessions` $\to$ `Validation Layer` $\to$ [IF Fails] $\to$ `Error Response` $\to$ [IF Passes] $\to$ `Release/Side Validation` $\to$ `Sessions Service` $\to$ `DB Persistence (INSERT)` $\to$ `Success Response`**
+
+The Android Home screen uses a read-only summary flow:
+
+**`Client GET /sessions/summary` $\to$ `Sessions Service` $\to$ `Recent Session + Release Join` $\to$ `Aggregate Counts` $\to$ `HomeSummaryResponse`**

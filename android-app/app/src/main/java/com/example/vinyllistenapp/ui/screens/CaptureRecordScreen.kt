@@ -1,5 +1,11 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -35,21 +42,51 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import java.io.File
 
 @Composable
 fun CaptureRecordScreen(
-    onTakePhoto: () -> Unit,
-    onUpload: () -> Unit,
+    onImageSelected: (Uri) -> Unit,
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
+    var pendingCaptureUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var permissionDenied by rememberSaveable { mutableStateOf(false) }
+    val cameraLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+            if (captured) {
+                pendingCaptureUri?.let { onImageSelected(Uri.parse(it)) }
+            }
+        }
+
+    fun launchCameraCapture() {
+        val captureUri = createImageCaptureUri(context)
+        pendingCaptureUri = captureUri.toString()
+        cameraLauncher.launch(captureUri)
+    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                permissionDenied = false
+                launchCameraCapture()
+            } else {
+                permissionDenied = true
+            }
+        }
+    val uploadLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let(onImageSelected)
+        }
 
     Box(
         modifier =
@@ -76,8 +113,25 @@ fun CaptureRecordScreen(
             )
             GlassPrimaryButton(
                 label = "Take Photo",
-                onClick = onTakePhoto,
+                onClick = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        permissionDenied = false
+                        launchCameraCapture()
+                    } else {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
             )
+            if (permissionDenied) {
+                Spacer(Modifier.height(VinylSpacing.SpaceMd))
+                Text(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "Camera permission is needed to take a photo.",
+                    color = VinylColors.AccentOrange,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -86,7 +140,7 @@ fun CaptureRecordScreen(
                 CaptureSecondaryButton(
                     label = "Upload",
                     accentColor = VinylColors.AccentGreen,
-                    onClick = onUpload,
+                    onClick = { uploadLauncher.launch("image/*") },
                     modifier = Modifier.weight(1f),
                 )
                 CaptureSecondaryButton(
@@ -102,6 +156,11 @@ fun CaptureRecordScreen(
             CaptureInfoPopup(onDismiss = { showCaptureInfo = false })
         }
     }
+}
+
+private fun createImageCaptureUri(context: Context): Uri {
+    val imageFile = File.createTempFile("vinyl_capture_", ".jpg", context.cacheDir)
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
 }
 
 @Composable

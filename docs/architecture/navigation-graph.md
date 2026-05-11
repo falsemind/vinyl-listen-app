@@ -57,6 +57,7 @@ Current backend endpoints used by these routes:
 
 |Client flow|Backend API|
 |---|---|
+|Load Home dashboard data|`GET /api/v1/sessions/summary`|
 |Identify uploaded/captured image|`POST /api/v1/identify`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
@@ -111,6 +112,17 @@ home
 |Tap record|`record_detail/{releaseId}`|
 |Tap future Analytics/Stats tab|placeholder / no-op|
 |Tap future Settings tab|placeholder / no-op|
+
+### Backend Data
+
+Home loads real dashboard data from:
+
+```
+GET /api/v1/sessions/summary
+```
+
+The response provides recent sessions, total session count, records played this month, and top record summaries. The Android app keeps local prototype data as a fallback when the backend is unavailable.
+
 ---
 
 # 2. Capture Record Screen
