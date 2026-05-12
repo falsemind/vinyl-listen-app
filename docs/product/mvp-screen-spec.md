@@ -140,6 +140,18 @@ Extracting text
 Searching candidates
 ```
 
+Statuses are backed by the server identify job flow. The client starts `POST /api/v1/identify/jobs` and polls `GET /api/v1/identify/jobs/{job_id}` until the backend returns a terminal state.
+
+Visible phases map to backend statuses:
+
+| UI phase | Backend statuses |
+| --- | --- |
+| Uploading image | `queued`, `upload_received` |
+| Extracting text | `preprocessing_image`, `extracting_text`, `parsing_identifiers` |
+| Searching candidates | `searching_local`, `searching_discogs`, `ranking_candidates` |
+
+If the job fails, the backend returns `failed_step` so the client can mark upload, extraction, or search as the failed phase.
+
 ## Navigation
 
 ```

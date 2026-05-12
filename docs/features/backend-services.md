@@ -10,6 +10,7 @@ description: This document explains the backend service layer in `backend/app/se
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsService`, `CandidateRanker`. |
+| `identify_job_service.py` | Persist and expose async identify job status for clients that need progress updates. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`. |
 | `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
@@ -17,7 +18,7 @@ description: This document explains the backend service layer in `backend/app/se
 
 ## IdentifyService
 
-`IdentifyService` powers `POST /api/v1/identify`. It accepts raw image bytes plus filename/content type and returns up to five ranked `IdentifyCandidate` values.
+`IdentifyService` powers `POST /api/v1/identify` and the background work behind identify jobs. It accepts raw image bytes plus filename/content type and returns up to five ranked `IdentifyCandidate` values.
 
 ### Dependencies
 
@@ -35,6 +36,7 @@ The service rejects invalid uploads before the pipeline runs.
 - Max upload size: `8 MiB`.
 - Empty files and blank content types raise `IdentifyValidationError`.
 - API routes convert validation errors to structured `ErrorResponse` payloads.
+- `validate_upload` is also used by `IdentifyJobService` before creating an async job row.
 
 ### Identification flow
 
@@ -49,6 +51,15 @@ The service rejects invalid uploads before the pipeline runs.
 9. Rank candidates and return the top candidates.
 
 Local matches get `match_source="local"`. Discogs matches get `match_source="discogs"`.
+
+When a progress reporter is provided, the service emits backend status updates before expensive phases:
+
+- `preprocessing_image`
+- `extracting_text`
+- `parsing_identifiers`
+- `searching_local`
+- `searching_discogs`
+- `ranking_candidates`
 
 ### Local candidate search
 
@@ -84,6 +95,38 @@ The ranker adds:
 - `confidence`: normalized score used by clients.
 - `matched_on`: tuple of evidence types that matched, such as `barcode`, `catalog_number`, `artist`, `title`, `label`, `year`, or OCR-derived roles.
 - `score_trace`: debug-friendly reasons such as `+100 barcode`, `+60 catalog_number`, or contradiction penalties.
+
+## IdentifyJobService
+
+`IdentifyJobService` powers `POST /api/v1/identify/jobs` and `GET /api/v1/identify/jobs/{job_id}`. It exists so clients can show server-backed Processing screen progress instead of guessing from local HTTP state.
+
+### Create flow
+
+`create_job(db, image_bytes, filename, content_type)`:
+
+1. Validates the upload through `IdentifyService.validate_upload`.
+2. Creates an `identify_jobs` row with `status="upload_received"`.
+3. Sets `expires_at` to the current time plus the job TTL.
+4. Returns an `IdentifyJobStatusResponse` immediately.
+
+The current job TTL is 24 hours.
+
+### Background processing
+
+`process_job(job_id, image_bytes, filename, content_type)` opens a fresh database session, loads the job, and runs `IdentifyService.identify` with a database-backed progress reporter.
+
+The reporter persists status and message updates at each major identify phase. On success, the service stores the serialized `IdentifyResponse` in `result` and marks the job `completed`.
+
+### Failure mapping
+
+Failures are persisted as `status="failed"` with an error payload:
+
+- Upload validation failures use `failed_step="upload"`.
+- Image preprocessing, OCR, and identifier parsing failures use `failed_step="extract"`.
+- Discogs and candidate lookup failures use `failed_step="search"`.
+- Unknown failures use `failed_step="unknown"`.
+
+Expired jobs raise `IdentifyJobExpiredError`; missing jobs raise `IdentifyJobNotFoundError`. API routes map those to `410` and `404`.
 
 ## DiscogsService
 

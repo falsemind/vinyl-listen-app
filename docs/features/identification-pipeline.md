@@ -27,6 +27,8 @@ CandidateRanker.rank
 IdentifyResponse
 ```
 
+Clients can call the pipeline directly with `POST /api/v1/identify`, or use the async job wrapper with `POST /api/v1/identify/jobs` and `GET /api/v1/identify/jobs/{job_id}`. The job wrapper does not change identification behavior; it persists progress and terminal results for polling clients.
+
 ## Data Model
 
 Core dataclasses live in `models.py`.
@@ -273,6 +275,8 @@ This makes API results explainable and helps tests assert why a candidate won.
 5. Search stops early when a confident external candidate already covers the extracted identity context.
 6. Final candidates are ranked and limited before response serialization.
 
+When called by `IdentifyJobService`, the same flow reports persisted status before image preprocessing, OCR extraction, identifier parsing, local search, Discogs search, and candidate ranking. This is the backend source for the Android Processing screen progress states.
+
 ## Test Coverage
 
 Pipeline tests live in `backend/tests/pipelines/`:
@@ -287,4 +291,4 @@ Pipeline tests live in `backend/tests/pipelines/`:
 - `test_search_evidence.py`
 - `test_search_planner.py`
 
-Service-level integration around this pipeline is covered by `backend/tests/services/test_identify_service.py` and route behavior by `backend/tests/api/test_identify_api.py`.
+Service-level integration around this pipeline is covered by `backend/tests/services/test_identify_service.py`, async job behavior by `backend/tests/services/test_identify_job_service.py`, and route behavior by `backend/tests/api/test_identify_api.py`.
