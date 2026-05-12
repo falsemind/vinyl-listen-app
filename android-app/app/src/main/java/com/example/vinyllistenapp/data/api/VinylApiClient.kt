@@ -15,6 +15,7 @@ import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,45 +33,45 @@ class VinylApiClient(
     suspend fun identifyImage(
         context: Context,
         imageUri: Uri,
+        onStatus: (IdentifyJobState) -> Unit = {},
     ): List<MatchCandidate> =
         apiCall {
-            val resolver = context.contentResolver
-            val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
-            val filename = imageUri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "record.jpg"
-            val imageBytes =
-                resolver.openInputStream(imageUri)?.use { it.readBytes() }
-                    ?: throw ApiException("Could not read selected image.")
-            val boundary = "VinylListenBoundary${System.currentTimeMillis()}"
-            val connection = openConnection("identify")
-
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            connection.outputStream.use { output ->
-                output.writeUtf8("--$boundary\r\n")
-                output.writeUtf8("Content-Disposition: form-data; name=\"image\"; filename=\"$filename\"\r\n")
-                output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
-                output.write(imageBytes)
-                output.writeUtf8("\r\n--$boundary--\r\n")
+            var job = startIdentifyJob(context, imageUri)
+            onStatus(job)
+            while (!job.status.isTerminal) {
+                delay(750)
+                job = getIdentifyJobStatus(job.jobId)
+                onStatus(job)
             }
-
-            val response = readJsonResponse(connection)
-            response.optJSONArray("candidates").orEmpty().mapObjects { candidate ->
-                MatchCandidate(
-                    releaseId = candidate.optNullableString("release_id"),
-                    discogsReleaseId = candidate.optLong("discogs_release_id"),
-                    artist = candidate.optString("artist", "Unknown artist"),
-                    title = candidate.optString("title", "Unknown title"),
-                    label = candidate.optNullableString("label") ?: "Unknown label",
-                    confidence = candidate.optConfidence(),
-                    year = candidate.optNullableInt("year"),
-                    catalogNumber = candidate.optNullableString("catalog_number"),
-                    barcode = candidate.optNullableString("barcode"),
-                    coverImageUrl = candidate.optNullableString("cover_image_url"),
-                    matchSource = candidate.optNullableString("match_source"),
-                    matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
-                )
+            when (job.status) {
+                IdentifyJobStatus.Completed -> job.candidates.orEmpty()
+                IdentifyJobStatus.Failed ->
+                    throw ApiException(
+                        message = job.error?.message ?: "Identify failed. Retry or use Manual Search.",
+                        failedStep = job.error?.failedStep,
+                    )
+                IdentifyJobStatus.Expired ->
+                    throw ApiException(
+                        message = "Identify result expired. Try another image or search manually.",
+                        kind = ApiErrorKind.NotFound,
+                        failedStep = "unknown",
+                    )
+                else -> emptyList()
             }
+        }
+
+    suspend fun startIdentifyJob(
+        context: Context,
+        imageUri: Uri,
+    ): IdentifyJobState =
+        apiCall {
+            val response = postImageMultipart(context, imageUri, "identify/jobs")
+            response.toIdentifyJobState()
+        }
+
+    suspend fun getIdentifyJobStatus(jobId: String): IdentifyJobState =
+        apiCall {
+            getJson("identify/jobs/${Uri.encode(jobId)}").toIdentifyJobState()
         }
 
     suspend fun importRelease(discogsReleaseId: Long): String =
@@ -257,7 +258,7 @@ class VinylApiClient(
             postJson("sessions/", body).getString("session_id")
         }
 
-    private suspend fun <T> apiCall(block: () -> T): T =
+    private suspend fun <T> apiCall(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
             try {
                 block()
@@ -275,6 +276,34 @@ class VinylApiClient(
     private fun getJson(path: String): JSONObject {
         val connection = openConnection(path)
         connection.requestMethod = "GET"
+        return readJsonResponse(connection)
+    }
+
+    private fun postImageMultipart(
+        context: Context,
+        imageUri: Uri,
+        path: String,
+    ): JSONObject {
+        val resolver = context.contentResolver
+        val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
+        val filename = imageUri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "record.jpg"
+        val imageBytes =
+            resolver.openInputStream(imageUri)?.use { it.readBytes() }
+                ?: throw ApiException("Could not read selected image.", failedStep = "upload")
+        val boundary = "VinylListenBoundary${System.currentTimeMillis()}"
+        val connection = openConnection(path)
+
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        connection.outputStream.use { output ->
+            output.writeUtf8("--$boundary\r\n")
+            output.writeUtf8("Content-Disposition: form-data; name=\"image\"; filename=\"$filename\"\r\n")
+            output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
+            output.write(imageBytes)
+            output.writeUtf8("\r\n--$boundary--\r\n")
+        }
+
         return readJsonResponse(connection)
     }
 
@@ -339,6 +368,7 @@ enum class ApiErrorKind {
 class ApiException(
     message: String,
     val kind: ApiErrorKind = ApiErrorKind.Unknown,
+    val failedStep: String? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
@@ -384,6 +414,82 @@ private fun JSONObject.putNullable(
         } else {
             put(name, value)
         }
+    }
+
+data class IdentifyJobState(
+    val jobId: String,
+    val status: IdentifyJobStatus,
+    val message: String,
+    val candidates: List<MatchCandidate>? = null,
+    val error: IdentifyJobError? = null,
+)
+
+enum class IdentifyJobStatus(
+    val wireValue: String,
+) {
+    Queued("queued"),
+    UploadReceived("upload_received"),
+    PreprocessingImage("preprocessing_image"),
+    ExtractingText("extracting_text"),
+    ParsingIdentifiers("parsing_identifiers"),
+    SearchingLocal("searching_local"),
+    SearchingDiscogs("searching_discogs"),
+    RankingCandidates("ranking_candidates"),
+    Completed("completed"),
+    Failed("failed"),
+    Expired("expired"),
+    Unknown("unknown"),
+    ;
+
+    val isTerminal: Boolean
+        get() = this == Completed || this == Failed || this == Expired
+
+    companion object {
+        fun fromWireValue(value: String): IdentifyJobStatus = entries.firstOrNull { it.wireValue == value } ?: Unknown
+    }
+}
+
+data class IdentifyJobError(
+    val code: String,
+    val message: String,
+    val failedStep: String,
+)
+
+private fun JSONObject.toIdentifyJobState(): IdentifyJobState {
+    val result = optJSONObject("result")
+    val error = optJSONObject("error")
+    return IdentifyJobState(
+        jobId = getString("job_id"),
+        status = IdentifyJobStatus.fromWireValue(optString("status", "unknown")),
+        message = optString("message", ""),
+        candidates = result?.optJSONArray("candidates")?.toMatchCandidates(),
+        error =
+            error?.let {
+                IdentifyJobError(
+                    code = it.optString("code", "identify_failed"),
+                    message = it.optString("message", "Identify failed. Retry or use Manual Search."),
+                    failedStep = it.optString("failed_step", "unknown"),
+                )
+            },
+    )
+}
+
+private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
+    mapObjects { candidate ->
+        MatchCandidate(
+            releaseId = candidate.optNullableString("release_id"),
+            discogsReleaseId = candidate.optLong("discogs_release_id"),
+            artist = candidate.optString("artist", "Unknown artist"),
+            title = candidate.optString("title", "Unknown title"),
+            label = candidate.optNullableString("label") ?: "Unknown label",
+            confidence = candidate.optConfidence(),
+            year = candidate.optNullableInt("year"),
+            catalogNumber = candidate.optNullableString("catalog_number"),
+            barcode = candidate.optNullableString("barcode"),
+            coverImageUrl = candidate.optNullableString("cover_image_url"),
+            matchSource = candidate.optNullableString("match_source"),
+            matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
+        )
     }
 
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }

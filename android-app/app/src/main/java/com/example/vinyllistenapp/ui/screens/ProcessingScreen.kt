@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.ApiException
+import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -59,23 +61,26 @@ fun ProcessingScreen(
 ) {
     val context = LocalContext.current
     var retryKey by remember { mutableIntStateOf(0) }
-    var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading) }
+    var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
 
     LaunchedEffect(imageUri, retryKey) {
-        state = IdentifyUiState.Loading
+        state = IdentifyUiState.Loading()
         val candidates =
             if (imageUri == null) {
                 MockVinylData.matchCandidates
             } else {
-                runCatching { apiClient.identifyImage(context, Uri.parse(imageUri)) }
-                    .getOrElse { error ->
-                        state =
-                            IdentifyUiState.Error(
-                                error.toUserMessage("Identify failed. Retry or use Manual Search."),
-                                ProcessingFailureStep.Upload,
-                            )
-                        return@LaunchedEffect
+                runCatching {
+                    apiClient.identifyImage(context, Uri.parse(imageUri)) { job ->
+                        state = IdentifyUiState.Loading(job.status)
                     }
+                }.getOrElse { error ->
+                    state =
+                        IdentifyUiState.Error(
+                            error.toUserMessage("Identify failed. Retry or use Manual Search."),
+                            error.toProcessingFailureStep(),
+                        )
+                    return@LaunchedEffect
+                }
             }
         if (candidates.isEmpty()) {
             state = IdentifyUiState.Empty
@@ -151,7 +156,7 @@ fun ProcessingScreen(
                                 onManualSearch = onManualSearch,
                             )
 
-                        IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
+                        is IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
                     }
                 }
             }
@@ -160,7 +165,9 @@ fun ProcessingScreen(
 }
 
 private sealed interface IdentifyUiState {
-    data object Loading : IdentifyUiState
+    data class Loading(
+        val status: IdentifyJobStatus? = null,
+    ) : IdentifyUiState
 
     data class Success(
         val candidates: List<MatchCandidate>,
@@ -182,7 +189,7 @@ private enum class ProcessingFailureStep {
 
 private fun processingSubtitle(state: IdentifyUiState): String =
     when (state) {
-        IdentifyUiState.Loading -> "Please wait while we search our database"
+        is IdentifyUiState.Loading -> state.status.toProcessingMessage()
         is IdentifyUiState.Success -> "Matches found"
         IdentifyUiState.Empty -> "Try another image or search manually"
         is IdentifyUiState.Error -> "The identify request could not finish"
@@ -197,7 +204,13 @@ private enum class ProcessingStatus {
 
 private fun uploadStatus(state: IdentifyUiState): ProcessingStatus =
     when (state) {
-        IdentifyUiState.Loading -> ProcessingStatus.Active
+        is IdentifyUiState.Loading ->
+            if (state.status == null || state.status == IdentifyJobStatus.Queued) {
+                ProcessingStatus.Active
+            } else {
+                ProcessingStatus.Complete
+            }
+
         is IdentifyUiState.Error ->
             if (state.failedStep == ProcessingFailureStep.Upload) ProcessingStatus.Error else ProcessingStatus.Complete
 
@@ -208,7 +221,22 @@ private fun uploadStatus(state: IdentifyUiState): ProcessingStatus =
 
 private fun extractingStatus(state: IdentifyUiState): ProcessingStatus =
     when (state) {
-        IdentifyUiState.Loading -> ProcessingStatus.Pending
+        is IdentifyUiState.Loading ->
+            when (state.status) {
+                IdentifyJobStatus.PreprocessingImage,
+                IdentifyJobStatus.ExtractingText,
+                IdentifyJobStatus.ParsingIdentifiers,
+                -> ProcessingStatus.Active
+
+                IdentifyJobStatus.SearchingLocal,
+                IdentifyJobStatus.SearchingDiscogs,
+                IdentifyJobStatus.RankingCandidates,
+                IdentifyJobStatus.Completed,
+                -> ProcessingStatus.Complete
+
+                else -> ProcessingStatus.Pending
+            }
+
         is IdentifyUiState.Error ->
             if (state.failedStep == ProcessingFailureStep.Extract) ProcessingStatus.Error else ProcessingStatus.Pending
 
@@ -219,12 +247,49 @@ private fun extractingStatus(state: IdentifyUiState): ProcessingStatus =
 
 private fun searchingStatus(state: IdentifyUiState): ProcessingStatus =
     when (state) {
-        IdentifyUiState.Loading -> ProcessingStatus.Pending
+        is IdentifyUiState.Loading ->
+            when (state.status) {
+                IdentifyJobStatus.SearchingLocal,
+                IdentifyJobStatus.SearchingDiscogs,
+                IdentifyJobStatus.RankingCandidates,
+                -> ProcessingStatus.Active
+
+                IdentifyJobStatus.Completed -> ProcessingStatus.Complete
+                else -> ProcessingStatus.Pending
+            }
+
         IdentifyUiState.Empty -> ProcessingStatus.Error
         is IdentifyUiState.Error ->
             if (state.failedStep == ProcessingFailureStep.Search) ProcessingStatus.Error else ProcessingStatus.Pending
 
         is IdentifyUiState.Success -> ProcessingStatus.Active
+    }
+
+private fun IdentifyJobStatus?.toProcessingMessage(): String =
+    when (this) {
+        null,
+        IdentifyJobStatus.Queued,
+        -> "Uploading image"
+
+        IdentifyJobStatus.UploadReceived -> "Image received by server"
+        IdentifyJobStatus.PreprocessingImage -> "Preparing image"
+        IdentifyJobStatus.ExtractingText -> "Extracting text"
+        IdentifyJobStatus.ParsingIdentifiers -> "Reading label details"
+        IdentifyJobStatus.SearchingLocal -> "Checking local records"
+        IdentifyJobStatus.SearchingDiscogs -> "Searching Discogs candidates"
+        IdentifyJobStatus.RankingCandidates -> "Ranking matches"
+        IdentifyJobStatus.Completed -> "Matches found"
+        IdentifyJobStatus.Failed -> "The identify request could not finish"
+        IdentifyJobStatus.Expired -> "Identify result expired"
+        IdentifyJobStatus.Unknown -> "Identifying record"
+    }
+
+private fun Throwable.toProcessingFailureStep(): ProcessingFailureStep =
+    when ((this as? ApiException)?.failedStep) {
+        "upload" -> ProcessingFailureStep.Upload
+        "extract" -> ProcessingFailureStep.Extract
+        "search" -> ProcessingFailureStep.Search
+        else -> ProcessingFailureStep.Search
     }
 
 @Composable
