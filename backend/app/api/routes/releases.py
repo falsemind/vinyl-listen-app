@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -20,6 +21,7 @@ def get_release_import_service() -> ReleaseImportService:
     return ReleaseImportService()
 
 
+@lru_cache(maxsize=1)
 def get_discogs_service() -> DiscogsService:
     return DiscogsService()
 

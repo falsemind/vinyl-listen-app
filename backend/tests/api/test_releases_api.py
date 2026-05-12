@@ -4,6 +4,17 @@ from app.main import app
 from app.services.discogs_service import DiscogsClientError
 
 
+def test_discogs_service_dependency_reuses_search_cache() -> None:
+    from app.api.routes.releases import get_discogs_service
+
+    get_discogs_service.cache_clear()
+
+    try:
+        assert get_discogs_service() is get_discogs_service()
+    finally:
+        get_discogs_service.cache_clear()
+
+
 def test_search_releases_endpoint_returns_discogs_results(
     build_stub_discogs_search_service,
     override_discogs_service,

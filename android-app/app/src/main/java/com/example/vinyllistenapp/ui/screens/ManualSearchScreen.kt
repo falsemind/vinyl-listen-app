@@ -94,8 +94,11 @@ fun ManualSearchScreen(
     }
 
     fun selectResult(result: ReleaseSearchResult) {
+        if (selectingDiscogsReleaseId != null) {
+            return
+        }
+        selectingDiscogsReleaseId = result.discogsReleaseId
         scope.launch {
-            selectingDiscogsReleaseId = result.discogsReleaseId
             val releaseId =
                 runCatching { apiClient.importRelease(result.discogsReleaseId) }
                     .getOrElse { error ->
@@ -195,9 +198,11 @@ fun ManualSearchScreen(
                 is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message)
                 is ManualSearchUiState.Success ->
                     currentState.results.forEach { result ->
+                        val isImporting = selectingDiscogsReleaseId != null
                         ManualSearchResultRow(
                             record = result,
                             isSelecting = selectingDiscogsReleaseId == result.discogsReleaseId,
+                            enabled = !isImporting,
                             onClick = { selectResult(result) },
                         )
                     }
@@ -313,11 +318,13 @@ private fun ManualSearchField(
 private fun ManualSearchResultRow(
     record: ReleaseSearchResult,
     isSelecting: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     AccentCard(
         modifier =
             Modifier.clickable(
+                enabled = enabled,
                 onClickLabel = "Select ${record.title}",
                 role = Role.Button,
                 onClick = onClick,
