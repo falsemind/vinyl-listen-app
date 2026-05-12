@@ -110,7 +110,7 @@ Missing required Discogs settings raise `DiscogsConfigurationError`.
 - TLS context from `certifi`
 - structured `DiscogsClientError` messages for HTTP and URL failures
 
-`DiscogsRateLimiter` serializes calls with a lock and enforces the configured requests-per-minute window.
+`DiscogsRateLimiter` serializes calls with a lock, keeps configured request spacing as a fallback, and tracks Discogs `X-Discogs-Ratelimit*` response headers. When Discogs reports no remaining requests, the limiter waits for the conservative one-minute window estimate before the next request.
 
 ### Search behavior
 

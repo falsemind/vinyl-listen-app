@@ -2,7 +2,7 @@ import json
 import logging
 import ssl
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
@@ -34,6 +34,14 @@ class DiscogsClientError(DiscogsServiceError):
 
 
 @dataclass(frozen=True)
+class DiscogsRateLimitState:
+    limit: int | None
+    used: int | None
+    remaining: int | None
+    observed_at: float
+
+
+@dataclass(frozen=True)
 class DiscogsApiConfig:
     base_url: str
     token: str
@@ -60,8 +68,14 @@ class DiscogsApiConfig:
         }
 
 
+@dataclass(frozen=True)
+class DiscogsResponse:
+    payload: dict[str, Any]
+    headers: Mapping[str, str]
+
+
 class DiscogsRateLimiter:
-    """Simple process-local limiter that spaces calls across the quota window."""
+    """Process-local limiter backed by observed Discogs quota headers."""
 
     def __init__(
         self,
@@ -72,27 +86,78 @@ class DiscogsRateLimiter:
         if requests_per_minute <= 0:
             raise ValueError("requests_per_minute must be positive")
 
-        self._minimum_interval_seconds = 60.0 / requests_per_minute
+        self._requests_per_minute = requests_per_minute
         self._sleep = sleep_func
         self._clock = clock
         self._lock = threading.Lock()
         self._last_request_started_at: float | None = None
+        self._rate_limit_state: DiscogsRateLimitState | None = None
+
+    @property
+    def rate_limit_state(self) -> DiscogsRateLimitState | None:
+        with self._lock:
+            return self._rate_limit_state
 
     def wait(self) -> None:
         with self._lock:
             now = self._clock()
             if self._last_request_started_at is None:
+                quota_wait_seconds = self._quota_wait_seconds(now)
+                if quota_wait_seconds > 0:
+                    self._sleep(quota_wait_seconds)
+                    now = self._clock()
                 self._last_request_started_at = now
                 return
 
             elapsed = now - self._last_request_started_at
-            remaining = self._minimum_interval_seconds - elapsed
+            spacing_wait_seconds = self._minimum_interval_seconds() - elapsed
+            quota_wait_seconds = self._quota_wait_seconds(now)
+            wait_seconds = max(spacing_wait_seconds, quota_wait_seconds)
 
-            if remaining > 0:
-                self._sleep(remaining)
+            if wait_seconds > 0:
+                self._sleep(wait_seconds)
                 now = self._clock()
 
             self._last_request_started_at = now
+
+    def observe_response_headers(self, headers: Mapping[str, str] | None) -> None:
+        if not headers:
+            return
+
+        limit = _parse_header_int(headers, "X-Discogs-Ratelimit")
+        used = _parse_header_int(headers, "X-Discogs-Ratelimit-Used")
+        remaining = _parse_header_int(headers, "X-Discogs-Ratelimit-Remaining")
+        if limit is None and used is None and remaining is None:
+            return
+
+        state = DiscogsRateLimitState(
+            limit=limit,
+            used=used,
+            remaining=remaining,
+            observed_at=self._clock(),
+        )
+        with self._lock:
+            self._rate_limit_state = state
+
+        logger.info(
+            "Observed Discogs rate limit limit=%s used=%s remaining=%s",
+            state.limit,
+            state.used,
+            state.remaining,
+        )
+
+    def _minimum_interval_seconds(self) -> float:
+        requests_per_minute = self._requests_per_minute
+        if self._rate_limit_state and self._rate_limit_state.limit and self._rate_limit_state.limit > 0:
+            requests_per_minute = min(requests_per_minute, self._rate_limit_state.limit)
+        return 60.0 / requests_per_minute
+
+    def _quota_wait_seconds(self, now: float) -> float:
+        if not self._rate_limit_state or self._rate_limit_state.remaining is None:
+            return 0.0
+        if self._rate_limit_state.remaining > 0:
+            return 0.0
+        return max(0.0, self._rate_limit_state.observed_at + 60.0 - now)
 
 
 class DiscogsClient:
@@ -102,7 +167,7 @@ class DiscogsClient:
         self,
         config: DiscogsApiConfig | None = None,
         rate_limiter: DiscogsRateLimiter | None = None,
-        transport: Callable[[str, dict[str, str], float], dict[str, Any]] | None = None,
+        transport: Callable[[str, dict[str, str], float], dict[str, Any] | DiscogsResponse] | None = None,
     ) -> None:
         self._config = config or DiscogsApiConfig.from_settings()
         self._rate_limiter = rate_limiter or DiscogsRateLimiter(settings.api_rate_limit_per_minute)
@@ -115,19 +180,33 @@ class DiscogsClient:
         logger.debug("Discogs request url=%s params=%s", url, params)
 
         try:
-            payload = self._transport(
-                url=url,
-                headers=self._config.build_headers(),
-                timeout=self._config.timeout_seconds,
+            response = self._coerce_response(
+                self._transport(
+                    url=url,
+                    headers=self._config.build_headers(),
+                    timeout=self._config.timeout_seconds,
+                )
             )
-            logger.info("Discogs request succeeded path=%s", path)
-            return payload
+            self._rate_limiter.observe_response_headers(response.headers)
+            rate_limit_state = self._rate_limiter.rate_limit_state
+            logger.info(
+                "Discogs request succeeded path=%s rate_limit_remaining=%s",
+                path,
+                rate_limit_state.remaining if rate_limit_state else None,
+            )
+            return response.payload
         except HTTPError as error:
+            self._rate_limiter.observe_response_headers(error.headers)
             logger.warning("Discogs request failed with status path=%s status=%s", path, error.code)
             raise DiscogsClientError(self._parse_error_response(error)) from error
         except URLError as error:
             logger.warning("Discogs request failed path=%s reason=%s", path, error.reason)
             raise DiscogsClientError(f"Unable to reach Discogs API: {error.reason}") from error
+
+    def _coerce_response(self, response: dict[str, Any] | DiscogsResponse) -> DiscogsResponse:
+        if isinstance(response, DiscogsResponse):
+            return response
+        return DiscogsResponse(payload=response, headers={})
 
     def _build_url(self, path: str, params: dict[str, Any] | None = None) -> str:
         normalized_path = path if path.startswith("/") else f"/{path}"
@@ -143,11 +222,12 @@ class DiscogsClient:
 
         return f"{url}?{query_string}"
 
-    def _default_transport(self, url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:
+    def _default_transport(self, url: str, headers: dict[str, str], timeout: float) -> DiscogsResponse:
         request = Request(url=url, headers=headers, method="GET")
         with urlopen(request, timeout=timeout, context=self._build_ssl_context()) as response:
             payload = response.read().decode("utf-8")
-        return json.loads(payload)
+            response_headers = dict(response.headers.items())
+        return DiscogsResponse(payload=json.loads(payload), headers=response_headers)
 
     def _build_ssl_context(self) -> ssl.SSLContext:
         return ssl.create_default_context(cafile=certifi.where())
@@ -165,6 +245,17 @@ class DiscogsClient:
                 return f"Discogs API error ({error.code}): {message}"
 
         return f"Discogs API error ({error.code})"
+
+
+def _parse_header_int(headers: Mapping[str, str], name: str) -> int | None:
+    for header_name, value in headers.items():
+        if header_name.lower() != name.lower():
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 class DiscogsService:

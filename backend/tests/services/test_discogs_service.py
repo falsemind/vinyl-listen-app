@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 from app.models.discogs_release_cache import DiscogsReleaseCache
-from app.services.discogs_service import DiscogsRateLimiter, DiscogsService
+from app.services.discogs_service import DiscogsClient, DiscogsRateLimiter, DiscogsResponse, DiscogsService
 
 
 def test_search_by_barcode_uses_discogs_search_endpoint(
@@ -180,3 +180,95 @@ def test_rate_limiter_waits_between_close_requests() -> None:
     limiter.wait()
 
     assert sleep_calls == [0.75]
+
+
+def test_rate_limiter_tracks_discogs_response_headers() -> None:
+    limiter = DiscogsRateLimiter(
+        requests_per_minute=60,
+        sleep_func=lambda _seconds: None,
+        clock=lambda: 42.0,
+    )
+
+    limiter.observe_response_headers(
+        {
+            "X-Discogs-Ratelimit": "60",
+            "X-Discogs-Ratelimit-Used": "58",
+            "X-Discogs-Ratelimit-Remaining": "2",
+        }
+    )
+
+    state = limiter.rate_limit_state
+    assert state is not None
+    assert state.limit == 60
+    assert state.used == 58
+    assert state.remaining == 2
+    assert state.observed_at == 42.0
+
+
+def test_rate_limiter_waits_when_observed_discogs_quota_is_exhausted() -> None:
+    sleep_calls: list[float] = []
+    current_time = 10.0
+
+    limiter = DiscogsRateLimiter(
+        requests_per_minute=60,
+        sleep_func=lambda seconds: sleep_calls.append(seconds),
+        clock=lambda: current_time,
+    )
+    limiter.observe_response_headers(
+        {
+            "X-Discogs-Ratelimit": "60",
+            "X-Discogs-Ratelimit-Used": "60",
+            "X-Discogs-Ratelimit-Remaining": "0",
+        }
+    )
+
+    current_time = 25.0
+    limiter.wait()
+
+    assert sleep_calls == [45.0]
+
+
+def test_rate_limiter_ignores_malformed_discogs_headers() -> None:
+    limiter = DiscogsRateLimiter(
+        requests_per_minute=60,
+        sleep_func=lambda _seconds: None,
+        clock=lambda: 42.0,
+    )
+
+    limiter.observe_response_headers(
+        {
+            "X-Discogs-Ratelimit": "many",
+            "X-Discogs-Ratelimit-Used": "nope",
+            "X-Discogs-Ratelimit-Remaining": "",
+        }
+    )
+
+    assert limiter.rate_limit_state is None
+
+
+def test_discogs_client_observes_rate_limit_headers(discogs_api_config) -> None:
+    limiter = DiscogsRateLimiter(
+        requests_per_minute=60,
+        sleep_func=lambda _seconds: None,
+        clock=lambda: 42.0,
+    )
+
+    def transport(url: str, headers: dict[str, str], timeout: float) -> DiscogsResponse:
+        _ = (url, headers, timeout)
+        return DiscogsResponse(
+            payload={"results": []},
+            headers={
+                "X-Discogs-Ratelimit": "60",
+                "X-Discogs-Ratelimit-Used": "12",
+                "X-Discogs-Ratelimit-Remaining": "48",
+            },
+        )
+
+    client = DiscogsClient(config=discogs_api_config, rate_limiter=limiter, transport=transport)
+
+    assert client.get("/database/search") == {"results": []}
+    state = limiter.rate_limit_state
+    assert state is not None
+    assert state.limit == 60
+    assert state.used == 12
+    assert state.remaining == 48
