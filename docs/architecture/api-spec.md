@@ -1,3 +1,8 @@
+---
+name: api-spec
+description: This document explains Backend API Specification.
+---
+
 # Vinyl Listening App — Backend API Specification (MVP)
 
 ## Purpose

@@ -33,6 +33,20 @@ class VinylNavigationSmokeTest {
     }
 
     @Test
+    fun homeStatsTabCanReachAnalytics() {
+        composeRule.setContent {
+            VinylListenAppTheme {
+                VinylNavHost(navController = rememberNavController())
+            }
+        }
+
+        composeRule.onNodeWithText("Stats").performClick()
+
+        composeRule.onNodeWithText("Your listening insights").assertIsDisplayed()
+        composeRule.onNodeWithText("Plays Over Time").assertIsDisplayed()
+    }
+
+    @Test
     fun processingSuccessIsRemovedBeforeMatchConfirmation() {
         lateinit var navController: NavHostController
         composeRule.setContent {

@@ -41,6 +41,34 @@ data class HomeSummary(
     val topRecords: List<TopRecordSummary>,
 )
 
+data class MonthlyPlayCount(
+    val month: String,
+    val plays: Int,
+)
+
+data class AnalyticsTopRecordSummary(
+    val record: RecordSummary,
+    val plays: Int,
+    val averageRating: String,
+)
+
+data class RatingDistributionItem(
+    val rating: Int,
+    val count: Int,
+)
+
+data class MoodDistributionItem(
+    val mood: String,
+    val count: Int,
+)
+
+data class AnalyticsDashboard(
+    val monthlyPlays: List<MonthlyPlayCount>,
+    val topRecords: List<AnalyticsTopRecordSummary>,
+    val ratingDistribution: List<RatingDistributionItem>,
+    val moodDistribution: List<MoodDistributionItem>,
+)
+
 data class MatchCandidate(
     val releaseId: String?,
     val discogsReleaseId: Long,

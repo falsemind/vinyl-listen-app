@@ -1,3 +1,8 @@
+---
+name: roadmap
+description: Roadmap with scoped milestones to implement new features.
+---
+
 # Vinyl Listening App — GitHub Roadmap & Milestones (MVP)
 
 ## Purpose

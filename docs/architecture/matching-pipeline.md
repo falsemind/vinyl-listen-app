@@ -1,3 +1,8 @@
+---
+name: matching-pipeline
+description: This document explains Discogs Matching Pipeline Specification.
+---
+
 # Vinyl Listening App — Discogs Matching Pipeline Specification (MVP)
 
 ## Purpose

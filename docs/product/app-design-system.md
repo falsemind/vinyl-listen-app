@@ -1,3 +1,8 @@
+---
+name: app-design-system
+description: This document explains UI client's design system and guidelines.
+---
+
 # Vinyl Listening App — MVP Design System
 
 ## Scope

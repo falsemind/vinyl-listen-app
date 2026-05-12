@@ -1,3 +1,8 @@
+---
+name: database-schema
+description: This document explains Database Schema Specification.
+---
+
 # Vinyl Listening App — Database Schema Specification (MVP)
 
 ## Purpose

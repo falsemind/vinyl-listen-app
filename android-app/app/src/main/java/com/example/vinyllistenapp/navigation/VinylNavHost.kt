@@ -14,6 +14,7 @@ import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
@@ -41,6 +42,8 @@ fun VinylNavHost(
                 apiClient = apiClient,
                 onLogSession = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
+                onOpenSettings = { navController.navigate(VinylRoutes.SETTINGS) },
             )
         }
         composable(VinylRoutes.CAPTURE_RECORD) {
@@ -128,7 +131,16 @@ fun VinylNavHost(
             )
         }
         composable(VinylRoutes.ANALYTICS) {
-            PlaceholderScreen(title = "Stats", message = "Analytics stays out of this prototype pass.")
+            AnalyticsScreen(
+                apiClient = apiClient,
+                onHome = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+            )
         }
         composable(VinylRoutes.SETTINGS) {
             PlaceholderScreen(title = "Settings", message = "Settings stays out of this prototype pass.")

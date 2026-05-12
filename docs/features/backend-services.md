@@ -1,8 +1,11 @@
+---
+name: backend-services
+description: This document explains the backend service layer in `backend/app/services/`. Services sit between API routes and repositories/pipelines. Routes handle HTTP details; services own business decisions.
+---
+
 # Backend Services
 
-This document explains the backend service layer in `backend/app/services/`. Services sit between API routes and repositories/pipelines. Routes handle HTTP details; services own business decisions.
-
-## Service Map
+## Backend Service Map
 
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
