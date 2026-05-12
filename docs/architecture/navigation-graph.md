@@ -64,6 +64,7 @@ Current backend endpoints used by these routes:
 |---|---|
 |Load Home dashboard data|`GET /api/v1/sessions/summary`|
 |Identify uploaded/captured image|`POST /api/v1/identify`|
+|Manual Discogs search|`GET /api/v1/releases/search`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
@@ -94,7 +95,7 @@ then
 session_logging/{releaseId}
 ```
 
-Manual Search is part of the Android prototype UI, but the backend does not currently expose a dedicated manual Discogs search endpoint. Until that endpoint exists, Manual Search should use mocked results, local prototype data, or a later backend route.
+Manual Search uses `GET /api/v1/releases/search` to list Discogs candidates. Search results do not have an internal `release_id`, so the app imports the selected `discogs_release_id` with `POST /api/v1/releases/import` before navigating to `session_logging/{releaseId}`.
 
 # Screen Navigation Details
 

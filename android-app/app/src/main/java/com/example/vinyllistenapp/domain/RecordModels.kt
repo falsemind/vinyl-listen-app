@@ -17,6 +17,16 @@ data class RecordSummary(
     val coverImageUrl: String? = null,
 )
 
+data class ReleaseSearchResult(
+    val discogsReleaseId: Long,
+    val artist: String,
+    val title: String,
+    val year: Int?,
+    val label: String?,
+    val catalogNumber: String?,
+    val thumbnailUrl: String?,
+)
+
 data class ListeningSession(
     val releaseId: String,
     val artist: String,

@@ -1,14 +1,15 @@
 import logging
-from typing import Annotated
+from functools import lru_cache
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse
+from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse, ReleaseSearchResponse
 from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse
-from app.services.discogs_service import DiscogsClientError
+from app.services.discogs_service import DiscogsClientError, DiscogsService
 from app.services.release_import_service import ReleaseImportService
 from app.services.sessions_service import ReleaseNotFoundError, SessionsService, SessionValidationError
 
@@ -20,6 +21,11 @@ def get_release_import_service() -> ReleaseImportService:
     return ReleaseImportService()
 
 
+@lru_cache(maxsize=1)
+def get_discogs_service() -> DiscogsService:
+    return DiscogsService()
+
+
 def get_sessions_service() -> SessionsService:
     return SessionsService()
 
@@ -29,6 +35,100 @@ def releases():
     logger.info("Releases endpoint called")
 
     return {"message": "list of releases"}
+
+
+@router.get("/search", response_model=ReleaseSearchResponse)
+def search_releases(
+    service: Annotated[DiscogsService, Depends(get_discogs_service)],
+    artist: str | None = Query(default=None),
+    title: str | None = Query(default=None),
+    catalog: str | None = Query(default=None),
+    barcode: str | None = Query(default=None),
+    year: int | None = Query(default=None, ge=1900),
+    query: str | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=25),
+    offset: int = Query(default=0, ge=0),
+):
+    search_fields = (artist, title, catalog, barcode, year, query)
+    if not any(field not in (None, "") for field in search_fields):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one search field is required.",
+        )
+
+    try:
+        payload = service.search_releases(
+            artist=artist,
+            title=title,
+            catalog_number=catalog,
+            barcode=barcode,
+            year=year,
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+    except DiscogsClientError as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+
+    return ReleaseSearchResponse(
+        results=[
+            result
+            for result in (
+                _map_discogs_search_result(item, fallback_artist=artist, fallback_title=title)
+                for item in payload.get("results", [])
+            )
+            if result is not None
+        ],
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _map_discogs_search_result(
+    item: dict[str, Any],
+    *,
+    fallback_artist: str | None,
+    fallback_title: str | None,
+) -> dict[str, Any] | None:
+    discogs_release_id = _coerce_int(item.get("id"))
+    if discogs_release_id is None:
+        return None
+
+    artist, title = _split_discogs_title(str(item.get("title") or ""))
+    return {
+        "discogs_release_id": discogs_release_id,
+        "artist": artist or fallback_artist or "Unknown Artist",
+        "title": title or fallback_title or str(item.get("title") or "Untitled Release"),
+        "year": _coerce_int(item.get("year")),
+        "label": _first_string(item.get("label")),
+        "catalog_number": _first_string(item.get("catno")),
+        "thumbnail_url": item.get("thumb") or item.get("cover_image"),
+    }
+
+
+def _split_discogs_title(value: str) -> tuple[str | None, str | None]:
+    if " - " not in value:
+        return None, value or None
+
+    artist, title = value.split(" - ", 1)
+    return artist.strip() or None, title.strip() or None
+
+
+def _first_string(value: Any) -> str | None:
+    if isinstance(value, list):
+        return str(value[0]) if value else None
+    if value is None:
+        return None
+    return str(value)
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.post("/import", response_model=ReleaseImportResponse)

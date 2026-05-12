@@ -26,6 +26,22 @@ class ReleaseResponse(BaseModel):
     updated_at: datetime
 
 
+class ReleaseSearchResult(BaseModel):
+    discogs_release_id: int
+    artist: str
+    title: str
+    year: int | None = None
+    label: str | None = None
+    catalog_number: str | None = None
+    thumbnail_url: str | None = None
+
+
+class ReleaseSearchResponse(BaseModel):
+    results: list[ReleaseSearchResult]
+    limit: int
+    offset: int
+
+
 class ReleaseImportResponse(BaseModel):
     release_id: str
     discogs_release_id: int

@@ -12,6 +12,7 @@ import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,6 +81,40 @@ class VinylApiClient(
                     .put("force_refresh", false)
             val response = postJson("releases/import", body)
             response.getString("release_id")
+        }
+
+    suspend fun searchReleases(
+        artist: String?,
+        title: String?,
+        catalog: String?,
+        barcode: String?,
+        year: Int?,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): List<ReleaseSearchResult> =
+        apiCall {
+            val query =
+                buildList {
+                    addQueryParam("artist", artist)
+                    addQueryParam("title", title)
+                    addQueryParam("catalog", catalog)
+                    addQueryParam("barcode", barcode)
+                    addQueryParam("year", year?.toString())
+                    addQueryParam("limit", limit.toString())
+                    addQueryParam("offset", offset.toString())
+                }.joinToString("&")
+            val response = getJson("releases/search?$query")
+            response.optJSONArray("results").orEmpty().mapObjects { item ->
+                ReleaseSearchResult(
+                    discogsReleaseId = item.optLong("discogs_release_id"),
+                    artist = item.optString("artist", "Unknown artist"),
+                    title = item.optString("title", "Unknown title"),
+                    year = item.optNullableInt("year"),
+                    label = item.optNullableString("label"),
+                    catalogNumber = item.optNullableString("catalog_number"),
+                    thumbnailUrl = item.optNullableString("thumbnail_url"),
+                )
+            }
         }
 
     suspend fun getRelease(releaseId: String): RecordSummary =
@@ -311,6 +346,14 @@ fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?
 
 private fun OutputStream.writeUtf8(value: String) {
     write(value.toByteArray(Charsets.UTF_8))
+}
+
+private fun MutableList<String>.addQueryParam(
+    name: String,
+    value: String?,
+) {
+    val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() } ?: return
+    add("${Uri.encode(name)}=${Uri.encode(normalizedValue)}")
 }
 
 private fun JSONObject.toRecordSummary(): RecordSummary =

@@ -95,7 +95,7 @@ fun VinylNavHost(
         }
         composable(VinylRoutes.MANUAL_SEARCH) {
             ManualSearchScreen(
-                records = MockVinylData.records,
+                apiClient = apiClient,
                 onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                 onDismiss = {
                     navController.navigate(VinylRoutes.HOME) {

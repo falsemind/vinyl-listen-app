@@ -21,6 +21,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,7 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
@@ -40,17 +44,72 @@ import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun ManualSearchScreen(
-    records: List<RecordSummary>,
+    apiClient: VinylApiClient,
     onSelectRecord: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
     var catalogQuery by rememberSaveable { mutableStateOf("") }
+    var barcodeQuery by rememberSaveable { mutableStateOf("") }
     var yearQuery by rememberSaveable { mutableStateOf("") }
+    var state by remember { mutableStateOf<ManualSearchUiState>(ManualSearchUiState.Idle) }
+    var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }
+
+    fun runSearch() {
+        val artist = artistQuery.trim()
+        val title = titleQuery.trim()
+        val catalog = catalogQuery.trim()
+        val barcode = barcodeQuery.trim()
+        val year = yearQuery.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
+        val hasSearchTerm =
+            listOf(artist, title, catalog, barcode).any { it.isNotBlank() } || year != null
+        if (!hasSearchTerm) {
+            state = ManualSearchUiState.Error("Enter at least one search field.")
+            return
+        }
+
+        scope.launch {
+            state = ManualSearchUiState.Loading
+            val results =
+                runCatching {
+                    apiClient.searchReleases(
+                        artist = artist,
+                        title = title,
+                        catalog = catalog,
+                        barcode = barcode,
+                        year = year,
+                    )
+                }.getOrElse { error ->
+                    state = ManualSearchUiState.Error(error.toUserMessage("Search failed. Retry in a moment."))
+                    return@launch
+                }
+            state = if (results.isEmpty()) ManualSearchUiState.Empty else ManualSearchUiState.Success(results)
+        }
+    }
+
+    fun selectResult(result: ReleaseSearchResult) {
+        if (selectingDiscogsReleaseId != null) {
+            return
+        }
+        selectingDiscogsReleaseId = result.discogsReleaseId
+        scope.launch {
+            val releaseId =
+                runCatching { apiClient.importRelease(result.discogsReleaseId) }
+                    .getOrElse { error ->
+                        selectingDiscogsReleaseId = null
+                        state = ManualSearchUiState.Error(error.toUserMessage("Could not import that record. Retry."))
+                        return@launch
+                    }
+            selectingDiscogsReleaseId = null
+            onSelectRecord(releaseId)
+        }
+    }
 
     Column(
         modifier =
@@ -98,13 +157,26 @@ fun ManualSearchScreen(
                     label = "Year",
                     placeholder = "Year",
                     value = yearQuery,
-                    onValueChange = { yearQuery = it },
+                    onValueChange = { yearQuery = it.filter(Char::isDigit).take(4) },
                     modifier = Modifier.weight(1f),
                 )
             }
+            ManualSearchField(
+                label = "Barcode",
+                placeholder = "Search by barcode",
+                value = barcodeQuery,
+                onValueChange = { barcodeQuery = it },
+            )
         }
         Spacer(Modifier.height(VinylSpacing.SpaceLg))
-        GlassPrimaryButton("Search", onClick = {})
+        GlassPrimaryButton(
+            label = if (state == ManualSearchUiState.Loading) "Searching" else "Search",
+            onClick = {
+                if (state != ManualSearchUiState.Loading && selectingDiscogsReleaseId == null) {
+                    runSearch()
+                }
+            },
+        )
         Spacer(Modifier.height(VinylSpacing.SpaceXl))
         Text(
             text = "Results",
@@ -119,11 +191,51 @@ fun ManualSearchScreen(
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
         ) {
-            records.forEach { record ->
-                ManualSearchResultRow(record = record, onClick = { onSelectRecord(record.releaseId) })
+            when (val currentState = state) {
+                ManualSearchUiState.Idle -> ManualSearchMessage("Search by artist, title, catalog number, barcode, or year.")
+                ManualSearchUiState.Loading -> ManualSearchMessage("Searching Discogs...")
+                ManualSearchUiState.Empty -> ManualSearchMessage("No results found.")
+                is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message)
+                is ManualSearchUiState.Success ->
+                    currentState.results.forEach { result ->
+                        val isImporting = selectingDiscogsReleaseId != null
+                        ManualSearchResultRow(
+                            record = result,
+                            isSelecting = selectingDiscogsReleaseId == result.discogsReleaseId,
+                            enabled = !isImporting,
+                            onClick = { selectResult(result) },
+                        )
+                    }
             }
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
         }
+    }
+}
+
+private sealed interface ManualSearchUiState {
+    data object Idle : ManualSearchUiState
+
+    data object Loading : ManualSearchUiState
+
+    data object Empty : ManualSearchUiState
+
+    data class Success(
+        val results: List<ReleaseSearchResult>,
+    ) : ManualSearchUiState
+
+    data class Error(
+        val message: String,
+    ) : ManualSearchUiState
+}
+
+@Composable
+private fun ManualSearchMessage(message: String) {
+    AccentCard {
+        Text(
+            text = message,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -204,12 +316,15 @@ private fun ManualSearchField(
 
 @Composable
 private fun ManualSearchResultRow(
-    record: RecordSummary,
+    record: ReleaseSearchResult,
+    isSelecting: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     AccentCard(
         modifier =
             Modifier.clickable(
+                enabled = enabled,
                 onClickLabel = "Select ${record.title}",
                 role = Role.Button,
                 onClick = onClick,
@@ -236,7 +351,7 @@ private fun ManualSearchResultRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = record.title,
+                    text = if (isSelecting) "Importing..." else record.title,
                     color = VinylColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
@@ -247,7 +362,7 @@ private fun ManualSearchResultRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = record.year.toString(),
+                        text = record.year?.toString() ?: "Unknown year",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -257,7 +372,7 @@ private fun ManualSearchResultRow(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = record.label,
+                        text = record.label ?: "Unknown label",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,

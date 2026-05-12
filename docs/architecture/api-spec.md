@@ -175,6 +175,7 @@ Fallback when automatic identification fails.
 | title     | optional | Release title     |
 | catalog   | optional | Catalog number    |
 | barcode   | optional | Barcode           |
+| year      | optional | Release year      |
 | limit     | optional | Pagination limit  |
 | offset    | optional | Pagination offset |
 
@@ -190,16 +191,21 @@ GET /api/v1/releases/search?artist=boards+of+canada&title=music&limit=10&offset=
 {
   "results": [
     {
-      "discogs_release_id": "555123",
+      "discogs_release_id": 555123,
       "artist": "Boards of Canada",
       "title": "Music Has The Right To Children",
       "year": 1998,
       "label": "Warp Records",
+      "catalog_number": "WARPLP55",
       "thumbnail_url": "https://..."
     }
-  ]
+  ],
+  "limit": 10,
+  "offset": 0
 }
 ```
+
+The response contains Discogs results, not local records. When the user selects a result, the client imports it with `POST /api/v1/releases/import` and navigates with the returned internal `release_id`.
 
 ---
 
