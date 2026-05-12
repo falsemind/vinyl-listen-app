@@ -98,6 +98,30 @@ class StubReleaseImportService:
         return None
 
 
+class StubDiscogsSearchService:
+    def __init__(self) -> None:
+        self.payload = {
+            "results": [
+                {
+                    "id": 555123,
+                    "title": "Boards of Canada - Music Has The Right To Children",
+                    "year": 1998,
+                    "label": ["Warp Records"],
+                    "catno": "WARPLP55",
+                    "thumb": "https://img.discogs.com/thumb.jpg",
+                }
+            ]
+        }
+        self.error: Exception | None = None
+        self.calls: list[dict[str, object]] = []
+
+    def search_releases(self, **kwargs) -> dict:
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.payload
+
+
 @dataclass
 class SessionStub:
     id: str
@@ -223,6 +247,14 @@ def build_stub_release_import_service() -> Callable[[], StubReleaseImportService
 
 
 @pytest.fixture
+def build_stub_discogs_search_service() -> Callable[[], StubDiscogsSearchService]:
+    def _factory() -> StubDiscogsSearchService:
+        return StubDiscogsSearchService()
+
+    return _factory
+
+
+@pytest.fixture
 def build_stub_sessions_service() -> Callable[[], StubSessionsService]:
     def _factory() -> StubSessionsService:
         return StubSessionsService()
@@ -248,6 +280,17 @@ def override_release_import_service() -> Callable[[StubReleaseImportService], No
         from app.main import app
 
         app.dependency_overrides[get_release_import_service] = lambda: service
+
+    return _override
+
+
+@pytest.fixture
+def override_discogs_service() -> Callable[[StubDiscogsSearchService], None]:
+    def _override(service: StubDiscogsSearchService) -> None:
+        from app.api.routes.releases import get_discogs_service
+        from app.main import app
+
+        app.dependency_overrides[get_discogs_service] = lambda: service
 
     return _override
 

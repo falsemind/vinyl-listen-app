@@ -4,6 +4,94 @@ from app.main import app
 from app.services.discogs_service import DiscogsClientError
 
 
+def test_search_releases_endpoint_returns_discogs_results(
+    build_stub_discogs_search_service,
+    override_discogs_service,
+) -> None:
+    service = build_stub_discogs_search_service()
+    override_discogs_service(service)
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/releases/search",
+            params={"artist": "Boards of Canada", "title": "Music", "catalog": "WARPLP55", "limit": 10, "offset": 0},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {
+                "discogs_release_id": 555123,
+                "artist": "Boards of Canada",
+                "title": "Music Has The Right To Children",
+                "year": 1998,
+                "label": "Warp Records",
+                "catalog_number": "WARPLP55",
+                "thumbnail_url": "https://img.discogs.com/thumb.jpg",
+            }
+        ],
+        "limit": 10,
+        "offset": 0,
+    }
+    assert service.calls == [
+        {
+            "artist": "Boards of Canada",
+            "title": "Music",
+            "catalog_number": "WARPLP55",
+            "barcode": None,
+            "year": None,
+            "query": None,
+            "limit": 10,
+            "offset": 0,
+        }
+    ]
+
+
+def test_search_releases_endpoint_requires_search_field(
+    build_stub_discogs_search_service,
+    override_discogs_service,
+) -> None:
+    service = build_stub_discogs_search_service()
+    override_discogs_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/search")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "At least one search field is required."}
+    assert service.calls == []
+
+
+def test_search_releases_endpoint_returns_empty_results(
+    build_stub_discogs_search_service,
+    override_discogs_service,
+) -> None:
+    service = build_stub_discogs_search_service()
+    service.payload = {"results": []}
+    override_discogs_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/search", params={"query": "unknown"})
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "limit": 10, "offset": 0}
+
+
+def test_search_releases_endpoint_maps_discogs_errors(
+    build_stub_discogs_search_service,
+    override_discogs_service,
+) -> None:
+    service = build_stub_discogs_search_service()
+    service.error = DiscogsClientError("Discogs API error (503): unavailable")
+    override_discogs_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/search", params={"query": "boards"})
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Discogs API error (503): unavailable"}
+
+
 def test_import_release_endpoint_returns_created_release_id(
     build_stub_release_import_service,
     override_release_import_service,
