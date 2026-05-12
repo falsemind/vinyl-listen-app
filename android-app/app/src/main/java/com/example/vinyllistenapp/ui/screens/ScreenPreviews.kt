@@ -25,7 +25,7 @@ private fun MatchConfirmationScreenPreview() {
 private fun ManualSearchScreenPreview() {
     VinylListenAppTheme {
         ManualSearchScreen(
-            records = MockVinylData.records,
+            apiClient = VinylApiClient(),
             onSelectRecord = {},
             onDismiss = {},
         )
