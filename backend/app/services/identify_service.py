@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,10 @@ class IdentifyResult:
     candidates: tuple[IdentifyCandidate, ...]
 
 
+class IdentifyProgressReporter(Protocol):
+    def update(self, status: str, message: str) -> None: ...
+
+
 class IdentifyService:
     def __init__(
         self,
@@ -70,12 +74,14 @@ class IdentifyService:
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        progress_reporter: IdentifyProgressReporter | None = None,
     ) -> IdentifyResult:
-        self._validate_upload(
+        self.validate_upload(
             image_bytes=image_bytes,
             filename=filename,
             content_type=content_type,
         )
+        _report_progress(progress_reporter, "preprocessing_image", "Preparing image for identification")
         prepared_image = self._image_processor.prepare(
             filename=filename,
             content_type=content_type,
@@ -88,7 +94,9 @@ class IdentifyService:
             prepared_image.height,
             len(prepared_image.variants),
         )
+        _report_progress(progress_reporter, "extracting_text", "Extracting text from image")
         identifiers = self._identifier_extractor.extract(prepared_image)
+        _report_progress(progress_reporter, "parsing_identifiers", "Parsing identifiers from extracted text")
 
         logger.info(
             (
@@ -105,6 +113,7 @@ class IdentifyService:
             len(identifiers.text_fragments),
             len(identifiers.identifier_evidence),
         )
+        _report_progress(progress_reporter, "searching_local", "Searching local releases")
         local_candidates = self._find_local_candidates(db, identifiers)
         if local_candidates:
             logger.info(
@@ -112,8 +121,10 @@ class IdentifyService:
                 filename,
                 len(local_candidates),
             )
+            _report_progress(progress_reporter, "ranking_candidates", "Ranking candidate releases")
             return IdentifyResult(candidates=tuple(self._rank_candidates(local_candidates, identifiers)))
 
+        _report_progress(progress_reporter, "searching_discogs", "Searching Discogs candidates")
         external_result = self._find_external_candidates(identifiers)
         logger.info(
             "Returning Discogs identify matches filename=%s count=%s discogs_query_count=%s",
@@ -121,9 +132,10 @@ class IdentifyService:
             len(external_result.candidates),
             external_result.query_count,
         )
+        _report_progress(progress_reporter, "ranking_candidates", "Ranking candidate releases")
         return IdentifyResult(candidates=tuple(self._rank_candidates(external_result.candidates, identifiers)))
 
-    def _validate_upload(
+    def validate_upload(
         self,
         *,
         image_bytes: bytes,
@@ -327,6 +339,11 @@ class IdentifyService:
 class _ExternalSearchResult:
     candidates: list[IdentifyCandidate]
     query_count: int
+
+
+def _report_progress(progress_reporter: IdentifyProgressReporter | None, status: str, message: str) -> None:
+    if progress_reporter is not None:
+        progress_reporter.update(status, message)
 
 
 def _parse_discogs_title(value: str | None) -> tuple[str | None, str | None]:

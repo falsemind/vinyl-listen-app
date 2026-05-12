@@ -84,6 +84,7 @@ Main API domains:
 
 ```
 /identify
+/identify/jobs
 /releases
 /sessions
 /analytics
@@ -94,11 +95,11 @@ Main API domains:
 
 # 1. Record Identification
 
-Endpoint used after the user captures a photo.
+Endpoints used after the user captures or uploads a photo.
 
 ## POST /identify
 
-Uploads an image and returns candidate releases.
+Uploads an image and returns candidate releases synchronously.
 
 ### Request
 
@@ -125,7 +126,9 @@ barcode detection
 ↓
 text cleanup
 ↓
-Discogs search
+local release search
+↓
+Discogs search when local matches are not enough
 ↓
 candidate ranking
 ```
@@ -142,13 +145,18 @@ candidate ranking
 {
   "candidates": [
     {
-      "discogs_release_id": "123456",
+      "discogs_release_id": 123456,
+      "release_id": null,
       "artist": "Pink Floyd",
       "title": "The Dark Side of the Moon",
       "year": 1973,
       "label": "Harvest",
       "catalog_number": "SHVL 804",
-      "thumbnail_url": "https://..."
+      "barcode": null,
+      "cover_image_url": "https://...",
+      "match_source": "discogs",
+      "matched_on": ["catalog_number"],
+      "confidence": 0.92
     }
   ]
 }
@@ -156,8 +164,116 @@ candidate ranking
 
 Notes:
 
-* Candidates do **not include `release_id` yet** because the record may not exist in the backend database.
-* `release_id` will be created once the user confirms a match.
+* Candidates include `release_id` when the candidate already exists in the local database.
+* Candidates from Discogs may have `release_id: null`.
+* If `release_id` is null, the client imports the selected Discogs release before logging a session.
+
+## POST /identify/jobs
+
+Uploads an image, creates an async identify job, and returns the first persisted job status.
+
+This is the preferred Android Processing screen flow because it exposes backend status while OCR, parsing, search, and ranking are running.
+
+### Request
+
+Content type:
+
+```
+multipart/form-data
+```
+
+Fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| image | file | Photo of label/runout/barcode |
+
+### Response
+
+```
+202 Accepted
+```
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "upload_received",
+  "message": "Image upload received",
+  "created_at": "2026-05-11T20:00:00Z",
+  "updated_at": "2026-05-11T20:00:00Z",
+  "result": null,
+  "error": null
+}
+```
+
+Upload validation errors use the same structured error format and status codes as `POST /identify`.
+
+## GET /identify/jobs/{job_id}
+
+Returns the current identify job status, terminal result, or terminal error.
+
+### Response
+
+```
+200 OK
+```
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "completed",
+  "message": "Identify completed",
+  "created_at": "2026-05-11T20:00:00Z",
+  "updated_at": "2026-05-11T20:00:04Z",
+  "result": {
+    "candidates": []
+  },
+  "error": null
+}
+```
+
+### Status Values
+
+| Status | Description |
+| ------ | ----------- |
+| `queued` | Reserved for future queued execution. |
+| `upload_received` | Upload validation passed and the job was created. |
+| `preprocessing_image` | Backend is preparing image variants. |
+| `extracting_text` | OCR and barcode extraction are running. |
+| `parsing_identifiers` | OCR output is being parsed into identifiers. |
+| `searching_local` | Local release candidates are being searched. |
+| `searching_discogs` | Discogs candidate search is running. |
+| `ranking_candidates` | Candidate ranking is running. |
+| `completed` | `result` contains the identify response. |
+| `failed` | `error` contains a terminal failure. |
+| `expired` | Job is outside the retention window. |
+
+### Error Payload
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "failed",
+  "message": "Candidate search failed. Retry in a moment.",
+  "created_at": "2026-05-11T20:00:00Z",
+  "updated_at": "2026-05-11T20:00:04Z",
+  "result": null,
+  "error": {
+    "code": "candidate_search_failed",
+    "message": "Candidate search failed. Retry in a moment.",
+    "failed_step": "search"
+  }
+}
+```
+
+`failed_step` values are `upload`, `extract`, `search`, or `unknown`.
+
+### Job Lookup Errors
+
+| Status | Meaning |
+| ------ | ------- |
+| `404 Not Found` | No job exists for `job_id`. |
+| `410 Gone` | Job exists but has expired. |
 
 ---
 

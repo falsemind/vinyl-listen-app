@@ -39,9 +39,11 @@ docs/
 │   └── roadmap.md
 ├── features/
 │   ├── backend-services.md
+│   ├── identify-progress-jobs.md
 │   └── identification-pipeline.md
 ├── implementation-plans/
 │   ├── discogs-integration-plan.md
+│   ├── identify-progress-status-plan.md
 │   ├── image-identify-ocr-backend-upgrade-plan.md
 │   ├── image-identify-pipeline-plan.md
 │   ├── listening-session-api-plan.md
@@ -102,6 +104,7 @@ backend/app/
 │   └── session.py
 ├── models/
 │   ├── discogs_release_cache.py
+│   ├── identify_job.py
 │   ├── releases.py
 │   ├── sessions.py
 │   └── sessions_moods.py
@@ -110,6 +113,7 @@ backend/app/
 ├── repositories/
 │   ├── analytics_repository.py
 │   ├── discogs_release_repository.py
+│   ├── identify_job_repository.py
 │   ├── releases_repository.py
 │   ├── sessions_moods_repository.py
 │   └── sessions_repository.py
@@ -121,6 +125,7 @@ backend/app/
 ├── services/
 │   ├── analytics_service.py
 │   ├── discogs_service.py
+│   ├── identify_job_service.py
 │   ├── identify_service.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
@@ -135,10 +140,10 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, listening sessions, and moods. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: analytics, identification, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `services/` | Business workflows: analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -150,6 +155,8 @@ All routes are nested under `/api/v1`.
 | `GET /health` | `api/routes/health.py` | Runtime/database health checks. |
 | `GET /health/runtime` | `api/routes/health.py` | Optional dependency status. |
 | `POST /identify` | `api/routes/identify.py` | `IdentifyService`. |
+| `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService`. |
+| `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
@@ -210,7 +217,7 @@ backend/tests/
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
 | `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
-| `services/` | Analytics, Discogs client/service, identify service, release import, release mapper, sessions service, and Home summary aggregation. |
+| `services/` | Analytics, Discogs client/service, identify service, identify job service, release import, release mapper, sessions service, and Home summary aggregation. |
 | `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 
@@ -223,6 +230,7 @@ backend/alembic/
 └── versions/
     ├── 1a8551e314b6_create_models_releases_sessions_.py
     ├── a5427b530a12_latest_db_revision.py
+    ├── b7f3c9d2a4e1_add_identify_jobs.py
     └── eed6974773b8_init.py
 
 backend/scripts/
@@ -333,7 +341,7 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify, release import/detail/history, session create, Home summary, and analytics calls. |
+| `data/api/` | Lightweight HTTP client for identify jobs, release import/detail/history, session create, Home summary, and analytics calls. |
 | `domain/` | UI-facing domain models for records, sessions, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host and route helpers. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
@@ -345,6 +353,7 @@ android-app/
 - Camera capture uses `androidx.core.content.FileProvider` with `res/xml/file_paths.xml` for temporary image URIs.
 - The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
+- The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, and maps backend statuses into upload, extraction, and candidate-search phases.
 - `RelativeDateFormatter.kt` formats backend date strings for compact UI labels such as `Today`, `1d`, `1w`, and `1m`.
 - Local Android unit tests live under `android-app/app/src/test/`; current formatter coverage is in `ui/screens/RelativeDateFormatterTest.kt`.
 - Android navigation smoke coverage lives under `android-app/app/src/androidTest/`.

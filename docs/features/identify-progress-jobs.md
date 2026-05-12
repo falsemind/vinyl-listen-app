@@ -1,0 +1,94 @@
+---
+name: identify-progress-jobs
+description: This document explains the server-backed identify job workflow used to expose backend processing status to the Android Processing screen.
+---
+
+# Identify Progress Jobs
+
+## Purpose
+
+Identify progress jobs let the Android client show real backend state while an uploaded image moves through identification.
+
+The original synchronous endpoint remains available at `POST /api/v1/identify`. The job flow wraps the same `IdentifyService` pipeline with persisted status updates so the client can poll progress, show terminal errors, and still receive the normal `IdentifyResponse` when processing completes.
+
+## API Flow
+
+1. The client uploads an image to `POST /api/v1/identify/jobs`.
+2. The backend validates the upload and creates an `identify_jobs` row.
+3. The backend starts the identify pipeline in a background task.
+4. The client polls `GET /api/v1/identify/jobs/{job_id}`.
+5. The job returns `completed` with `result`, `failed` with `error`, or `expired`.
+
+Upload validation still happens before a job is created. Invalid content type, empty files, or files larger than the configured identify upload limit return the same structured errors as the synchronous endpoint.
+
+## Job Statuses
+
+| Status | Meaning |
+| --- | --- |
+| `queued` | Reserved for future queued execution. |
+| `upload_received` | Upload validation passed and the job row was created. |
+| `preprocessing_image` | The image is being normalized and prepared. |
+| `extracting_text` | OCR and barcode extraction are running. |
+| `parsing_identifiers` | OCR text is being parsed into barcodes, catalog numbers, artist/title clues, and other evidence. |
+| `searching_local` | Local releases are being searched first. |
+| `searching_discogs` | External Discogs candidate search is running. |
+| `ranking_candidates` | Local or Discogs candidates are being scored and sorted. |
+| `completed` | Identification finished and `result` contains candidates. |
+| `failed` | Identification failed and `error` explains the terminal failure. |
+| `expired` | The job is past its retention window. |
+
+## Storage
+
+Jobs are stored in the `identify_jobs` table.
+
+Important fields:
+
+- `id`: UUID string returned to the client as `job_id`.
+- `status`: current job status.
+- `message`: short user-facing progress message.
+- `filename` and `content_type`: upload metadata for diagnostics.
+- `result`: completed `IdentifyResponse` payload.
+- `error`: terminal failure payload with `code`, `message`, and `failed_step`.
+- `expires_at`: retention cutoff. Current jobs expire after 24 hours.
+
+Image bytes are not stored in the table. They are held only long enough for the background task to process the upload.
+
+## Error Handling
+
+`IdentifyJobService` maps backend failures into stable client-facing errors.
+
+| Failure area | `failed_step` | Example codes |
+| --- | --- | --- |
+| Upload validation | `upload` | `empty_upload`, `unsupported_media_type`, `file_too_large` |
+| Image preparation or OCR | `extract` | `image_preprocessing_failed`, `ocr_failed`, `identifier_parse_failed` |
+| Candidate lookup or Discogs | `search` | `discogs_unavailable`, `candidate_search_failed` |
+| Unknown failure | `unknown` | `identify_failed` |
+
+The Android client uses `failed_step` to mark the correct Processing screen section as failed: upload, text extraction, or candidate search.
+
+## Android Polling Behavior
+
+`VinylApiClient.identifyImage` starts a job, polls job status, and returns candidates once the job is completed.
+
+The Processing screen groups backend statuses into three visible phases:
+
+- Image upload: `queued`, `upload_received`
+- Text extraction: `preprocessing_image`, `extracting_text`, `parsing_identifiers`
+- Candidate search: `searching_local`, `searching_discogs`, `ranking_candidates`
+
+When the job fails, the client uses the persisted `message` and `failed_step` instead of guessing which backend phase failed.
+
+## Compatibility
+
+`POST /api/v1/identify` still provides the direct synchronous flow. It is useful for tests, scripts, and any client that does not need progress polling.
+
+Both flows use the same identification pipeline, search behavior, ranking, and response schema.
+
+## Test Coverage
+
+Relevant coverage lives in:
+
+- `backend/tests/services/test_identify_job_service.py`
+- `backend/tests/api/test_identify_api.py`
+- `backend/tests/migrations/test_schema_migration.py`
+- `backend/tests/services/test_identify_service.py`

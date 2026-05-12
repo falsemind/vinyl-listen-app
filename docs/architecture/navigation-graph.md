@@ -63,7 +63,8 @@ Current backend endpoints used by these routes:
 |Client flow|Backend API|
 |---|---|
 |Load Home dashboard data|`GET /api/v1/sessions/summary`|
-|Identify uploaded/captured image|`POST /api/v1/identify`|
+|Identify uploaded/captured image with progress|`POST /api/v1/identify/jobs`, then `GET /api/v1/identify/jobs/{job_id}`|
+|Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
 |Manual Discogs search|`GET /api/v1/releases/search`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
@@ -71,7 +72,9 @@ Current backend endpoints used by these routes:
 |Create listening session|`POST /api/v1/sessions`|
 |Load one session by id|`GET /api/v1/sessions/{session_id}`|
 
-`POST /api/v1/identify` returns candidates with both:
+The identify job flow returns candidates inside `result` when the job reaches `completed`. The synchronous `POST /api/v1/identify` flow returns the same candidate shape directly.
+
+Identify candidates include:
 
 ```
 discogs_release_id
@@ -166,6 +169,8 @@ processing
 ### Purpose
 
 Displays processing progress while the backend identifies the record.
+
+The screen starts an identify job, polls the job endpoint, and maps backend statuses into upload, text extraction, and candidate search phases. Terminal job errors include `failed_step`, which identifies whether upload, extraction, search, or an unknown backend phase failed.
 
 ### Possible Results
 

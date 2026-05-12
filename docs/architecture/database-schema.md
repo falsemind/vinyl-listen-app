@@ -18,6 +18,7 @@ The schema supports:
 - analytics queries
     
 - Discogs metadata caching
+- server-backed identify job progress
     
 
 Database engine:
@@ -46,6 +47,7 @@ releases
 sessions
 session_moods
 discogs_release_cache
+identify_jobs
 ```
 
 Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP.
@@ -60,6 +62,9 @@ releases
    │        └── session_moods
    │
    └── discogs_release_cache
+
+identify_jobs
+   └── stores short-lived identify progress, result, and error payloads
 ```
 
 ---
@@ -236,6 +241,67 @@ INDEX (last_accessed_at)
 
 ---
 
+# Table: identify_jobs
+
+Stores short-lived server-side status for image identification jobs.
+
+This table supports the Android Processing screen. It lets the client poll backend state instead of inferring progress from one long-running HTTP request.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID string|Primary key returned to clients as `job_id`|
+|status|TEXT|Current identify status|
+|message|TEXT|Short progress or terminal message|
+|filename|TEXT|Original upload filename for diagnostics|
+|content_type|TEXT|Upload content type|
+|result|JSONB|Serialized identify response when completed|
+|error|JSONB|Serialized terminal error when failed|
+|created_at|TIMESTAMP|Job creation time|
+|updated_at|TIMESTAMP|Last status update time|
+|expires_at|TIMESTAMP|Retention cutoff|
+
+### Status Values
+
+```
+queued
+upload_received
+preprocessing_image
+extracting_text
+parsing_identifiers
+searching_local
+searching_discogs
+ranking_candidates
+completed
+failed
+expired
+```
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (status)
+
+INDEX (expires_at)
+```
+
+### Lifecycle
+
+```
+upload received
+   -> row inserted
+   -> background identify task updates status/message
+   -> completed result or failed error stored
+   -> job expires after retention window
+```
+
+Image bytes are not stored in this table.
+
+---
+
 # Derived Analytics (Computed)
 
 Analytics are calculated dynamically from sessions.
@@ -293,6 +359,7 @@ All internal entities use UUIDs.
 releases.id
 sessions.id
 session_moods.id
+identify_jobs.id
 ```
 
 Discogs identifiers remain separate:
@@ -333,6 +400,15 @@ computed dynamically
 no materialized views required for MVP
 ```
 
+### Identify Job
+
+```
+insert identify_jobs row
+background task updates status/message
+store completed result or failed error
+expire after retention window
+```
+
 ---
 
 # Migration Strategy
@@ -350,6 +426,7 @@ releases
 sessions
 session_moods
 discogs_release_cache
+identify_jobs
 ```
 
 ---
@@ -393,6 +470,8 @@ Indexes on:
 release_id
 played_at
 discogs_release_id
+identify_jobs.status
+identify_jobs.expires_at
 ```
 
 will ensure fast analytics queries.
@@ -408,6 +487,7 @@ The MVP schema provides:
 - efficient session logging
     
 - Discogs metadata caching
+- server-backed identify progress
     
 - simple analytics queries
     

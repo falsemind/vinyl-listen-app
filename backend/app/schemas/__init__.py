@@ -6,7 +6,13 @@ from app.schemas.analytics import (
     MoodDistributionResponse,
     RatingDistributionResponse,
 )
-from app.schemas.identify import IdentifyCandidateResponse, IdentifyResponse
+from app.schemas.identify import (
+    IdentifyCandidateResponse,
+    IdentifyJobError,
+    IdentifyJobStatus,
+    IdentifyJobStatusResponse,
+    IdentifyResponse,
+)
 from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse
 from app.schemas.sessions import (
     CreateSessionRequest,
@@ -23,6 +29,9 @@ __all__ = [
     "CreateSessionRequest",
     "ErrorResponse",
     "IdentifyCandidateResponse",
+    "IdentifyJobError",
+    "IdentifyJobStatus",
+    "IdentifyJobStatusResponse",
     "IdentifyResponse",
     "MonthlyPlayItem",
     "MonthlyPlaysResponse",

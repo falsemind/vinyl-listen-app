@@ -2,6 +2,14 @@ from app.pipelines.identification import ExtractedIdentifiers, OcrRoleEvidence
 from app.services.identify_service import IdentifyValidationError
 
 
+class RecordingProgressReporter:
+    def __init__(self) -> None:
+        self.updates: list[tuple[str, str]] = []
+
+    def update(self, status: str, message: str) -> None:
+        self.updates.append((status, message))
+
+
 def test_identify_service_returns_local_match_before_discogs_lookup(
     releases_repository_factory,
     build_release_stub,
@@ -30,6 +38,28 @@ def test_identify_service_returns_local_match_before_discogs_lookup(
     assert "barcode" in result.candidates[0].matched_on
     assert discogs_service.search_by_barcode_calls == []
     assert discogs_service.search_release_calls == []
+
+
+def test_identify_service_reports_progress(build_identify_service) -> None:
+    service = build_identify_service(identifiers=ExtractedIdentifiers())
+    reporter = RecordingProgressReporter()
+
+    service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="cover.jpg",
+        content_type="image/jpeg",
+        progress_reporter=reporter,
+    )
+
+    assert [status for status, _message in reporter.updates] == [
+        "preprocessing_image",
+        "extracting_text",
+        "parsing_identifiers",
+        "searching_local",
+        "searching_discogs",
+        "ranking_candidates",
+    ]
 
 
 def test_identify_service_falls_back_to_discogs_search_in_priority_order(
