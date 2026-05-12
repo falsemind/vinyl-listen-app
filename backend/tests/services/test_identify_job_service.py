@@ -1,0 +1,154 @@
+from datetime import UTC, datetime
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.models.identify_job import IdentifyJob
+from app.pipelines.identification import IdentifyCandidate
+from app.services.discogs_service import DiscogsClientError
+from app.services.identify_job_service import IdentifyJobService
+from app.services.identify_service import IdentifyResult, IdentifyValidationError
+
+
+class SuccessfulIdentifyService:
+    def validate_upload(self, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        _ = (image_bytes, filename, content_type)
+
+    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
+        _ = (image_bytes, filename, content_type)
+        if progress_reporter is not None:
+            progress_reporter.update("searching_local", "Searching local releases")
+        return IdentifyResult(
+            candidates=(
+                IdentifyCandidate(
+                    discogs_release_id=123,
+                    release_id="release-123",
+                    artist="Artist",
+                    title="Title",
+                    year=2026,
+                    label="Label",
+                    catalog_number="CAT-1",
+                    barcode=None,
+                    cover_image_url=None,
+                    match_source="local",
+                    matched_on=("local_lookup",),
+                    confidence=0.9,
+                ),
+            )
+        )
+
+
+class FailingIdentifyService(SuccessfulIdentifyService):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
+        _ = (image_bytes, filename, content_type, progress_reporter)
+        raise self._error
+
+
+class ProgressFailingIdentifyService(SuccessfulIdentifyService):
+    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
+        _ = (image_bytes, filename, content_type)
+        if progress_reporter is not None:
+            progress_reporter.update("extracting_text", "Extracting text from image")
+        raise RuntimeError("OCR failed")
+
+
+def test_identify_job_service_completes_job() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+        now_provider=lambda: datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC),
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        completed = service.get_job(db, job.job_id)
+
+    assert completed.status == "completed"
+    assert completed.result is not None
+    assert completed.result.candidates[0].discogs_release_id == 123
+    assert completed.error is None
+
+
+def test_identify_job_service_persists_discogs_failure() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=FailingIdentifyService(DiscogsClientError("down")),
+        session_factory=session_factory,
+        now_provider=lambda: datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC),
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        failed = service.get_job(db, job.job_id)
+
+    assert failed.status == "failed"
+    assert failed.error is not None
+    assert failed.error.code == "discogs_unavailable"
+    assert failed.error.failed_step == "search"
+
+
+def test_identify_job_service_maps_failure_from_last_progress_status() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=ProgressFailingIdentifyService(),
+        session_factory=session_factory,
+        now_provider=lambda: datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC),
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        failed = service.get_job(db, job.job_id)
+
+    assert failed.status == "failed"
+    assert failed.error is not None
+    assert failed.error.code == "ocr_failed"
+    assert failed.error.failed_step == "extract"
+
+
+def test_identify_job_service_rejects_invalid_upload_before_job_creation() -> None:
+    session_factory = _build_session_factory()
+    error = IdentifyValidationError(message="Uploaded image is empty.", status_code=422, code="empty_image")
+    service = IdentifyJobService(
+        identify_service=FailingValidationIdentifyService(error),
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        try:
+            service.create_job(db, image_bytes=b"", filename="cover.jpg", content_type="image/jpeg")
+        except IdentifyValidationError as raised:
+            assert raised.code == "empty_image"
+        else:
+            raise AssertionError("Expected IdentifyValidationError")
+        assert db.query(IdentifyJob).count() == 0
+
+
+class FailingValidationIdentifyService(SuccessfulIdentifyService):
+    def __init__(self, error: IdentifyValidationError) -> None:
+        self._error = error
+
+    def validate_upload(self, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        _ = (image_bytes, filename, content_type)
+        raise self._error
+
+
+def _build_session_factory():
+    engine = create_engine("sqlite:///:memory:")
+    IdentifyJob.__table__.create(engine)
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False)

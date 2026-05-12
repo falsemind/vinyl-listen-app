@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.pipelines.identification import IdentifyCandidate
+from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
 from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
@@ -44,6 +45,51 @@ class StubIdentifyService:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class StubIdentifyJobService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.process_calls: list[dict[str, object]] = []
+        timestamp = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+        self.response = IdentifyJobStatusResponse(
+            job_id="job-123",
+            status=IdentifyJobStatus.UPLOAD_RECEIVED,
+            message="Image upload received",
+            created_at=timestamp,
+            updated_at=timestamp,
+            result=None,
+            error=None,
+        )
+        self.create_error: IdentifyValidationError | None = None
+        self.get_error: Exception | None = None
+
+    def create_job(self, _db, *, image_bytes: bytes, filename: str, content_type: str) -> IdentifyJobStatusResponse:
+        self.calls.append(
+            {
+                "size_bytes": len(image_bytes),
+                "filename": filename,
+                "content_type": content_type,
+            }
+        )
+        if self.create_error is not None:
+            raise self.create_error
+        return self.response
+
+    def process_job(self, job_id: str, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        self.process_calls.append(
+            {
+                "job_id": job_id,
+                "size_bytes": len(image_bytes),
+                "filename": filename,
+                "content_type": content_type,
+            }
+        )
+
+    def get_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+        if self.get_error is not None:
+            raise self.get_error
+        return self.response.model_copy(update={"job_id": job_id})
 
 
 @dataclass
@@ -239,6 +285,14 @@ def build_stub_identify_service() -> Callable[[], StubIdentifyService]:
 
 
 @pytest.fixture
+def build_stub_identify_job_service() -> Callable[[], StubIdentifyJobService]:
+    def _factory() -> StubIdentifyJobService:
+        return StubIdentifyJobService()
+
+    return _factory
+
+
+@pytest.fixture
 def build_stub_release_import_service() -> Callable[[], StubReleaseImportService]:
     def _factory() -> StubReleaseImportService:
         return StubReleaseImportService()
@@ -269,6 +323,17 @@ def override_identify_service() -> Callable[[StubIdentifyService], None]:
         from app.main import app
 
         app.dependency_overrides[get_identify_service] = lambda: service
+
+    return _override
+
+
+@pytest.fixture
+def override_identify_job_service() -> Callable[[StubIdentifyJobService], None]:
+    def _override(service: StubIdentifyJobService) -> None:
+        from app.api.routes.identify import get_identify_job_service
+        from app.main import app
+
+        app.dependency_overrides[get_identify_job_service] = lambda: service
 
     return _override
 

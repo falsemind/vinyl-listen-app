@@ -1,0 +1,92 @@
+from datetime import datetime
+
+from sqlalchemy.orm import Session
+
+from app.models.identify_job import IdentifyJob
+
+
+class IdentifyJobRepository:
+    @staticmethod
+    def create(
+        db: Session,
+        *,
+        job_id: str,
+        status: str,
+        message: str,
+        filename: str,
+        content_type: str,
+        created_at: datetime,
+        expires_at: datetime,
+    ) -> IdentifyJob:
+        job = IdentifyJob(
+            id=job_id,
+            status=status,
+            message=message,
+            filename=filename,
+            content_type=content_type,
+            created_at=created_at,
+            updated_at=created_at,
+            expires_at=expires_at,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    @staticmethod
+    def get(db: Session, job_id: str) -> IdentifyJob | None:
+        return db.query(IdentifyJob).filter(IdentifyJob.id == job_id).one_or_none()
+
+    @staticmethod
+    def update_status(
+        db: Session,
+        job: IdentifyJob,
+        *,
+        status: str,
+        message: str,
+        updated_at: datetime,
+    ) -> IdentifyJob:
+        job.status = status
+        job.message = message
+        job.updated_at = updated_at
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    @staticmethod
+    def complete(
+        db: Session,
+        job: IdentifyJob,
+        *,
+        result: dict,
+        message: str,
+        updated_at: datetime,
+    ) -> IdentifyJob:
+        job.status = "completed"
+        job.message = message
+        job.result = result
+        job.error = None
+        job.updated_at = updated_at
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    @staticmethod
+    def fail(
+        db: Session,
+        job: IdentifyJob,
+        *,
+        error: dict,
+        message: str,
+        updated_at: datetime,
+    ) -> IdentifyJob:
+        job.status = "failed"
+        job.message = message
+        job.error = error
+        job.updated_at = updated_at
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job

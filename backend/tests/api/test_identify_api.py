@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.identify import get_identify_service
 from app.main import app
+from app.services.identify_job_service import IdentifyJobNotFoundError
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
 
 
@@ -96,3 +97,88 @@ def test_identify_endpoint_rejects_oversized_upload_before_service_call(
         }
     }
     assert service.calls == []
+
+
+def test_identify_job_endpoint_returns_accepted_status(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/jobs",
+            files={"image": ("cover.jpg", b"binary-image", "image/jpeg")},
+        )
+
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "job-123"
+    assert response.json()["status"] == "upload_received"
+    assert service.calls == [{"size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}]
+    assert service.process_calls == [
+        {"job_id": "job-123", "size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}
+    ]
+
+
+def test_identify_job_endpoint_returns_validation_errors(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.create_error = IdentifyValidationError(
+        message="Unsupported image type. Supported types: image/jpeg, image/png, image/webp.",
+        status_code=415,
+        code="unsupported_image_type",
+    )
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/jobs",
+            files={"image": ("cover.gif", b"gif-binary", "image/gif")},
+        )
+
+    assert response.status_code == 415
+    assert response.json() == {
+        "error": {
+            "code": "unsupported_image_type",
+            "message": "Unsupported image type. Supported types: image/jpeg, image/png, image/webp.",
+        }
+    }
+    assert service.process_calls == []
+
+
+def test_identify_job_status_endpoint_returns_job(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/identify/jobs/job-456")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-456"
+    assert response.json()["status"] == "upload_received"
+
+
+def test_identify_job_status_endpoint_returns_not_found(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.get_error = IdentifyJobNotFoundError("missing")
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/identify/jobs/missing")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "identify_job_not_found",
+            "message": "Identify job was not found.",
+        }
+    }
