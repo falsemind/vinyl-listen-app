@@ -215,6 +215,7 @@ Artist
 Title
 Catalog number
 Barcode
+Year
 ```
 
 ## Results List
@@ -232,7 +233,7 @@ Thumbnail
 ## Actions
 
 ```
-Select Release → Session Logging Screen
+Select Release → Import Release → Session Logging Screen
 ```
 
 ---

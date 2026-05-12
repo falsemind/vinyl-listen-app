@@ -122,8 +122,20 @@ Missing required Discogs settings raise `DiscogsConfigurationError`.
 - Returns in-memory cached search payloads when fresh.
 - Calls Discogs `/database/search`.
 - Forces `type=release`.
+- Supports artist, release title, catalog number, barcode, year, and general query search fields.
 - Fetches paginated results.
 - Stores successful search payloads in memory with a TTL.
+
+### Manual release search API
+
+`GET /api/v1/releases/search` exposes Discogs release search for the Android Manual Search screen.
+
+The route:
+
+1. Requires at least one search field.
+2. Calls `DiscogsService.search_releases`.
+3. Normalizes Discogs result payloads into compact candidate rows.
+4. Returns Discogs IDs only; clients must call `POST /api/v1/releases/import` after selection to get an internal `release_id`.
 
 ### Release fetch behavior
 

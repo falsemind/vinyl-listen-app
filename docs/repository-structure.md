@@ -45,6 +45,7 @@ docs/
 │   ├── image-identify-ocr-backend-upgrade-plan.md
 │   ├── image-identify-pipeline-plan.md
 │   ├── listening-session-api-plan.md
+│   ├── manual-search-implementation-plan.md
 │   └── release-import-metadata-api-plan.md
 ├── product/
 │   ├── app-design-system.md
