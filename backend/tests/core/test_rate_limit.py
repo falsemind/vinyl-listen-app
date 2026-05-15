@@ -50,7 +50,37 @@ def test_rate_limiter_keeps_client_keys_independent() -> None:
     assert limiter.acquire(client_key="client-b", policy=policy).allowed is True
 
 
-def test_client_key_resolver_prefers_forwarded_for() -> None:
+def test_rate_limiter_prunes_idle_buckets() -> None:
+    clock = FakeClock()
+    limiter = InMemoryRateLimiter(clock=clock)
+    policy = RateLimitPolicy(name="test", limit=1, window_seconds=60.0)
+
+    for index in range(10):
+        assert limiter.acquire(client_key=f"client-{index}", policy=policy).allowed is True
+
+    assert limiter.bucket_count() == 10
+
+    clock.advance(60.0)
+    assert limiter.acquire(client_key="active-client", policy=policy).allowed is True
+
+    assert limiter.bucket_count() == 1
+
+
+def test_client_key_resolver_ignores_proxy_headers_by_default() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/releases",
+            "headers": [(b"x-forwarded-for", b"203.0.113.1")],
+            "client": ("10.0.0.1", 1234),
+        }
+    )
+
+    assert ClientKeyResolver().resolve(request) == "10.0.0.1"
+
+
+def test_client_key_resolver_prefers_forwarded_for_when_proxy_headers_are_trusted() -> None:
     request = Request(
         {
             "type": "http",
@@ -61,7 +91,7 @@ def test_client_key_resolver_prefers_forwarded_for() -> None:
         }
     )
 
-    assert ClientKeyResolver().resolve(request) == "203.0.113.1"
+    assert ClientKeyResolver(trust_proxy_headers=True).resolve(request) == "203.0.113.1"
 
 
 def test_route_policy_table_matches_phase_one_contract() -> None:

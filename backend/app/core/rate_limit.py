@@ -44,10 +44,11 @@ class RateLimitResult:
 class _Bucket:
     tokens: float
     updated_at: float
+    window_seconds: float
 
 
 class ClientKeyResolver:
-    def __init__(self, *, trust_proxy_headers: bool = True) -> None:
+    def __init__(self, *, trust_proxy_headers: bool = False) -> None:
         self._trust_proxy_headers = trust_proxy_headers
 
     def resolve(self, request: Request) -> str:
@@ -80,16 +81,25 @@ class InMemoryRateLimiter:
         refill_rate = policy.limit / policy.window_seconds
 
         with self._lock:
+            self._prune_expired_buckets(now)
             bucket = self._buckets.get(bucket_key)
             if bucket is None:
-                bucket = _Bucket(tokens=float(policy.limit), updated_at=now)
+                bucket = _Bucket(
+                    tokens=float(policy.limit),
+                    updated_at=now,
+                    window_seconds=policy.window_seconds,
+                )
 
             elapsed_seconds = max(0.0, now - bucket.updated_at)
             tokens = min(float(policy.limit), bucket.tokens + (elapsed_seconds * refill_rate))
 
             if tokens >= 1.0:
                 tokens -= 1.0
-                self._buckets[bucket_key] = _Bucket(tokens=tokens, updated_at=now)
+                self._buckets[bucket_key] = _Bucket(
+                    tokens=tokens,
+                    updated_at=now,
+                    window_seconds=policy.window_seconds,
+                )
                 return RateLimitResult(
                     allowed=True,
                     retry_after_seconds=0.0,
@@ -97,7 +107,11 @@ class InMemoryRateLimiter:
                 )
 
             retry_after_seconds = max(0.0, (1.0 - tokens) / refill_rate)
-            self._buckets[bucket_key] = _Bucket(tokens=tokens, updated_at=now)
+            self._buckets[bucket_key] = _Bucket(
+                tokens=tokens,
+                updated_at=now,
+                window_seconds=policy.window_seconds,
+            )
             return RateLimitResult(
                 allowed=False,
                 retry_after_seconds=retry_after_seconds,
@@ -107,6 +121,19 @@ class InMemoryRateLimiter:
     def reset(self) -> None:
         with self._lock:
             self._buckets.clear()
+
+    def bucket_count(self) -> int:
+        with self._lock:
+            return len(self._buckets)
+
+    def _prune_expired_buckets(self, now: float) -> None:
+        expired_keys = [
+            bucket_key
+            for bucket_key, bucket in self._buckets.items()
+            if now - bucket.updated_at >= bucket.window_seconds
+        ]
+        for bucket_key in expired_keys:
+            del self._buckets[bucket_key]
 
 
 def build_rate_limit_policies(
