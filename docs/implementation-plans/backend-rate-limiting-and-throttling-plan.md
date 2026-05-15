@@ -188,6 +188,12 @@ Phase 1 `429` contract:
 - `X-RateLimit-Limit` header: active policy limit.
 - `X-RateLimit-Remaining` header: remaining whole tokens for accepted requests, `0` for rejected requests.
 
+Client behavior:
+
+- Clients should honor `Retry-After` before applying local backoff.
+- If `Retry-After` is absent or invalid, clients should use exponential backoff with jitter.
+- Clients should not automatically retry non-idempotent uploads or writes unless an idempotency contract exists.
+
 ## Phase 1: In-Process API Rate Limiter
 
 Purpose: add simple inbound protection for one backend process.
@@ -225,6 +231,7 @@ Done criteria:
 - Health endpoints remain usable.
 - `Retry-After` is present and non-negative.
 - Tests do not sleep.
+- API documentation tells clients to honor `Retry-After` and use jittered backoff when needed.
 
 Validation:
 
@@ -252,6 +259,7 @@ Implementation shape:
 - Enforce per-client active jobs by checking DB rows.
 - Store `client_key` on `identify_jobs`.
 - Add active terminal status helpers.
+- Add `identify_capacity_retry_after_seconds` for client retry guidance.
 
 Active statuses:
 
@@ -281,11 +289,12 @@ Tasks:
 3. Add repository query for active jobs globally, if needed.
 4. Add admission check before creating or starting a job.
 5. Return `429 identify_capacity_exceeded` when active job capacity is full.
-6. Wrap job execution in a concurrency guard.
-7. Ensure semaphore release happens in `finally`.
-8. Keep failed jobs terminal if processing raises.
-9. Add tests for per-client active job rejection.
-10. Add tests for global concurrency rejection or queued behavior.
+6. Include `Retry-After` on identify capacity rejects.
+7. Wrap job execution in a concurrency guard.
+8. Ensure semaphore release happens in `finally`.
+9. Keep failed jobs terminal if processing raises.
+10. Add tests for per-client active job rejection.
+11. Add tests for global concurrency rejection or queued behavior.
 
 Design choice:
 
@@ -359,6 +368,7 @@ Done criteria:
 - A crashed or stale job does not block the client forever.
 - No generic `rate_limit_buckets` table is added.
 - General API request limiting remains separate from DB-backed business limits.
+- `identify_capacity_exceeded` responses expose a stable retry hint for clients.
 
 Tradeoff:
 
@@ -471,6 +481,7 @@ Add structured logs for:
 - Current active identify job count.
 - Job start, completion, failure, and duration.
 - Retry-after values.
+- Client-visible throttle error codes.
 
 Add health/runtime fields:
 
