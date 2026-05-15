@@ -22,7 +22,7 @@ The original synchronous endpoint remains available at `POST /api/v1/identify`. 
 
 Upload validation still happens before a job is created. Invalid content type, empty files, or files larger than the configured identify upload limit return the same structured errors as the synchronous endpoint.
 
-When identify capacity is full, `POST /api/v1/identify` and `POST /api/v1/identify/jobs` return `429 identify_capacity_exceeded` before starting OCR or search work.
+When identify capacity is full, `POST /api/v1/identify` and `POST /api/v1/identify/jobs` return `429 identify_capacity_exceeded` with `Retry-After` before starting OCR or search work.
 
 ## Job Statuses
 
@@ -38,7 +38,7 @@ When identify capacity is full, `POST /api/v1/identify` and `POST /api/v1/identi
 | `ranking_candidates` | Local or Discogs candidates are being scored and sorted. |
 | `completed` | Identification finished and `result` contains candidates. |
 | `failed` | Identification failed and `error` explains the terminal failure. |
-| `expired` | The job is past its retention window. |
+| `expired` | The job is past its retention window or was stale before completion. |
 
 ## Storage
 
@@ -56,6 +56,8 @@ Important fields:
 - `expires_at`: retention cutoff. Current jobs expire after 24 hours.
 
 Image bytes are not stored in the table. They are held only long enough for the background task to process the upload.
+
+Before creating a new job, the backend expires active rows whose status has not advanced within `identify_stale_active_job_timeout_seconds`. This keeps stale rows left by crashed processing from blocking a client's active-job limit forever.
 
 ## Error Handling
 

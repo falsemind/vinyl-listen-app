@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.identify_job import IdentifyJob
@@ -53,6 +53,43 @@ class IdentifyJobRepository:
     @staticmethod
     def count_active(db: Session, *, active_statuses: set[str]) -> int:
         return db.query(func.count(IdentifyJob.id)).filter(IdentifyJob.status.in_(active_statuses)).scalar() or 0
+
+    @staticmethod
+    def expire_stale_active(
+        db: Session,
+        *,
+        active_statuses: set[str],
+        stale_before: datetime,
+        expires_at_or_before: datetime,
+        updated_at: datetime,
+    ) -> int:
+        stale_jobs = (
+            db.query(IdentifyJob)
+            .filter(IdentifyJob.status.in_(active_statuses))
+            .filter(
+                or_(
+                    IdentifyJob.updated_at <= stale_before,
+                    IdentifyJob.expires_at <= expires_at_or_before,
+                )
+            )
+            .all()
+        )
+        if not stale_jobs:
+            return 0
+
+        for job in stale_jobs:
+            job.status = "expired"
+            job.message = "Identify job expired before completion. Please retry."
+            job.error = {
+                "code": "identify_job_stale",
+                "message": "Identify job expired before completion. Please retry.",
+                "failed_step": "unknown",
+            }
+            job.updated_at = updated_at
+            db.add(job)
+
+        db.commit()
+        return len(stale_jobs)
 
     @staticmethod
     def update_status(

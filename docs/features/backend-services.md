@@ -66,13 +66,13 @@ When a progress reporter is provided, the service emits backend status updates b
 Identify work has two protection layers:
 
 - Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses.
-- `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local capacity is full.
+- `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local or configured DB-backed capacity is full.
 
-Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
+Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
 
 Both generic rate-limit rejects and identify capacity rejects include `Retry-After` so clients can wait before retrying. Android should honor this header before using local exponential backoff with jitter.
 
-The current admission guard is process-local. Multiple backend workers still need a database transaction or advisory lock for strict cross-worker per-client admission.
+The local semaphore and keyed client lock are process-local. DB active counts and stale recovery add shared state awareness, but multiple backend workers still need a database transaction or advisory lock for strict cross-worker admission.
 
 ### Local candidate search
 

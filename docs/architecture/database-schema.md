@@ -286,6 +286,8 @@ PRIMARY KEY (id)
 
 INDEX (status)
 
+INDEX (status, updated_at)
+
 INDEX (client_key, status)
 
 INDEX (expires_at)
@@ -409,7 +411,7 @@ no materialized views required for MVP
 insert identify_jobs row
 background task updates status/message
 store completed result or failed error
-expire after retention window
+expire after retention window or stale active timeout
 ```
 
 ---
@@ -474,6 +476,7 @@ release_id
 played_at
 discogs_release_id
 identify_jobs.status
+identify_jobs.status + identify_jobs.updated_at
 identify_jobs.expires_at
 ```
 

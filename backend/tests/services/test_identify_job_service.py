@@ -1,6 +1,6 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -218,6 +218,45 @@ def test_identify_job_service_serializes_same_client_admission() -> None:
     service.process_job(accepted_job_ids[0], image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
 
+def test_identify_job_service_serializes_db_global_admission() -> None:
+    session_factory = _build_threadsafe_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        admission_controller=IdentifyAdmissionController(max_concurrent_jobs=2),
+        session_factory=session_factory,
+        max_active_jobs_per_client=2,
+        max_active_jobs_global=1,
+    )
+    barrier = threading.Barrier(2)
+
+    def create_job_for_client(client_key: str) -> str:
+        barrier.wait()
+        with session_factory() as db:
+            try:
+                job = service.create_job(
+                    db,
+                    image_bytes=b"image",
+                    filename="cover.jpg",
+                    content_type="image/jpeg",
+                    client_key=client_key,
+                )
+            except IdentifyCapacityExceededError:
+                return "rejected"
+            return job.job_id
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(create_job_for_client, ("client-a", "client-b")))
+
+    assert results.count("rejected") == 1
+    accepted_job_ids = [result for result in results if result != "rejected"]
+    assert len(accepted_job_ids) == 1
+
+    with session_factory() as db:
+        assert db.query(IdentifyJob).count() == 1
+
+    service.process_job(accepted_job_ids[0], image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+
 def test_identify_job_service_rejects_when_global_capacity_is_full() -> None:
     session_factory = _build_session_factory()
     service = IdentifyJobService(
@@ -249,6 +288,86 @@ def test_identify_job_service_rejects_when_global_capacity_is_full() -> None:
             raise AssertionError("Expected IdentifyCapacityExceededError")
 
     service.process_job(first_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+
+def test_identify_job_service_rejects_when_db_global_active_capacity_is_full() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        admission_controller=IdentifyAdmissionController(max_concurrent_jobs=2),
+        session_factory=session_factory,
+        max_active_jobs_per_client=2,
+        max_active_jobs_global=1,
+    )
+
+    with session_factory() as db:
+        first_job = service.create_job(
+            db,
+            image_bytes=b"image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+            client_key="client-a",
+        )
+        try:
+            service.create_job(
+                db,
+                image_bytes=b"image",
+                filename="cover.jpg",
+                content_type="image/jpeg",
+                client_key="client-b",
+            )
+        except IdentifyCapacityExceededError as error:
+            assert error.code == "identify_capacity_exceeded"
+        else:
+            raise AssertionError("Expected IdentifyCapacityExceededError")
+
+    service.process_job(first_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+
+def test_identify_job_service_expires_stale_active_job_before_admission() -> None:
+    session_factory = _build_session_factory()
+    now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        admission_controller=IdentifyAdmissionController(max_concurrent_jobs=1),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+        max_active_jobs_per_client=1,
+        stale_active_job_timeout=timedelta(minutes=15),
+    )
+
+    with session_factory() as db:
+        db.add(
+            IdentifyJob(
+                id="stale-job",
+                status="upload_received",
+                client_key="client-a",
+                message="Image upload received",
+                filename="cover.jpg",
+                content_type="image/jpeg",
+                created_at=now - timedelta(minutes=30),
+                updated_at=now - timedelta(minutes=30),
+                expires_at=now + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+        new_job = service.create_job(
+            db,
+            image_bytes=b"image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+            client_key="client-a",
+        )
+        stale_job = db.get(IdentifyJob, "stale-job")
+
+    assert new_job.status == "upload_received"
+    assert stale_job is not None
+    assert stale_job.status == "expired"
+    assert stale_job.error is not None
+    assert stale_job.error["code"] == "identify_job_stale"
+
+    service.process_job(new_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
 
 def test_identify_job_service_releases_capacity_after_worker_failure() -> None:
