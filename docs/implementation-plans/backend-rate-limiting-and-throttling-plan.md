@@ -310,7 +310,8 @@ DISCOGS_TOKEN=test .venv/bin/pytest
 Limitations:
 
 - Semaphore is per process.
-- DB active-job count helps per-client behavior, but two workers can still race without stronger locking.
+- Per-client admission is serialized with an in-process keyed lock around active-count check and job creation.
+- Multiple backend workers still need a database transaction/advisory lock before the active-count check and insert.
 
 ## Phase 3: DB-Backed Business Limits For Identify Jobs
 
