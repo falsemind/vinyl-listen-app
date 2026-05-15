@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
     identify_max_concurrent_jobs: int = 1
     identify_max_active_jobs_per_client: int = 1
+    identify_max_active_jobs_global: int = 0
+    identify_stale_active_job_timeout_seconds: int = 900
     identify_capacity_retry_after_seconds: int = 5
     identify_ocr_tesseract_fallback_enabled: bool = True
     identify_mlx_vlm_service_url: str | None = None

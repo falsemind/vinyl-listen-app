@@ -16,6 +16,7 @@ class IdentifyJob(Base):
     __tablename__ = "identify_jobs"
     __table_args__ = (
         Index("idx_identify_jobs_status", "status"),
+        Index("idx_identify_jobs_status_updated_at", "status", "updated_at"),
         Index("idx_identify_jobs_client_key_status", "client_key", "status"),
         Index("idx_identify_jobs_expires_at", "expires_at"),
     )

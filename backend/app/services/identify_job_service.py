@@ -74,6 +74,7 @@ class IdentifyAdmissionController:
         if client_lock_stripes <= 0:
             raise ValueError("client_lock_stripes must be positive.")
         self._semaphore = threading.BoundedSemaphore(max_concurrent_jobs)
+        self._admission_lock = threading.Lock()
         self._client_locks = tuple(threading.Lock() for _ in range(client_lock_stripes))
 
     def acquire_global_slot(self) -> IdentifyAdmissionTicket:
@@ -92,6 +93,11 @@ class IdentifyAdmissionController:
             yield
         finally:
             lock.release()
+
+    @contextmanager
+    def db_admission_lock(self, client_key: str) -> Iterator[None]:
+        with self._admission_lock, self.client_admission_lock(client_key):
+            yield
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,8 @@ class IdentifyJobService:
         now_provider: Callable[[], datetime] | None = None,
         job_ttl: timedelta = DEFAULT_IDENTIFY_JOB_TTL,
         max_active_jobs_per_client: int = settings.identify_max_active_jobs_per_client,
+        max_active_jobs_global: int = settings.identify_max_active_jobs_global,
+        stale_active_job_timeout: timedelta = timedelta(seconds=settings.identify_stale_active_job_timeout_seconds),
     ) -> None:
         self._identify_service = identify_service or IdentifyService()
         self._repository = repository or IdentifyJobRepository()
@@ -146,6 +154,8 @@ class IdentifyJobService:
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._job_ttl = job_ttl
         self._max_active_jobs_per_client = max_active_jobs_per_client
+        self._max_active_jobs_global = max_active_jobs_global
+        self._stale_active_job_timeout = stale_active_job_timeout
         self._admission_tickets: dict[str, IdentifyAdmissionTicket] = {}
         self._admission_tickets_lock = threading.Lock()
 
@@ -163,7 +173,10 @@ class IdentifyJobService:
             filename=filename,
             content_type=content_type,
         )
-        with self._admission_controller.client_admission_lock(client_key):
+        now = self._now_provider()
+        with self._admission_controller.db_admission_lock(client_key):
+            self._expire_stale_active_jobs(db, now=now)
+
             active_job_count = self._repository.count_active_by_client(
                 db,
                 client_key=client_key,
@@ -172,8 +185,15 @@ class IdentifyJobService:
             if active_job_count >= self._max_active_jobs_per_client:
                 raise IdentifyCapacityExceededError
 
+            if self._max_active_jobs_global > 0:
+                active_global_job_count = self._repository.count_active(
+                    db,
+                    active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
+                )
+                if active_global_job_count >= self._max_active_jobs_global:
+                    raise IdentifyCapacityExceededError
+
             admission_ticket = self._admission_controller.acquire_global_slot()
-            now = self._now_provider()
             job_id = str(uuid4())
             try:
                 job = self._repository.create(
@@ -265,6 +285,18 @@ class IdentifyJobService:
     def _pop_admission_ticket(self, job_id: str) -> IdentifyAdmissionTicket | None:
         with self._admission_tickets_lock:
             return self._admission_tickets.pop(job_id, None)
+
+    def _expire_stale_active_jobs(self, db: Session, *, now: datetime) -> int:
+        if self._stale_active_job_timeout.total_seconds() <= 0:
+            return 0
+
+        return self._repository.expire_stale_active(
+            db,
+            active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
+            stale_before=now - self._stale_active_job_timeout,
+            expires_at_or_before=now,
+            updated_at=now,
+        )
 
     def _to_response(self, job: IdentifyJob) -> IdentifyJobStatusResponse:
         result = IdentifyResponse.model_validate(job.result) if job.result else None
