@@ -1,6 +1,6 @@
 ---
 name: repository-structure
-description: This document describes the current monorepo layout. Use this when need a quick reference to find a specific file or directory.
+description: This document explains the current monorepo detailed layout with most of the files and directories.
 ---
 
 ## Top-Level Layout
@@ -48,7 +48,8 @@ docs/
 │   ├── image-identify-pipeline-plan.md
 │   ├── listening-session-api-plan.md
 │   ├── manual-search-implementation-plan.md
-│   └── release-import-metadata-api-plan.md
+│   ├── release-import-metadata-api-plan.md
+│   └── backend-rate-limiting-and-throttling-plan.md
 ├── product/
 │   ├── app-design-system.md
 │   ├── app-screens-mockups/
@@ -97,6 +98,7 @@ backend/app/
 ├── core/
 │   ├── config.py
 │   ├── logging.py
+│   ├── rate_limit.py
 │   └── runtime_dependencies.py
 ├── database/
 │   ├── base.py
@@ -135,10 +137,10 @@ backend/app/
 
 | Layer | Responsibility |
 | --- | --- |
-| `main.py` | Creates the FastAPI app, attaches `/api/v1`, handles validation errors, and logs runtime dependency status during startup. |
+| `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
 | `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, and `/analytics`. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
-| `core/` | Configuration, logging, and optional runtime dependency checks. |
+| `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
 | `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
@@ -154,8 +156,8 @@ All routes are nested under `/api/v1`.
 | --- | --- | --- |
 | `GET /health` | `api/routes/health.py` | Runtime/database health checks. |
 | `GET /health/runtime` | `api/routes/health.py` | Optional dependency status. |
-| `POST /identify` | `api/routes/identify.py` | `IdentifyService`. |
-| `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService`. |
+| `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard. |
+| `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService` with per-client admission control. |
 | `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
@@ -231,6 +233,7 @@ backend/alembic/
     ├── 1a8551e314b6_create_models_releases_sessions_.py
     ├── a5427b530a12_latest_db_revision.py
     ├── b7f3c9d2a4e1_add_identify_jobs.py
+    ├── 7ab6c5d4e3f2_add_identify_job_client_key.py
     └── eed6974773b8_init.py
 
 backend/scripts/

@@ -14,12 +14,15 @@ The original synchronous endpoint remains available at `POST /api/v1/identify`. 
 ## API Flow
 
 1. The client uploads an image to `POST /api/v1/identify/jobs`.
-2. The backend validates the upload and creates an `identify_jobs` row.
-3. The backend starts the identify pipeline in a background task.
-4. The client polls `GET /api/v1/identify/jobs/{job_id}`.
-5. The job returns `completed` with `result`, `failed` with `error`, or `expired`.
+2. The backend validates the upload and checks identify admission capacity.
+3. The backend creates an `identify_jobs` row with the resolved `client_key`.
+4. The backend starts the identify pipeline in a background task.
+5. The client polls `GET /api/v1/identify/jobs/{job_id}`.
+6. The job returns `completed` with `result`, `failed` with `error`, or `expired`.
 
 Upload validation still happens before a job is created. Invalid content type, empty files, or files larger than the configured identify upload limit return the same structured errors as the synchronous endpoint.
+
+When identify capacity is full, `POST /api/v1/identify` and `POST /api/v1/identify/jobs` return `429 identify_capacity_exceeded` before starting OCR or search work.
 
 ## Job Statuses
 
@@ -45,6 +48,7 @@ Important fields:
 
 - `id`: UUID string returned to the client as `job_id`.
 - `status`: current job status.
+- `client_key`: resolved client identity used for per-client active job admission.
 - `message`: short user-facing progress message.
 - `filename` and `content_type`: upload metadata for diagnostics.
 - `result`: completed `IdentifyResponse` payload.
