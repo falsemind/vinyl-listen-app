@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.identify_job import IdentifyJob
@@ -13,6 +14,7 @@ class IdentifyJobRepository:
         job_id: str,
         status: str,
         message: str,
+        client_key: str | None,
         filename: str,
         content_type: str,
         created_at: datetime,
@@ -21,6 +23,7 @@ class IdentifyJobRepository:
         job = IdentifyJob(
             id=job_id,
             status=status,
+            client_key=client_key,
             message=message,
             filename=filename,
             content_type=content_type,
@@ -36,6 +39,20 @@ class IdentifyJobRepository:
     @staticmethod
     def get(db: Session, job_id: str) -> IdentifyJob | None:
         return db.query(IdentifyJob).filter(IdentifyJob.id == job_id).one_or_none()
+
+    @staticmethod
+    def count_active_by_client(db: Session, *, client_key: str, active_statuses: set[str]) -> int:
+        return (
+            db.query(func.count(IdentifyJob.id))
+            .filter(IdentifyJob.client_key == client_key)
+            .filter(IdentifyJob.status.in_(active_statuses))
+            .scalar()
+            or 0
+        )
+
+    @staticmethod
+    def count_active(db: Session, *, active_statuses: set[str]) -> int:
+        return db.query(func.count(IdentifyJob.id)).filter(IdentifyJob.status.in_(active_statuses)).scalar() or 0
 
     @staticmethod
     def update_status(

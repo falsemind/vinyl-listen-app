@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     inbound_rate_limit_trust_proxy_headers: bool = False
 
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
+    identify_max_concurrent_jobs: int = 1
+    identify_max_active_jobs_per_client: int = 1
     identify_ocr_tesseract_fallback_enabled: bool = True
     identify_mlx_vlm_service_url: str | None = None
     identify_mlx_vlm_endpoint_path: str = "/v1/chat/completions"
