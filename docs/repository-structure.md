@@ -234,6 +234,7 @@ backend/alembic/
     ├── a5427b530a12_latest_db_revision.py
     ├── b7f3c9d2a4e1_add_identify_jobs.py
     ├── 7ab6c5d4e3f2_add_identify_job_client_key.py
+    ├── d2b8c7e9f041_add_identify_job_stale_recovery_index.py
     └── eed6974773b8_init.py
 
 backend/scripts/
