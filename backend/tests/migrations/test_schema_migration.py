@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
+
+from alembic import command
 
 
 def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeypatch, capsys) -> None:
@@ -32,4 +33,6 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE INDEX idx_discogs_release_cache_last_accessed_at" in sql
     assert "CREATE TABLE identify_jobs" in sql
     assert "CREATE INDEX idx_identify_jobs_status" in sql
+    assert "ALTER TABLE identify_jobs ADD COLUMN client_key" in sql
+    assert "CREATE INDEX idx_identify_jobs_client_key_status" in sql
     assert "CREATE INDEX idx_identify_jobs_expires_at" in sql
