@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     discogs_cache_ttl_seconds: int = 86400
 
     api_rate_limit_per_minute: int = 60
+    inbound_rate_limit_enabled: bool = True
+    inbound_default_rate_limit_per_minute: int = 300
+    inbound_identify_rate_limit_per_minute: int = 30
+    inbound_rate_limit_window_seconds: float = 60.0
+    inbound_rate_limit_trust_proxy_headers: bool = True
 
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
     identify_ocr_tesseract_fallback_enabled: bool = True
