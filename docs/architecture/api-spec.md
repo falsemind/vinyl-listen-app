@@ -101,7 +101,7 @@ Endpoints used after the user captures or uploads a photo.
 
 Uploads an image and returns candidate releases synchronously.
 
-This endpoint is protected by the identify admission guard. If local identify capacity is full, it returns `429` with error code `identify_capacity_exceeded`.
+This endpoint is protected by the identify admission guard. If local identify capacity is full, it returns `429` with error code `identify_capacity_exceeded` and a `Retry-After` header.
 
 ### Request
 
@@ -210,7 +210,7 @@ Fields:
 
 Upload validation errors use the same structured error format and status codes as `POST /identify`.
 
-If the client already has too many active identify jobs, or local identify capacity is full, the endpoint returns:
+If the client already has too many active identify jobs, or local identify capacity is full, the endpoint returns `429` with a `Retry-After` header:
 
 ```json
 {
@@ -220,6 +220,8 @@ If the client already has too many active identify jobs, or local identify capac
   }
 }
 ```
+
+Clients should honor `Retry-After` before applying local exponential backoff.
 
 ## GET /identify/jobs/{job_id}
 
@@ -689,6 +691,13 @@ limit rapid search queries
 ```
 
 This prevents abuse and protects the Discogs quota.
+
+Clients should also handle backend `429` responses gracefully:
+
+* Honor `Retry-After` when present.
+* Use exponential backoff with jitter when no valid retry hint is present.
+* Avoid automatic retries for uploads and writes unless the backend provides an idempotency contract.
+* Use a circuit breaker later if repeated `429`, `502`, `503`, timeout, or offline failures appear in production.
 
 ---
 

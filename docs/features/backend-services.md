@@ -70,6 +70,8 @@ Identify work has two protection layers:
 
 Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
 
+Both generic rate-limit rejects and identify capacity rejects include `Retry-After` so clients can wait before retrying. Android should honor this header before using local exponential backoff with jitter.
+
 The current admission guard is process-local. Multiple backend workers still need a database transaction or advisory lock for strict cross-worker per-client admission.
 
 ### Local candidate search
