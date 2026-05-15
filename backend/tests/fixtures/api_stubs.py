@@ -6,6 +6,7 @@ import pytest
 
 from app.pipelines.identification import IdentifyCandidate
 from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
+from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
 from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
@@ -61,10 +62,19 @@ class StubIdentifyJobService:
             result=None,
             error=None,
         )
-        self.create_error: IdentifyValidationError | None = None
+        self.create_error: Exception | None = None
         self.get_error: Exception | None = None
 
-    def create_job(self, _db, *, image_bytes: bytes, filename: str, content_type: str) -> IdentifyJobStatusResponse:
+    def create_job(
+        self,
+        _db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        client_key: str = "unknown",
+    ) -> IdentifyJobStatusResponse:
+        _ = client_key
         self.calls.append(
             {
                 "size_bytes": len(image_bytes),
@@ -75,6 +85,17 @@ class StubIdentifyJobService:
         if self.create_error is not None:
             raise self.create_error
         return self.response
+
+    def acquire_sync_identify_slot(self):
+        if isinstance(self.create_error, IdentifyCapacityExceededError):
+            raise self.create_error
+
+        class _Ticket:
+            @staticmethod
+            def release() -> None:
+                return None
+
+        return _Ticket()
 
     def process_job(self, job_id: str, *, image_bytes: bytes, filename: str, content_type: str) -> None:
         self.process_calls.append(

@@ -1,13 +1,18 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.identify import IdentifyCandidateResponse, IdentifyJobStatusResponse, IdentifyResponse
 from app.schemas.sessions import ErrorResponse
-from app.services.identify_job_service import IdentifyJobExpiredError, IdentifyJobNotFoundError, IdentifyJobService
+from app.services.identify_job_service import (
+    IdentifyCapacityExceededError,
+    IdentifyJobExpiredError,
+    IdentifyJobNotFoundError,
+    IdentifyJobService,
+)
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyService, IdentifyValidationError
 
 router = APIRouter()
@@ -37,9 +42,17 @@ def get_identify_job_service() -> IdentifyJobService:
 )
 async def identify_release(
     image: Annotated[UploadFile, File(...)],
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     service: Annotated[IdentifyService, Depends(get_identify_service)],
+    job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
 ):
+    _ = request
+    try:
+        admission_ticket = job_service.acquire_sync_identify_slot()
+    except IdentifyCapacityExceededError as error:
+        return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+
     try:
         image_bytes = await _read_image_bytes(image)
         result = service.identify(
@@ -53,6 +66,8 @@ async def identify_release(
             status_code=error.status_code,
             content={"error": {"code": error.code, "message": error.message}},
         )
+    finally:
+        admission_ticket.release()
 
     return IdentifyResponse(
         candidates=[
@@ -83,6 +98,7 @@ async def identify_release(
 )
 async def create_identify_job(
     image: Annotated[UploadFile, File(...)],
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
@@ -91,8 +107,17 @@ async def create_identify_job(
     content_type = image.content_type or ""
     try:
         image_bytes = await _read_image_bytes(image)
-        job = job_service.create_job(db, image_bytes=image_bytes, filename=filename, content_type=content_type)
+        client_key = request.app.state.client_key_resolver.resolve(request)
+        job = job_service.create_job(
+            db,
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            client_key=client_key,
+        )
     except IdentifyValidationError as error:
+        return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+    except IdentifyCapacityExceededError as error:
         return _error_response(status_code=error.status_code, code=error.code, message=error.message)
 
     background_tasks.add_task(

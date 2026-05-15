@@ -253,6 +253,7 @@ This table supports the Android Processing screen. It lets the client poll backe
 |---|---|---|
 |id|UUID string|Primary key returned to clients as `job_id`|
 |status|TEXT|Current identify status|
+|client_key|TEXT|Resolved client identity used for per-client active job admission|
 |message|TEXT|Short progress or terminal message|
 |filename|TEXT|Original upload filename for diagnostics|
 |content_type|TEXT|Upload content type|
@@ -284,6 +285,8 @@ expired
 PRIMARY KEY (id)
 
 INDEX (status)
+
+INDEX (client_key, status)
 
 INDEX (expires_at)
 ```

@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.identify import get_identify_service
 from app.main import app
-from app.services.identify_job_service import IdentifyJobNotFoundError
+from app.services.identify_job_service import IdentifyCapacityExceededError, IdentifyJobNotFoundError
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
 
 
@@ -147,6 +147,58 @@ def test_identify_job_endpoint_returns_validation_errors(
         }
     }
     assert service.process_calls == []
+
+
+def test_identify_job_endpoint_returns_capacity_errors(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.create_error = IdentifyCapacityExceededError()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/jobs",
+            files={"image": ("cover.jpg", b"binary-image", "image/jpeg")},
+        )
+
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {
+            "code": "identify_capacity_exceeded",
+            "message": "Identify capacity is full. Please retry later.",
+        }
+    }
+    assert service.process_calls == []
+
+
+def test_sync_identify_endpoint_returns_capacity_errors(
+    build_stub_identify_service,
+    build_stub_identify_job_service,
+    override_identify_service,
+    override_identify_job_service,
+) -> None:
+    identify_service = build_stub_identify_service()
+    job_service = build_stub_identify_job_service()
+    job_service.create_error = IdentifyCapacityExceededError()
+    override_identify_service(identify_service)
+    override_identify_job_service(job_service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify",
+            files={"image": ("cover.jpg", b"binary-image", "image/jpeg")},
+        )
+
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {
+            "code": "identify_capacity_exceeded",
+            "message": "Identify capacity is full. Please retry later.",
+        }
+    }
+    assert identify_service.calls == []
 
 
 def test_identify_job_status_endpoint_returns_job(

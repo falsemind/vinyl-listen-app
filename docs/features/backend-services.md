@@ -10,7 +10,7 @@ description: This document explains the backend service layer in `backend/app/se
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsService`, `CandidateRanker`. |
-| `identify_job_service.py` | Persist and expose async identify job status for clients that need progress updates. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`. |
+| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
 | `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
@@ -60,6 +60,17 @@ When a progress reporter is provided, the service emits backend status updates b
 - `searching_local`
 - `searching_discogs`
 - `ranking_candidates`
+
+## Identify Admission Control
+
+Identify work has two protection layers:
+
+- Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses.
+- `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local capacity is full.
+
+Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
+
+The current admission guard is process-local. Multiple backend workers still need a database transaction or advisory lock for strict cross-worker per-client admission.
 
 ### Local candidate search
 

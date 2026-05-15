@@ -1,19 +1,18 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 24.4.2
-    hooks:
-      - id: black
-        files: ^backend/
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
-    hooks:
-      - id: ruff
-        args: ["--fix"]
-        files: ^backend/
-
   - repo: local
     hooks:
+      - id: backend-black
+        name: backend black
+        entry: bash scripts/pre-commit/run-backend-tool.sh black
+        language: system
+        files: ^backend/.*\.py$
+
+      - id: backend-ruff
+        name: backend ruff
+        entry: bash scripts/pre-commit/run-backend-tool.sh ruff
+        language: system
+        files: ^backend/.*\.py$
+
       - id: android-ktlint
         name: android ktlint
         entry: bash scripts/pre-commit/run-android-gradle-task.sh :app:ktlintCheck

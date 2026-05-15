@@ -101,6 +101,8 @@ Endpoints used after the user captures or uploads a photo.
 
 Uploads an image and returns candidate releases synchronously.
 
+This endpoint is protected by the identify admission guard. If local identify capacity is full, it returns `429` with error code `identify_capacity_exceeded`.
+
 ### Request
 
 Content type:
@@ -207,6 +209,17 @@ Fields:
 ```
 
 Upload validation errors use the same structured error format and status codes as `POST /identify`.
+
+If the client already has too many active identify jobs, or local identify capacity is full, the endpoint returns:
+
+```json
+{
+  "error": {
+    "code": "identify_capacity_exceeded",
+    "message": "Identify capacity is full. Please retry later."
+  }
+}
+```
 
 ## GET /identify/jobs/{job_id}
 

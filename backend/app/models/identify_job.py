@@ -16,11 +16,13 @@ class IdentifyJob(Base):
     __tablename__ = "identify_jobs"
     __table_args__ = (
         Index("idx_identify_jobs_status", "status"),
+        Index("idx_identify_jobs_client_key_status", "client_key", "status"),
         Index("idx_identify_jobs_expires_at", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
+    client_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(String(255), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
