@@ -170,6 +170,7 @@ def test_identify_job_endpoint_returns_capacity_errors(
             "message": "Identify capacity is full. Please retry later.",
         }
     }
+    assert response.headers["Retry-After"] == "5"
     assert service.process_calls == []
 
 
@@ -198,6 +199,7 @@ def test_sync_identify_endpoint_returns_capacity_errors(
             "message": "Identify capacity is full. Please retry later.",
         }
     }
+    assert response.headers["Retry-After"] == "5"
     assert identify_service.calls == []
 
 

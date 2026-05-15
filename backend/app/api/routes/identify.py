@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Request, UploadFi
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.schemas.identify import IdentifyCandidateResponse, IdentifyJobStatusResponse, IdentifyResponse
 from app.schemas.sessions import ErrorResponse
@@ -51,7 +52,7 @@ async def identify_release(
     try:
         admission_ticket = job_service.acquire_sync_identify_slot()
     except IdentifyCapacityExceededError as error:
-        return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+        return _capacity_error_response(error)
 
     try:
         image_bytes = await _read_image_bytes(image)
@@ -118,7 +119,7 @@ async def create_identify_job(
     except IdentifyValidationError as error:
         return _error_response(status_code=error.status_code, code=error.code, message=error.message)
     except IdentifyCapacityExceededError as error:
-        return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+        return _capacity_error_response(error)
 
     background_tasks.add_task(
         job_service.process_job,
@@ -181,4 +182,13 @@ def _error_response(*, status_code: int, code: str, message: str) -> JSONRespons
     return JSONResponse(
         status_code=status_code,
         content={"error": {"code": code, "message": message}},
+    )
+
+
+def _capacity_error_response(error: IdentifyCapacityExceededError) -> JSONResponse:
+    retry_after_seconds = max(0, settings.identify_capacity_retry_after_seconds)
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"error": {"code": error.code, "message": error.message}},
+        headers={"Retry-After": str(retry_after_seconds)},
     )
