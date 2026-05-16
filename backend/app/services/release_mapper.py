@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -127,13 +128,16 @@ def _extract_side_prefix(position: str) -> str | None:
 def _extract_artist(raw_json: dict[str, Any]) -> str | None:
     artists_sort = _clean_string(raw_json.get("artists_sort"))
     if artists_sort:
-        return artists_sort
+        return _clean_discogs_artist_name(artists_sort)
 
     artists = raw_json.get("artists")
     if not isinstance(artists, list):
         return None
 
-    names = [_clean_string(artist.get("name")) for artist in artists if isinstance(artist, dict)]
+    names = [
+        _clean_discogs_artist_name(name)
+        for name in (_clean_string(artist.get("name")) for artist in artists if isinstance(artist, dict))
+    ]
     normalized_names = [name for name in names if name]
     return ", ".join(normalized_names) if normalized_names else None
 
@@ -147,7 +151,7 @@ def _extract_label_name(labels: Any) -> str | None:
             continue
         name = _clean_string(label.get("name"))
         if name:
-            return name
+            return _clean_discogs_self_released_label(name)
 
     return None
 
@@ -240,3 +244,11 @@ def _clean_string(value: Any) -> str | None:
 
     cleaned = value.strip()
     return cleaned or None
+
+
+def _clean_discogs_artist_name(value: str) -> str:
+    return ", ".join(re.sub(r"\s+\(\d+\)$", "", artist.strip()) for artist in value.split(","))
+
+
+def _clean_discogs_self_released_label(value: str) -> str:
+    return re.sub(r"\(([^()]+?)\s+\(\d+\)\s+Self-Released\)", r"(\1 Self-Released)", value).strip()

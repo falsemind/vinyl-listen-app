@@ -89,6 +89,22 @@ def test_search_releases_endpoint_returns_empty_results(
     assert response.json() == {"results": [], "limit": 10, "offset": 0}
 
 
+def test_search_releases_endpoint_trims_discogs_artist_number_suffix(
+    build_stub_discogs_search_service,
+    override_discogs_service,
+) -> None:
+    service = build_stub_discogs_search_service()
+    service.payload["results"][0]["title"] = "Karma (54), Mutt (2) - The Warning"
+    override_discogs_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/search", params={"query": "karma warning"})
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["artist"] == "Karma, Mutt"
+    assert response.json()["results"][0]["title"] == "The Warning"
+
+
 def test_search_releases_endpoint_maps_discogs_errors(
     build_stub_discogs_search_service,
     override_discogs_service,

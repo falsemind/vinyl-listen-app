@@ -1,4 +1,5 @@
 import logging
+import re
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -99,7 +100,7 @@ def _map_discogs_search_result(
     artist, title = _split_discogs_title(str(item.get("title") or ""))
     return {
         "discogs_release_id": discogs_release_id,
-        "artist": artist or fallback_artist or "Unknown Artist",
+        "artist": _clean_discogs_artist_name(artist or fallback_artist) or "Unknown Artist",
         "title": title or fallback_title or str(item.get("title") or "Untitled Release"),
         "year": _coerce_int(item.get("year")),
         "label": _first_string(item.get("label")),
@@ -115,6 +116,13 @@ def _split_discogs_title(value: str) -> tuple[str | None, str | None]:
 
     artist, title = value.split(" - ", 1)
     return artist.strip() or None, title.strip() or None
+
+
+def _clean_discogs_artist_name(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    return ", ".join(re.sub(r"\s+\(\d+\)$", "", artist.strip()) for artist in value.split(","))
 
 
 def _first_string(value: Any) -> str | None:

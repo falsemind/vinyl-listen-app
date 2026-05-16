@@ -48,3 +48,54 @@ def test_map_discogs_to_internal_falls_back_to_artist_list_and_thumb() -> None:
     assert result.cover_image_url == "https://img.discogs.com/thumb.jpg"
     assert result.genres is None
     assert result.styles is None
+
+
+def test_map_discogs_to_internal_trims_discogs_artist_number_suffix() -> None:
+    payload = {
+        "id": 1357,
+        "artists_sort": "Karma (54), Mutt (2)",
+        "title": "The Warning",
+    }
+
+    result = map_discogs_to_internal(payload)
+
+    assert result.artist == "Karma, Mutt"
+
+
+def test_map_discogs_to_internal_keeps_numbers_inside_artist_names() -> None:
+    payload = {
+        "id": 24680,
+        "artists_sort": "Studio 54 Ensemble (7)",
+        "title": "Night Drive",
+    }
+
+    result = map_discogs_to_internal(payload)
+
+    assert result.artist == "Studio 54 Ensemble"
+
+
+def test_map_discogs_to_internal_trims_discogs_artist_suffix_in_self_released_label() -> None:
+    payload = {
+        "id": 9753,
+        "artists_sort": "Karma (54)",
+        "title": "Dub Plate",
+        "labels": [{"name": "Not On Label (Karma (54) Self-Released)", "catno": "KARMADUBZ001"}],
+    }
+
+    result = map_discogs_to_internal(payload)
+
+    assert result.label == "Not On Label (Karma Self-Released)"
+    assert result.catalog_number == "KARMADUBZ001"
+
+
+def test_map_discogs_to_internal_keeps_clean_self_released_label() -> None:
+    payload = {
+        "id": 8642,
+        "artists_sort": "Om Unit",
+        "title": "Acid Dub Studies",
+        "labels": [{"name": "Not On Label (Om Unit Self-Released)", "catno": "ADS002"}],
+    }
+
+    result = map_discogs_to_internal(payload)
+
+    assert result.label == "Not On Label (Om Unit Self-Released)"
