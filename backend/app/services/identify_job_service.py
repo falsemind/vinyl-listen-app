@@ -152,6 +152,7 @@ class IdentifyJobService:
         )
         self._session_factory = session_factory
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._service_started_at = self._now_provider()
         self._job_ttl = job_ttl
         self._max_active_jobs_per_client = max_active_jobs_per_client
         self._max_active_jobs_global = max_active_jobs_global
@@ -290,10 +291,14 @@ class IdentifyJobService:
         if self._stale_active_job_timeout.total_seconds() <= 0:
             return 0
 
+        stale_before = max(
+            now - self._stale_active_job_timeout,
+            self._service_started_at - timedelta(microseconds=1),
+        )
         return self._repository.expire_stale_active(
             db,
             active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
-            stale_before=now - self._stale_active_job_timeout,
+            stale_before=stale_before,
             expires_at_or_before=now,
             updated_at=now,
         )

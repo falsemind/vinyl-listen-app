@@ -370,6 +370,53 @@ def test_identify_job_service_expires_stale_active_job_before_admission() -> Non
     service.process_job(new_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
 
+def test_identify_job_service_expires_orphaned_active_job_after_restart() -> None:
+    session_factory = _build_session_factory()
+    previous_process_time = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
+    restarted_process_time = datetime(2026, 5, 15, 12, 1, 0, tzinfo=UTC)
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        admission_controller=IdentifyAdmissionController(max_concurrent_jobs=1),
+        session_factory=session_factory,
+        now_provider=lambda: restarted_process_time,
+        max_active_jobs_per_client=1,
+        stale_active_job_timeout=timedelta(minutes=15),
+    )
+
+    with session_factory() as db:
+        db.add(
+            IdentifyJob(
+                id="orphaned-job",
+                status="upload_received",
+                client_key="client-a",
+                message="Image upload received",
+                filename="cover.jpg",
+                content_type="image/jpeg",
+                created_at=previous_process_time,
+                updated_at=previous_process_time,
+                expires_at=previous_process_time + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+        new_job = service.create_job(
+            db,
+            image_bytes=b"image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+            client_key="client-a",
+        )
+        orphaned_job = db.get(IdentifyJob, "orphaned-job")
+
+    assert new_job.status == "upload_received"
+    assert orphaned_job is not None
+    assert orphaned_job.status == "expired"
+    assert orphaned_job.error is not None
+    assert orphaned_job.error["code"] == "identify_job_stale"
+
+    service.process_job(new_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+
 def test_identify_job_service_releases_capacity_after_worker_failure() -> None:
     session_factory = _build_session_factory()
     service = IdentifyJobService(
