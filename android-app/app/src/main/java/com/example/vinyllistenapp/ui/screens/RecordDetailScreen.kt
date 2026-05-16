@@ -590,7 +590,7 @@ private fun recordDetailHistory(
     val sessionHistory =
         sessions.map { session ->
             RecordHistoryEntry(
-                date = session.playedAt,
+                date = absolutePlayedDateLabel(session.playedAt),
                 side = session.side?.removePrefix("Side ") ?: "-",
                 rating = session.rating,
                 mood = session.mood,
@@ -602,23 +602,23 @@ private fun recordDetailHistory(
     return when (releaseId) {
         "release-002" ->
             listOf(
-                RecordHistoryEntry("Apr 25, 2026", "A", 4, "Late night", true),
-                RecordHistoryEntry("Apr 18, 2026", "B", 4, "Focused", false),
-                RecordHistoryEntry("Apr 03, 2026", "A", 5, "Social", true),
+                RecordHistoryEntry("2026-04-25", "A", 4, "Late night", true),
+                RecordHistoryEntry("2026-04-18", "B", 4, "Focused", false),
+                RecordHistoryEntry("2026-04-03", "A", 5, "Social", true),
             )
 
         "release-003" ->
             listOf(
-                RecordHistoryEntry("Apr 21, 2026", "A", 5, "Calm", true),
-                RecordHistoryEntry("Apr 12, 2026", "B", 4, "Nostalgic", false),
-                RecordHistoryEntry("Mar 30, 2026", "A", 5, "Relaxed", true),
+                RecordHistoryEntry("2026-04-21", "A", 5, "Calm", true),
+                RecordHistoryEntry("2026-04-12", "B", 4, "Nostalgic", false),
+                RecordHistoryEntry("2026-03-30", "A", 5, "Relaxed", true),
             )
 
         else ->
             listOf(
-                RecordHistoryEntry("Apr 25, 2026", "A", 5, "Calm", true),
-                RecordHistoryEntry("Apr 20, 2026", "B", 5, "Focused", false),
-                RecordHistoryEntry("Apr 15, 2026", "A", 4, "Nostalgic", true),
+                RecordHistoryEntry("2026-04-25", "A", 5, "Calm", true),
+                RecordHistoryEntry("2026-04-20", "B", 5, "Focused", false),
+                RecordHistoryEntry("2026-04-15", "A", 4, "Nostalgic", true),
             )
     }
 }
