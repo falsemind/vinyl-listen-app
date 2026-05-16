@@ -241,6 +241,7 @@ Mapped fields:
 - `styles`
 - `cover_image_url`
 - `available_sides` for API responses, derived from raw Discogs track positions rather than persisted on `releases`
+- `available_side_options` for client selectors that need stable values and labels when side names repeat across multiple discs
 
 The mapper handles common Discogs shapes:
 
@@ -248,6 +249,7 @@ The mapper handles common Discogs shapes:
 - Label/company arrays provide label name and catalog number.
 - Identifier arrays provide barcode values.
 - Image arrays provide cover URLs.
+- Track positions provide side options. When a release repeats side names across multiple discs, option values include the disc number, such as `1:X` and `2:X`.
 - Scalar values are cleaned and coerced before persistence.
 
 ## SessionsService
