@@ -20,6 +20,7 @@ from app.pipelines.identification.search_planner import (
 )
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
+from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
 
 logger = logging.getLogger(__name__)
 
@@ -324,10 +325,10 @@ class IdentifyService:
         return IdentifyCandidate(
             discogs_release_id=discogs_release_id,
             release_id=None,
-            artist=artist,
+            artist=clean_discogs_artist_name(artist) or artist,
             title=title,
             year=_coerce_int(result.get("year")),
-            label=_coerce_first_string(result.get("label")),
+            label=clean_discogs_self_released_label(_coerce_first_string(result.get("label"))),
             catalog_number=_coerce_catalog_number(result.get("catno")),
             barcode=None,
             cover_image_url=_clean_string(result.get("cover_image")) or _clean_string(result.get("thumb")),

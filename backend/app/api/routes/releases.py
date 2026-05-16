@@ -12,6 +12,7 @@ from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, Relea
 from app.services.discogs_service import DiscogsClientError, DiscogsService
 from app.services.release_import_service import ReleaseImportService
 from app.services.sessions_service import ReleaseNotFoundError, SessionsService, SessionValidationError
+from app.utils.discogs_display import clean_discogs_artist_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -99,7 +100,7 @@ def _map_discogs_search_result(
     artist, title = _split_discogs_title(str(item.get("title") or ""))
     return {
         "discogs_release_id": discogs_release_id,
-        "artist": artist or fallback_artist or "Unknown Artist",
+        "artist": clean_discogs_artist_name(artist or fallback_artist) or "Unknown Artist",
         "title": title or fallback_title or str(item.get("title") or "Untitled Release"),
         "year": _coerce_int(item.get("year")),
         "label": _first_string(item.get("label")),

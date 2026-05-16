@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
+
 
 @dataclass(frozen=True)
 class InternalReleaseData:
@@ -127,13 +129,16 @@ def _extract_side_prefix(position: str) -> str | None:
 def _extract_artist(raw_json: dict[str, Any]) -> str | None:
     artists_sort = _clean_string(raw_json.get("artists_sort"))
     if artists_sort:
-        return artists_sort
+        return clean_discogs_artist_name(artists_sort)
 
     artists = raw_json.get("artists")
     if not isinstance(artists, list):
         return None
 
-    names = [_clean_string(artist.get("name")) for artist in artists if isinstance(artist, dict)]
+    names = [
+        clean_discogs_artist_name(name)
+        for name in (_clean_string(artist.get("name")) for artist in artists if isinstance(artist, dict))
+    ]
     normalized_names = [name for name in names if name]
     return ", ".join(normalized_names) if normalized_names else None
 
@@ -147,7 +152,7 @@ def _extract_label_name(labels: Any) -> str | None:
             continue
         name = _clean_string(label.get("name"))
         if name:
-            return name
+            return clean_discogs_self_released_label(name)
 
     return None
 
