@@ -48,6 +48,7 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
@@ -67,8 +68,10 @@ fun SessionLoggingScreen(
     val fallbackRecord = MockVinylData.record(releaseId)
     var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: fallbackRecord
+    val sideOptions = sessionSideOptions(record, usePrototypeFallback = releaseId == null || loadedRecord != null)
     val moods = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
-    var selectedSide by rememberSaveable { mutableStateOf("Side A") }
+    var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
+    val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
     var selectedMood by rememberSaveable { mutableStateOf("Calm") }
     var rating by rememberSaveable { mutableStateOf(record.rating) }
     var notes by rememberSaveable { mutableStateOf("") }
@@ -89,6 +92,12 @@ fun SessionLoggingScreen(
         }
     }
 
+    LaunchedEffect(sideOptions) {
+        if (sideOptions.none { it.value == selectedSide }) {
+            selectedSide = sideOptions.firstOrNull()?.value.orEmpty()
+        }
+    }
+
     fun saveSession() {
         val targetReleaseId = releaseId ?: record.releaseId
         isSaving = true
@@ -97,7 +106,7 @@ fun SessionLoggingScreen(
             runCatching {
                 apiClient.createSession(
                     releaseId = targetReleaseId,
-                    side = selectedSide.removePrefix("Side "),
+                    side = selectedSideOption?.value?.takeIf { it.isNotBlank() },
                     rating = rating,
                     mood = selectedMood,
                     notes = notes,
@@ -142,7 +151,8 @@ fun SessionLoggingScreen(
             }
             SessionFieldLabel("Side Played")
             SessionSideSelector(
-                selectedSide = selectedSide,
+                selectedSide = selectedSideOption,
+                sideOptions = sideOptions,
                 onSideSelected = { selectedSide = it },
             )
             SessionFieldLabel("Rating")
@@ -275,12 +285,12 @@ private fun SessionFieldLabel(label: String) {
 
 @Composable
 private fun SessionSideSelector(
-    selectedSide: String,
+    selectedSide: SessionSideOption?,
+    sideOptions: List<SessionSideOption>,
     onSideSelected: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
-    val sideOptions = listOf("Side A", "Side B")
     val density = LocalDensity.current
     val sideSelectorActionLabel = if (expanded) "Close side selector" else "Open side selector"
     val anchorModifier =
@@ -309,7 +319,7 @@ private fun SessionSideSelector(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = selectedSide,
+                text = selectedSide?.label.orEmpty(),
                 color = VinylColors.TextPrimary,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -334,10 +344,10 @@ private fun SessionSideSelector(
                             .background(VinylColors.SurfacePrimary)
                             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
                 ) {
-                    sideOptions.forEachIndexed { index, side ->
+                    sideOptions.forEachIndexed { index, sideOption ->
                         val rowColor = if (index % 2 == 0) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
                         val selectSide = {
-                            onSideSelected(side)
+                            onSideSelected(sideOption.value)
                             expanded = false
                         }
                         val rowModifier =
@@ -346,7 +356,7 @@ private fun SessionSideSelector(
                                 .height(48.dp)
                                 .background(rowColor)
                                 .clickable(
-                                    onClickLabel = "Select $side",
+                                    onClickLabel = "Select ${sideOption.label}",
                                     role = Role.Button,
                                     onClick = selectSide,
                                 ).padding(horizontal = VinylSpacing.SpaceMd)
@@ -356,8 +366,13 @@ private fun SessionSideSelector(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = side,
-                                color = if (side == selectedSide) VinylColors.AccentGreen else VinylColors.TextPrimary,
+                                text = sideOption.label,
+                                color =
+                                    if (sideOption.value == selectedSide?.value) {
+                                        VinylColors.AccentGreen
+                                    } else {
+                                        VinylColors.TextPrimary
+                                    },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -367,6 +382,26 @@ private fun SessionSideSelector(
         }
     }
 }
+
+internal data class SessionSideOption(
+    val value: String,
+    val label: String,
+)
+
+internal fun sessionSideOptions(
+    record: RecordSummary,
+    usePrototypeFallback: Boolean = true,
+): List<SessionSideOption> =
+    when {
+        record.availableSideOptions.isNotEmpty() -> record.availableSideOptions.map { it.toSessionSideOption() }
+        record.availableSides.isNotEmpty() -> record.availableSides.map { SessionSideOption(it, displaySessionSide(it)) }
+        usePrototypeFallback -> listOf("A", "B").map { SessionSideOption(it, displaySessionSide(it)) }
+        else -> emptyList()
+    }
+
+private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
+
+internal fun displaySessionSide(side: String): String = side.takeIf { it.isNotBlank() }?.let { "Side $it" }.orEmpty()
 
 @Composable
 private fun SessionRatingPicker(

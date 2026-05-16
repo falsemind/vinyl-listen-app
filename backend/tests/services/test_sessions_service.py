@@ -115,6 +115,39 @@ def test_create_session_accepts_side_when_release_sides_are_unknown(
     assert repository.created_payload["vinyl_side"] == "A"
 
 
+def test_create_session_accepts_repeated_side_option_value(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    service = build_sessions_service(
+        sessions_repository=repository,
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {"position": "X1"},
+                    {"position": "Y1"},
+                    {"position": "X1"},
+                    {"position": "Y1"},
+                ]
+            }
+        },
+    )
+
+    service.create_session(
+        db=object(),
+        release_id="release-123",
+        rating=4,
+        mood=None,
+        notes=None,
+        played_at="2026-03-14T19:21:00Z",
+        side="2:X",
+    )
+
+    assert repository.created_payload is not None
+    assert repository.created_payload["vinyl_side"] == "2:X"
+
+
 def test_create_session_rejects_invalid_played_at(build_sessions_service) -> None:
     service = build_sessions_service()
 

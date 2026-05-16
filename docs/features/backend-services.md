@@ -221,6 +221,7 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 ### Read and mapping helpers
 
 - `get_release` reads a local release by database ID.
+- `get_available_sides` reads cached Discogs track positions and returns ordered side prefixes for session logging.
 - `map_discogs_payload` exposes the Discogs-to-internal mapping for tests and route workflows.
 
 ## release_mapper.py
@@ -239,6 +240,8 @@ Mapped fields:
 - `genres`
 - `styles`
 - `cover_image_url`
+- `available_sides` for API responses, derived from raw Discogs track positions rather than persisted on `releases`
+- `available_side_options` for client selectors that need stable values and labels when side names repeat across multiple discs
 
 The mapper handles common Discogs shapes:
 
@@ -246,6 +249,7 @@ The mapper handles common Discogs shapes:
 - Label/company arrays provide label name and catalog number.
 - Identifier arrays provide barcode values.
 - Image arrays provide cover URLs.
+- Track positions provide side options. When a release repeats side names across multiple discs, option values include the disc number, such as `1:X` and `2:X`.
 - Scalar values are cleaned and coerced before persistence.
 
 ## SessionsService

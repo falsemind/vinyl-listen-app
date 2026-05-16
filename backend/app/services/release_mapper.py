@@ -16,6 +16,14 @@ class InternalReleaseData:
     cover_image_url: str | None
 
 
+@dataclass(frozen=True)
+class ReleaseSideOptionData:
+    value: str
+    label: str
+    side: str
+    disc_number: int | None = None
+
+
 def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
     discogs_release_id = raw_json.get("id")
     title = _clean_string(raw_json.get("title"))
@@ -44,6 +52,76 @@ def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
         styles=_normalize_string_list(raw_json.get("styles")),
         cover_image_url=_extract_cover_image_url(raw_json),
     )
+
+
+def extract_release_sides(raw_discogs_json: dict[str, Any] | None) -> list[str]:
+    sides: list[str] = []
+    seen: set[str] = set()
+    for option in extract_release_side_options(raw_discogs_json):
+        if option.side not in seen:
+            sides.append(option.side)
+            seen.add(option.side)
+
+    return sides
+
+
+def extract_release_side_options(raw_discogs_json: dict[str, Any] | None) -> list[ReleaseSideOptionData]:
+    tracklist = raw_discogs_json.get("tracklist") if isinstance(raw_discogs_json, dict) else None
+    if not isinstance(tracklist, list):
+        return []
+
+    side_sequence: list[str] = []
+    previous_side: str | None = None
+    for track in tracklist:
+        if not isinstance(track, dict):
+            continue
+
+        position = track.get("position")
+        if not isinstance(position, str):
+            continue
+
+        prefix = _extract_side_prefix(position)
+        if prefix and prefix != previous_side:
+            side_sequence.append(prefix)
+            previous_side = prefix
+
+    duplicate_sides = {side for side in side_sequence if side_sequence.count(side) > 1}
+    include_disc = bool(duplicate_sides)
+    disc_number = 1
+    sides_in_current_disc: set[str] = set()
+    options: list[ReleaseSideOptionData] = []
+
+    for side in side_sequence:
+        if side in sides_in_current_disc:
+            disc_number += 1
+            sides_in_current_disc = set()
+        sides_in_current_disc.add(side)
+
+        value = f"{disc_number}:{side}" if include_disc else side
+        label = f"Disc {disc_number} - Side {side}" if include_disc else f"Side {side}"
+        options.append(
+            ReleaseSideOptionData(
+                value=value,
+                label=label,
+                side=side,
+                disc_number=disc_number if include_disc else None,
+            )
+        )
+
+    return options
+
+
+def _extract_side_prefix(position: str) -> str | None:
+    trimmed = position.strip().upper()
+    letters = []
+    for char in trimmed:
+        if char.isalpha():
+            letters.append(char)
+            continue
+        if letters:
+            break
+
+    return "".join(letters) or None
 
 
 def _extract_artist(raw_json: dict[str, Any]) -> str | None:

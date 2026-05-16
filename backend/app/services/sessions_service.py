@@ -10,6 +10,7 @@ from app.models.sessions import Sessions
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_repository import SessionsRepository
+from app.services.release_mapper import extract_release_side_options
 
 logger = logging.getLogger(__name__)
 
@@ -279,33 +280,8 @@ class SessionsService:
         return normalized or None
 
     def _extract_release_sides(self, raw_discogs_json: dict[str, Any] | None) -> set[str]:
-        tracklist = raw_discogs_json.get("tracklist") if isinstance(raw_discogs_json, dict) else None
-        if not isinstance(tracklist, list):
-            return set()
-
-        sides: set[str] = set()
-        for track in tracklist:
-            if not isinstance(track, dict):
-                continue
-
-            position = track.get("position")
-            if not isinstance(position, str):
-                continue
-
-            prefix = self._extract_side_prefix(position)
-            if prefix:
-                sides.add(prefix)
-
-        return sides
-
-    def _extract_side_prefix(self, position: str) -> str | None:
-        trimmed = position.strip().upper()
-        letters = []
-        for char in trimmed:
-            if char.isalpha():
-                letters.append(char)
-                continue
-            if letters:
-                break
-
-        return "".join(letters) or None
+        available_values: set[str] = set()
+        for option in extract_release_side_options(raw_discogs_json):
+            available_values.add(option.side)
+            available_values.add(option.value)
+        return available_values

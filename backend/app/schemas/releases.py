@@ -8,6 +8,13 @@ class ReleaseImportRequest(BaseModel):
     force_refresh: bool = False
 
 
+class ReleaseSideOptionResponse(BaseModel):
+    value: str
+    label: str
+    side: str
+    disc_number: int | None = None
+
+
 class ReleaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,6 +29,8 @@ class ReleaseResponse(BaseModel):
     genres: list[str] | None
     styles: list[str] | None
     cover_image_url: str | None
+    available_sides: list[str] = Field(default_factory=list)
+    available_side_options: list[ReleaseSideOptionResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
