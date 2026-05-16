@@ -432,6 +432,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         genres = optJSONArray("genres").orEmpty().mapStrings(),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
         coverImageUrl = optNullableString("cover_image_url"),
+        availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
     )
 
 private fun JSONObject.putNullable(
