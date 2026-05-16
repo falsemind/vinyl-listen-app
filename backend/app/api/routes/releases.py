@@ -174,8 +174,18 @@ def get_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    available_sides = service.get_available_sides(db, release.discogs_release_id)
-    return ReleaseResponse.model_validate(release).model_copy(update={"available_sides": available_sides})
+    available_side_options = service.get_available_side_options(db, release.discogs_release_id)
+    available_sides = []
+    for option in available_side_options:
+        if option.side not in available_sides:
+            available_sides.append(option.side)
+
+    return ReleaseResponse.model_validate(release).model_copy(
+        update={
+            "available_sides": available_sides,
+            "available_side_options": available_side_options,
+        }
+    )
 
 
 @router.get(

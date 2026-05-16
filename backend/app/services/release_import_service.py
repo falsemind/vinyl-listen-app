@@ -7,7 +7,13 @@ from app.models.releases import Releases
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
-from app.services.release_mapper import InternalReleaseData, extract_release_sides, map_discogs_to_internal
+from app.services.release_mapper import (
+    InternalReleaseData,
+    ReleaseSideOptionData,
+    extract_release_side_options,
+    extract_release_sides,
+    map_discogs_to_internal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +76,10 @@ class ReleaseImportService:
     def get_available_sides(self, db: Session, discogs_release_id: int) -> list[str]:
         cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
         return extract_release_sides(cache_entry.raw_discogs_json if cache_entry is not None else None)
+
+    def get_available_side_options(self, db: Session, discogs_release_id: int) -> list[ReleaseSideOptionData]:
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
+        return extract_release_side_options(cache_entry.raw_discogs_json if cache_entry is not None else None)
 
     def map_discogs_payload(self, raw_payload: dict) -> InternalReleaseData:
         logger.debug("Mapping Discogs payload to internal release model")

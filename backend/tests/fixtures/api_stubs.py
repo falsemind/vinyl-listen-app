@@ -9,6 +9,7 @@ from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
+from app.services.release_mapper import ReleaseSideOptionData
 from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
 
 
@@ -152,6 +153,10 @@ class StubReleaseImportService:
         self.import_calls: list[tuple[int, bool]] = []
         self.lookup_calls: list[str] = []
         self.available_sides = ["A", "AA"]
+        self.available_side_options = [
+            ReleaseSideOptionData(value="A", label="Side A", side="A"),
+            ReleaseSideOptionData(value="AA", label="Side AA", side="AA"),
+        ]
 
     def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
         self.import_calls.append((discogs_release_id, force_refresh))
@@ -168,6 +173,11 @@ class StubReleaseImportService:
     def get_available_sides(self, _db, discogs_release_id: int) -> list[str]:
         if discogs_release_id == self.release.discogs_release_id:
             return self.available_sides
+        return []
+
+    def get_available_side_options(self, _db, discogs_release_id: int) -> list[ReleaseSideOptionData]:
+        if discogs_release_id == self.release.discogs_release_id:
+            return self.available_side_options
         return []
 
 

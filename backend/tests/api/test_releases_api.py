@@ -189,6 +189,10 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "styles": ["IDM"],
         "cover_image_url": "https://img.discogs.com/cover.jpg",
         "available_sides": ["A", "AA"],
+        "available_side_options": [
+            {"value": "A", "label": "Side A", "side": "A", "disc_number": None},
+            {"value": "AA", "label": "Side AA", "side": "AA", "disc_number": None},
+        ],
         "created_at": "2026-04-19T00:00:00Z",
         "updated_at": "2026-04-19T00:00:00Z",
     }
