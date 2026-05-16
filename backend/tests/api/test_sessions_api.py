@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionValidationError,
 )
@@ -155,6 +156,94 @@ def test_get_home_summary_endpoint_returns_real_session_data(
         ],
     }
     assert service.summary_calls == [(5, 3)]
+
+
+def test_get_custom_moods_endpoint_returns_saved_moods(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/sessions/moods")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "moods": [
+            {"name": "Dubby", "is_custom": True},
+            {"name": "Late Night", "is_custom": True},
+        ]
+    }
+
+
+def test_create_custom_mood_endpoint_returns_created_mood(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/sessions/moods", json={"name": "Dubby"})
+
+    assert response.status_code == 201
+    assert response.json() == {"mood": {"name": "Dubby", "is_custom": True}}
+    assert service.create_mood_calls == ["Dubby"]
+
+
+def test_create_custom_mood_endpoint_returns_validation_error(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    service.mood_error = SessionValidationError("invalid_mood", "Mood name must use only letters, numbers, and spaces.")
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/sessions/moods", json={"name": "Dubby!"})
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "invalid_mood",
+            "message": "Mood name must use only letters, numbers, and spaces.",
+        }
+    }
+
+
+def test_create_custom_mood_endpoint_returns_conflict_for_duplicate(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    service.mood_error = SessionMoodAlreadyExistsError("Dubby")
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/sessions/moods", json={"name": "Dubby"})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": {
+            "code": "duplicate_mood",
+            "message": "Mood already exists.",
+        }
+    }
+
+
+def test_delete_custom_mood_endpoint_deletes_saved_mood(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.delete("/api/v1/sessions/moods/Dubby")
+
+    assert response.status_code == 204
+    assert service.delete_mood_calls == ["Dubby"]
 
 
 def test_get_release_sessions_endpoint_returns_paginated_history(

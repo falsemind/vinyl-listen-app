@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -224,10 +225,17 @@ class StubSessionsService:
         self.get_error: Exception | None = None
         self.list_error: Exception | None = None
         self.summary_error: Exception | None = None
+        self.mood_error: Exception | None = None
         self.create_calls: list[dict] = []
         self.get_calls: list[str] = []
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
+        self.create_mood_calls: list[str] = []
+        self.delete_mood_calls: list[str] = []
+        self.custom_moods = [
+            SimpleNamespace(name="Dubby", is_custom=True),
+            SimpleNamespace(name="Late Night", is_custom=True),
+        ]
         self.created_result = CreateSessionResult(
             session_id="session-123",
             timestamp=datetime(2026, 4, 19, 8, 30, tzinfo=UTC),
@@ -312,6 +320,25 @@ class StubSessionsService:
                 TopReleaseSummary(release=self.release, plays=2, average_rating=4.5),
             ],
         )
+
+    def list_custom_moods(self, _db):
+        if self.mood_error is not None:
+            raise self.mood_error
+        return self.custom_moods
+
+    def create_custom_mood(self, _db, name: str):
+        self.create_mood_calls.append(name)
+        if self.mood_error is not None:
+            raise self.mood_error
+        mood = SimpleNamespace(name=name.strip(), is_custom=True)
+        self.custom_moods.append(mood)
+        return mood
+
+    def delete_custom_mood(self, _db, name: str) -> None:
+        self.delete_mood_calls.append(name)
+        if self.mood_error is not None:
+            raise self.mood_error
+        self.custom_moods = [mood for mood in self.custom_moods if mood.name != name]
 
 
 @pytest.fixture

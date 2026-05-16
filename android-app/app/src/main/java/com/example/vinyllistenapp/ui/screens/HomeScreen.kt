@@ -94,7 +94,7 @@ fun HomeScreen(
                 onClick = onLogSession,
                 modifier =
                     Modifier.padding(
-                        end = VinylSpacing.SpaceXl,
+                        end = VinylSpacing.SpaceMd,
                         bottom = VinylSpacing.SpaceLg,
                     ),
             )

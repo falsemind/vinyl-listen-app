@@ -29,6 +29,25 @@ class SessionCreateResponse(BaseModel):
     status: str
 
 
+class SessionMoodItem(BaseModel):
+    name: str
+    is_custom: bool
+
+
+class SessionMoodsResponse(BaseModel):
+    moods: list[SessionMoodItem]
+
+
+class CreateSessionMoodRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+
+
+class SessionMoodResponse(BaseModel):
+    mood: SessionMoodItem
+
+
 class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

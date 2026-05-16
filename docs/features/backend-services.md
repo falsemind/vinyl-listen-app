@@ -275,6 +275,8 @@ The service validates:
 - `side` is trimmed and uppercased.
 - `mood` and `notes` are trimmed and stored as nullable optional text.
 - If Discogs track positions are available, requested side must exist on the release.
+- Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods`; session analytics still reads the selected text from `sessions.mood`.
+- Mood names are canonicalized case-insensitively from built-in moods, active custom mood options, or historical session rows before a session is stored.
 
 Errors are typed:
 

@@ -417,7 +417,78 @@ played_at required
 
 ---
 
-# 5. Home Summary
+# 5. Session Moods
+
+Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
+
+## GET /sessions/moods
+
+Returns custom mood options.
+
+```json
+{
+  "moods": [
+    {
+      "name": "Late Night",
+      "is_custom": true
+    }
+  ]
+}
+```
+
+## POST /sessions/moods
+
+Creates a custom mood option. Names are compared case-insensitively.
+
+### Request
+
+```json
+{
+  "name": "Late Night"
+}
+```
+
+### Response
+
+```
+201 Created
+```
+
+```json
+{
+  "mood": {
+    "name": "Late Night",
+    "is_custom": true
+  }
+}
+```
+
+Validation rules:
+
+```
+name must be 3-20 characters
+name may contain only letters, numbers, and spaces
+name must not match a built-in mood
+name must not match an existing custom mood
+```
+
+Duplicate names return `409 Conflict` with `duplicate_mood`.
+
+If a deleted custom mood still exists in historical session rows, the backend reuses the historical casing when the option is created again.
+
+## DELETE /sessions/moods/{mood_name}
+
+Deletes a custom mood option. Existing listening sessions keep their saved `mood` value for analytics history.
+
+Response:
+
+```
+204 No Content
+```
+
+---
+
+# 6. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -466,7 +537,7 @@ The Android app prefers `played_at` for device-timezone-aware labels such as `To
 
 ---
 
-# 6. Get Record Details
+# 7. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -505,7 +576,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 7. Session History
+# 8. Session History
 
 Used for listening history.
 
@@ -538,7 +609,7 @@ Used for listening history.
 
 ---
 
-# 8. Analytics
+# 9. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -608,6 +679,8 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
 
 ## GET /analytics/mood-distribution
 
+Mood names are grouped case-insensitively so historical values such as `LateNight` and `latenight` count under one displayed mood.
+
 ### Response
 
 ```json
@@ -622,7 +695,7 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
 
 ---
 
-# 9. System Endpoint
+# 10. System Endpoint
 
 Used by the **Settings screen**.
 

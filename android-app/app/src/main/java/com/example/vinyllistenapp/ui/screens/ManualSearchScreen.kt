@@ -218,7 +218,7 @@ fun ManualSearchScreen(
                 ManualSearchUiState.Idle -> Unit
                 ManualSearchUiState.Loading -> ManualSearchMessage("Searching Discogs...")
                 ManualSearchUiState.Empty -> ManualSearchMessage("No results found.")
-                is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message)
+                is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message, isError = true)
                 is ManualSearchUiState.Success -> {
                     currentState.results.forEach { result ->
                         val isImporting = selectingDiscogsReleaseId != null
@@ -285,14 +285,20 @@ private fun ShowMoreButton(
 }
 
 @Composable
-private fun ManualSearchMessage(message: String) {
-    AccentCard {
-        Text(
-            text = message,
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+private fun ManualSearchMessage(
+    message: String,
+    isError: Boolean = false,
+) {
+    Text(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = VinylSpacing.SpaceMd),
+        text = message,
+        color = if (isError) VinylColors.AccentOrange else VinylColors.TextSecondary,
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable

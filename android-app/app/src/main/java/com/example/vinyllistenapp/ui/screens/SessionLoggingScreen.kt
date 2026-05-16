@@ -1,8 +1,10 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -57,6 +60,10 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
+private const val CUSTOM_MOOD_MIN_LENGTH = 3
+private const val CUSTOM_MOOD_MAX_LENGTH = 20
+internal val BUILT_IN_SESSION_MOODS = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
+
 @Composable
 fun SessionLoggingScreen(
     releaseId: String?,
@@ -69,7 +76,8 @@ fun SessionLoggingScreen(
     var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: fallbackRecord
     val sideOptions = sessionSideOptions(record, usePrototypeFallback = releaseId == null || loadedRecord != null)
-    val moods = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
+    val moods = BUILT_IN_SESSION_MOODS
+    var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
     val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
     var selectedMood by rememberSaveable { mutableStateOf("Calm") }
@@ -77,6 +85,7 @@ fun SessionLoggingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var isSaving by rememberSaveable { mutableStateOf(false) }
     var saveError by rememberSaveable { mutableStateOf<String?>(null) }
+    var customMoodError by rememberSaveable { mutableStateOf<String?>(null) }
     var loadRetryKey by remember { mutableIntStateOf(0) }
     var loadError by remember(releaseId) { mutableStateOf<String?>(null) }
 
@@ -96,6 +105,19 @@ fun SessionLoggingScreen(
         if (sideOptions.none { it.value == selectedSide }) {
             selectedSide = sideOptions.firstOrNull()?.value.orEmpty()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { apiClient.getCustomMoods() }
+            .onSuccess { moodsFromApi ->
+                customMoods =
+                    moodsFromApi
+                        .filter { isValidCustomMood(it) && !isBuiltInMood(it, moods) }
+                        .distinctBy { it.lowercase() }
+                customMoodError = null
+            }.onFailure { error ->
+                customMoodError = error.toUserMessage("Custom moods could not be loaded.")
+            }
     }
 
     fun saveSession() {
@@ -160,9 +182,51 @@ fun SessionLoggingScreen(
             SessionFieldLabel("Mood")
             SessionMoodGrid(
                 moods = moods,
+                customMoods = customMoods,
                 selectedMood = selectedMood,
                 onMoodSelected = { selectedMood = it },
+                onSaveCustomMood = { mood ->
+                    val normalizedMood = sanitizeCustomMood(mood).trim()
+                    if (isExistingMood(normalizedMood, moods, customMoods)) {
+                        customMoodError = "That mood already exists."
+                    } else {
+                        scope.launch {
+                            runCatching { apiClient.createCustomMood(normalizedMood) }
+                                .onSuccess { savedMood ->
+                                    val cleanedMood = sanitizeCustomMood(savedMood).trim()
+                                    if (isExistingMood(cleanedMood, moods, customMoods)) {
+                                        customMoodError = "That mood already exists."
+                                    } else {
+                                        customMoods = saveCustomMood(customMoods, cleanedMood, moods)
+                                        selectedMood = cleanedMood
+                                        customMoodError = null
+                                    }
+                                }.onFailure { error ->
+                                    customMoodError = error.toUserMessage("Custom mood could not be saved.")
+                                }
+                        }
+                    }
+                },
+                onDeleteCustomMood = { mood ->
+                    scope.launch {
+                        runCatching { apiClient.deleteCustomMood(mood) }
+                            .onSuccess {
+                                customMoods = deleteCustomMood(customMoods, mood)
+                                if (selectedMood == mood) selectedMood = "Calm"
+                                customMoodError = null
+                            }.onFailure { error ->
+                                customMoodError = error.toUserMessage("Custom mood could not be deleted.")
+                            }
+                    }
+                },
             )
+            customMoodError?.let { message ->
+                Text(
+                    text = message,
+                    color = VinylColors.AccentOrange,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             SessionFieldLabel("Notes (Optional)")
             SessionNotesField(notes = notes, onNotesChange = { notes = it })
             saveError?.let { message ->
@@ -403,6 +467,44 @@ private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = Session
 
 internal fun displaySessionSide(side: String): String = side.takeIf { it.isNotBlank() }?.let { "Side $it" }.orEmpty()
 
+private fun saveCustomMood(
+    currentMoods: List<String>,
+    mood: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
+): List<String> {
+    val normalizedMood = sanitizeCustomMood(mood).trim()
+    if (!isValidCustomMood(normalizedMood) || isBuiltInMood(normalizedMood, builtInMoods)) return currentMoods
+    val updated =
+        (currentMoods.filterNot { it.equals(normalizedMood, ignoreCase = true) } + normalizedMood)
+            .distinctBy { it.lowercase() }
+    return updated
+}
+
+private fun deleteCustomMood(
+    currentMoods: List<String>,
+    mood: String,
+): List<String> = currentMoods.filterNot { it.equals(mood, ignoreCase = true) }
+
+private fun sanitizeCustomMood(value: String): String =
+    value
+        .filter { it.isLetterOrDigit() || it.isWhitespace() }
+        .take(CUSTOM_MOOD_MAX_LENGTH)
+
+private fun isValidCustomMood(value: String): Boolean = value.trim().length in CUSTOM_MOOD_MIN_LENGTH..CUSTOM_MOOD_MAX_LENGTH
+
+internal fun isBuiltInMood(
+    value: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
+): Boolean = builtInMoods.any { it.equals(value.trim(), ignoreCase = true) }
+
+internal fun isExistingMood(
+    value: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
+    customMoods: List<String> = emptyList(),
+): Boolean =
+    isBuiltInMood(value, builtInMoods) ||
+        customMoods.any { it.equals(value.trim(), ignoreCase = true) }
+
 @Composable
 private fun SessionRatingPicker(
     rating: Int,
@@ -421,40 +523,117 @@ private fun SessionRatingPicker(
 @Composable
 private fun SessionMoodGrid(
     moods: List<String>,
+    customMoods: List<String>,
     selectedMood: String,
     onMoodSelected: (String) -> Unit,
+    onSaveCustomMood: (String) -> Unit,
+    onDeleteCustomMood: (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-        moods.chunked(3).forEach { rowMoods ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-            ) {
-                rowMoods.forEach { mood ->
-                    SessionMoodChip(
-                        label = mood,
-                        selected = mood == selectedMood,
-                        onClick = { onMoodSelected(mood) },
-                    )
+    var inputVisible by rememberSaveable { mutableStateOf(false) }
+    var inputValue by rememberSaveable { mutableStateOf("") }
+    var deleteCandidate by remember { mutableStateOf<String?>(null) }
+    var popupWidth by remember { mutableStateOf(Dp.Unspecified) }
+    val density = LocalDensity.current
+    val sanitizedInput = sanitizeCustomMood(inputValue)
+    val canSave = isValidCustomMood(sanitizedInput)
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { coordinates ->
+                    popupWidth = with(density) { coordinates.size.width.toDp() }
+                },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+            moods.chunked(3).forEach { rowMoods ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+                ) {
+                    rowMoods.forEach { mood ->
+                        SessionMoodChip(
+                            label = mood,
+                            selected = mood == selectedMood,
+                            onClick = { onMoodSelected(mood) },
+                        )
+                    }
                 }
             }
-        }
-        Row(modifier = Modifier.fillMaxWidth()) {
+            customMoods.chunked(2).forEach { rowMoods ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+                ) {
+                    rowMoods.forEach { mood ->
+                        SessionMoodChip(
+                            label = "X $mood",
+                            selected = mood == selectedMood,
+                            onClick = { onMoodSelected(mood) },
+                            onLongClick = { deleteCandidate = mood },
+                        )
+                    }
+                }
+            }
             SessionMoodChip(
                 label = "+ Custom",
                 selected = false,
-                onClick = { onMoodSelected("Custom") },
+                onClick = {
+                    inputValue = ""
+                    inputVisible = true
+                },
             )
+        }
+        if (inputVisible) {
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(x = 0, y = with(density) { 44.dp.roundToPx() }),
+                onDismissRequest = { inputVisible = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                SessionCustomMoodInput(
+                    value = inputValue,
+                    onValueChange = { inputValue = sanitizeCustomMood(it) },
+                    canSave = canSave,
+                    onDismiss = { inputVisible = false },
+                    onSave = {
+                        if (canSave) {
+                            onSaveCustomMood(sanitizedInput)
+                            inputVisible = false
+                            inputValue = ""
+                        }
+                    },
+                    modifier = Modifier.sessionMoodPopupWidth(popupWidth),
+                )
+            }
+        }
+        deleteCandidate?.let { mood ->
+            Popup(
+                alignment = Alignment.TopStart,
+                onDismissRequest = { deleteCandidate = null },
+                properties = PopupProperties(focusable = true),
+            ) {
+                SessionDeleteMoodPopup(
+                    onCancel = { deleteCandidate = null },
+                    onConfirm = {
+                        onDeleteCustomMood(mood)
+                        deleteCandidate = null
+                    },
+                    modifier = Modifier.sessionMoodPopupWidth(popupWidth),
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionMoodChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val fill = if (selected) VinylColors.GreenTint20 else VinylColors.SurfacePrimary
     val border = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault
@@ -466,9 +645,10 @@ private fun SessionMoodChip(
                 .clip(VinylShapes.Chip)
                 .background(fill)
                 .border(1.dp, border, VinylShapes.Chip)
-                .clickable(
+                .combinedClickable(
                     onClickLabel = label,
                     role = Role.Button,
+                    onLongClick = onLongClick,
                     onClick = onClick,
                 ).padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceSm),
         contentAlignment = Alignment.Center,
@@ -482,6 +662,132 @@ private fun SessionMoodChip(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+private fun Modifier.sessionMoodPopupWidth(width: Dp): Modifier =
+    if (width == Dp.Unspecified) {
+        fillMaxWidth()
+    } else {
+        this.width(width)
+    }
+
+@Composable
+private fun SessionCustomMoodInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    canSave: Boolean,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .height(64.dp)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .padding(start = VinylSpacing.SpaceLg, end = VinylSpacing.SpaceSm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            textStyle =
+                MaterialTheme.typography.bodyMedium.copy(
+                    color = VinylColors.TextPrimary,
+                ),
+            cursorBrush = SolidColor(VinylColors.AccentGreen),
+            decorationBox = { innerTextField ->
+                if (value.isBlank()) {
+                    Text(
+                        text = "Custom mood",
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                innerTextField()
+            },
+        )
+        Text(
+            modifier =
+                Modifier
+                    .clip(VinylShapes.Chip)
+                    .clickable(
+                        onClickLabel = if (canSave) "Save custom mood" else "Dismiss custom mood input",
+                        role = Role.Button,
+                        onClick = { if (canSave) onSave() else onDismiss() },
+                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+            text = if (canSave) "✓" else "X",
+            color = if (canSave) VinylColors.AccentGreen else VinylColors.TextSecondary,
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+private fun SessionDeleteMoodPopup(
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier =
+            modifier
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .padding(VinylSpacing.SpaceXl),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+    ) {
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = "Do you want to delete this mood?",
+            color = VinylColors.TextPrimary,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        ) {
+            SessionMoodPopupAction(
+                label = "Cancel",
+                color = VinylColors.TextSecondary,
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+            )
+            SessionMoodPopupAction(
+                label = "Confirm",
+                color = VinylColors.AccentGreen,
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionMoodPopupAction(
+    label: String,
+    color: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        modifier =
+            modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.SurfaceSecondary)
+                .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
+                .padding(vertical = VinylSpacing.SpaceMd),
+        text = label,
+        color = color,
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.labelLarge,
+    )
 }
 
 @Composable

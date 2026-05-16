@@ -3,6 +3,8 @@ package com.example.vinyllistenapp.ui.screens
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionSideOptionsTest {
@@ -51,6 +53,20 @@ class SessionSideOptionsTest {
     @Test
     fun displaySessionSideAddsReadablePrefix() {
         assertEquals("Side AA", displaySessionSide("AA"))
+    }
+
+    @Test
+    fun isBuiltInMoodMatchesIgnoringCaseAndWhitespace() {
+        assertTrue(isBuiltInMood(" calm "))
+        assertTrue(isBuiltInMood("FOCUSED"))
+        assertFalse(isBuiltInMood("Late Night"))
+    }
+
+    @Test
+    fun isExistingMoodMatchesCustomMoodsIgnoringCase() {
+        assertTrue(isExistingMood(" late night ", customMoods = listOf("Late Night")))
+        assertTrue(isExistingMood("calm", customMoods = listOf("Late Night")))
+        assertFalse(isExistingMood("Dubby", customMoods = listOf("Late Night")))
     }
 
     private fun recordSummary(

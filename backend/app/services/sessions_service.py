@@ -7,12 +7,25 @@ from sqlalchemy.orm import Session
 
 from app.models.releases import Releases
 from app.models.sessions import Sessions
+from app.models.sessions_moods import SessionsMoods
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
+from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
 from app.services.release_mapper import extract_release_side_options
 
 logger = logging.getLogger(__name__)
+
+CUSTOM_MOOD_MIN_LENGTH = 3
+CUSTOM_MOOD_MAX_LENGTH = 20
+BUILT_IN_SESSION_MOODS = {
+    "energetic": "Energetic",
+    "calm": "Calm",
+    "melancholic": "Melancholic",
+    "nostalgic": "Nostalgic",
+    "focused": "Focused",
+    "background": "Background",
+}
 
 
 class SessionsServiceError(Exception):
@@ -26,6 +39,15 @@ class SessionValidationError(SessionsServiceError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class SessionMoodAlreadyExistsError(SessionsServiceError):
+    """Raised when a custom mood name already exists."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Mood '{name}' already exists.")
+        self.code = "duplicate_mood"
+        self.message = "Mood already exists."
 
 
 class SessionNotFoundError(SessionsServiceError):
@@ -88,10 +110,12 @@ class SessionsService:
         sessions_repository: SessionsRepository | None = None,
         releases_repository: ReleasesRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
+        moods_repository: SessionsMoodsRepository | None = None,
     ) -> None:
         self._sessions_repository = sessions_repository or SessionsRepository()
         self._releases_repository = releases_repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
+        self._moods_repository = moods_repository or SessionsMoodsRepository()
 
     def create_session(
         self,
@@ -197,6 +221,21 @@ class SessionsService:
             top_records=top_records,
         )
 
+    def list_custom_moods(self, db: Session) -> list[SessionsMoods]:
+        return self._moods_repository.get_custom(db)
+
+    def create_custom_mood(self, db: Session, name: str) -> SessionsMoods:
+        normalized_name = self._normalize_custom_mood_name(name)
+        existing_mood = self._moods_repository.get_by_name(db, normalized_name)
+        if existing_mood is not None:
+            raise SessionMoodAlreadyExistsError(normalized_name)
+        canonical_name = self._sessions_repository.get_mood_by_name(db, normalized_name) or normalized_name
+        return self._moods_repository.create_custom(db, canonical_name)
+
+    def delete_custom_mood(self, db: Session, name: str) -> None:
+        normalized_name = self._normalize_custom_mood_name(name)
+        self._moods_repository.delete_custom(db, normalized_name)
+
     def _validate_create_input(
         self,
         db: Session,
@@ -214,7 +253,7 @@ class SessionsService:
 
         normalized_played_at = self._parse_played_at(played_at)
         normalized_side = self._normalize_side(side)
-        normalized_mood = self._normalize_optional_text(mood)
+        normalized_mood = self._canonicalize_session_mood(db, mood)
         normalized_notes = self._normalize_optional_text(notes)
 
         release = self._releases_repository.get_by_id(db, release_id)
@@ -278,6 +317,42 @@ class SessionsService:
 
         normalized = value.strip()
         return normalized or None
+
+    def _normalize_custom_mood_name(self, value: str) -> str:
+        if not isinstance(value, str):
+            raise SessionValidationError("invalid_mood", "Mood name must be text.")
+
+        normalized = " ".join(value.strip().split())
+        if not CUSTOM_MOOD_MIN_LENGTH <= len(normalized) <= CUSTOM_MOOD_MAX_LENGTH:
+            raise SessionValidationError(
+                "invalid_mood",
+                f"Mood name must be between {CUSTOM_MOOD_MIN_LENGTH} and {CUSTOM_MOOD_MAX_LENGTH} characters.",
+            )
+        if any(not (character.isalnum() or character.isspace()) for character in normalized):
+            raise SessionValidationError("invalid_mood", "Mood name must use only letters, numbers, and spaces.")
+        if normalized.lower() in BUILT_IN_SESSION_MOODS:
+            raise SessionValidationError("invalid_mood", "Mood name already exists as a built-in mood.")
+        return normalized
+
+    def _canonicalize_session_mood(self, db: Session, value: str | None) -> str | None:
+        normalized = self._normalize_optional_text(value)
+        if normalized is None:
+            return None
+
+        built_in_mood = self._built_in_mood_name(normalized)
+        if built_in_mood is not None:
+            return built_in_mood
+
+        custom_mood = self._moods_repository.get_by_name(db, normalized)
+        if custom_mood is not None:
+            return custom_mood.name
+
+        historical_mood = self._sessions_repository.get_mood_by_name(db, normalized)
+        return historical_mood or normalized
+
+    def _built_in_mood_name(self, value: str) -> str | None:
+        normalized = value.strip().lower()
+        return BUILT_IN_SESSION_MOODS.get(normalized)
 
     def _extract_release_sides(self, raw_discogs_json: dict[str, Any] | None) -> set[str]:
         available_values: set[str] = set()

@@ -195,17 +195,17 @@ INDEX (played_at)
 
 # Table: session_moods
 
-Defines allowed moods.
+Stores custom mood options shown on the Log Session screen.
 
-Users may add custom moods.
+Logged sessions keep the selected mood text in `sessions.mood`, so deleting a custom mood option does not rewrite historical session rows or remove analytics history. The service canonicalizes mood names case-insensitively before storing new sessions and analytics groups case variants together.
 
 ### Columns
 
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID|Primary key|
-|name|TEXT|Mood label|
-|is_custom|BOOLEAN|User-defined mood|
+|name|TEXT|Unique mood label|
+|is_custom|BOOLEAN|User-defined mood option|
 |created_at|TIMESTAMP|Creation time|
 
 ### Indexes

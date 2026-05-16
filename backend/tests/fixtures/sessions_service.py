@@ -6,6 +6,7 @@ import pytest
 
 from app.models.releases import Releases
 from app.models.sessions import Sessions
+from app.models.sessions_moods import SessionsMoods
 from app.services.sessions_service import SessionsService
 
 
@@ -41,6 +42,12 @@ class InMemorySessionsRepository:
         matching = [session for session in self.sessions if session.release_id == release_id]
         return matching[offset : offset + limit]
 
+    def get_mood_by_name(self, _db, name: str) -> str | None:
+        for session in sorted(self.sessions, key=lambda item: item.created_at):
+            if session.mood is not None and session.mood.lower() == name.lower():
+                return session.mood
+        return None
+
 
 class InMemoryReleasesRepository:
     def __init__(self, releases: list[Releases]) -> None:
@@ -59,6 +66,32 @@ class StubDiscogsRepository:
         if payload is None:
             return None
         return SimpleNamespace(raw_discogs_json=payload)
+
+
+class InMemorySessionsMoodsRepository:
+    def __init__(self) -> None:
+        self.moods: list[SessionsMoods] = []
+
+    def get_custom(self, _db) -> list[SessionsMoods]:
+        return sorted([mood for mood in self.moods if mood.is_custom], key=lambda mood: mood.name)
+
+    def get_by_name(self, _db, name: str) -> SessionsMoods | None:
+        for mood in self.moods:
+            if mood.name.lower() == name.lower():
+                return mood
+        return None
+
+    def create_custom(self, _db, name: str) -> SessionsMoods:
+        mood = SessionsMoods(name=name, is_custom=True)
+        self.moods.append(mood)
+        return mood
+
+    def delete_custom(self, _db, name: str) -> bool:
+        mood = self.get_by_name(_db, name)
+        if mood is None or not mood.is_custom:
+            return False
+        self.moods.remove(mood)
+        return True
 
 
 @pytest.fixture
@@ -92,21 +125,36 @@ def sessions_repository_factory() -> Callable[[], InMemorySessionsRepository]:
 
 
 @pytest.fixture
+def sessions_moods_repository_factory() -> Callable[[], InMemorySessionsMoodsRepository]:
+    def _factory() -> InMemorySessionsMoodsRepository:
+        return InMemorySessionsMoodsRepository()
+
+    return _factory
+
+
+@pytest.fixture
 def build_sessions_service(
     build_release: Callable[[str, int], Releases],
 ) -> Callable[
-    [InMemorySessionsRepository | None, list[Releases] | None, dict[int, dict] | None],
+    [
+        InMemorySessionsRepository | None,
+        list[Releases] | None,
+        dict[int, dict] | None,
+        InMemorySessionsMoodsRepository | None,
+    ],
     SessionsService,
 ]:
     def _build_service(
         sessions_repository: InMemorySessionsRepository | None = None,
         releases: list[Releases] | None = None,
         payload_by_discogs_id: dict[int, dict] | None = None,
+        moods_repository: InMemorySessionsMoodsRepository | None = None,
     ) -> SessionsService:
         return SessionsService(
             sessions_repository=sessions_repository or InMemorySessionsRepository(),
             releases_repository=InMemoryReleasesRepository(releases or [build_release()]),
             discogs_repository=StubDiscogsRepository(payload_by_discogs_id or {}),
+            moods_repository=moods_repository or InMemorySessionsMoodsRepository(),
         )
 
     return _build_service

@@ -267,6 +267,31 @@ class VinylApiClient(
             postJson("sessions/", body).getString("session_id")
         }
 
+    suspend fun getCustomMoods(): List<String> =
+        apiCall {
+            getJson("sessions/moods")
+                .optJSONArray("moods")
+                .orEmpty()
+                .mapObjects { item -> item.optString("name") }
+                .filter { it.isNotBlank() }
+        }
+
+    suspend fun createCustomMood(name: String): String =
+        apiCall {
+            val body = JSONObject().put("name", name)
+            postJson("sessions/moods", body)
+                .optJSONObject("mood")
+                ?.optString("name")
+                ?.takeIf { it.isNotBlank() }
+                ?: name
+        }
+
+    suspend fun deleteCustomMood(name: String) {
+        apiCall {
+            deleteJson("sessions/moods/${Uri.encode(name)}")
+        }
+    }
+
     private suspend fun <T> apiCall(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
             try {
@@ -326,6 +351,12 @@ class VinylApiClient(
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
         connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
+    private fun deleteJson(path: String): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "DELETE"
         return readJsonResponse(connection)
     }
 
