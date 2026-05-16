@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
@@ -41,7 +42,12 @@ fun RecentSessionsScreen(
             }
     }
 
-    ScreenContent(title = "Recent Sessions", subtitle = "Latest logged listens") {
+    ScreenContent(
+        title = "Recent Sessions",
+        subtitle = "Latest logged listens",
+        topPadding = 48.dp,
+        topStartContent = { BackText(onBack) },
+    ) {
         error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
         sessions.forEach { session ->
             SessionListItem(session = session, onClick = { onOpenRecord(session.releaseId) })
@@ -74,7 +80,12 @@ fun TopRecordsScreen(
             }
     }
 
-    ScreenContent(title = "Top Records", subtitle = "Most played records") {
+    ScreenContent(
+        title = "Top Records",
+        subtitle = "Most played records",
+        topPadding = 48.dp,
+        topStartContent = { BackText(onBack) },
+    ) {
         error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
         records.forEach { record ->
             TopRecordListItem(record = record, onClick = { onOpenRecord(record.record.releaseId) })
@@ -127,8 +138,8 @@ private fun RetryMessage(
 @Composable
 private fun BackText(onBack: () -> Unit) {
     Text(
-        modifier = Modifier.clickable(onClickLabel = "Back", role = Role.Button, onClick = onBack),
-        text = "Back",
+        modifier = Modifier.clickable(onClickLabel = "Go back", role = Role.Button, onClick = onBack),
+        text = "< Go Back",
         color = VinylColors.AccentGreen,
     )
 }

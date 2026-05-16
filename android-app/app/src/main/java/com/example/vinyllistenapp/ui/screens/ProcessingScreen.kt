@@ -13,14 +13,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.ApiErrorKind
 import com.example.vinyllistenapp.data.api.ApiException
@@ -83,7 +83,7 @@ fun ProcessingScreen(
             state = IdentifyUiState.Empty
         } else {
             state = IdentifyUiState.Success(candidates)
-            delay(450)
+            delay(300)
             onComplete(candidates)
         }
     }
@@ -117,9 +117,9 @@ fun ProcessingScreen(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
             ) {
-                ProcessingSpinner()
+                ProcessingStateIndicator(state)
                 Text(
                     modifier = Modifier.width(260.dp),
                     text = processingSubtitle(state),
@@ -209,31 +209,35 @@ private fun Throwable.toIdentifyErrorMessage(): String {
 }
 
 @Composable
+private fun ProcessingStateIndicator(state: IdentifyUiState) {
+    when (state) {
+        is IdentifyUiState.Success ->
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                modifier = Modifier.size(100.dp),
+                tint = VinylColors.AccentGreen,
+            )
+
+        is IdentifyUiState.Loading -> ProcessingSpinner(animated = true)
+
+        IdentifyUiState.Empty,
+        is IdentifyUiState.Error,
+        -> ProcessingSpinner(animated = false)
+    }
+}
+
+@Composable
 private fun ProcessingRecoveryActions(
     onRetry: () -> Unit,
     onManualSearch: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        ProcessingActionText(
-            label = "Retry",
-            onClick = onRetry,
-            icon = { StaticProcessingIcon() },
-        )
-        ProcessingActionText(
-            label = "Manual Search",
-            onClick = onManualSearch,
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = VinylColors.AccentGreen,
-                )
-            },
-        )
+        ProcessingActionText(label = "Retry", onClick = onRetry)
+        ProcessingActionText(label = "Manual Search", onClick = onManualSearch)
     }
 }
 
@@ -241,58 +245,42 @@ private fun ProcessingRecoveryActions(
 private fun ProcessingActionText(
     label: String,
     onClick: () -> Unit,
-    icon: @Composable () -> Unit,
 ) {
-    Row(
+    Text(
         modifier =
             Modifier
                 .width(232.dp)
                 .clickable(onClick = onClick)
                 .padding(vertical = VinylSpacing.SpaceSm),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        icon()
-        Text(
-            modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
-            text = label,
-            color = VinylColors.AccentGreen,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-@Composable
-private fun StaticProcessingIcon() {
-    Canvas(modifier = Modifier.size(18.dp)) {
-        drawArc(
-            color = VinylColors.AccentGreen,
-            startAngle = -90f,
-            sweepAngle = 285f,
-            useCenter = false,
-            style =
-                Stroke(
-                    width = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                ),
-        )
-    }
-}
-
-@Composable
-private fun ProcessingSpinner() {
-    val transition = rememberInfiniteTransition(label = "processing-spinner")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec =
-            infiniteRepeatable(
-                animation = tween(durationMillis = 900, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
+        text = label,
+        color = VinylColors.AccentGreen,
+        textAlign = TextAlign.Center,
+        style =
+            MaterialTheme.typography.bodyMedium.copy(
+                fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
             ),
-        label = "processing-spinner-rotation",
     )
+}
+
+@Composable
+private fun ProcessingSpinner(animated: Boolean) {
+    val rotation =
+        if (animated) {
+            val transition = rememberInfiniteTransition(label = "processing-spinner")
+            val animatedRotation by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec =
+                    infiniteRepeatable(
+                        animation = tween(durationMillis = 900, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart,
+                    ),
+                label = "processing-spinner-rotation",
+            )
+            animatedRotation
+        } else {
+            0f
+        }
 
     Canvas(
         modifier =

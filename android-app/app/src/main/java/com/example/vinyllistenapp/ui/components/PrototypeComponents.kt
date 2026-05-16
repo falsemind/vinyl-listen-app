@@ -38,6 +38,8 @@ internal fun ScreenContent(
     title: String,
     subtitle: String,
     innerPadding: PaddingValues = PaddingValues(),
+    topPadding: androidx.compose.ui.unit.Dp = VinylSpacing.Space2Xl,
+    topStartContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -47,7 +49,8 @@ internal fun ScreenContent(
                 .background(VinylColors.AppBackground)
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.Space2Xl),
+                .padding(horizontal = VinylSpacing.SpaceMd)
+                .padding(top = topPadding, bottom = VinylSpacing.Space2Xl),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
     ) {
         Text(
@@ -62,6 +65,7 @@ internal fun ScreenContent(
             color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.bodyLarge,
         )
+        topStartContent?.invoke()
         content()
         Spacer(Modifier.height(96.dp))
     }
