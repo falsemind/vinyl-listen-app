@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseSideOption
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,21 +10,42 @@ class SessionSideOptionsTest {
     fun sessionSideOptionsUsesReleaseAvailableSides() {
         val record = recordSummary(availableSides = listOf("A", "AA"))
 
-        assertEquals(listOf("A", "AA"), sessionSideOptions(record))
+        assertEquals(listOf(SessionSideOption("A", "Side A"), SessionSideOption("AA", "Side AA")), sessionSideOptions(record))
+    }
+
+    @Test
+    fun sessionSideOptionsPrefersDetailedSideOptions() {
+        val record =
+            recordSummary(
+                availableSides = listOf("X", "Y"),
+                availableSideOptions =
+                    listOf(
+                        ReleaseSideOption("1:X", "Disc 1 - Side X"),
+                        ReleaseSideOption("2:X", "Disc 2 - Side X"),
+                    ),
+            )
+
+        assertEquals(
+            listOf(
+                SessionSideOption("1:X", "Disc 1 - Side X"),
+                SessionSideOption("2:X", "Disc 2 - Side X"),
+            ),
+            sessionSideOptions(record),
+        )
     }
 
     @Test
     fun sessionSideOptionsFallsBackToPrototypeSides() {
         val record = recordSummary(availableSides = emptyList())
 
-        assertEquals(listOf("A", "B"), sessionSideOptions(record))
+        assertEquals(listOf(SessionSideOption("A", "Side A"), SessionSideOption("B", "Side B")), sessionSideOptions(record))
     }
 
     @Test
     fun sessionSideOptionsCanSuppressPrototypeFallback() {
         val record = recordSummary(availableSides = emptyList())
 
-        assertEquals(emptyList<String>(), sessionSideOptions(record, usePrototypeFallback = false))
+        assertEquals(emptyList<SessionSideOption>(), sessionSideOptions(record, usePrototypeFallback = false))
     }
 
     @Test
@@ -31,17 +53,20 @@ class SessionSideOptionsTest {
         assertEquals("Side AA", displaySessionSide("AA"))
     }
 
-    private fun recordSummary(availableSides: List<String>) =
-        RecordSummary(
-            releaseId = "release-123",
-            discogsReleaseId = 555123,
-            artist = "Artist",
-            title = "Title",
-            label = "Label",
-            year = 2026,
-            format = "Vinyl",
-            rating = 0,
-            lastPlayed = "Not logged yet",
-            availableSides = availableSides,
-        )
+    private fun recordSummary(
+        availableSides: List<String>,
+        availableSideOptions: List<ReleaseSideOption> = emptyList(),
+    ) = RecordSummary(
+        releaseId = "release-123",
+        discogsReleaseId = 555123,
+        artist = "Artist",
+        title = "Title",
+        label = "Label",
+        year = 2026,
+        format = "Vinyl",
+        rating = 0,
+        lastPlayed = "Not logged yet",
+        availableSides = availableSides,
+        availableSideOptions = availableSideOptions,
+    )
 }

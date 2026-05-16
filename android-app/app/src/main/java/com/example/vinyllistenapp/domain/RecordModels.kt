@@ -16,6 +16,12 @@ data class RecordSummary(
     val styles: List<String> = emptyList(),
     val coverImageUrl: String? = null,
     val availableSides: List<String> = emptyList(),
+    val availableSideOptions: List<ReleaseSideOption> = emptyList(),
+)
+
+data class ReleaseSideOption(
+    val value: String,
+    val label: String,
 )
 
 data class ReleaseSearchResult(

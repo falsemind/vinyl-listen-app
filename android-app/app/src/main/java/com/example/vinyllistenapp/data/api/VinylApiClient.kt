@@ -13,6 +13,7 @@ import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
+import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -433,6 +434,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         styles = optJSONArray("styles").orEmpty().mapStrings(),
         coverImageUrl = optNullableString("cover_image_url"),
         availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
+        availableSideOptions = optJSONArray("available_side_options").orEmpty().toReleaseSideOptions(),
     )
 
 private fun JSONObject.putNullable(
@@ -583,6 +585,14 @@ private fun JSONArray?.orEmpty(): JSONArray = this ?: JSONArray()
 private fun JSONObject?.orEmpty(): JSONObject = this ?: JSONObject()
 
 private fun JSONArray.mapStrings(): List<String> = List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
+
+private fun JSONArray.toReleaseSideOptions(): List<ReleaseSideOption> =
+    mapObjects { item ->
+        ReleaseSideOption(
+            value = item.optString("value"),
+            label = item.optString("label"),
+        )
+    }.filter { it.value.isNotBlank() && it.label.isNotBlank() }
 
 private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = List(length()) { index -> transform(getJSONObject(index)) }
 
