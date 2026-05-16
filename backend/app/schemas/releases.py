@@ -22,6 +22,7 @@ class ReleaseResponse(BaseModel):
     genres: list[str] | None
     styles: list[str] | None
     cover_image_url: str | None
+    available_sides: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

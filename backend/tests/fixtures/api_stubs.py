@@ -151,6 +151,7 @@ class StubReleaseImportService:
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
         self.lookup_calls: list[str] = []
+        self.available_sides = ["A", "AA"]
 
     def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
         self.import_calls.append((discogs_release_id, force_refresh))
@@ -163,6 +164,11 @@ class StubReleaseImportService:
         if release_id == self.release.id:
             return self.release
         return None
+
+    def get_available_sides(self, _db, discogs_release_id: int) -> list[str]:
+        if discogs_release_id == self.release.discogs_release_id:
+            return self.available_sides
+        return []
 
 
 class StubDiscogsSearchService:

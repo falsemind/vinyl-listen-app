@@ -46,6 +46,42 @@ def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
     )
 
 
+def extract_release_sides(raw_discogs_json: dict[str, Any] | None) -> list[str]:
+    tracklist = raw_discogs_json.get("tracklist") if isinstance(raw_discogs_json, dict) else None
+    if not isinstance(tracklist, list):
+        return []
+
+    sides: list[str] = []
+    seen: set[str] = set()
+    for track in tracklist:
+        if not isinstance(track, dict):
+            continue
+
+        position = track.get("position")
+        if not isinstance(position, str):
+            continue
+
+        prefix = _extract_side_prefix(position)
+        if prefix and prefix not in seen:
+            sides.append(prefix)
+            seen.add(prefix)
+
+    return sides
+
+
+def _extract_side_prefix(position: str) -> str | None:
+    trimmed = position.strip().upper()
+    letters = []
+    for char in trimmed:
+        if char.isalpha():
+            letters.append(char)
+            continue
+        if letters:
+            break
+
+    return "".join(letters) or None
+
+
 def _extract_artist(raw_json: dict[str, Any]) -> str | None:
     artists_sort = _clean_string(raw_json.get("artists_sort"))
     if artists_sort:

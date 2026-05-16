@@ -82,3 +82,21 @@ def test_get_release_returns_repository_result(
     result = service.get_release(db=object(), release_id="release-123")
 
     assert result is release
+
+
+def test_get_available_sides_returns_discogs_track_sides(
+    release_import_discogs_repository_factory,
+    build_release_import_service,
+) -> None:
+    discogs_repository = release_import_discogs_repository_factory(
+        {
+            "tracklist": [
+                {"position": "A1"},
+                {"position": "A2"},
+                {"position": "AA"},
+            ]
+        }
+    )
+    service = build_release_import_service(discogs_repository=discogs_repository)
+
+    assert service.get_available_sides(db=object(), discogs_release_id=555123) == ["A", "AA"]

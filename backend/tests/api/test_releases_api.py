@@ -188,6 +188,7 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "genres": ["Electronic"],
         "styles": ["IDM"],
         "cover_image_url": "https://img.discogs.com/cover.jpg",
+        "available_sides": ["A", "AA"],
         "created_at": "2026-04-19T00:00:00Z",
         "updated_at": "2026-04-19T00:00:00Z",
     }

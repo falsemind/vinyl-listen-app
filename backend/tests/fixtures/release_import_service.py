@@ -66,6 +66,21 @@ class InMemoryReleasesRepository:
         return self.release, created
 
 
+class InMemoryDiscogsReleaseRepository:
+    def __init__(self, raw_discogs_json: dict | None = None) -> None:
+        self.raw_discogs_json = raw_discogs_json
+
+    def get_by_discogs_release_id(self, _db, _discogs_release_id: int):
+        if self.raw_discogs_json is None:
+            return None
+
+        class CacheEntry:
+            def __init__(self, raw_discogs_json: dict) -> None:
+                self.raw_discogs_json = raw_discogs_json
+
+        return CacheEntry(self.raw_discogs_json)
+
+
 @pytest.fixture
 def discogs_release_payload() -> dict:
     return {
@@ -94,15 +109,25 @@ def release_import_repository_factory() -> Callable[[Releases | None], InMemoryR
 
 
 @pytest.fixture
+def release_import_discogs_repository_factory() -> Callable[[dict | None], InMemoryDiscogsReleaseRepository]:
+    def _factory(raw_discogs_json: dict | None = None) -> InMemoryDiscogsReleaseRepository:
+        return InMemoryDiscogsReleaseRepository(raw_discogs_json=raw_discogs_json)
+
+    return _factory
+
+
+@pytest.fixture
 def build_release_import_service() -> Callable[..., ReleaseImportService]:
     def _build_service(
         *,
         discogs_service: StubDiscogsService | None = None,
         repository: InMemoryReleasesRepository | None = None,
+        discogs_repository: InMemoryDiscogsReleaseRepository | None = None,
     ) -> ReleaseImportService:
         return ReleaseImportService(
             discogs_service=discogs_service or StubDiscogsService({}),
             repository=repository or InMemoryReleasesRepository(),
+            discogs_repository=discogs_repository or InMemoryDiscogsReleaseRepository(),
         )
 
     return _build_service

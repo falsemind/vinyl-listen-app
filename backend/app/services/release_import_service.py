@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.models.releases import Releases
+from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
-from app.services.release_mapper import InternalReleaseData, map_discogs_to_internal
+from app.services.release_mapper import InternalReleaseData, extract_release_sides, map_discogs_to_internal
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,11 @@ class ReleaseImportService:
         self,
         discogs_service: DiscogsService | None = None,
         repository: ReleasesRepository | None = None,
+        discogs_repository: DiscogsReleaseRepository | None = None,
     ) -> None:
         self._discogs_service = discogs_service or DiscogsService()
         self._repository = repository or ReleasesRepository()
+        self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
 
     def import_release(
         self,
@@ -63,6 +66,10 @@ class ReleaseImportService:
         if release is None:
             logger.info("Release not found release_id=%s", release_id)
         return release
+
+    def get_available_sides(self, db: Session, discogs_release_id: int) -> list[str]:
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
+        return extract_release_sides(cache_entry.raw_discogs_json if cache_entry is not None else None)
 
     def map_discogs_payload(self, raw_payload: dict) -> InternalReleaseData:
         logger.debug("Mapping Discogs payload to internal release model")
