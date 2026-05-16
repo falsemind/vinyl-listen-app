@@ -1,11 +1,19 @@
 package com.example.vinyllistenapp.ui.screens
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,8 +33,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,10 +50,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.LifecycleOwner
 import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
@@ -59,30 +71,54 @@ fun CaptureRecordScreen(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
-    var pendingCaptureUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraPermissionGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
-    val cameraLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
-            if (captured) {
-                pendingCaptureUri?.let { onImageSelected(Uri.parse(it)) }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var captureError by rememberSaveable { mutableStateOf<String?>(null) }
+    var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
+
+    fun takePhotoInApp() {
+        val capture = imageCapture
+        if (capture == null) {
+            captureError = "Camera is starting. Try again in a moment."
+            return
+        }
+
+        val imageFile = createImageCaptureFile(context)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(imageFile).build()
+        isTakingPhoto = true
+        captureError = null
+        capture.takePicture(
+            outputOptions,
+            mainExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    isTakingPhoto = false
+                    onImageSelected(createImageCaptureUri(context, imageFile))
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    isTakingPhoto = false
+                    captureError = "Photo could not be captured. Try again."
+                }
+            },
+        )
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            cameraPermissionGranted = granted
+            permissionDenied = !granted
+            if (!granted) {
+                imageCapture = null
+                captureError = null
             }
         }
 
-    fun launchCameraCapture() {
-        val captureUri = createImageCaptureUri(context)
-        pendingCaptureUri = captureUri.toString()
-        cameraLauncher.launch(captureUri)
-    }
-    val permissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                permissionDenied = false
-                launchCameraCapture()
-            } else {
-                permissionDenied = true
-            }
-        }
     val uploadLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             uri?.let(onImageSelected)
@@ -105,6 +141,9 @@ fun CaptureRecordScreen(
                 onInfoClick = { showCaptureInfo = !showCaptureInfo },
             )
             CameraPreviewSurface(
+                cameraPermissionGranted = cameraPermissionGranted,
+                onImageCaptureReady = { imageCapture = it },
+                onCameraError = { captureError = it },
                 modifier =
                     Modifier
                         .weight(1f)
@@ -112,11 +151,11 @@ fun CaptureRecordScreen(
                         .padding(vertical = VinylSpacing.SpaceLg),
             )
             GlassPrimaryButton(
-                label = "Take Photo",
+                label = if (isTakingPhoto) "Taking Photo..." else "Take Photo",
                 onClick = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    if (cameraPermissionGranted) {
                         permissionDenied = false
-                        launchCameraCapture()
+                        if (!isTakingPhoto) takePhotoInApp()
                     } else {
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
@@ -127,6 +166,16 @@ fun CaptureRecordScreen(
                 Text(
                     modifier = Modifier.fillMaxWidth(),
                     text = "Camera permission is needed to take a photo.",
+                    color = VinylColors.AccentOrange,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            captureError?.let { message ->
+                Spacer(Modifier.height(VinylSpacing.SpaceMd))
+                Text(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = message,
                     color = VinylColors.AccentOrange,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium,
@@ -158,10 +207,21 @@ fun CaptureRecordScreen(
     }
 }
 
-private fun createImageCaptureUri(context: Context): Uri {
-    val imageFile = File.createTempFile("vinyl_capture_", ".jpg", context.cacheDir)
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
-}
+private fun createImageCaptureFile(context: Context): File = File.createTempFile("vinyl_capture_", ".jpg", context.cacheDir)
+
+private fun createImageCaptureUri(
+    context: Context,
+    imageFile: File,
+): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
+private fun Context.findLifecycleOwner(): LifecycleOwner? = findActivity() as? LifecycleOwner
 
 @Composable
 private fun CaptureHeader(
@@ -226,7 +286,12 @@ private fun CaptureInfoPopup(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun CameraPreviewSurface(modifier: Modifier = Modifier) {
+private fun CameraPreviewSurface(
+    cameraPermissionGranted: Boolean,
+    onImageCaptureReady: (ImageCapture?) -> Unit,
+    onCameraError: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val previewBrush =
         Brush.linearGradient(
             listOf(
@@ -236,6 +301,93 @@ private fun CameraPreviewSurface(modifier: Modifier = Modifier) {
             ),
         )
 
+    if (!cameraPermissionGranted) {
+        CameraPlaceholderSurface(previewBrush = previewBrush, modifier = modifier)
+        return
+    }
+
+    val context = LocalContext.current
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
+    val previewView =
+        remember(context) {
+            PreviewView(context).apply {
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+            }
+        }
+
+    DisposableEffect(lifecycleOwner, previewView) {
+        val owner = lifecycleOwner
+        if (owner == null) {
+            onImageCaptureReady(null)
+            onCameraError("Camera could not start in this app context.")
+            return@DisposableEffect onDispose {}
+        }
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val listener =
+            Runnable {
+                runCatching {
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview =
+                        Preview
+                            .Builder()
+                            .build()
+                            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                    val imageCapture =
+                        ImageCapture
+                            .Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                            .build()
+
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        owner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        imageCapture,
+                    )
+                    onImageCaptureReady(imageCapture)
+                    onCameraError(null)
+                }.onFailure {
+                    onImageCaptureReady(null)
+                    onCameraError("Camera could not start. Check camera permission and try again.")
+                }
+            }
+        cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))
+
+        onDispose {
+            onImageCaptureReady(null)
+            if (cameraProviderFuture.isDone) {
+                runCatching { cameraProviderFuture.get().unbindAll() }
+            }
+        }
+    }
+
+    Box(
+        modifier =
+            modifier
+                .clip(VinylShapes.Floating)
+                .background(VinylColors.SurfacePrimary),
+    ) {
+        AndroidView(
+            factory = { previewView },
+            modifier = Modifier.matchParentSize(),
+        )
+        CaptureHintCard(
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(VinylSpacing.SpaceLg),
+        )
+    }
+}
+
+@Composable
+private fun CameraPlaceholderSurface(
+    previewBrush: Brush,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier =
             modifier
