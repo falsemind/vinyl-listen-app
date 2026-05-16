@@ -259,3 +259,41 @@ def test_get_sessions_by_release_returns_paginated_results(
     )
 
     assert [session.id for session in sessions] == ["session-2"]
+
+
+def test_custom_moods_are_persisted_and_listed(
+    sessions_moods_repository_factory,
+    build_sessions_service,
+) -> None:
+    moods_repository = sessions_moods_repository_factory()
+    service = build_sessions_service(moods_repository=moods_repository)
+
+    created = service.create_custom_mood(db=object(), name="  Late   Night  ")
+    duplicate = service.create_custom_mood(db=object(), name="late night")
+
+    assert created.name == "Late Night"
+    assert duplicate.name == "Late Night"
+    assert [mood.name for mood in service.list_custom_moods(db=object())] == ["Late Night"]
+
+
+@pytest.mark.parametrize("name", ["Lo", "This Mood Name Is Too Long", "Dreamy!"])
+def test_create_custom_mood_rejects_invalid_names(name: str, build_sessions_service) -> None:
+    service = build_sessions_service()
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.create_custom_mood(db=object(), name=name)
+
+    assert exc_info.value.code == "invalid_mood"
+
+
+def test_delete_custom_mood_removes_saved_option(
+    sessions_moods_repository_factory,
+    build_sessions_service,
+) -> None:
+    moods_repository = sessions_moods_repository_factory()
+    service = build_sessions_service(moods_repository=moods_repository)
+    service.create_custom_mood(db=object(), name="Dubby")
+
+    service.delete_custom_mood(db=object(), name="dubby")
+
+    assert service.list_custom_moods(db=object()) == []

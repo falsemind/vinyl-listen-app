@@ -7,12 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.sessions import (
+    CreateSessionMoodRequest,
     CreateSessionRequest,
     ErrorResponse,
     HomeRecentSessionItem,
     HomeSummaryResponse,
     HomeTopRecordItem,
     SessionCreateResponse,
+    SessionMoodItem,
+    SessionMoodResponse,
+    SessionMoodsResponse,
     SessionResponse,
 )
 from app.services.sessions_service import (
@@ -121,6 +125,63 @@ def get_home_summary(
             for item in summary.top_records
         ],
     )
+
+
+@router.get(
+    "/moods",
+    response_model=SessionMoodsResponse,
+)
+def list_custom_moods(
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+):
+    moods = service.list_custom_moods(db)
+    return SessionMoodsResponse(
+        moods=[SessionMoodItem(name=mood.name, is_custom=mood.is_custom) for mood in moods],
+    )
+
+
+@router.post(
+    "/moods",
+    response_model=SessionMoodResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={422: {"model": ErrorResponse}},
+)
+def create_custom_mood(
+    payload: CreateSessionMoodRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+):
+    try:
+        mood = service.create_custom_mood(db, payload.name)
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+
+    return SessionMoodResponse(mood=SessionMoodItem(name=mood.name, is_custom=mood.is_custom))
+
+
+@router.delete(
+    "/moods/{mood_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={422: {"model": ErrorResponse}},
+)
+def delete_custom_mood(
+    mood_name: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+):
+    try:
+        service.delete_custom_mood(db, mood_name)
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
