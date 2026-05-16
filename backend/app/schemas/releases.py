@@ -43,6 +43,7 @@ class ReleaseSearchResult(BaseModel):
     label: str | None = None
     catalog_number: str | None = None
     thumbnail_url: str | None = None
+    format: str | None = None
 
 
 class ReleaseSearchResponse(BaseModel):

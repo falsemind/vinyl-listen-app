@@ -2,6 +2,7 @@ package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -59,6 +65,7 @@ fun AnalyticsScreen(
     onHome: () -> Unit,
     onOpenRecord: (String) -> Unit,
     onSettings: () -> Unit,
+    onViewAllTopRecords: () -> Unit,
 ) {
     var dashboard by remember { mutableStateOf(mockAnalyticsDashboard()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -80,9 +87,9 @@ fun AnalyticsScreen(
             BottomNavBar(
                 items =
                     listOf(
-                        BottomNavItem("Home", selected = false, onClick = onHome),
-                        BottomNavItem("Stats", selected = true, onClick = {}),
-                        BottomNavItem("Settings", selected = false, onClick = onSettings),
+                        BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
+                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = true, onClick = {}),
+                        BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onSettings),
                     ),
             )
         },
@@ -97,8 +104,8 @@ fun AnalyticsScreen(
             }
             SectionTitle("Plays Over Time")
             MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
-            SectionTitle("Top Records")
-            dashboard.topRecords.forEachIndexed { index, record ->
+            AnalyticsSectionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
+            dashboard.topRecords.take(5).forEachIndexed { index, record ->
                 TopRecordAnalyticsCard(
                     record = record,
                     accentColor = analyticsAccent(index),
@@ -116,23 +123,26 @@ fun AnalyticsScreen(
 
 @Composable
 private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
-    val totalSessions = monthlyPlays.sumOf { it.plays }
-    val maxPlays = monthlyPlays.maxOfOrNull { it.plays }?.takeIf { it > 0 } ?: 1
+    val displayMonths = lastTwelveMonths(monthlyPlays)
+    val monthScrollState = rememberScrollState(initial = Int.MAX_VALUE)
+    val totalSessions = displayMonths.sumOf { it.plays }
+    val maxPlays = displayMonths.maxOfOrNull { it.plays }?.takeIf { it > 0 } ?: 1
 
     AccentCard {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(monthScrollState)
                     .height(132.dp),
             horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
             verticalAlignment = Alignment.Bottom,
         ) {
-            monthlyPlays.forEach { item ->
+            displayMonths.forEach { item ->
                 MonthlyPlayBar(
                     item = item,
                     maxPlays = maxPlays,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.width(48.dp),
                 )
             }
         }
@@ -275,13 +285,44 @@ private fun RatingDistributionCard(ratings: List<RatingDistributionItem>) {
                     )
                     Text(
                         text = item.count.toString(),
-                        color = VinylColors.TextOnSolidAccent,
+                        color =
+                            if ((item.count.toFloat() / maxCount.toFloat()).coerceIn(0f, 1f) >= 0.86f) {
+                                VinylColors.AppBackground
+                            } else {
+                                VinylColors.AccentOrange
+                            },
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.align(Alignment.CenterEnd).padding(horizontal = VinylSpacing.SpaceSm),
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AnalyticsSectionHeader(
+    label: String,
+    action: String,
+    onActionClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionTitle(label)
+        Text(
+            modifier =
+                Modifier.clickable(
+                    onClickLabel = action,
+                    role = Role.Button,
+                    onClick = onActionClick,
+                ),
+            text = action,
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -373,6 +414,17 @@ private fun shortMonthLabel(month: String): String =
     runCatching {
         YearMonth.parse(month).month.getDisplayName(TextStyle.SHORT, Locale.US)
     }.getOrDefault(month.takeLast(3))
+
+internal fun lastTwelveMonths(
+    monthlyPlays: List<MonthlyPlayCount>,
+    currentMonth: YearMonth = YearMonth.now(),
+): List<MonthlyPlayCount> {
+    val playsByMonth = monthlyPlays.associateBy { it.month }
+    return (11 downTo 0).map { offset ->
+        val month = currentMonth.minusMonths(offset.toLong())
+        playsByMonth[month.toString()] ?: MonthlyPlayCount(month.toString(), 0)
+    }
+}
 
 private fun mockAnalyticsDashboard(): AnalyticsDashboard =
     AnalyticsDashboard(

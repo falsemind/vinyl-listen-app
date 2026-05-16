@@ -135,6 +135,7 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
                 "date": "2026-03-14",
+                "played_at": "2026-03-14T19:21:00Z",
                 "side": "A",
                 "rating": 5,
                 "mood": "Calm",
@@ -172,6 +173,7 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
             {
                 "session_id": "session-456",
                 "date": "2026-03-10",
+                "played_at": "2026-03-10T14:00:00Z",
                 "side": "B",
                 "rating": 4,
                 "mood": None,

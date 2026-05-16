@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -56,13 +60,14 @@ fun HomeScreen(
     onOpenRecord: (String) -> Unit,
     onOpenAnalytics: () -> Unit,
     onOpenSettings: () -> Unit,
+    onViewAllSessions: () -> Unit,
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(retryKey) {
-        runCatching { apiClient.getHomeSummary() }
+        runCatching { apiClient.getHomeSummary(recentLimit = 5, topLimit = 25) }
             .onSuccess {
                 homeSummary = it
                 loadError = null
@@ -77,9 +82,9 @@ fun HomeScreen(
             BottomNavBar(
                 items =
                     listOf(
-                        BottomNavItem("Home", selected = true, onClick = {}),
-                        BottomNavItem("Stats", selected = false, onClick = onOpenAnalytics),
-                        BottomNavItem("Settings", selected = false, onClick = onOpenSettings),
+                        BottomNavItem("Home", Icons.Filled.Home, selected = true, onClick = {}),
+                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
+                        BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onOpenSettings),
                     ),
             )
         },
@@ -101,14 +106,14 @@ fun HomeScreen(
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
         ) {
-            SectionHeader("Recent Sessions", action = "View All")
+            SectionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
             loadError?.let { message ->
                 HomeRecoveryCard(message = message, onRetry = { retryKey += 1 })
             }
             if (homeSummary.recentSessions.isEmpty()) {
                 EmptyHomeState("No sessions logged yet.")
             } else {
-                homeSummary.recentSessions.forEach { session ->
+                homeSummary.recentSessions.take(3).forEach { session ->
                     SessionRow(session, onClick = { onOpenRecord(session.releaseId) })
                 }
             }
@@ -133,7 +138,7 @@ fun HomeScreen(
             }
 
             SectionTitle("Top Records")
-            homeSummary.topRecords.forEachIndexed { index, topRecord ->
+            homeTopRecordHighlights(homeSummary.topRecords).forEachIndexed { index, topRecord ->
                 TopRecordRow(
                     topRecord = topRecord,
                     badge = if (index == 0) "Most Played" else "Least Played",
@@ -161,6 +166,7 @@ private fun mockHomeSummary(): HomeSummary =
 private fun SectionHeader(
     label: String,
     action: String,
+    onActionClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -169,11 +175,23 @@ private fun SectionHeader(
     ) {
         SectionTitle(label)
         Text(
+            modifier =
+                Modifier.clickable(
+                    onClickLabel = action,
+                    role = androidx.compose.ui.semantics.Role.Button,
+                    onClick = onActionClick,
+                ),
             text = action,
             color = VinylColors.AccentGreen,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
+}
+
+private fun homeTopRecordHighlights(records: List<TopRecordSummary>): List<TopRecordSummary> {
+    val mostPlayed = records.maxByOrNull { it.plays }
+    val leastPlayed = records.minByOrNull { it.plays }
+    return listOfNotNull(mostPlayed, leastPlayed.takeIf { it?.record?.releaseId != mostPlayed?.record?.releaseId })
 }
 
 @Composable

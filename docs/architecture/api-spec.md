@@ -54,6 +54,7 @@ To decouple the application from Discogs, the backend uses **two identifiers**.
   "title": "...",
   "catalog_number": "...",
   "barcode": "...",
+  "format": "Vinyl, LP",
   "cover_image_url": "...",
   "sessions": []
 }
@@ -328,6 +329,7 @@ GET /api/v1/releases/search?artist=boards+of+canada&title=music&limit=10&offset=
       "year": 1998,
       "label": "Warp Records",
       "catalog_number": "WARPLP55",
+      "format": "Vinyl, LP",
       "thumbnail_url": "https://..."
     }
   ],
@@ -423,8 +425,8 @@ Used by the **Home screen** to show real listening data after sessions are logge
 
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
-| recent_limit | Maximum recent sessions to return. Must be 1-20. | 5 |
-| top_limit | Maximum top records to return. Must be 1-20. | 3 |
+| recent_limit | Maximum recent sessions to return. Must be 1-25. | 5 |
+| top_limit | Maximum top records to return. Must be 1-25. | 3 |
 
 ### Response
 
@@ -437,6 +439,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
       "date": "2026-05-10",
+      "played_at": "2026-05-10T23:30:00Z",
       "side": "A",
       "rating": 5,
       "mood": "Focused",
@@ -457,7 +460,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
 }
 ```
 
-The Android app formats `date` into display text such as `Today`, `1d`, `1w`, or `1m`.
+The Android app prefers `played_at` for device-timezone-aware labels such as `Today`, `1d`, `1w`, or `1m`. `date` remains as a calendar-date fallback.
 
 ---
 
@@ -521,6 +524,7 @@ Used for listening history.
     {
       "session_id": "abc123",
       "date": "2026-03-10",
+      "played_at": "2026-03-10T23:30:00Z",
       "side": "B",
       "rating": 4,
       "mood": "Calm",

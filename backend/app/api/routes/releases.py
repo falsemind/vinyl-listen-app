@@ -105,6 +105,7 @@ def _map_discogs_search_result(
         "label": _first_string(item.get("label")),
         "catalog_number": _first_string(item.get("catno")),
         "thumbnail_url": item.get("thumb") or item.get("cover_image"),
+        "format": _format_release_format(item.get("format")),
     }
 
 
@@ -122,6 +123,16 @@ def _first_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _format_release_format(value: Any) -> str | None:
+    if isinstance(value, list):
+        formats = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(formats) if formats else None
+    if value is None:
+        return None
+    formatted = str(value).strip()
+    return formatted or None
 
 
 def _coerce_int(value: Any) -> int | None:
@@ -218,6 +229,7 @@ def get_release_sessions(
             ReleaseSessionHistoryItem(
                 session_id=session.id,
                 date=session.played_at.date().isoformat() if session.played_at is not None else None,
+                played_at=session.played_at,
                 side=session.vinyl_side,
                 rating=session.rating,
                 mood=session.mood,

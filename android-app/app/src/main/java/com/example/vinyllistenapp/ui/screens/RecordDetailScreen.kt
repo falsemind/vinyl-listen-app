@@ -81,7 +81,7 @@ fun RecordDetailScreen(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = VinylSpacing.SpaceXl)
+                        .padding(horizontal = VinylSpacing.SpaceMd)
                         .padding(top = 48.dp, bottom = 40.dp),
                 text = "Record Details",
                 color = VinylColors.TextPrimary,
@@ -92,7 +92,7 @@ fun RecordDetailScreen(
                     Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = VinylSpacing.SpaceXl),
+                        .padding(horizontal = VinylSpacing.SpaceMd),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
             ) {
                 RecordDetailHeroCard(record = record)

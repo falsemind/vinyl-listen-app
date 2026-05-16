@@ -125,7 +125,7 @@ fun SessionLoggingScreen(
             Modifier
                 .fillMaxSize()
                 .background(VinylColors.AppBackground)
-                .padding(horizontal = VinylSpacing.SpaceXl),
+                .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         SessionLoggingHeader(onCancel = onCancel)
         Column(

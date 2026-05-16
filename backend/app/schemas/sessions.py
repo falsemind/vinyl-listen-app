@@ -45,6 +45,7 @@ class SessionResponse(BaseModel):
 class ReleaseSessionHistoryItem(BaseModel):
     session_id: str
     date: str | None
+    played_at: datetime | None = None
     side: str | None
     rating: int | None
     mood: str | None
@@ -61,6 +62,7 @@ class HomeRecentSessionItem(BaseModel):
     artist: str
     title: str
     date: str | None
+    played_at: datetime | None = None
     side: str | None
     rating: int | None
     mood: str | None

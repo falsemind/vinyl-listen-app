@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 class RelativeDateFormatterTest {
@@ -30,5 +31,12 @@ class RelativeDateFormatterTest {
     @Test
     fun unparseableDatesPassThrough() {
         assertEquals("Recent", relativeLastPlayedLabel("Recent", clock))
+    }
+
+    @Test
+    fun timestampUsesDeviceTimezoneDate() {
+        val losAngelesClock = Clock.fixed(Instant.parse("2026-05-11T07:30:00Z"), ZoneId.of("America/Los_Angeles"))
+
+        assertEquals("1d", relativeLastPlayedLabel("2026-05-11T06:30:00Z", losAngelesClock))
     }
 }

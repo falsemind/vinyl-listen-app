@@ -98,7 +98,7 @@ fun CaptureRecordScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = VinylSpacing.SpaceXl),
+                    .padding(horizontal = VinylSpacing.SpaceMd),
         ) {
             CaptureHeader(
                 onDismiss = onDismiss,

@@ -169,12 +169,12 @@ class SessionsService:
         recent_limit: int = 5,
         top_limit: int = 3,
     ) -> HomeSummary:
-        if recent_limit < 1 or recent_limit > 20:
+        if recent_limit < 1 or recent_limit > 25:
             logger.info("Rejecting home summary invalid_recent_limit=%s", recent_limit)
-            raise SessionValidationError("invalid_limit", "recent_limit must be between 1 and 20.")
-        if top_limit < 1 or top_limit > 20:
+            raise SessionValidationError("invalid_limit", "recent_limit must be between 1 and 25.")
+        if top_limit < 1 or top_limit > 25:
             logger.info("Rejecting home summary invalid_top_limit=%s", top_limit)
-            raise SessionValidationError("invalid_limit", "top_limit must be between 1 and 20.")
+            raise SessionValidationError("invalid_limit", "top_limit must be between 1 and 25.")
 
         now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

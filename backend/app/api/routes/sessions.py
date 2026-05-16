@@ -100,6 +100,7 @@ def get_home_summary(
                 artist=item.release.artist,
                 title=item.release.title,
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
+                played_at=item.session.played_at,
                 side=item.session.vinyl_side,
                 rating=item.session.rating,
                 mood=item.session.mood,

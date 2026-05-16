@@ -47,7 +47,7 @@ internal fun ScreenContent(
                 .background(VinylColors.AppBackground)
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = VinylSpacing.SpaceXl, vertical = VinylSpacing.Space2Xl),
+                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.Space2Xl),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
     ) {
         Text(

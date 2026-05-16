@@ -1,7 +1,10 @@
 package com.example.vinyllistenapp.ui.screens
 
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 
@@ -9,7 +12,7 @@ internal fun relativeLastPlayedLabel(
     dateText: String,
     clock: Clock = Clock.systemDefaultZone(),
 ): String {
-    val playedDate = parseLocalDate(dateText) ?: return dateText
+    val playedDate = parsePlayedDate(dateText, clock.zone) ?: return dateText
     val today = LocalDate.now(clock)
     val days = ChronoUnit.DAYS.between(playedDate, today).coerceAtLeast(0)
     return when {
@@ -19,6 +22,21 @@ internal fun relativeLastPlayedLabel(
         days < 365L -> "${days / 30L}m"
         else -> "${days / 365L}y"
     }
+}
+
+private fun parsePlayedDate(
+    value: String,
+    zone: ZoneId,
+): LocalDate? = parseInstantDate(value, zone) ?: parseLocalDate(value)
+
+private fun parseInstantDate(
+    value: String,
+    zone: ZoneId,
+): LocalDate? {
+    if (!value.contains("T")) return null
+    return runCatching { Instant.parse(value).atZone(zone).toLocalDate() }
+        .recoverCatching { OffsetDateTime.parse(value).atZoneSameInstant(zone).toLocalDate() }
+        .getOrNull()
 }
 
 private fun parseLocalDate(value: String): LocalDate? =

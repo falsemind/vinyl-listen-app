@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,6 +31,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -36,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.domain.ConfidenceLevel
 import com.example.vinyllistenapp.domain.confidenceLevel
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -359,6 +363,7 @@ private fun RoundedRatingStar(
 
 data class BottomNavItem(
     val label: String,
+    val icon: ImageVector,
     val selected: Boolean,
     val onClick: () -> Unit,
 )
@@ -385,31 +390,48 @@ fun BottomNavBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEach { item ->
-                BottomNavLabel(item)
+                BottomNavLabel(
+                    item = item,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun RowScope.BottomNavLabel(item: BottomNavItem) {
-    Text(
+private fun RowScope.BottomNavLabel(
+    item: BottomNavItem,
+    modifier: Modifier = Modifier,
+) {
+    val color = if (item.selected) VinylColors.AccentGreen else VinylColors.TextSecondary
+    Column(
         modifier =
-            Modifier
-                .weight(1f)
+            modifier
                 .clip(VinylShapes.Chip)
                 .semantics { selected = item.selected }
                 .clickable(
                     onClickLabel = "Open ${item.label}",
                     role = Role.Tab,
                     onClick = item.onClick,
-                ).padding(vertical = VinylSpacing.SpaceSm),
-        text = item.label,
-        color = if (item.selected) VinylColors.AccentGreen else VinylColors.TextSecondary,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Icon(
+            imageVector = item.icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text = item.label,
+            color = color,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 internal fun accessibleControlLabel(label: String): String =

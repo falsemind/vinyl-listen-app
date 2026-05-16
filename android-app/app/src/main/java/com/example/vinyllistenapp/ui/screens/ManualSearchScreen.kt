@@ -52,6 +52,7 @@ fun ManualSearchScreen(
     onSelectRecord: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val pageSize = 10
     val scope = rememberCoroutineScope()
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
@@ -61,7 +62,7 @@ fun ManualSearchScreen(
     var state by remember { mutableStateOf<ManualSearchUiState>(ManualSearchUiState.Idle) }
     var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }
 
-    fun runSearch() {
+    fun runSearch(loadMore: Boolean = false) {
         val artist = artistQuery.trim()
         val title = titleQuery.trim()
         val catalog = catalogQuery.trim()
@@ -75,7 +76,14 @@ fun ManualSearchScreen(
         }
 
         scope.launch {
-            state = ManualSearchUiState.Loading
+            val currentResults = (state as? ManualSearchUiState.Success)?.results.orEmpty()
+            val offset = if (loadMore) currentResults.size else 0
+            state =
+                if (loadMore && currentResults.isNotEmpty()) {
+                    ManualSearchUiState.Success(currentResults, hasMore = true, isLoadingMore = true)
+                } else {
+                    ManualSearchUiState.Loading
+                }
             val results =
                 runCatching {
                     apiClient.searchReleases(
@@ -84,12 +92,27 @@ fun ManualSearchScreen(
                         catalog = catalog,
                         barcode = barcode,
                         year = year,
+                        limit = pageSize,
+                        offset = offset,
                     )
                 }.getOrElse { error ->
+                    if (loadMore && currentResults.isNotEmpty()) {
+                        state = ManualSearchUiState.Success(currentResults, hasMore = true)
+                        return@launch
+                    }
                     state = ManualSearchUiState.Error(error.toUserMessage("Search failed. Retry in a moment."))
                     return@launch
                 }
-            state = if (results.isEmpty()) ManualSearchUiState.Empty else ManualSearchUiState.Success(results)
+            val combinedResults = if (loadMore) currentResults + results else results
+            state =
+                if (combinedResults.isEmpty()) {
+                    ManualSearchUiState.Empty
+                } else {
+                    ManualSearchUiState.Success(
+                        results = combinedResults,
+                        hasMore = results.size == pageSize,
+                    )
+                }
         }
     }
 
@@ -116,7 +139,7 @@ fun ManualSearchScreen(
             Modifier
                 .fillMaxSize()
                 .background(VinylColors.AppBackground)
-                .padding(horizontal = VinylSpacing.SpaceXl),
+                .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         ManualSearchHeader(onDismiss = onDismiss)
         Text(
@@ -192,11 +215,11 @@ fun ManualSearchScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
         ) {
             when (val currentState = state) {
-                ManualSearchUiState.Idle -> ManualSearchMessage("Search by artist, title, catalog number, barcode, or year.")
+                ManualSearchUiState.Idle -> Unit
                 ManualSearchUiState.Loading -> ManualSearchMessage("Searching Discogs...")
                 ManualSearchUiState.Empty -> ManualSearchMessage("No results found.")
                 is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message)
-                is ManualSearchUiState.Success ->
+                is ManualSearchUiState.Success -> {
                     currentState.results.forEach { result ->
                         val isImporting = selectingDiscogsReleaseId != null
                         ManualSearchResultRow(
@@ -206,6 +229,13 @@ fun ManualSearchScreen(
                             onClick = { selectResult(result) },
                         )
                     }
+                    if (currentState.hasMore) {
+                        ShowMoreButton(
+                            isLoading = currentState.isLoadingMore,
+                            onClick = { if (!currentState.isLoadingMore) runSearch(loadMore = true) },
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
         }
@@ -221,11 +251,37 @@ private sealed interface ManualSearchUiState {
 
     data class Success(
         val results: List<ReleaseSearchResult>,
+        val hasMore: Boolean,
+        val isLoadingMore: Boolean = false,
     ) : ManualSearchUiState
 
     data class Error(
         val message: String,
     ) : ManualSearchUiState
+}
+
+@Composable
+private fun ShowMoreButton(
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Chip)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Chip)
+                .clickable(
+                    enabled = !isLoading,
+                    onClickLabel = "Show more results",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceMd),
+        text = if (isLoading) "Loading..." else "Show more",
+        color = VinylColors.AccentGreen,
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.labelLarge,
+    )
 }
 
 @Composable
@@ -362,7 +418,7 @@ private fun ManualSearchResultRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = record.year?.toString() ?: "Unknown year",
+                        text = listOfNotNull(record.format, record.year?.toString()).joinToString(" - ").ifBlank { "Unknown format" },
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
