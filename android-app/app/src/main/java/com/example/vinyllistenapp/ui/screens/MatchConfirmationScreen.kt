@@ -87,7 +87,7 @@ fun MatchConfirmationScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = VinylSpacing.SpaceXl),
+                    .padding(horizontal = VinylSpacing.SpaceMd),
         ) {
             MatchConfirmationHeader(onDismiss = onDismiss)
             Text(

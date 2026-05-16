@@ -52,6 +52,7 @@ private fun AnalyticsScreenPreview() {
             onHome = {},
             onOpenRecord = {},
             onSettings = {},
+            onViewAllTopRecords = {},
         )
     }
 }

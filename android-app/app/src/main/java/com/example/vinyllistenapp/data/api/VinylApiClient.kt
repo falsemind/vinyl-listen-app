@@ -119,6 +119,7 @@ class VinylApiClient(
                     label = item.optNullableString("label"),
                     catalogNumber = item.optNullableString("catalog_number"),
                     thumbnailUrl = item.optNullableString("thumbnail_url"),
+                    format = item.optNullableString("format"),
                 )
             }
         }
@@ -137,7 +138,7 @@ class VinylApiClient(
                     releaseId = releaseId,
                     artist = "",
                     title = "",
-                    playedAt = item.optNullableString("date") ?: "Unknown date",
+                    playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
                     mood = item.optNullableString("mood") ?: "Unspecified",
                     rating = item.optNullableInt("rating") ?: 0,
                     side = item.optNullableString("side"),
@@ -146,9 +147,12 @@ class VinylApiClient(
             }
         }
 
-    suspend fun getHomeSummary(): HomeSummary =
+    suspend fun getHomeSummary(
+        recentLimit: Int = 5,
+        topLimit: Int = 3,
+    ): HomeSummary =
         apiCall {
-            val response = getJson("sessions/summary")
+            val response = getJson("sessions/summary?recent_limit=$recentLimit&top_limit=$topLimit")
             HomeSummary(
                 recentSessions =
                     response.optJSONArray("recent_sessions").orEmpty().mapObjects { item ->
@@ -156,7 +160,7 @@ class VinylApiClient(
                             releaseId = item.getString("release_id"),
                             artist = item.optString("artist", "Unknown artist"),
                             title = item.optString("title", "Unknown title"),
-                            playedAt = item.optNullableString("date") ?: "Unknown date",
+                            playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
                             mood = item.optNullableString("mood") ?: "Unspecified",
                             rating = item.optNullableInt("rating") ?: 0,
                             side = item.optNullableString("side"),

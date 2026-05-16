@@ -21,8 +21,10 @@ import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
 import com.example.vinyllistenapp.ui.screens.PlaceholderScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
+import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
 import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
+import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 
 @Composable
 fun VinylNavHost(
@@ -44,6 +46,14 @@ fun VinylNavHost(
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
                 onOpenSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+                onViewAllSessions = { navController.navigate(VinylRoutes.RECENT_SESSIONS) },
+            )
+        }
+        composable(VinylRoutes.RECENT_SESSIONS) {
+            RecentSessionsScreen(
+                apiClient = apiClient,
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
         composable(VinylRoutes.CAPTURE_RECORD) {
@@ -140,6 +150,14 @@ fun VinylNavHost(
                 },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+                onViewAllTopRecords = { navController.navigate(VinylRoutes.TOP_RECORDS) },
+            )
+        }
+        composable(VinylRoutes.TOP_RECORDS) {
+            TopRecordsScreen(
+                apiClient = apiClient,
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
         composable(VinylRoutes.SETTINGS) {

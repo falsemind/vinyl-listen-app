@@ -32,6 +32,7 @@ data class ReleaseSearchResult(
     val label: String?,
     val catalogNumber: String?,
     val thumbnailUrl: String?,
+    val format: String?,
 )
 
 data class ListeningSession(
