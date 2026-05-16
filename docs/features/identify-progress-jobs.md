@@ -57,7 +57,7 @@ Important fields:
 
 Image bytes are not stored in the table. They are held only long enough for the background task to process the upload.
 
-Before creating a new job, the backend expires active rows whose status has not advanced within `identify_stale_active_job_timeout_seconds`. This keeps stale rows left by crashed processing from blocking a client's active-job limit forever.
+Before creating a new job, the backend expires active rows whose status has not advanced within `identify_stale_active_job_timeout_seconds`. It also expires active rows older than the current `IdentifyJobService` instance startup. This covers backend restarts where the database still has an active job row, but the new process no longer has the in-memory background worker ticket for that job. These stale rows are marked `expired` with `identify_job_stale` so one interrupted upload does not block a client's active-job limit until the full timeout passes.
 
 ## Error Handling
 
@@ -70,19 +70,19 @@ Before creating a new job, the backend expires active rows whose status has not 
 | Candidate lookup or Discogs | `search` | `discogs_unavailable`, `candidate_search_failed` |
 | Unknown failure | `unknown` | `identify_failed` |
 
-The Android client uses `failed_step` to mark the correct Processing screen section as failed: upload, text extraction, or candidate search.
+The Android client can use `failed_step` for diagnostics or future step-level UI. The current Processing screen shows the terminal backend message under the spinner and exposes Retry and Manual Search actions.
 
 ## Android Polling Behavior
 
 `VinylApiClient.identifyImage` starts a job, polls job status, and returns candidates once the job is completed.
 
-The Processing screen groups backend statuses into three visible phases:
+The Processing screen maps backend statuses into one concise status line under the spinner:
 
-- Image upload: `queued`, `upload_received`
-- Text extraction: `preprocessing_image`, `extracting_text`, `parsing_identifiers`
-- Candidate search: `searching_local`, `searching_discogs`, `ranking_candidates`
+- `queued`, `upload_received`: upload or server receipt.
+- `preprocessing_image`, `extracting_text`, `parsing_identifiers`: image preparation and text extraction.
+- `searching_local`, `searching_discogs`, `ranking_candidates`: candidate search and ranking.
 
-When the job fails, the client uses the persisted `message` and `failed_step` instead of guessing which backend phase failed.
+When the job fails, the client uses the persisted backend message. Offline/local API failures are collapsed to a generic identify-failure message, while backend capacity or validation responses keep their structured API messages.
 
 ## Compatibility
 

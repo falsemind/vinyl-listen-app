@@ -224,6 +224,8 @@ If the client already has too many active identify jobs, or local identify capac
 
 Clients should honor `Retry-After` before applying local exponential backoff.
 
+Before enforcing the active-job limit, the backend expires stale active job rows. Rows that predate the current backend service instance are treated as orphaned restart leftovers and do not keep blocking the same client.
+
 ## GET /identify/jobs/{job_id}
 
 Returns the current identify job status, terminal result, or terminal error.
