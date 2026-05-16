@@ -62,6 +62,7 @@ import kotlinx.coroutines.launch
 
 private const val CUSTOM_MOOD_MIN_LENGTH = 3
 private const val CUSTOM_MOOD_MAX_LENGTH = 20
+internal val BUILT_IN_SESSION_MOODS = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
 
 @Composable
 fun SessionLoggingScreen(
@@ -75,7 +76,7 @@ fun SessionLoggingScreen(
     var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: fallbackRecord
     val sideOptions = sessionSideOptions(record, usePrototypeFallback = releaseId == null || loadedRecord != null)
-    val moods = listOf("Energetic", "Calm", "Melancholic", "Nostalgic", "Focused", "Background")
+    val moods = BUILT_IN_SESSION_MOODS
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
     val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
@@ -109,7 +110,10 @@ fun SessionLoggingScreen(
     LaunchedEffect(Unit) {
         runCatching { apiClient.getCustomMoods() }
             .onSuccess { moodsFromApi ->
-                customMoods = moodsFromApi.filter(::isValidCustomMood).distinctBy { it.lowercase() }
+                customMoods =
+                    moodsFromApi
+                        .filter { isValidCustomMood(it) && !isBuiltInMood(it, moods) }
+                        .distinctBy { it.lowercase() }
                 customMoodError = null
             }.onFailure { error ->
                 customMoodError = error.toUserMessage("Custom moods could not be loaded.")
@@ -183,16 +187,24 @@ fun SessionLoggingScreen(
                 onMoodSelected = { selectedMood = it },
                 onSaveCustomMood = { mood ->
                     val normalizedMood = sanitizeCustomMood(mood).trim()
-                    scope.launch {
-                        runCatching { apiClient.createCustomMood(normalizedMood) }
-                            .onSuccess { savedMood ->
-                                val cleanedMood = sanitizeCustomMood(savedMood).trim()
-                                customMoods = saveCustomMood(customMoods, cleanedMood)
-                                selectedMood = cleanedMood
-                                customMoodError = null
-                            }.onFailure { error ->
-                                customMoodError = error.toUserMessage("Custom mood could not be saved.")
-                            }
+                    if (isBuiltInMood(normalizedMood, moods)) {
+                        customMoodError = "That mood already exists."
+                    } else {
+                        scope.launch {
+                            runCatching { apiClient.createCustomMood(normalizedMood) }
+                                .onSuccess { savedMood ->
+                                    val cleanedMood = sanitizeCustomMood(savedMood).trim()
+                                    if (isBuiltInMood(cleanedMood, moods)) {
+                                        customMoodError = "That mood already exists."
+                                    } else {
+                                        customMoods = saveCustomMood(customMoods, cleanedMood, moods)
+                                        selectedMood = cleanedMood
+                                        customMoodError = null
+                                    }
+                                }.onFailure { error ->
+                                    customMoodError = error.toUserMessage("Custom mood could not be saved.")
+                                }
+                        }
                     }
                 },
                 onDeleteCustomMood = { mood ->
@@ -458,9 +470,10 @@ internal fun displaySessionSide(side: String): String = side.takeIf { it.isNotBl
 private fun saveCustomMood(
     currentMoods: List<String>,
     mood: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
 ): List<String> {
     val normalizedMood = sanitizeCustomMood(mood).trim()
-    if (!isValidCustomMood(normalizedMood)) return currentMoods
+    if (!isValidCustomMood(normalizedMood) || isBuiltInMood(normalizedMood, builtInMoods)) return currentMoods
     val updated =
         (currentMoods.filterNot { it.equals(normalizedMood, ignoreCase = true) } + normalizedMood)
             .distinctBy { it.lowercase() }
@@ -478,6 +491,11 @@ private fun sanitizeCustomMood(value: String): String =
         .take(CUSTOM_MOOD_MAX_LENGTH)
 
 private fun isValidCustomMood(value: String): Boolean = value.trim().length in CUSTOM_MOOD_MIN_LENGTH..CUSTOM_MOOD_MAX_LENGTH
+
+internal fun isBuiltInMood(
+    value: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
+): Boolean = builtInMoods.any { it.equals(value.trim(), ignoreCase = true) }
 
 @Composable
 private fun SessionRatingPicker(
@@ -509,7 +527,7 @@ private fun SessionMoodGrid(
     var popupWidth by remember { mutableStateOf(Dp.Unspecified) }
     val density = LocalDensity.current
     val sanitizedInput = sanitizeCustomMood(inputValue)
-    val canSave = isValidCustomMood(sanitizedInput)
+    val canSave = isValidCustomMood(sanitizedInput) && !isBuiltInMood(sanitizedInput, moods)
 
     Box(
         modifier =

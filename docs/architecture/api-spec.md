@@ -468,6 +468,7 @@ Validation rules:
 ```
 name must be 3-20 characters
 name may contain only letters, numbers, and spaces
+name must not match a built-in mood
 ```
 
 ## DELETE /sessions/moods/{mood_name}

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 CUSTOM_MOOD_MIN_LENGTH = 3
 CUSTOM_MOOD_MAX_LENGTH = 20
+BUILT_IN_SESSION_MOODS = frozenset({"energetic", "calm", "melancholic", "nostalgic", "focused", "background"})
 
 
 class SessionsServiceError(Exception):
@@ -312,6 +313,8 @@ class SessionsService:
             )
         if any(not (character.isalnum() or character.isspace()) for character in normalized):
             raise SessionValidationError("invalid_mood", "Mood name must use only letters, numbers, and spaces.")
+        if normalized.lower() in BUILT_IN_SESSION_MOODS:
+            raise SessionValidationError("invalid_mood", "Mood name already exists as a built-in mood.")
         return normalized
 
     def _extract_release_sides(self, raw_discogs_json: dict[str, Any] | None) -> set[str]:

@@ -276,7 +276,7 @@ def test_custom_moods_are_persisted_and_listed(
     assert [mood.name for mood in service.list_custom_moods(db=object())] == ["Late Night"]
 
 
-@pytest.mark.parametrize("name", ["Lo", "This Mood Name Is Too Long", "Dreamy!"])
+@pytest.mark.parametrize("name", ["Lo", "This Mood Name Is Too Long", "Dreamy!", "calm"])
 def test_create_custom_mood_rejects_invalid_names(name: str, build_sessions_service) -> None:
     service = build_sessions_service()
 
