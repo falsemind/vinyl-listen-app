@@ -26,9 +26,13 @@ import java.net.URL
 import java.time.Instant
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 class VinylApiClient(
     private val baseUrl: String = BuildConfig.VINYL_API_BASE_URL,
+    private val retryPolicy: ApiRetryPolicy = ApiRetryPolicy(),
+    private val retryJitterMillis: () -> Long = { Random.nextLong(0, retryPolicy.jitterMaxMillis + 1) },
+    private val retryDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
     suspend fun identifyImage(
         context: Context,
@@ -273,11 +277,12 @@ class VinylApiClient(
             }
         }
 
-    private fun getJson(path: String): JSONObject {
-        val connection = openConnection(path)
-        connection.requestMethod = "GET"
-        return readJsonResponse(connection)
-    }
+    private suspend fun getJson(path: String): JSONObject =
+        withRetry(ApiHttpMethod.Get) {
+            val connection = openConnection(path)
+            connection.requestMethod = "GET"
+            readJsonResponse(connection)
+        }
 
     private fun postImageMultipart(
         context: Context,
@@ -330,6 +335,7 @@ class VinylApiClient(
 
     private fun readJsonResponse(connection: HttpURLConnection): JSONObject {
         val status = connection.responseCode
+        val retryAfterMillis = parseRetryAfterMillis(connection.getHeaderField("Retry-After"))
         val body =
             if (status in 200..299) {
                 connection.inputStream.bufferedReader().use { it.readText() }
@@ -349,16 +355,38 @@ class VinylApiClient(
                     ?: body.takeIf { it.isNotBlank() }
             val kind = status.toApiErrorKind()
             throw ApiException(
-                message = apiErrorMessage(status, code, rawMessage),
+                message = apiErrorMessage(status, code, rawMessage, retryAfterMillis),
                 kind = kind,
+                statusCode = status,
+                retryAfterMillis = retryAfterMillis,
             )
         }
         return JSONObject(body.ifBlank { "{}" })
+    }
+
+    private suspend fun <T> withRetry(
+        method: ApiHttpMethod,
+        block: () -> T,
+    ): T {
+        var attempt = 1
+        while (true) {
+            try {
+                return block()
+            } catch (error: ApiException) {
+                if (!retryPolicy.shouldRetry(method, attempt, statusCode = error.statusCode)) throw error
+                retryDelay(retryPolicy.delayMillis(attempt, error.retryAfterMillis, retryJitterMillis()))
+            } catch (error: IOException) {
+                if (!retryPolicy.shouldRetry(method, attempt, isNetworkFailure = true)) throw error
+                retryDelay(retryPolicy.delayMillis(attempt, retryAfterMillis = null, retryJitterMillis()))
+            }
+            attempt += 1
+        }
     }
 }
 
 enum class ApiErrorKind {
     Offline,
+    RateLimited,
     Validation,
     NotFound,
     Server,
@@ -369,6 +397,8 @@ class ApiException(
     message: String,
     val kind: ApiErrorKind = ApiErrorKind.Unknown,
     val failedStep: String? = null,
+    val statusCode: Int? = null,
+    val retryAfterMillis: Long? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
@@ -500,6 +530,7 @@ private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(nam
 
 private fun Int.toApiErrorKind(): ApiErrorKind =
     when (this) {
+        429 -> ApiErrorKind.RateLimited
         404 -> ApiErrorKind.NotFound
         422 -> ApiErrorKind.Validation
         in 500..599 -> ApiErrorKind.Server
@@ -512,6 +543,7 @@ private fun apiErrorMessage(
     rawMessage: String?,
 ): String =
     when {
+        code == "identify_capacity_exceeded" || status == 429 -> rateLimitMessage(retryAfterMillis = null)
         code == "invalid_side" -> "That side is not available for this release."
         code == "invalid_rating" -> "Rating must be between 1 and 5."
         code == "invalid_played_at" -> "Session time was invalid. Try saving again."
@@ -521,6 +553,23 @@ private fun apiErrorMessage(
         !rawMessage.isNullOrBlank() -> rawMessage
         else -> "Request failed. Retry in a moment."
     }
+
+private fun apiErrorMessage(
+    status: Int,
+    code: String?,
+    rawMessage: String?,
+    retryAfterMillis: Long?,
+): String =
+    when {
+        code == "identify_capacity_exceeded" || status == 429 -> rateLimitMessage(retryAfterMillis)
+        else -> apiErrorMessage(status, code, rawMessage)
+    }
+
+internal fun rateLimitMessage(retryAfterMillis: Long?): String {
+    val seconds = retryAfterMillis?.takeIf { it > 0 }?.let { (it + 999) / 1_000 }
+    return seconds?.let { "Backend is busy. Retry in $it seconds." }
+        ?: "Backend is busy. Retry in a moment."
+}
 
 private fun JSONObject.optConfidence(): Int {
     val rawConfidence = optDouble("confidence", 0.0)
