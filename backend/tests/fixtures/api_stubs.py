@@ -191,6 +191,7 @@ class StubDiscogsSearchService:
                     "year": 1998,
                     "label": ["Warp Records"],
                     "catno": "WARPLP55",
+                    "format": ["Vinyl", "LP"],
                     "thumb": "https://img.discogs.com/thumb.jpg",
                 }
             ]

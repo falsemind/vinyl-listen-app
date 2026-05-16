@@ -39,6 +39,7 @@ def test_search_releases_endpoint_returns_discogs_results(
                 "label": "Warp Records",
                 "catalog_number": "WARPLP55",
                 "thumbnail_url": "https://img.discogs.com/thumb.jpg",
+                "format": "Vinyl, LP",
             }
         ],
         "limit": 10,
