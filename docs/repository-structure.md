@@ -42,14 +42,17 @@ docs/
 │   ├── identify-progress-jobs.md
 │   └── identification-pipeline.md
 ├── implementation-plans/
+│   ├── android-app-implementation-plan.md
+│   ├── android-client-rate-limit-backoff-plan.md
+│   ├── backend-mvp-stabilization-plan.md
+│   ├── backend-rate-limiting-and-throttling-plan.md
 │   ├── discogs-integration-plan.md
 │   ├── identify-progress-status-plan.md
 │   ├── image-identify-ocr-backend-upgrade-plan.md
 │   ├── image-identify-pipeline-plan.md
 │   ├── listening-session-api-plan.md
 │   ├── manual-search-implementation-plan.md
-│   ├── release-import-metadata-api-plan.md
-│   └── backend-rate-limiting-and-throttling-plan.md
+│   └── release-import-metadata-api-plan.md
 ├── product/
 │   ├── app-design-system.md
 │   ├── app-screens-mockups/
@@ -160,6 +163,7 @@ All routes are nested under `/api/v1`.
 | `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService` with per-client admission control. |
 | `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
+| `GET /releases/search` | `api/routes/releases.py` | Manual Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
@@ -306,6 +310,7 @@ android-app/
 │       │   │   ├── data/
 │       │   │   │   ├── MockVinylData.kt
 │       │   │   │   └── api/
+│       │   │   │       ├── ApiRetryPolicy.kt
 │       │   │   │       └── VinylApiClient.kt
 │       │   │   ├── domain/
 │       │   │   │   └── RecordModels.kt
@@ -314,6 +319,8 @@ android-app/
 │       │   │   │   └── VinylRoutes.kt
 │       │   │   └── ui/
 │       │   │       ├── components/
+│       │   │       │   ├── PrototypeComponents.kt
+│       │   │       │   └── VinylComponents.kt
 │       │   │       ├── screens/
 │       │   │       │   ├── AnalyticsScreen.kt
 │       │   │       │   ├── CaptureRecordScreen.kt
@@ -326,13 +333,32 @@ android-app/
 │       │   │       │   ├── RecordDisplayFormatters.kt
 │       │   │       │   ├── RelativeDateFormatter.kt
 │       │   │       │   ├── ScreenPreviews.kt
-│       │   │       │   └── SessionLoggingScreen.kt
+│       │   │       │   ├── SessionLoggingScreen.kt
+│       │   │       │   └── ViewAllScreens.kt
 │       │   │       └── theme/
+│       │   │           ├── Theme.kt
+│       │   │           ├── Type.kt
+│       │   │           ├── VinylColors.kt
+│       │   │           └── VinylTokens.kt
 │       │   └── res/
+│       │       ├── drawable/
+│       │       ├── mipmap-*/
+│       │       ├── values/
 │       │       └── xml/
 │       │           └── file_paths.xml
 │       ├── test/
+│       │   └── java/com/example/vinyllistenapp/
+│       │       ├── ExampleUnitTest.kt
+│       │       ├── data/api/
+│       │       │   └── ApiRetryPolicyTest.kt
+│       │       └── ui/screens/
+│       │           ├── AnalyticsMonthsTest.kt
+│       │           ├── RelativeDateFormatterTest.kt
+│       │           └── SessionSideOptionsTest.kt
 │       └── androidTest/
+│           └── java/com/example/vinyllistenapp/
+│               ├── ExampleInstrumentedTest.kt
+│               └── VinylNavigationSmokeTest.kt
 └── gradle/
     ├── libs.versions.toml
     └── wrapper/
@@ -345,11 +371,11 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify jobs, release import/detail/history, session create, Home summary, and analytics calls. |
-| `domain/` | UI-facing domain models for records, sessions, candidates, Home summaries, and analytics dashboard data. |
-| `navigation/` | Compose navigation host and route helpers. |
+| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
+| `domain/` | UI-facing domain models for records, release side options, sessions, candidates, Home summaries, and analytics dashboard data. |
+| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
-| `ui/screens/` | Home, analytics, capture, processing, match confirmation, manual search, session logging, record detail, placeholders, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
@@ -357,9 +383,12 @@ android-app/
 - Camera capture uses `androidx.core.content.FileProvider` with `res/xml/file_paths.xml` for temporary image URIs.
 - The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
+- The Recent Sessions and Top Records expanded screens live in `ViewAllScreens.kt`; they show up to 25 sessions or records.
+- Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
 - The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, and maps backend statuses into upload, extraction, and candidate-search phases.
-- `RelativeDateFormatter.kt` formats backend date strings for compact UI labels such as `Today`, `1d`, `1w`, and `1m`.
-- Local Android unit tests live under `android-app/app/src/test/`; current formatter coverage is in `ui/screens/RelativeDateFormatterTest.kt`.
+- Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
+- `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.
+- Local Android unit tests live under `android-app/app/src/test/`; focused coverage includes retry policy, analytics month padding, relative date labels, and side-option selection.
 - Android navigation smoke coverage lives under `android-app/app/src/androidTest/`.
 
 ## Source Of Truth

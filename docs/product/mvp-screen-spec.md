@@ -42,9 +42,21 @@ Button:
 Log Listening Session
 ```
 
+### Bottom Navigation
+
+Primary tabs:
+
+```
+Home
+Stats
+Settings
+```
+
+Each item uses an icon above the label.
+
 ### Recent Sessions
 
-List showing last 3–5 listening sessions.
+List showing up to 3 listening sessions.
 
 Each item shows:
 
@@ -56,6 +68,8 @@ Rating
 Timestamp
 ```
 
+`View All` opens the Recent Sessions screen with up to 25 sessions.
+
 ### Stats Snapshot
 
 Small overview metrics:
@@ -63,6 +77,13 @@ Small overview metrics:
 ```
 Total sessions
 Records played this month
+```
+
+### Top Records
+
+Compact highlight list:
+
+```
 Most played record
 Least played record
 ```
@@ -73,6 +94,9 @@ Least played record
 Tap Log Listening Session → Capture Record Screen
 Tap Session → Record Detail Screen
 Tap Record → Record Detail Screen
+Tap Recent Sessions View All → Recent Sessions Screen
+Tap Stats tab → Analytics Screen
+Tap Settings tab → Settings Screen
 ```
 
 ---
@@ -138,6 +162,14 @@ Example messages:
 Uploading image
 Extracting text
 Searching candidates
+```
+
+Status rows are lightweight text rows with a status marker:
+
+```
+Grey circle → pending
+Green checkmark → complete
+Orange ! → issue
 ```
 
 Statuses are backed by the server identify job flow. The client starts `POST /api/v1/identify/jobs` and polls `GET /api/v1/identify/jobs/{job_id}` until the backend returns a terminal state.
@@ -237,10 +269,13 @@ Each result shows:
 ```
 Artist
 Title
+Format
 Year
 Label
 Thumbnail
 ```
+
+The first page shows up to 10 results. If more results are likely available, a `Show more` action loads the next page.
 
 ## Actions
 
@@ -275,15 +310,13 @@ Thumbnail
 Dropdown or selector:
 
 ```
-A
-B
-C
-D
-E
-F
+Disc 1 - Side A
+Disc 1 - Side B
+Disc 2 - Side A
+Disc 2 - Side B
 ```
 
-Values based on release data.
+Values are based on release data. Multi-disc releases can repeat the same side names, so the selector stores a unique option value and displays a user-facing label.
 
 ### Rating
 
@@ -406,19 +439,19 @@ Add Session → Session Logging Screen
 
 Provide visual insights into listening habits.
 
-Charts use Compose-compatible chart components.
-
-Backend analytics is implemented before the Android screen. Android can use a mockup screen until the chart UI is built.
+Charts use Compose-compatible components backed by the analytics API. The Android screen keeps local prototype data as a fallback when the backend is unavailable.
 
 ## Charts
 
 ### Plays Over Time
 
-Line chart showing:
+Bar chart showing:
 
 ```
 Sessions per month
 ```
+
+The screen shows a rolling 12-month series, including empty months. The latest 6 months are visible by default, and the previous 6 months are reachable by horizontal scrolling.
 
 Backend source:
 
@@ -428,11 +461,13 @@ GET /analytics/plays/monthly
 
 ### Top Records
 
-Bar chart:
+List:
 
 ```
 Most played records
 ```
+
+The Analytics screen shows up to 5 records inline. `View All` opens the Top Records screen with up to 25 records.
 
 Backend source:
 
@@ -447,6 +482,8 @@ Histogram or bar chart:
 ```
 Rating frequency
 ```
+
+Rating counts remain visible against the orange bar. Counts use orange when the bar does not cover the digits and dark text only when the orange bar is wide enough behind the count.
 
 Backend source:
 
@@ -472,7 +509,72 @@ GET /analytics/mood-distribution
 
 ```
 Tap record in chart → Record Detail Screen
+Tap Top Records View All → Top Records Screen
 ```
+
+---
+
+# Screen 9 — Recent Sessions
+
+## Purpose
+
+Show the expanded recent listening history from Home.
+
+## Content
+
+List up to 25 recent sessions.
+
+Each item shows:
+
+```
+Title
+Artist
+Relative timestamp
+```
+
+## Actions
+
+```
+Tap Session → Record Detail Screen
+Back → Home
+```
+
+---
+
+# Screen 10 — Top Records
+
+## Purpose
+
+Show the expanded top records list from Analytics.
+
+## Content
+
+List up to 25 top records.
+
+Each item shows:
+
+```
+Title
+Artist
+Play count
+```
+
+## Actions
+
+```
+Tap Record → Record Detail Screen
+Back → Analytics
+```
+
+---
+
+# Screen 11 — Settings
+
+## Purpose
+
+Show app information and leave room for future configuration.
+
+Current MVP content is lightweight and informational.
 
 ---
 
@@ -500,6 +602,9 @@ Alternative paths:
 Capture Record → Manual Search → Session Logging
 Record Detail → Add Session
 Home → Session → Record Detail
+Home → Recent Sessions → Record Detail
+Home → Analytics → Top Records → Record Detail
+Home → Settings
 ```
 
 ---

@@ -20,6 +20,10 @@ Primary navigation structure:
 
 ```
 Home
+ ├── RecentSessions
+ │      └── RecordDetail
+ │             └── SessionLogging
+ │
  ├── CaptureRecord
  │     └── Processing
  │           ├── MatchConfirmation
@@ -33,9 +37,16 @@ Home
  │
  ├── RecordDetail
  │      └── SessionLogging
+ │
+ ├── Analytics
+ │      ├── TopRecords
+ │      │      └── RecordDetail
+ │      └── RecordDetail
+ │
+ └── Settings
 ```
 
-Analytics and Settings are not active MVP routes in the current Android prototype scope. Bottom navigation may show placeholder tabs for future work, but those tabs should not imply implemented screens or backend support yet.
+Home, Analytics, and Settings are active bottom-navigation routes. Settings currently shows lightweight app information, while Analytics loads the implemented dashboard endpoints.
 
 ---
 
@@ -44,12 +55,16 @@ Analytics and Settings are not active MVP routes in the current Android prototyp
 |Screen|Route|
 |---|---|
 |Home|`home`|
+|Recent Sessions|`recent_sessions`|
 |Capture Record|`capture_record`|
-|Processing|`processing`|
+|Processing|`processing?imageUri={imageUri}`|
 |Match Confirmation|`match_confirmation`|
 |Manual Search|`manual_search`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
+|Analytics|`analytics`|
+|Top Records|`top_records`|
+|Settings|`settings`|
 ---
 
 ## Backend API Alignment
@@ -63,6 +78,7 @@ Current backend endpoints used by these routes:
 |Client flow|Backend API|
 |---|---|
 |Load Home dashboard data|`GET /api/v1/sessions/summary`|
+|Load Recent Sessions expanded list|`GET /api/v1/sessions/summary?recent_limit=25`|
 |Identify uploaded/captured image with progress|`POST /api/v1/identify/jobs`, then `GET /api/v1/identify/jobs/{job_id}`|
 |Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
 |Manual Discogs search|`GET /api/v1/releases/search`|
@@ -71,6 +87,7 @@ Current backend endpoints used by these routes:
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
 |Create listening session|`POST /api/v1/sessions`|
 |Load one session by id|`GET /api/v1/sessions/{session_id}`|
+|Load Analytics dashboard|`GET /api/v1/analytics/plays/monthly`, `GET /api/v1/analytics/top-records`, `GET /api/v1/analytics/rating-distribution`, `GET /api/v1/analytics/mood-distribution`|
 
 The identify job flow returns candidates inside `result` when the job reaches `completed`. The synchronous `POST /api/v1/identify` flow returns the same candidate shape directly.
 
@@ -118,9 +135,10 @@ home
 |---|---|
 |Log Listening Session|`capture_record`|
 |Tap recent session|`record_detail/{releaseId}`|
+|Tap Recent Sessions View All|`recent_sessions`|
 |Tap record|`record_detail/{releaseId}`|
-|Tap future Analytics/Stats tab|placeholder / no-op|
-|Tap future Settings tab|placeholder / no-op|
+|Tap Analytics/Stats tab|`analytics`|
+|Tap Settings tab|`settings`|
 
 ### Backend Data
 
@@ -134,7 +152,34 @@ The response provides recent sessions, total session count, records played this 
 
 ---
 
-# 2. Capture Record Screen
+# 2. Recent Sessions Screen
+
+### Route
+
+```
+recent_sessions
+```
+
+### Purpose
+
+Expanded recent-listening screen opened from Home.
+
+### Backend Data
+
+```
+GET /api/v1/sessions/summary?recent_limit=25
+```
+
+### Actions
+
+|Action|Destination|
+|---|---|
+|Tap session|`record_detail/{releaseId}`|
+|Back|previous screen|
+
+---
+
+# 3. Capture Record Screen
 
 ### Route
 
@@ -158,12 +203,12 @@ image_uri
 
 ---
 
-# 3. Processing Screen
+# 4. Processing Screen
 
 ### Route
 
 ```
-processing
+processing?imageUri={imageUri}
 ```
 
 ### Purpose
@@ -181,7 +226,7 @@ The screen starts an identify job, polls the job endpoint, and maps backend stat
 
 ---
 
-# 4. Match Confirmation Screen
+# 5. Match Confirmation Screen
 
 ### Route
 
@@ -209,7 +254,7 @@ releaseId
 
 ---
 
-# 5. Manual Search Screen
+# 6. Manual Search Screen
 
 ### Route
 
@@ -228,6 +273,7 @@ artist
 title
 catalog_number
 barcode
+year
 ```
 
 ### Actions
@@ -235,10 +281,11 @@ barcode
 |Action|Destination|
 |---|---|
 |Select release|`session_logging/{releaseId}`|
+|Show more|same screen with next search page|
 
 ---
 
-# 6. Session Logging Screen
+# 7. Session Logging Screen
 
 ### Route
 
@@ -265,7 +312,7 @@ Log listening session for selected record.
 
 ---
 
-# 7. Record Detail Screen
+# 8. Record Detail Screen
 
 ### Route
 
@@ -294,9 +341,7 @@ session history
 |Add session|`session_logging/{releaseId}`|
 |Back|`home`|
 
----
-
-# Future Placeholder: Analytics Screen
+# 9. Analytics Screen
 
 ### Route
 
@@ -306,20 +351,48 @@ analytics
 
 ### Purpose
 
-Future screen for listening statistics and charts.
-
-Analytics is not part of the current Android prototype scope. Add this route after the backend analytics work is ready.
+Listening statistics and charts. The screen loads monthly plays, top records, rating distribution, and mood distribution from backend analytics endpoints.
 
 ### Navigation
 
 |Action|Destination|
 |---|---|
 |Tap record in chart|`record_detail/{releaseId}`|
+|Tap Top Records View All|`top_records`|
 |Back|`home`|
 
 ---
 
-# Future Placeholder: Settings Screen
+# 10. Top Records Screen
+
+### Route
+
+```
+top_records
+```
+
+### Purpose
+
+Expanded top-records screen opened from Analytics.
+
+### Backend Data
+
+```
+GET /api/v1/analytics/top-records
+```
+
+The screen displays up to 25 records.
+
+### Navigation
+
+|Action|Destination|
+|---|---|
+|Tap record|`record_detail/{releaseId}`|
+|Back|previous screen|
+
+---
+
+# 11. Settings Screen
 
 ### Route
 
@@ -329,9 +402,7 @@ settings
 
 ### Purpose
 
-Future screen for app configuration and basic application information.
-
-Settings is not part of the current Android prototype scope.
+Screen for app configuration and basic application information.
 
 ### Displays
 
@@ -341,7 +412,7 @@ Settings is not part of the current Android prototype scope.
 
 ### Notes
 
-No functional settings are included in the MVP.
+No functional settings are included in the MVP yet.
 
 This screen exists to support future configuration features such as:
 
@@ -352,9 +423,9 @@ This screen exists to support future configuration features such as:
 
 ### Navigation
 
-Action | Destination
------- | ------
-Back | home
+|Action|Destination|
+|---|---|
+|Back|`home`|
 
 # Navigation Argument Definitions
 
@@ -379,11 +450,15 @@ NavHost(
         HomeScreen()
     }
 
+    composable("recent_sessions") {
+        RecentSessionsScreen()
+    }
+
     composable("capture_record") {
         CaptureRecordScreen()
     }
 
-    composable("processing") {
+    composable("processing?imageUri={imageUri}") {
         ProcessingScreen()
     }
 
@@ -417,6 +492,10 @@ NavHost(
 
     composable("analytics") {
         AnalyticsScreen()
+    }
+
+    composable("top_records") {
+        TopRecordsScreen()
     }
 
     composable("settings") {
