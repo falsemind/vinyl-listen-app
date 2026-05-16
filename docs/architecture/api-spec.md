@@ -479,7 +479,8 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
   "title": "...",
   "catalog_number": "...",
   "barcode": "...",
-  "cover_image_url": "..."
+  "cover_image_url": "...",
+  "available_sides": ["A", "AA"]
 }
 ```
 
