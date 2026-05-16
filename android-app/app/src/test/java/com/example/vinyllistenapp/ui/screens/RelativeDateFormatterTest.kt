@@ -39,4 +39,11 @@ class RelativeDateFormatterTest {
 
         assertEquals("1d", relativeLastPlayedLabel("2026-05-11T06:30:00Z", losAngelesClock))
     }
+
+    @Test
+    fun absoluteDateUsesDeviceTimezoneDate() {
+        val losAngelesClock = Clock.fixed(Instant.parse("2026-05-11T07:30:00Z"), ZoneId.of("America/Los_Angeles"))
+
+        assertEquals("2026-05-10", absolutePlayedDateLabel("2026-05-11T06:30:00Z", losAngelesClock))
+    }
 }

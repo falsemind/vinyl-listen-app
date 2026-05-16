@@ -24,6 +24,11 @@ internal fun relativeLastPlayedLabel(
     }
 }
 
+internal fun absolutePlayedDateLabel(
+    dateText: String,
+    clock: Clock = Clock.systemDefaultZone(),
+): String = parsePlayedDate(dateText, clock.zone)?.toString() ?: dateText
+
 private fun parsePlayedDate(
     value: String,
     zone: ZoneId,
