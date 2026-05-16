@@ -133,12 +133,33 @@ Create a root `.env` file or export these variables in your shell:
 ```env
 DISCOGS_TOKEN=your_discogs_token
 DISCOGS_BASE_URL=https://api.discogs.com
+IDENTIFY_OCR_BACKEND=auto
+IDENTIFY_MLX_VLM_SERVICE_URL=http://host.docker.internal:8111
+IDENTIFY_MLX_VLM_ENDPOINT_PATH=/v1/chat/completions
+IDENTIFY_MLX_VLM_MODEL_NAME=PaddlePaddle/PaddleOCR-VL-1.5
 LOG_LEVEL=DEBUG
 ```
 
 `DATABASE_URL` is provided automatically inside Docker Compose and points the backend container at the bundled PostgreSQL service.
+`IDENTIFY_MLX_VLM_SERVICE_URL` points the backend container to a VLM server running on the host machine.
 
-### 2. Start the backend and database
+### 2. Start the local VLM OCR server
+
+The backend calls an external OpenAI-compatible vision model server for the `mlx_vlm` OCR path. Start it before testing image identification:
+
+```bash
+python3 -m venv .venv-mlx-vlm
+source .venv-mlx-vlm/bin/activate
+pip install mlx-vlm
+```
+
+```bash
+mlx_vlm.server --host 127.0.0.1 --port 8111 --model PaddlePaddle/PaddleOCR-VL-1.5 --trust-remote-code
+```
+
+Any compatible VLM server can be used if it exposes `/v1/chat/completions`. For example, a local `vllm serve ... --port 8111` process can be used with the same backend URL settings.
+
+### 3. Start the backend and database
 
 From the repository root:
 
@@ -152,8 +173,9 @@ This starts:
 * `backend` on `http://localhost:8000`
 
 The backend container installs both `tesseract-ocr` and `zbar`, so OCR and barcode detection work without any macOS-specific setup.
+The VLM model itself is not run inside the backend container; keep the local server running separately.
 
-### 3. Check runtime dependencies
+### 4. Check runtime dependencies
 
 You can verify runtime dependency availability with:
 
@@ -161,7 +183,7 @@ You can verify runtime dependency availability with:
 curl http://localhost:8000/api/v1/health/runtime
 ```
 
-You should also see startup log lines showing whether `tesseract` and `zbar` are available inside the container.
+You should also see startup log lines showing whether `tesseract`, `zbar`, and the configured `mlx_vlm_service` are available.
 For quieter logs later, set `LOG_LEVEL=INFO` in the root `.env`.
 
 ---
@@ -202,10 +224,24 @@ DATABASE_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl
 DISCOGS_TOKEN=your_discogs_token
 DISCOGS_BASE_URL=https://api.discogs.com
 API_RATE_LIMIT_PER_MINUTE=60
+IDENTIFY_OCR_BACKEND=auto
+IDENTIFY_MLX_VLM_SERVICE_URL=http://localhost:8111
+IDENTIFY_MLX_VLM_ENDPOINT_PATH=/v1/chat/completions
+IDENTIFY_MLX_VLM_MODEL_NAME=PaddlePaddle/PaddleOCR-VL-1.5
 LOG_LEVEL=INFO
 ```
 
-### 5. Run Backend Server
+### 5. Start the local VLM OCR server
+
+Use the same external server from the Docker setup. If it is not already running, start it in a separate terminal:
+
+```bash
+mlx_vlm.server --host 127.0.0.1 --port 8111 --model PaddlePaddle/PaddleOCR-VL-1.5 --trust-remote-code
+```
+
+The backend only needs an OpenAI-compatible `/v1/chat/completions` endpoint. If you use another server, keep `IDENTIFY_MLX_VLM_SERVICE_URL` pointed at its base URL.
+
+### 6. Run Backend Server
 
 ```bash
 cd backend
