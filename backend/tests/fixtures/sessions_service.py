@@ -42,6 +42,12 @@ class InMemorySessionsRepository:
         matching = [session for session in self.sessions if session.release_id == release_id]
         return matching[offset : offset + limit]
 
+    def get_mood_by_name(self, _db, name: str) -> str | None:
+        for session in sorted(self.sessions, key=lambda item: item.created_at):
+            if session.mood is not None and session.mood.lower() == name.lower():
+                return session.mood
+        return None
+
 
 class InMemoryReleasesRepository:
     def __init__(self, releases: list[Releases]) -> None:

@@ -5,6 +5,7 @@ import pytest
 from app.models.sessions import Sessions
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionValidationError,
 )
@@ -269,11 +270,51 @@ def test_custom_moods_are_persisted_and_listed(
     service = build_sessions_service(moods_repository=moods_repository)
 
     created = service.create_custom_mood(db=object(), name="  Late   Night  ")
-    duplicate = service.create_custom_mood(db=object(), name="late night")
 
     assert created.name == "Late Night"
-    assert duplicate.name == "Late Night"
     assert [mood.name for mood in service.list_custom_moods(db=object())] == ["Late Night"]
+
+
+def test_create_custom_mood_reuses_historical_session_casing(
+    sessions_repository_factory,
+    sessions_moods_repository_factory,
+    build_sessions_service,
+) -> None:
+    sessions_repository = sessions_repository_factory()
+    sessions_repository.sessions.append(
+        Sessions(
+            id="session-historical",
+            release_id="release-123",
+            rating=5,
+            mood="LateNight",
+            notes=None,
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=datetime(2026, 4, 18, tzinfo=UTC),
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=sessions_repository,
+        moods_repository=sessions_moods_repository_factory(),
+    )
+
+    created = service.create_custom_mood(db=object(), name="latenight")
+
+    assert created.name == "LateNight"
+
+
+def test_create_custom_mood_rejects_duplicate_names(
+    sessions_moods_repository_factory,
+    build_sessions_service,
+) -> None:
+    moods_repository = sessions_moods_repository_factory()
+    service = build_sessions_service(moods_repository=moods_repository)
+    service.create_custom_mood(db=object(), name="Late Night")
+
+    with pytest.raises(SessionMoodAlreadyExistsError) as exc_info:
+        service.create_custom_mood(db=object(), name="late night")
+
+    assert exc_info.value.code == "duplicate_mood"
 
 
 @pytest.mark.parametrize("name", ["Lo", "This Mood Name Is Too Long", "Dreamy!", "calm"])
@@ -284,6 +325,39 @@ def test_create_custom_mood_rejects_invalid_names(name: str, build_sessions_serv
         service.create_custom_mood(db=object(), name=name)
 
     assert exc_info.value.code == "invalid_mood"
+
+
+def test_create_session_canonicalizes_mood_casing_from_history(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    repository.sessions.append(
+        Sessions(
+            id="session-historical",
+            release_id="release-123",
+            rating=5,
+            mood="LateNight",
+            notes=None,
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=datetime(2026, 4, 18, tzinfo=UTC),
+        )
+    )
+    service = build_sessions_service(sessions_repository=repository)
+
+    service.create_session(
+        db=object(),
+        release_id="release-123",
+        rating=4,
+        mood="latenight",
+        notes=None,
+        played_at="2026-03-15T19:21:00Z",
+        side=None,
+    )
+
+    assert repository.created_payload is not None
+    assert repository.created_payload["mood"] == "LateNight"
 
 
 def test_delete_custom_mood_removes_saved_option(

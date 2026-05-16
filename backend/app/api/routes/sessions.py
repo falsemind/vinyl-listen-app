@@ -21,6 +21,7 @@ from app.schemas.sessions import (
 )
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionsService,
     SessionValidationError,
@@ -145,7 +146,7 @@ def list_custom_moods(
     "/moods",
     response_model=SessionMoodResponse,
     status_code=status.HTTP_201_CREATED,
-    responses={422: {"model": ErrorResponse}},
+    responses={409: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
 )
 def create_custom_mood(
     payload: CreateSessionMoodRequest,
@@ -157,6 +158,11 @@ def create_custom_mood(
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionMoodAlreadyExistsError as error:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
             content={"error": {"code": error.code, "message": error.message}},
         )
 

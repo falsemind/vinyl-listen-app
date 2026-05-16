@@ -438,7 +438,7 @@ Returns custom mood options.
 
 ## POST /sessions/moods
 
-Creates a custom mood option. The operation is idempotent by mood name.
+Creates a custom mood option. Names are compared case-insensitively.
 
 ### Request
 
@@ -469,7 +469,12 @@ Validation rules:
 name must be 3-20 characters
 name may contain only letters, numbers, and spaces
 name must not match a built-in mood
+name must not match an existing custom mood
 ```
+
+Duplicate names return `409 Conflict` with `duplicate_mood`.
+
+If a deleted custom mood still exists in historical session rows, the backend reuses the historical casing when the option is created again.
 
 ## DELETE /sessions/moods/{mood_name}
 
@@ -673,6 +678,8 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
 ---
 
 ## GET /analytics/mood-distribution
+
+Mood names are grouped case-insensitively so historical values such as `LateNight` and `latenight` count under one displayed mood.
 
 ### Response
 

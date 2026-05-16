@@ -353,11 +353,12 @@ Custom mood behavior:
 - Tap **+ Custom** to open a full-width input popup.
 - Input accepts only letters, numbers, and spaces.
 - Custom mood names must be 3-20 characters.
-- Custom mood names cannot duplicate predefined moods.
+- Custom mood names cannot duplicate predefined or saved custom moods.
 - Valid input changes dismiss **X** to a green save checkmark.
 - Saved custom moods are persisted through the backend and appear in future sessions.
 - Long-press a saved custom mood to confirm deletion from saved mood options.
 - Logged sessions keep their selected mood for analytics history even if the custom option is deleted later.
+- Re-created moods reuse historical casing, so analytics does not split the same mood by case.
 
 ### Notes
 

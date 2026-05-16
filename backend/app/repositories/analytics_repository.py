@@ -38,15 +38,16 @@ class AnalyticsRepository:
 
     @staticmethod
     def get_mood_distribution(db: Session):
-        plays = func.count(Sessions.id).label("plays")
-        return (
-            db.query(Sessions.mood, plays)
-            .filter(Sessions.mood.isnot(None))
-            .filter(Sessions.mood != "")
-            .group_by(Sessions.mood)
-            .order_by(plays.desc(), Sessions.mood.asc())
-            .all()
-        )
+        mood_rows = db.query(Sessions.mood).filter(Sessions.mood.isnot(None)).filter(Sessions.mood != "").all()
+        mood_counts: dict[str, tuple[str, int]] = {}
+        for (mood,) in mood_rows:
+            canonical_mood = mood.strip()
+            if not canonical_mood:
+                continue
+            mood_key = canonical_mood.lower()
+            existing_mood, count = mood_counts.get(mood_key, (canonical_mood, 0))
+            mood_counts[mood_key] = (existing_mood, count + 1)
+        return sorted(mood_counts.values(), key=lambda item: (-item[1], item[0].lower()))
 
     @staticmethod
     def _month_expression(db: Session):

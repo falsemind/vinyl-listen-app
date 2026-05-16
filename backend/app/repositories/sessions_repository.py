@@ -30,6 +30,18 @@ class SessionsRepository:
         )
 
     @staticmethod
+    def get_mood_by_name(db: Session, name: str) -> str | None:
+        row = (
+            db.query(Sessions.mood)
+            .filter(Sessions.mood.isnot(None))
+            .filter(Sessions.mood != "")
+            .filter(func.lower(Sessions.mood) == name.lower())
+            .order_by(Sessions.created_at.asc())
+            .first()
+        )
+        return row[0] if row is not None else None
+
+    @staticmethod
     def get_recent_with_releases(
         db: Session,
         *,
@@ -54,10 +66,7 @@ class SessionsRepository:
         since: datetime,
     ) -> int:
         return (
-            db.query(func.count(func.distinct(Sessions.release_id)))
-            .filter(Sessions.played_at >= since)
-            .scalar()
-            or 0
+            db.query(func.count(func.distinct(Sessions.release_id))).filter(Sessions.played_at >= since).scalar() or 0
         )
 
     @staticmethod

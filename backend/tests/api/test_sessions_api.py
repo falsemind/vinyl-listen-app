@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionValidationError,
 )
@@ -207,6 +208,26 @@ def test_create_custom_mood_endpoint_returns_validation_error(
         "error": {
             "code": "invalid_mood",
             "message": "Mood name must use only letters, numbers, and spaces.",
+        }
+    }
+
+
+def test_create_custom_mood_endpoint_returns_conflict_for_duplicate(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    service.mood_error = SessionMoodAlreadyExistsError("Dubby")
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/sessions/moods", json={"name": "Dubby"})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": {
+            "code": "duplicate_mood",
+            "message": "Mood already exists.",
         }
     }
 

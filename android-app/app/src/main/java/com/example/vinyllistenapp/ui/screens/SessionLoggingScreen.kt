@@ -187,14 +187,14 @@ fun SessionLoggingScreen(
                 onMoodSelected = { selectedMood = it },
                 onSaveCustomMood = { mood ->
                     val normalizedMood = sanitizeCustomMood(mood).trim()
-                    if (isBuiltInMood(normalizedMood, moods)) {
+                    if (isExistingMood(normalizedMood, moods, customMoods)) {
                         customMoodError = "That mood already exists."
                     } else {
                         scope.launch {
                             runCatching { apiClient.createCustomMood(normalizedMood) }
                                 .onSuccess { savedMood ->
                                     val cleanedMood = sanitizeCustomMood(savedMood).trim()
-                                    if (isBuiltInMood(cleanedMood, moods)) {
+                                    if (isExistingMood(cleanedMood, moods, customMoods)) {
                                         customMoodError = "That mood already exists."
                                     } else {
                                         customMoods = saveCustomMood(customMoods, cleanedMood, moods)
@@ -497,6 +497,14 @@ internal fun isBuiltInMood(
     builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
 ): Boolean = builtInMoods.any { it.equals(value.trim(), ignoreCase = true) }
 
+internal fun isExistingMood(
+    value: String,
+    builtInMoods: List<String> = BUILT_IN_SESSION_MOODS,
+    customMoods: List<String> = emptyList(),
+): Boolean =
+    isBuiltInMood(value, builtInMoods) ||
+        customMoods.any { it.equals(value.trim(), ignoreCase = true) }
+
 @Composable
 private fun SessionRatingPicker(
     rating: Int,
@@ -527,7 +535,7 @@ private fun SessionMoodGrid(
     var popupWidth by remember { mutableStateOf(Dp.Unspecified) }
     val density = LocalDensity.current
     val sanitizedInput = sanitizeCustomMood(inputValue)
-    val canSave = isValidCustomMood(sanitizedInput) && !isBuiltInMood(sanitizedInput, moods)
+    val canSave = isValidCustomMood(sanitizedInput)
 
     Box(
         modifier =

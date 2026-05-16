@@ -197,7 +197,7 @@ INDEX (played_at)
 
 Stores custom mood options shown on the Log Session screen.
 
-Logged sessions keep the selected mood text in `sessions.mood`, so deleting a custom mood option does not rewrite historical session rows or remove analytics history.
+Logged sessions keep the selected mood text in `sessions.mood`, so deleting a custom mood option does not rewrite historical session rows or remove analytics history. The service canonicalizes mood names case-insensitively before storing new sessions and analytics groups case variants together.
 
 ### Columns
 

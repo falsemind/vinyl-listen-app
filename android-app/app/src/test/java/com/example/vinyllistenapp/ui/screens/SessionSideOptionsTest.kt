@@ -62,6 +62,13 @@ class SessionSideOptionsTest {
         assertFalse(isBuiltInMood("Late Night"))
     }
 
+    @Test
+    fun isExistingMoodMatchesCustomMoodsIgnoringCase() {
+        assertTrue(isExistingMood(" late night ", customMoods = listOf("Late Night")))
+        assertTrue(isExistingMood("calm", customMoods = listOf("Late Night")))
+        assertFalse(isExistingMood("Dubby", customMoods = listOf("Late Night")))
+    }
+
     private fun recordSummary(
         availableSides: List<String>,
         availableSideOptions: List<ReleaseSideOption> = emptyList(),
