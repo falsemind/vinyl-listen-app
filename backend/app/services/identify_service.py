@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -324,10 +325,10 @@ class IdentifyService:
         return IdentifyCandidate(
             discogs_release_id=discogs_release_id,
             release_id=None,
-            artist=artist,
+            artist=_clean_discogs_artist_name(artist),
             title=title,
             year=_coerce_int(result.get("year")),
-            label=_coerce_first_string(result.get("label")),
+            label=_clean_discogs_self_released_label(_coerce_first_string(result.get("label"))),
             catalog_number=_coerce_catalog_number(result.get("catno")),
             barcode=None,
             cover_image_url=_clean_string(result.get("cover_image")) or _clean_string(result.get("thumb")),
@@ -356,6 +357,16 @@ def _parse_discogs_title(value: str | None) -> tuple[str | None, str | None]:
 
     artist, title = parts
     return artist or None, title or None
+
+
+def _clean_discogs_artist_name(value: str) -> str:
+    return ", ".join(re.sub(r"\s+\(\d+\)$", "", artist.strip()) for artist in value.split(","))
+
+
+def _clean_discogs_self_released_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return re.sub(r"\(([^()]+?)\s+\(\d+\)\s+Self-Released\)", r"(\1 Self-Released)", value).strip()
 
 
 def _clean_string(value: Any) -> str | None:
