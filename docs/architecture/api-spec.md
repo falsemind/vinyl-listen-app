@@ -425,8 +425,8 @@ Used by the **Home screen** to show real listening data after sessions are logge
 
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
-| recent_limit | Maximum recent sessions to return. Must be 1-20. | 5 |
-| top_limit | Maximum top records to return. Must be 1-20. | 3 |
+| recent_limit | Maximum recent sessions to return. Must be 1-25. | 5 |
+| top_limit | Maximum top records to return. Must be 1-25. | 3 |
 
 ### Response
 

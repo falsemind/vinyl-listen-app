@@ -65,7 +65,7 @@ fun TopRecordsScreen(
     var retryKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(retryKey) {
-        runCatching { apiClient.getAnalyticsDashboard() }
+        runCatching { apiClient.getAnalyticsDashboard(topRecordsLimit = 25) }
             .onSuccess {
                 records = it.topRecords.take(25)
                 error = null

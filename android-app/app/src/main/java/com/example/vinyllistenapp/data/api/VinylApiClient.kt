@@ -191,7 +191,7 @@ class VinylApiClient(
             )
         }
 
-    suspend fun getAnalyticsDashboard(): AnalyticsDashboard =
+    suspend fun getAnalyticsDashboard(topRecordsLimit: Int = 10): AnalyticsDashboard =
         apiCall {
             AnalyticsDashboard(
                 monthlyPlays =
@@ -205,7 +205,7 @@ class VinylApiClient(
                             )
                         },
                 topRecords =
-                    getJson("analytics/top-records")
+                    getJson("analytics/top-records?limit=$topRecordsLimit")
                         .optJSONArray("records")
                         .orEmpty()
                         .mapObjects { item ->
