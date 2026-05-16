@@ -220,7 +220,8 @@ Mood chips:
 
 - Default: `SurfacePrimary`, `BorderDefault`, `TextSecondary`
 - Selected: green tinted/outlined treatment with `AccentGreen`
-- Custom mood: dashed border, `TextSecondary`, plus icon.
+- Custom mood entry: `+ Custom` opens a full-width popup input.
+- Saved custom mood: normal chip styling with an `X ` text prefix; long-press opens a delete confirmation.
 
 ### Rating
 

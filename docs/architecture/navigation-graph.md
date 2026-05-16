@@ -86,6 +86,9 @@ Current backend endpoints used by these routes:
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
 |Create listening session|`POST /api/v1/sessions`|
+|Load custom moods|`GET /api/v1/sessions/moods`|
+|Create custom mood|`POST /api/v1/sessions/moods`|
+|Delete custom mood|`DELETE /api/v1/sessions/moods/{mood_name}`|
 |Load one session by id|`GET /api/v1/sessions/{session_id}`|
 |Load Analytics dashboard|`GET /api/v1/analytics/plays/monthly`, `GET /api/v1/analytics/top-records`, `GET /api/v1/analytics/rating-distribution`, `GET /api/v1/analytics/mood-distribution`|
 
