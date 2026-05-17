@@ -32,13 +32,14 @@ private fun ManualSearchScreenPreview() {
     }
 }
 
-@Preview(name = "Placeholder", showBackground = true, backgroundColor = 0xFF101010, widthDp = 390, heightDp = 844)
+@Preview(name = "Settings", showBackground = true, backgroundColor = 0xFF101010, widthDp = 390, heightDp = 844)
 @Composable
-private fun PlaceholderScreenPreview() {
+private fun SettingsScreenPreview() {
     VinylListenAppTheme {
-        PlaceholderScreen(
-            title = "Stats",
-            message = "Analytics stays out of this prototype pass.",
+        SettingsScreen(
+            message = "Settings stays out of this prototype pass.",
+            onHome = {},
+            onStats = {},
         )
     }
 }
