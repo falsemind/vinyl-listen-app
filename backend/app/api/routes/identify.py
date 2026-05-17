@@ -82,6 +82,7 @@ async def identify_release(
                 catalog_number=candidate.catalog_number,
                 barcode=candidate.barcode,
                 cover_image_url=candidate.cover_image_url,
+                format=candidate.format,
                 match_source=candidate.match_source,
                 matched_on=list(candidate.matched_on),
                 confidence=candidate.confidence,

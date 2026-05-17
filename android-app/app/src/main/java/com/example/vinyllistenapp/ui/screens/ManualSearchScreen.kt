@@ -39,7 +39,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
-import com.example.vinyllistenapp.ui.components.CaptureCircleButton
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
@@ -311,7 +311,7 @@ private fun ManualSearchHeader(onDismiss: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CaptureCircleButton(label = "X", onClick = onDismiss)
+        CloseCircleButton(onClick = onDismiss)
         Text(
             text = "Manual Search",
             color = VinylColors.TextPrimary,

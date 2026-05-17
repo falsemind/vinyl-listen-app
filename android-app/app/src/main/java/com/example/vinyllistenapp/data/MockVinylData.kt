@@ -92,6 +92,7 @@ object MockVinylData {
                 year = 1971,
                 catalogNumber = "AS-9203",
                 coverImageUrl = records[0].coverImageUrl,
+                format = "Vinyl, LP",
             ),
             MatchCandidate(
                 releaseId = "release-003",
@@ -103,6 +104,7 @@ object MockVinylData {
                 year = 1984,
                 catalogNumber = "FE 39581",
                 coverImageUrl = records[2].coverImageUrl,
+                format = "Vinyl, LP",
             ),
             MatchCandidate(
                 releaseId = "release-002",
@@ -114,6 +116,7 @@ object MockVinylData {
                 year = 2015,
                 catalogNumber = "FPLP01",
                 coverImageUrl = records[1].coverImageUrl,
+                format = "Vinyl, 2xLP",
             ),
         )
 

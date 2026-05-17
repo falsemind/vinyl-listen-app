@@ -78,6 +78,7 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order(
                     "label": ["Not On Label (Air (10) Self-Released)"],
                     "catno": "7243 8 44978 1 8",
                     "cover_image": "https://img.discogs.com/external.jpg",
+                    "format": ["Vinyl", "LP"],
                 }
             ]
         }
@@ -103,6 +104,7 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order(
     assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
     assert result.candidates[0].artist == "Air"
     assert result.candidates[0].label == "Not On Label (Air Self-Released)"
+    assert result.candidates[0].format == "Vinyl, LP"
     assert result.candidates[0].match_source == "discogs"
     assert result.candidates[0].matched_on == ("catalog_number", "artist", "title")
     assert discogs_service.search_by_barcode_calls == [("724384497818", 5)]

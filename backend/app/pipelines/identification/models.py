@@ -150,3 +150,4 @@ class IdentifyCandidate:
     matched_on: tuple[str, ...] = ()
     confidence: float = 0.0
     score_trace: tuple[str, ...] = ()
+    format: str | None = None

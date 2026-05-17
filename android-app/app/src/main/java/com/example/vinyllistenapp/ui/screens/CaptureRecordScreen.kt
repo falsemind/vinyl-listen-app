@@ -56,9 +56,10 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.LifecycleOwner
-import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
+import com.example.vinyllistenapp.ui.components.InfoCircleButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -236,13 +237,13 @@ private fun CaptureHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CaptureCircleButton(label = "X", onClick = onDismiss)
+        CloseCircleButton(onClick = onDismiss)
         Text(
             text = "Capture Record",
             color = VinylColors.TextPrimary,
             style = MaterialTheme.typography.titleMedium,
         )
-        CaptureCircleButton(label = "i", onClick = onInfoClick)
+        InfoCircleButton(onClick = onInfoClick)
     }
 }
 

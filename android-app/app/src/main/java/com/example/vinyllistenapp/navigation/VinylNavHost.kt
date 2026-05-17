@@ -88,6 +88,11 @@ fun VinylNavHost(
                     }
                 },
                 onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                onDismiss = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
             )
         }
         composable(VinylRoutes.MATCH_CONFIRMATION) {
