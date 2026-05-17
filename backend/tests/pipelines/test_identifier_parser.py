@@ -267,6 +267,38 @@ def test_identifier_parser_does_not_promote_track_duration_to_catalog_number() -
     assert identifiers.text_fragments == ()
 
 
+def test_identifier_parser_uses_repeated_side_title_over_credit_and_band_noise() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "A.SIDE TOOLATE 06:38",
+                "(DEEP VOCAL MIX)",
+                "Written by Carroll Thompson",
+                "Produced by Daryl B & Matt Coleman",
+                "Licensed courtesy of Daryl B & Matt Coleman",
+                "B.SIDE TOOLATE 06:56",
+                "(UNDERGROUND DUB)",
+                "Licensed courtesy of Daryl B & Pointblank Records",
+                "©2023 South Street",
+                "Youth Street",
+                "B.SIDE",
+                "TOOLATE",
+                "06:56",
+                "CLINICGROUNDLING",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist is None
+    assert identifiers.title == "TOOLATE"
+    assert identifiers.label is None
+    assert "B.SIDE" not in identifiers.text_fragments
+    assert all(not value.startswith("Licensed courtesy") for value in identifiers.text_fragments)
+
+
 def test_identifier_parser_keeps_catalog_number_near_side_marker() -> None:
     parser = IdentifierParser()
 

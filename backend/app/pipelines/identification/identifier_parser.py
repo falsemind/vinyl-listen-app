@@ -123,6 +123,7 @@ NOISE_PREFIXES = (
     "recorded by",
     "published by",
     "licenced",
+    "licensed",
     "licensed from",
     "unauthorised",
     "unauthorized",
@@ -478,6 +479,10 @@ def _extract_artist_and_title(
     if labeled_artist or labeled_title:
         return labeled_artist, labeled_title
 
+    repeated_track_title = _select_repeated_track_listing_title(cleaned_lines)
+    if repeated_track_title is not None:
+        return None, repeated_track_title
+
     for line in cleaned_lines:
         if line.lower() in blocked_values:
             continue
@@ -539,6 +544,26 @@ def _extract_slash_separated_identity(value: str) -> tuple[str, str, str] | None
         return None
 
     return catalog_number, artist, title
+
+
+def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None:
+    counts: dict[str, int] = {}
+    values: dict[str, str] = {}
+    for line in cleaned_lines:
+        title = _extract_track_listing_title(line)
+        if title is None:
+            continue
+
+        key = _normalize_catalog_sort_token(title)
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        values.setdefault(key, title)
+
+    repeated_titles = [values[key] for key, count in counts.items() if count >= 2]
+    if len(repeated_titles) != 1:
+        return None
+    return repeated_titles[0]
 
 
 def _extract_text_fragments(
@@ -653,6 +678,8 @@ def _is_candidate_metadata_line(value: str) -> bool:
         return False
     if _looks_like_track_listing(value):
         return False
+    if _looks_like_side_marker_line(value):
+        return False
     if lowered_value.startswith(("http://", "https://", "www.")):
         return False
     if lowered_value.startswith(NOISE_PREFIXES):
@@ -683,6 +710,10 @@ def _looks_like_credit_line(value: str) -> bool:
     if normalized_value.startswith("for ") and " production" in lowered_value:
         return True
     return any(term in lowered_value for term in CREDIT_LINE_TERMS)
+
+
+def _looks_like_side_marker_line(value: str) -> bool:
+    return re.fullmatch(rf"\s*{SIDE_MARKER_PATTERN}[.)]?\s*side\s*", value, re.IGNORECASE) is not None
 
 
 def _looks_like_legal_rights_line(value: str) -> bool:
