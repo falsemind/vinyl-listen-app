@@ -52,7 +52,7 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
-import com.example.vinyllistenapp.ui.components.CaptureCircleButton
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -265,7 +265,7 @@ private fun SessionLoggingHeader(onCancel: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CaptureCircleButton(label = "X", onClick = onCancel)
+        CloseCircleButton(onClick = onCancel)
         Text(
             text = "Log Session",
             color = VinylColors.TextPrimary,

@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,6 +48,7 @@ import com.example.vinyllistenapp.data.api.ApiException
 import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.delay
@@ -56,6 +59,7 @@ fun ProcessingScreen(
     apiClient: VinylApiClient,
     onComplete: (List<MatchCandidate>) -> Unit,
     onManualSearch: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     var retryKey by remember { mutableIntStateOf(0) }
@@ -95,18 +99,26 @@ fun ProcessingScreen(
                 .background(VinylColors.AppBackground)
                 .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
-        Column(
+        Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 48.dp, bottom = VinylSpacing.SpaceXl),
-            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (state is IdentifyUiState.Error) {
+                CloseCircleButton(onClick = onDismiss)
+            } else {
+                Spacer(Modifier.width(40.dp))
+            }
             Text(
+                modifier = Modifier.weight(1f),
                 text = "Identifying Record",
                 color = VinylColors.TextPrimary,
+                textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.headlineLarge,
             )
+            Spacer(Modifier.width(40.dp))
         }
         Box(
             modifier =

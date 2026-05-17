@@ -99,6 +99,7 @@ data class MatchCandidate(
     val catalogNumber: String? = null,
     val barcode: String? = null,
     val coverImageUrl: String? = null,
+    val format: String? = null,
     val matchSource: String? = null,
     val matchedOn: List<String> = emptyList(),
 )

@@ -42,8 +42,9 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.MatchCandidate
-import com.example.vinyllistenapp.ui.components.CaptureCircleButton
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
+import com.example.vinyllistenapp.ui.components.InfoCircleButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -174,7 +175,7 @@ private fun MatchConfirmationHeader(onDismiss: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CaptureCircleButton(label = "X", onClick = onDismiss)
+        CloseCircleButton(onClick = onDismiss)
         Text(
             text = "Confirm Match",
             color = VinylColors.TextPrimary,
@@ -249,6 +250,7 @@ private fun MatchCandidateCard(
                     MatchMetadataRow(label = "Year:", value = year?.toString() ?: "Unknown")
                     MatchMetadataRow(label = "Label:", value = candidate.label)
                     MatchMetadataRow(label = "Cat#:", value = catalogNumber)
+                    MatchMetadataRow(label = "Format:", value = candidate.format ?: "Unknown format")
                 }
             }
             Row(
@@ -262,7 +264,7 @@ private fun MatchCandidateCard(
                     label = if (isConfirming) "Importing" else "Confirm",
                     modifier = Modifier.weight(1f),
                 )
-                MatchDetailsButton(onClick = onDetails, modifier = Modifier.width(64.dp))
+                InfoCircleButton(onClick = onDetails)
             }
         }
     }
@@ -289,7 +291,7 @@ private fun MatchDetailsPlaceholderPopup(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
                 Text(
-                    text = "Release Details",
+                    text = "Metadata",
                     color = VinylColors.TextPrimary,
                     style = MaterialTheme.typography.titleMedium,
                 )
@@ -303,6 +305,7 @@ private fun MatchDetailsPlaceholderPopup(
                         listOfNotNull(
                             candidate.year?.let { "Year: $it" },
                             candidate.catalogNumber?.let { "Cat#: $it" },
+                            candidate.format?.let { "Format: $it" },
                             candidate.barcode?.let { "Barcode: $it" },
                             candidate.matchSource?.let { "Source: $it" },
                             candidate.matchedOn.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Matched: "),
@@ -453,30 +456,6 @@ private fun MatchConfirmButton(
                 style = MaterialTheme.typography.labelLarge,
             )
         }
-    }
-}
-
-@Composable
-private fun MatchDetailsButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier =
-            modifier
-                .height(56.dp)
-                .clip(VinylShapes.Button)
-                .background(VinylColors.SurfaceSecondary)
-                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
-                .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = ">",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 

@@ -558,6 +558,7 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
             catalogNumber = candidate.optNullableString("catalog_number"),
             barcode = candidate.optNullableString("barcode"),
             coverImageUrl = candidate.optNullableString("cover_image_url"),
+            format = candidate.optNullableString("format"),
             matchSource = candidate.optNullableString("match_source"),
             matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
         )

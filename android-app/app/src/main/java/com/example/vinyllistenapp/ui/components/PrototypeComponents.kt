@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -83,33 +88,60 @@ internal fun SectionTitle(label: String) {
 }
 
 @Composable
-internal fun CaptureCircleButton(
-    label: String,
+internal fun CircleIconButton(
+    icon: ImageVector,
+    contentDescription: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val accessibilityLabel = accessibleControlLabel(label)
-
     Box(
         modifier =
-            Modifier
+            modifier
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault, CircleShape)
-                .semantics { contentDescription = accessibilityLabel }
+                .semantics { this.contentDescription = contentDescription }
                 .clickable(
-                    onClickLabel = accessibilityLabel,
+                    onClickLabel = contentDescription,
                     role = Role.Button,
                     onClick = onClick,
                 ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = if (label == "X") VinylColors.TextPrimary else VinylColors.TextSecondary,
-            style = MaterialTheme.typography.labelLarge,
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = VinylColors.TextPrimary,
+            modifier = Modifier.size(20.dp),
         )
     }
+}
+
+@Composable
+internal fun CloseCircleButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CircleIconButton(
+        icon = Icons.Filled.Close,
+        contentDescription = "Close",
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun InfoCircleButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CircleIconButton(
+        icon = Icons.Filled.Info,
+        contentDescription = "Show information",
+        onClick = onClick,
+        modifier = modifier,
+    )
 }
 
 @Composable
