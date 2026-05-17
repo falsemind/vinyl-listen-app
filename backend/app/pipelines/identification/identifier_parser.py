@@ -479,10 +479,6 @@ def _extract_artist_and_title(
     if labeled_artist or labeled_title:
         return labeled_artist, labeled_title
 
-    repeated_track_title = _select_repeated_track_listing_title(cleaned_lines)
-    if repeated_track_title is not None:
-        return None, repeated_track_title
-
     for line in cleaned_lines:
         if line.lower() in blocked_values:
             continue
@@ -518,6 +514,13 @@ def _extract_artist_and_title(
     track_artist_pair = _select_nontrack_artist_with_track_title(candidate_entries)
     if track_artist_pair is not None:
         return track_artist_pair
+
+    repeated_track_pair = _select_repeated_track_listing_artist_title(
+        cleaned_lines,
+        blocked_values=blocked_values,
+    )
+    if repeated_track_pair is not None:
+        return repeated_track_pair
 
     scored_pair = _select_artist_title_pair(candidate_entries)
     if scored_pair is not None:
@@ -564,6 +567,49 @@ def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None
     if len(repeated_titles) != 1:
         return None
     return repeated_titles[0]
+
+
+def _select_repeated_track_listing_artist_title(
+    cleaned_lines: list[str],
+    *,
+    blocked_values: set[str],
+) -> tuple[str | None, str] | None:
+    title = _select_repeated_track_listing_title(cleaned_lines)
+    if title is None:
+        return None
+
+    artist = _select_artist_before_track_listing(cleaned_lines, title=title, blocked_values=blocked_values)
+    return artist, title
+
+
+def _select_artist_before_track_listing(
+    cleaned_lines: list[str],
+    *,
+    title: str,
+    blocked_values: set[str],
+) -> str | None:
+    normalized_title = _normalize_catalog_sort_token(title)
+    for index, line in enumerate(cleaned_lines):
+        track_title = _extract_track_listing_title(line)
+        if track_title is None or _normalize_catalog_sort_token(track_title) != normalized_title:
+            continue
+
+        for previous_line in reversed(cleaned_lines[:index]):
+            if previous_line.lower() in blocked_values:
+                continue
+            candidate = _clean_candidate_line(previous_line)
+            if candidate is None:
+                continue
+            if _normalize_catalog_sort_token(candidate) == normalized_title:
+                continue
+            if _is_strict_metadata_line(candidate) and _metadata_line_quality(candidate) > 0:
+                return candidate
+            if not _is_candidate_metadata_line(candidate):
+                continue
+
+        return None
+
+    return None
 
 
 def _extract_text_fragments(
