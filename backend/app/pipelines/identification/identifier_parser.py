@@ -58,6 +58,8 @@ TRACK_LISTING_PREFIX_PATTERN = re.compile(
     re.IGNORECASE,
 )
 TRACK_SIDE_QUALIFIER_PATTERN = re.compile(r"^\(?\s*(?:there|here|this side|other side)\s*\)?\s*", re.IGNORECASE)
+TRACK_SIDE_WORD_PREFIX_PATTERN = re.compile(r"^side\b[.)]?\s*", re.IGNORECASE)
+TRACK_DURATION_SUFFIX_PATTERN = re.compile(r"\s+\d{1,2}:\d{2}(?::\d{2})?\s*$")
 SEPARATOR_PATTERNS = (" - ", " / ", " + ", " – ", " — ", ": ")
 EDGE_JUNK_CHARACTERS = " \t\r\n'\"“”‘’`_-:#*/.,;|\\"
 MAX_TEXT_FRAGMENTS = 8
@@ -108,15 +110,20 @@ NOISE_PREFIXES = (
     "productions",
     "for ",
     "by ",
+    "a r",
     "mastered by",
     "pressed by",
     "distributed by",
+    "distributed",
     "manufactured by",
+    "manufactured",
     "mixed by",
     "engineered by",
     "produced by",
     "recorded by",
     "published by",
+    "licenced",
+    "licensed",
     "licensed from",
     "unauthorised",
     "unauthorized",
@@ -316,6 +323,11 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
         _append_catalog_number_candidates(token, detected_catalog_numbers, seen, scores)
 
     for line in cleaned_lines:
+        slash_identity = _extract_slash_separated_identity(line)
+        if slash_identity is not None:
+            _append_catalog_number_candidates(slash_identity[0], detected_catalog_numbers, seen, scores)
+            continue
+
         catalog_tokens = _extract_catalog_number_tokens(line)
         catalog_tokens = (*catalog_tokens, *_extract_ocr_confused_catalog_number_tokens(line))
         for token in catalog_tokens:
@@ -471,6 +483,15 @@ def _extract_artist_and_title(
         if line.lower() in blocked_values:
             continue
 
+        slash_identity = _extract_slash_separated_identity(line)
+        if slash_identity is not None:
+            _, artist, title = slash_identity
+            return artist, title
+
+    for line in cleaned_lines:
+        if line.lower() in blocked_values:
+            continue
+
         for separator in SEPARATOR_PATTERNS:
             if separator not in line:
                 continue
@@ -494,13 +515,101 @@ def _extract_artist_and_title(
     if track_artist_pair is not None:
         return track_artist_pair
 
+    repeated_track_pair = _select_repeated_track_listing_artist_title(
+        cleaned_lines,
+        blocked_values=blocked_values,
+    )
+    if repeated_track_pair is not None:
+        return repeated_track_pair
+
     scored_pair = _select_artist_title_pair(candidate_entries)
     if scored_pair is not None:
         return scored_pair
-    if len(candidate_lines) == 1:
+    if len(candidate_lines) == 1 and _metadata_line_quality(candidate_lines[0]) > 0:
         return None, candidate_lines[0]
 
     return None, None
+
+
+def _extract_slash_separated_identity(value: str) -> tuple[str, str, str] | None:
+    parts = [part for part in re.split(r"\s*/+\s*", value.strip()) if part]
+    if len(parts) < 3:
+        return None
+
+    catalog_number = _clean_catalog_candidate(parts[0])
+    artist = _clean_candidate_line(parts[1])
+    title = _clean_candidate_line(" / ".join(parts[2:]))
+    if catalog_number is None or artist is None or title is None:
+        return None
+    if not _looks_like_catalog_number(catalog_number):
+        return None
+    if not (_is_strict_metadata_line(artist) and _is_strict_metadata_line(title)):
+        return None
+
+    return catalog_number, artist, title
+
+
+def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None:
+    counts: dict[str, int] = {}
+    values: dict[str, str] = {}
+    for line in cleaned_lines:
+        title = _extract_track_listing_title(line)
+        if title is None:
+            continue
+
+        key = _normalize_catalog_sort_token(title)
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        values.setdefault(key, title)
+
+    repeated_titles = [values[key] for key, count in counts.items() if count >= 2]
+    if len(repeated_titles) != 1:
+        return None
+    return repeated_titles[0]
+
+
+def _select_repeated_track_listing_artist_title(
+    cleaned_lines: list[str],
+    *,
+    blocked_values: set[str],
+) -> tuple[str | None, str] | None:
+    title = _select_repeated_track_listing_title(cleaned_lines)
+    if title is None:
+        return None
+
+    artist = _select_artist_before_track_listing(cleaned_lines, title=title, blocked_values=blocked_values)
+    return artist, title
+
+
+def _select_artist_before_track_listing(
+    cleaned_lines: list[str],
+    *,
+    title: str,
+    blocked_values: set[str],
+) -> str | None:
+    normalized_title = _normalize_catalog_sort_token(title)
+    for index, line in enumerate(cleaned_lines):
+        track_title = _extract_track_listing_title(line)
+        if track_title is None or _normalize_catalog_sort_token(track_title) != normalized_title:
+            continue
+
+        for previous_line in reversed(cleaned_lines[:index]):
+            if previous_line.lower() in blocked_values:
+                continue
+            candidate = _clean_candidate_line(previous_line)
+            if candidate is None:
+                continue
+            if _normalize_catalog_sort_token(candidate) == normalized_title:
+                continue
+            if _is_strict_metadata_line(candidate) and _metadata_line_quality(candidate) > 0:
+                return candidate
+            if not _is_candidate_metadata_line(candidate):
+                continue
+
+        return None
+
+    return None
 
 
 def _extract_text_fragments(
@@ -615,6 +724,8 @@ def _is_candidate_metadata_line(value: str) -> bool:
         return False
     if _looks_like_track_listing(value):
         return False
+    if _looks_like_side_marker_line(value):
+        return False
     if lowered_value.startswith(("http://", "https://", "www.")):
         return False
     if lowered_value.startswith(NOISE_PREFIXES):
@@ -626,6 +737,9 @@ def _is_candidate_metadata_line(value: str) -> bool:
     if _is_labeled_metadata_line(value):
         return False
     if BARCODE_PATTERN.fullmatch(value.replace(" ", "")) is not None:
+        return False
+    alpha_tokens = [token for token in TOKEN_PATTERN.findall(value) if any(character.isalpha() for character in token)]
+    if len(alpha_tokens) == 1 and alpha_tokens[0].islower() and len(alpha_tokens[0]) <= 4:
         return False
     if _looks_like_catalog_number(value):
         return False
@@ -642,6 +756,10 @@ def _looks_like_credit_line(value: str) -> bool:
     if normalized_value.startswith("for ") and " production" in lowered_value:
         return True
     return any(term in lowered_value for term in CREDIT_LINE_TERMS)
+
+
+def _looks_like_side_marker_line(value: str) -> bool:
+    return re.fullmatch(rf"\s*{SIDE_MARKER_PATTERN}[.)]?\s*side\s*", value, re.IGNORECASE) is not None
 
 
 def _looks_like_legal_rights_line(value: str) -> bool:
@@ -1004,6 +1122,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
     track_prefix_end = _track_listing_prefix_end(value)
 
     for match in SPACED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _catalog_span_is_duration_prefix(value, match.span(1)):
+            continue
         token = _clean_catalog_candidate(match.group(1))
         if token is None or token.lower() in seen:
             continue
@@ -1014,6 +1134,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         tokens.append(token)
 
     for match in SPACED_CONFUSED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _catalog_span_is_duration_prefix(value, match.span(0)):
+            continue
         token = _clean_catalog_candidate(f"{match.group(1)} {match.group(2)}")
         if token is None or token.lower() in seen:
             continue
@@ -1055,6 +1177,11 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
 def _is_span_inside_spaced_catalog(span: tuple[int, int], spaced_catalog_spans: Iterable[tuple[int, int]]) -> bool:
     start, end = span
     return any(start >= spaced_start and end <= spaced_end for spaced_start, spaced_end in spaced_catalog_spans)
+
+
+def _catalog_span_is_duration_prefix(value: str, span: tuple[int, int]) -> bool:
+    _, end = span
+    return value[end:].lstrip().startswith(":")
 
 
 def _looks_like_year_range_token(value: str) -> bool:
@@ -1149,6 +1276,8 @@ def _extract_track_listing_title(value: str) -> str | None:
 
     title = " ".join(stripped_value[match.end() :].strip(EDGE_JUNK_CHARACTERS).split())
     title = TRACK_SIDE_QUALIFIER_PATTERN.sub("", title)
+    title = TRACK_SIDE_WORD_PREFIX_PATTERN.sub("", title)
+    title = TRACK_DURATION_SUFFIX_PATTERN.sub("", title)
     title = " ".join(title.strip(EDGE_JUNK_CHARACTERS).split())
     if not title or not any(character.isalpha() for character in title):
         return None
@@ -1424,7 +1553,12 @@ def _looks_like_label_value(value: str) -> bool:
         return False
     if not any(character.isalpha() for character in value):
         return False
-    if _looks_like_catalog_number(value) or _looks_like_year_line(value) or _is_labeled_metadata_line(value):
+    if (
+        _looks_like_catalog_number(value)
+        or _looks_like_year_line(value)
+        or _looks_like_credit_line(value)
+        or _is_labeled_metadata_line(value)
+    ):
         return False
     return any(lowered_value == suffix or lowered_value.endswith(f" {suffix}") for suffix in LABEL_SUFFIX_TERMS)
 

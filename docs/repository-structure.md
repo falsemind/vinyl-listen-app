@@ -364,7 +364,7 @@ android-app/
     └── wrapper/
 ```
 
-`android-app/local.properties` is local-only and ignored by Git. It can override `vinylApiBaseUrl` for non-emulator testing. The default debug base URL remains `http://10.0.2.2:8000/api/v1`, which targets the host machine from the Android emulator.
+`android-app/local.properties` is local-only and ignored by Git. It can override `vinylApiBaseUrl` or `VINYL_API_BASE_URL` for non-emulator testing. The default debug base URL remains `http://10.0.2.2:8000/api/v1`, which targets the host machine from the Android emulator. For a USB-connected physical device, run `adb reverse tcp:8000 tcp:8000`, set the debug base URL to `http://localhost:8000/api/v1`, use the Android Studio bundled JBR if the system JDK is too new, and rebuild/reinstall because the value is compiled into `BuildConfig`.
 
 ### Android Source Packages
 

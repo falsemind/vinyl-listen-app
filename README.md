@@ -295,6 +295,21 @@ http://10.0.2.2:8000
 
 This address allows the Android emulator to reach the host machine.
 
+For a physical device connected over USB, reverse the backend port and build the
+debug app with a localhost base URL:
+
+```
+adb reverse tcp:8000 tcp:8000
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+VINYL_API_BASE_URL=http://localhost:8000/api/v1 ./gradlew :app:installDebug
+```
+
+You can also put either `vinylApiBaseUrl=http://localhost:8000/api/v1` or
+`VINYL_API_BASE_URL=http://localhost:8000/api/v1` in
+`android-app/local.properties`, then rebuild and reinstall the app. The value is
+compiled into `BuildConfig`, so changing `local.properties` does not affect an
+already installed APK.
+
 ---
 
 # API Overview

@@ -11,6 +11,7 @@ val vinylApiBaseUrl =
     providers.gradleProperty("vinylApiBaseUrl").orNull
         ?: providers.environmentVariable("VINYL_API_BASE_URL").orNull
         ?: localProperties.getProperty("vinylApiBaseUrl")
+        ?: localProperties.getProperty("VINYL_API_BASE_URL")
         ?: "http://10.0.2.2:8000/api/v1"
 
 plugins {
@@ -64,6 +65,10 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
