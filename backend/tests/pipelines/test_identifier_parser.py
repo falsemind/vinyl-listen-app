@@ -241,6 +241,64 @@ def test_identifier_parser_does_not_promote_track_lines_with_stray_digits_to_cat
     assert identifiers.title == "LUMINARY EP"
 
 
+def test_identifier_parser_does_not_promote_track_duration_to_catalog_number() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "A.SIDE TOOLATE 06:38",
+                "[DEEP VOCAL MIX]",
+                "Written by Carroll Thompson",
+                "Produced by Daryl B & Matt Coleman",
+                "Licenced courtesy of Daryl B & Pointblank Records",
+                "B.SIDE TOOLATE 06:56",
+                "[UNDERGROUND DUB]",
+                "©2023 South Street",
+                "tree",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist is None
+    assert identifiers.title == "TOOLATE"
+    assert identifiers.label is None
+    assert identifiers.text_fragments == ()
+
+
+def test_identifier_parser_keeps_catalog_number_near_side_marker() -> None:
+    parser = IdentifierParser()
+
+    compact_identifiers = parser.parse("B 45RPM SOUTH011")
+    spaced_identifiers = parser.parse("B 45RPM SOUTH 011")
+
+    assert compact_identifiers.catalog_numbers == ("SOUTH011",)
+    assert spaced_identifiers.catalog_numbers == ("SOUTH 011",)
+
+
+def test_identifier_parser_splits_stamped_catalog_artist_title_line() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "RHYTHM NVIBE",
+                "RNVO3/DJ Perception/Phenomenal EP",
+                "Written & produced by Cameron Phillips.",
+                "Manufactured in the UK, Distributed by Juno.",
+                "A&R Marc Cotterell // Plastik People Recordings 2019.",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("RNVO3", "RNV03")
+    assert identifiers.artist == "DJ Perception"
+    assert identifiers.title == "Phenomenal EP"
+    assert identifiers.label is None
+    assert "Manufactured in the UK, Distributed by Juno" not in identifiers.text_fragments
+
+
 def test_identifier_parser_recovers_dj_artist_title_from_noisy_label_ocr() -> None:
     parser = IdentifierParser()
 

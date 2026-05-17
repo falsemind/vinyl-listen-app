@@ -10,6 +10,7 @@ DEFAULT_PHRASE_CONTEXT_LIMIT = 5
 DEFAULT_ROLE_CONTEXT_CATALOG_LIMIT = 1
 DEFAULT_ROLE_CONTEXT_LABEL_LIMIT = 2
 DEFAULT_IDENTITY_CONTEXT_LIMIT = 6
+DEFAULT_TITLE_CONTEXT_LIMIT = 6
 DEFAULT_TRACKLIST_QUERY_LIMIT = 6
 DEFAULT_TRACKLIST_TRACK_LIMIT = 8
 STRONG_PADDLEOCR_EVIDENCE_MIN_CONFIDENCE = 0.85
@@ -24,7 +25,11 @@ CREDIT_PREFIXES = (
     "written",
     "published",
     "copyright",
+    "manufactured",
+    "distributed",
+    "licenced",
     "licensed",
+    "a r",
 )
 CREDIT_QUERY_TERMS = (
     " written ",
@@ -35,6 +40,10 @@ CREDIT_QUERY_TERMS = (
     " mastered ",
     " mixed ",
     " engineered ",
+    " manufactured ",
+    " distributed ",
+    " licenced ",
+    " licensed ",
 )
 LOW_VALUE_QUERY_LINES = {
     "45 rpm",
@@ -80,6 +89,15 @@ def build_search_plan(identifiers: ExtractedIdentifiers) -> list[SearchStep]:
     for query in ocr_role_context_queries:
         search_steps.append(SearchStep(strategy="ocr_role_context", params={"query": query}))
 
+    title_context_queries: tuple[str, ...] = ()
+    should_defer_title_context = False
+    if not identifiers.artist:
+        title_context_queries = _build_title_context_queries(identifiers)
+        should_defer_title_context = bool(identifiers.catalog_numbers) or _has_raw_catalog_context(identifiers)
+        if not should_defer_title_context:
+            for query in title_context_queries:
+                search_steps.append(SearchStep(strategy="title_context", params={"query": query}))
+
     identity_context_queries: tuple[str, ...] = ()
     has_plausible_identity = _has_plausible_identity(identifiers)
     if identifiers.artist and identifiers.title and not ocr_role_context_queries and has_plausible_identity:
@@ -106,6 +124,10 @@ def build_search_plan(identifiers: ExtractedIdentifiers) -> list[SearchStep]:
         for fragment in identifiers.text_fragments:
             for query in _free_text_fragment_queries(fragment):
                 search_steps.append(SearchStep(strategy="free_text", params={"query": query}))
+
+    if should_defer_title_context:
+        for query in title_context_queries:
+            search_steps.append(SearchStep(strategy="title_context", params={"query": query}))
 
     return _dedupe_search_steps(search_steps)
 
@@ -209,6 +231,75 @@ def _build_catalog_identity_context_queries(identifiers: ExtractedIdentifiers) -
             queries.append(f"{catalog_number} {value}")
 
     return tuple(_dedupe_strings(queries)[:DEFAULT_MAX_RAW_CONTEXT_SEARCHES])
+
+
+def _build_title_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, ...]:
+    if not identifiers.title:
+        return ()
+
+    raw_lines = [
+        line
+        for line in _extract_raw_search_lines(identifiers.raw_text)
+        if not _looks_like_catalog_query_line(line)
+        and not _looks_like_credit_query(line)
+        and not _is_low_value_query_line(line)
+        and _looks_like_context_phrase(line)
+    ]
+    context_values = [
+        *_role_texts(identifiers, "release_title"),
+        *identifiers.text_fragments,
+        *raw_lines,
+    ]
+
+    title_values = _title_context_values(identifiers)
+    phrase_values = _dedupe_strings(
+        [
+            line
+            for value in context_values
+            if (line := _clean_query_line(value)) is not None
+            and _looks_like_context_phrase(line)
+            and not _looks_like_title_variant(line, identifiers.title)
+        ]
+    )
+
+    queries: list[str] = []
+    for title in title_values[:2]:
+        for phrase in phrase_values[:DEFAULT_PHRASE_CONTEXT_LIMIT]:
+            queries.append(f"{title} {phrase}")
+
+    return tuple(_dedupe_strings(queries)[:DEFAULT_TITLE_CONTEXT_LIMIT])
+
+
+def _has_raw_catalog_context(identifiers: ExtractedIdentifiers) -> bool:
+    return any(_looks_like_catalog_query_line(line) for line in _extract_raw_search_lines(identifiers.raw_text))
+
+
+def _title_context_values(identifiers: ExtractedIdentifiers) -> list[str]:
+    if identifiers.title is None:
+        return []
+
+    values = [identifiers.title]
+    compact_title = _compact_spaced_track_title(identifiers.title, raw_text=identifiers.raw_text)
+    if compact_title is not None:
+        values.insert(0, compact_title)
+
+    return _dedupe_strings(values)
+
+
+def _compact_spaced_track_title(title: str, *, raw_text: str) -> str | None:
+    tokens = title.split()
+    if len(tokens) != 2:
+        return None
+    if not all(token.isalpha() and token.upper() == token and len(token) >= 3 for token in tokens):
+        return None
+
+    title_pattern = r"\s+".join(re.escape(token) for token in tokens)
+    if re.search(rf"\b{title_pattern}\b\s+\d{{1,2}}:\d{{2}}(?::\d{{2}})?", raw_text) is None:
+        return None
+
+    if tokens[0].endswith(tokens[1][0]):
+        return f"{tokens[0][:-1]}{tokens[1]}"
+    return "".join(tokens)
 
 
 def _catalog_spacing_variant_values(catalog_numbers: tuple[str, ...]) -> list[str]:
@@ -467,7 +558,11 @@ def _build_raw_context_queries(identifiers: ExtractedIdentifiers) -> tuple[str, 
     catalog_lines = _dedupe_strings(
         [
             *identifiers.catalog_numbers,
-            *(line for line in raw_lines if _looks_like_catalog_query_line(line)),
+            *(
+                line
+                for line in raw_lines
+                if _looks_like_catalog_query_line(line) and not _looks_like_slash_identity_query_line(line)
+            ),
         ]
     )
     phrase_lines = _dedupe_strings(
@@ -672,6 +767,23 @@ def _looks_like_catalog_query_line(line: str) -> bool:
         return False
 
     return not (len(tokens) == 2 and tokens[1].isdigit() and len(tokens[1]) == 4)
+
+
+def _looks_like_slash_identity_query_line(line: str) -> bool:
+    parts = [part.strip() for part in re.split(r"\s*/+\s*", line) if part.strip()]
+    if len(parts) < 3:
+        return False
+
+    first_part_tokens = QUERY_TOKEN_PATTERN.findall(parts[0])
+    if len(first_part_tokens) != 1:
+        return False
+    first_part = first_part_tokens[0]
+    if not (
+        any(character.isalpha() for character in first_part) and any(character.isdigit() for character in first_part)
+    ):
+        return False
+
+    return all(_looks_like_context_phrase(part) for part in parts[1:3])
 
 
 def _looks_like_context_phrase(line: str) -> bool:

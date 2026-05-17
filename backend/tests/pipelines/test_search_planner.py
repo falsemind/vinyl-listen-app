@@ -150,6 +150,83 @@ def test_search_plan_prefers_exact_title_before_track_mix_variants() -> None:
     ]
 
 
+def test_search_plan_pairs_title_with_context_phrases_when_artist_is_missing() -> None:
+    identifiers = ExtractedIdentifiers(
+        title="TOOLATE",
+        raw_text="\n".join(
+            [
+                "A.SIDE TOOLATE 06:38",
+                "[DEEP VOCAL MIX]",
+                "Written by Carroll Thompson",
+                "Produced by Daryl B & Matt Coleman",
+                "B.SIDE TOOLATE 06:56",
+                "[UNDERGROUND DUB]",
+            ]
+        ),
+    )
+
+    search_steps = build_search_plan(identifiers)
+
+    assert [(step.strategy, step.params) for step in search_steps[:2]] == [
+        ("title_context", {"query": "TOOLATE DEEP VOCAL MIX"}),
+        ("title_context", {"query": "TOOLATE UNDERGROUND DUB"}),
+    ]
+
+
+def test_search_plan_compacts_split_track_title_before_context_queries() -> None:
+    identifiers = ExtractedIdentifiers(
+        title="TOOL LATE",
+        raw_text="\n".join(
+            [
+                "A.SIDE TOOL LATE 06:38",
+                "[DEEP VOCAL MIX]",
+                "B.SIDE TOOL LATE 06:56",
+                "[UNDERGROUND DUB]",
+            ]
+        ),
+        ocr_roles=(
+            OcrRoleEvidence(role="release_title", text="[DEEP VOCAL MIX]", confidence=None, source="mlx_vlm"),
+            OcrRoleEvidence(role="release_title", text="[UNDERGROUND DUB]", confidence=None, source="mlx_vlm"),
+        ),
+    )
+
+    search_steps = build_search_plan(identifiers)
+
+    assert [(step.strategy, step.params) for step in search_steps[:2]] == [
+        ("title_context", {"query": "TOOLATE DEEP VOCAL MIX"}),
+        ("title_context", {"query": "TOOLATE UNDERGROUND DUB"}),
+    ]
+
+
+def test_search_plan_filters_credit_prose_from_stamped_label_queries() -> None:
+    identifiers = ExtractedIdentifiers(
+        catalog_numbers=("RNVO3", "RNV03"),
+        artist="DJ Perception",
+        title="Phenomenal EP",
+        text_fragments=("RHYTHM NVIBE",),
+        raw_text="\n".join(
+            [
+                "RHYTHM NVIBE",
+                "RNVO3/DJ Perception/Phenomenal EP",
+                "Written & produced by Cameron Phillips.",
+                "Manufactured in the UK, Distributed by Juno.",
+                "A&R Marc Cotterell // Plastik People Recordings 2019.",
+            ]
+        ),
+    )
+
+    search_steps = build_search_plan(identifiers)
+    searched_queries = [step.params.get("query") for step in search_steps]
+
+    assert ("artist_title", {"artist": "DJ Perception", "title": "Phenomenal EP"}) in [
+        (step.strategy, step.params) for step in search_steps
+    ]
+    assert "DJ Perception Phenomenal EP" in searched_queries
+    assert all("Manufactured" not in (query or "") for query in searched_queries)
+    assert all("Marc Cotterell" not in (query or "") for query in searched_queries)
+    assert all("RNVO3/DJ" not in (query or "") for query in searched_queries)
+
+
 def test_search_plan_builds_tracklist_context_when_only_track_titles_are_known() -> None:
     identifiers = ExtractedIdentifiers(
         text_fragments=("Organix", "Wolpha", "Encoded", "Neurotikum"),
