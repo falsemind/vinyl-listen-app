@@ -19,11 +19,11 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
-import com.example.vinyllistenapp.ui.screens.PlaceholderScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
 import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
 import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
+import com.example.vinyllistenapp.ui.screens.SettingsScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 
 @Composable
@@ -166,7 +166,15 @@ fun VinylNavHost(
             )
         }
         composable(VinylRoutes.SETTINGS) {
-            PlaceholderScreen(title = "Settings", message = "Settings stays out of this prototype pass.")
+            SettingsScreen(
+                message = "Settings stays out of this prototype pass.",
+                onHome = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
+                onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
+            )
         }
     }
 }
