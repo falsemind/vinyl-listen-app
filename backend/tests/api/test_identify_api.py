@@ -39,6 +39,7 @@ def test_identify_endpoint_returns_ranked_candidates(
                 "catalog_number": "WARPLP55",
                 "barcode": "5021603065515",
                 "cover_image_url": "https://img.discogs.com/cover.jpg",
+                "format": "Vinyl, LP",
                 "match_source": "local",
                 "matched_on": ["local_lookup", "barcode"],
                 "confidence": 0.733,

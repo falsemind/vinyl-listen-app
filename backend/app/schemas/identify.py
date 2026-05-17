@@ -14,6 +14,7 @@ class IdentifyCandidateResponse(BaseModel):
     catalog_number: str | None
     barcode: str | None
     cover_image_url: str | None
+    format: str | None = None
     match_source: str
     matched_on: list[str]
     confidence: float

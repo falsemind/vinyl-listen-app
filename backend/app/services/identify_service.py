@@ -333,6 +333,7 @@ class IdentifyService:
             barcode=None,
             cover_image_url=_clean_string(result.get("cover_image")) or _clean_string(result.get("thumb")),
             match_source="discogs",
+            format=_format_release_format(result.get("format")),
         )
 
 
@@ -391,4 +392,11 @@ def _coerce_first_string(value: Any) -> str | None:
 def _coerce_catalog_number(value: Any) -> str | None:
     if isinstance(value, list):
         return _coerce_first_string(value)
+    return _clean_string(value)
+
+
+def _format_release_format(value: Any) -> str | None:
+    if isinstance(value, list):
+        formats = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(formats) if formats else None
     return _clean_string(value)
