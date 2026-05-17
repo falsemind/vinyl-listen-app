@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,9 +61,12 @@ import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
 import com.example.vinyllistenapp.ui.components.InfoCircleButton
+import com.example.vinyllistenapp.ui.components.SUCCESS_CONFIRMATION_DELAY_MS
+import com.example.vinyllistenapp.ui.components.SuccessStatusFeedback
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.delay
 import java.io.File
 
 @Composable
@@ -81,8 +85,17 @@ fun CaptureRecordScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
+    var capturedImageUri by remember { mutableStateOf<String?>(null) }
+    val photoCaptured = capturedImageUri != null
+
+    LaunchedEffect(capturedImageUri) {
+        val uri = capturedImageUri ?: return@LaunchedEffect
+        delay(SUCCESS_CONFIRMATION_DELAY_MS)
+        onImageSelected(Uri.parse(uri))
+    }
 
     fun takePhotoInApp() {
+        if (photoCaptured) return
         val capture = imageCapture
         if (capture == null) {
             captureError = "Camera is starting. Try again in a moment."
@@ -99,7 +112,7 @@ fun CaptureRecordScreen(
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     isTakingPhoto = false
-                    onImageSelected(createImageCaptureUri(context, imageFile))
+                    capturedImageUri = createImageCaptureUri(context, imageFile).toString()
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -143,6 +156,7 @@ fun CaptureRecordScreen(
             )
             CameraPreviewSurface(
                 cameraPermissionGranted = cameraPermissionGranted,
+                photoCaptured = photoCaptured,
                 onImageCaptureReady = { imageCapture = it },
                 onCameraError = { captureError = it },
                 modifier =
@@ -152,11 +166,16 @@ fun CaptureRecordScreen(
                         .padding(vertical = VinylSpacing.SpaceLg),
             )
             GlassPrimaryButton(
-                label = if (isTakingPhoto) "Taking Photo..." else "Take Photo",
+                label =
+                    when {
+                        photoCaptured -> "Photo Captured"
+                        isTakingPhoto -> "Taking Photo..."
+                        else -> "Take Photo"
+                    },
                 onClick = {
                     if (cameraPermissionGranted) {
                         permissionDenied = false
-                        if (!isTakingPhoto) takePhotoInApp()
+                        if (!isTakingPhoto && !photoCaptured) takePhotoInApp()
                     } else {
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
@@ -190,13 +209,21 @@ fun CaptureRecordScreen(
                 CaptureSecondaryButton(
                     label = "Upload",
                     accentColor = VinylColors.AccentGreen,
-                    onClick = { uploadLauncher.launch("image/*") },
+                    onClick = {
+                        if (!isTakingPhoto && !photoCaptured) {
+                            uploadLauncher.launch("image/*")
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 CaptureSecondaryButton(
                     label = "Manual Search",
                     accentColor = VinylColors.AccentOrange,
-                    onClick = onManualSearch,
+                    onClick = {
+                        if (!isTakingPhoto && !photoCaptured) {
+                            onManualSearch()
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -289,6 +316,7 @@ private fun CaptureInfoPopup(onDismiss: () -> Unit) {
 @Composable
 private fun CameraPreviewSurface(
     cameraPermissionGranted: Boolean,
+    photoCaptured: Boolean,
     onImageCaptureReady: (ImageCapture?) -> Unit,
     onCameraError: (String?) -> Unit,
     modifier: Modifier = Modifier,
@@ -374,13 +402,25 @@ private fun CameraPreviewSurface(
             factory = { previewView },
             modifier = Modifier.matchParentSize(),
         )
-        CaptureHintCard(
-            modifier =
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(VinylSpacing.SpaceLg),
-        )
+        if (photoCaptured) {
+            Box(
+                modifier =
+                    Modifier
+                        .matchParentSize()
+                        .background(VinylColors.AppBackground.copy(alpha = 0.72f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                SuccessStatusFeedback(message = "Photo captured")
+            }
+        } else {
+            CaptureHintCard(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(VinylSpacing.SpaceLg),
+            )
+        }
     }
 }
 

@@ -20,9 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +46,8 @@ import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
+import com.example.vinyllistenapp.ui.components.SUCCESS_CONFIRMATION_DELAY_MS
+import com.example.vinyllistenapp.ui.components.SuccessStatusFeedback
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.delay
@@ -87,7 +86,7 @@ fun ProcessingScreen(
             state = IdentifyUiState.Empty
         } else {
             state = IdentifyUiState.Success(candidates)
-            delay(300)
+            delay(SUCCESS_CONFIRMATION_DELAY_MS)
             onComplete(candidates)
         }
     }
@@ -127,34 +126,38 @@ fun ProcessingScreen(
                     .fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(32.dp),
-            ) {
-                ProcessingStateIndicator(state)
-                Text(
-                    modifier = Modifier.width(260.dp),
-                    text = processingSubtitle(state),
-                    color = processingSubtitleColor(state),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                when (state) {
-                    IdentifyUiState.Empty ->
-                        ProcessingRecoveryActions(
-                            onRetry = { retryKey += 1 },
-                            onManualSearch = onManualSearch,
-                        )
+            if (state is IdentifyUiState.Success) {
+                SuccessStatusFeedback(message = processingSubtitle(state))
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(32.dp),
+                ) {
+                    ProcessingStateIndicator(state)
+                    Text(
+                        modifier = Modifier.width(260.dp),
+                        text = processingSubtitle(state),
+                        color = processingSubtitleColor(state),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    when (state) {
+                        IdentifyUiState.Empty ->
+                            ProcessingRecoveryActions(
+                                onRetry = { retryKey += 1 },
+                                onManualSearch = onManualSearch,
+                            )
 
-                    is IdentifyUiState.Error ->
-                        ProcessingRecoveryActions(
-                            onRetry = { retryKey += 1 },
-                            onManualSearch = onManualSearch,
-                        )
+                        is IdentifyUiState.Error ->
+                            ProcessingRecoveryActions(
+                                onRetry = { retryKey += 1 },
+                                onManualSearch = onManualSearch,
+                            )
 
-                    is IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
+                        is IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
+                    }
                 }
             }
         }
@@ -187,11 +190,7 @@ private fun processingSubtitle(state: IdentifyUiState): String =
 
 @Composable
 private fun processingSubtitleColor(state: IdentifyUiState) =
-    if (state is IdentifyUiState.Error) {
-        VinylColors.AccentOrange
-    } else {
-        VinylColors.TextSecondary
-    }
+    if (state is IdentifyUiState.Error) VinylColors.AccentOrange else VinylColors.TextSecondary
 
 private fun IdentifyJobStatus?.toProcessingMessage(): String =
     when (this) {
@@ -223,18 +222,11 @@ private fun Throwable.toIdentifyErrorMessage(): String {
 @Composable
 private fun ProcessingStateIndicator(state: IdentifyUiState) {
     when (state) {
-        is IdentifyUiState.Success ->
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = null,
-                modifier = Modifier.size(100.dp),
-                tint = VinylColors.AccentGreen,
-            )
-
         is IdentifyUiState.Loading -> ProcessingSpinner(animated = true)
 
         IdentifyUiState.Empty,
         is IdentifyUiState.Error,
+        is IdentifyUiState.Success,
         -> ProcessingSpinner(animated = false)
     }
 }
