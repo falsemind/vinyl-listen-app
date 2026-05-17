@@ -19,6 +19,7 @@ object MockVinylData {
                 rating = 5,
                 lastPlayed = "Yesterday",
                 catalogNumber = "AS-9203",
+                coverImageUrl = "https://img.discogs.com/alice-coltrane-thumb.jpg",
             ),
             RecordSummary(
                 releaseId = "release-002",
@@ -31,6 +32,7 @@ object MockVinylData {
                 rating = 4,
                 lastPlayed = "Last week",
                 catalogNumber = "FPLP01",
+                coverImageUrl = "https://img.discogs.com/floating-points-thumb.jpg",
             ),
             RecordSummary(
                 releaseId = "release-003",
@@ -43,21 +45,76 @@ object MockVinylData {
                 rating = 5,
                 lastPlayed = "2 weeks ago",
                 catalogNumber = "FE 39581",
+                coverImageUrl = "https://img.discogs.com/sade-thumb.jpg",
             ),
         )
 
     val recentSessions =
         listOf(
-            ListeningSession("release-001", "Alice Coltrane", "Journey in Satchidananda", "Yesterday", "Focused", 5),
-            ListeningSession("release-002", "Floating Points", "Elaenia", "Last week", "Late night", 4),
-            ListeningSession("release-003", "Sade", "Diamond Life", "2 weeks ago", "Relaxed", 5),
+            ListeningSession(
+                releaseId = "release-001",
+                artist = "Alice Coltrane",
+                title = "Journey in Satchidananda",
+                playedAt = "Yesterday",
+                mood = "Focused",
+                rating = 5,
+                thumbnailUrl = records[0].coverImageUrl,
+            ),
+            ListeningSession(
+                releaseId = "release-002",
+                artist = "Floating Points",
+                title = "Elaenia",
+                playedAt = "Last week",
+                mood = "Late night",
+                rating = 4,
+                thumbnailUrl = records[1].coverImageUrl,
+            ),
+            ListeningSession(
+                releaseId = "release-003",
+                artist = "Sade",
+                title = "Diamond Life",
+                playedAt = "2 weeks ago",
+                mood = "Relaxed",
+                rating = 5,
+                thumbnailUrl = records[2].coverImageUrl,
+            ),
         )
 
     val matchCandidates =
         listOf(
-            MatchCandidate("release-001", 249504, "Alice Coltrane", "Journey in Satchidananda", "Impulse!", 92, 1971, "AS-9203"),
-            MatchCandidate("release-003", 527549, "Sade", "Diamond Life", "Epic", 71, 1984, "FE 39581"),
-            MatchCandidate("release-002", 1191434, "Floating Points", "Elaenia", "Pluto", 58, 2015, "FPLP01"),
+            MatchCandidate(
+                releaseId = "release-001",
+                discogsReleaseId = 249504,
+                artist = "Alice Coltrane",
+                title = "Journey in Satchidananda",
+                label = "Impulse!",
+                confidence = 92,
+                year = 1971,
+                catalogNumber = "AS-9203",
+                coverImageUrl = records[0].coverImageUrl,
+            ),
+            MatchCandidate(
+                releaseId = "release-003",
+                discogsReleaseId = 527549,
+                artist = "Sade",
+                title = "Diamond Life",
+                label = "Epic",
+                confidence = 71,
+                year = 1984,
+                catalogNumber = "FE 39581",
+                coverImageUrl = records[2].coverImageUrl,
+            ),
+            MatchCandidate(
+                releaseId = "release-002",
+                discogsReleaseId = 1191434,
+                artist = "Floating Points",
+                title = "Elaenia",
+                label = "Pluto",
+                confidence = 58,
+                year = 2015,
+                catalogNumber = "FPLP01",
+                coverImageUrl = records[1].coverImageUrl,
+            ),
         )
 
     val moods = listOf("Focused", "Relaxed", "Late night", "Social", "Deep listen")

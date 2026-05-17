@@ -288,7 +288,12 @@ private fun TopRecordRow(
                     .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AlbumArtBlock(accentColor = badgeColor, compact = compact)
+            AlbumArtBlock(
+                accentColor = badgeColor,
+                compact = compact,
+                imageUrl = record.coverImageUrl,
+                contentDescription = "${record.title} cover art",
+            )
             Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
             Column(
                 modifier = Modifier.weight(1f),
@@ -383,7 +388,12 @@ private fun SessionRow(
                     .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AlbumArtBlock(accentColor = VinylColors.AccentGreen, compact = compact)
+            AlbumArtBlock(
+                accentColor = VinylColors.AccentGreen,
+                compact = compact,
+                imageUrl = session.thumbnailUrl,
+                contentDescription = "${session.title} cover art",
+            )
             Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
             Column(
                 modifier = Modifier.weight(1f),

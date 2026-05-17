@@ -291,7 +291,10 @@ private fun SessionRecordCard(record: RecordSummary) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RecordDetailAlbumArtBlock()
+            RecordDetailAlbumArtBlock(
+                imageUrl = record.coverImageUrl,
+                contentDescription = "${record.title} cover art",
+            )
             Spacer(Modifier.width(VinylSpacing.SpaceLg))
             Column(
                 modifier = Modifier.weight(1f),

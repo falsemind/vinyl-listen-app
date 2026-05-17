@@ -399,7 +399,12 @@ private fun ManualSearchResultRow(
                     .padding(vertical = VinylSpacing.SpaceXs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AlbumArtBlock(accentColor = VinylColors.AccentGreen, compact = true)
+            AlbumArtBlock(
+                accentColor = VinylColors.AccentGreen,
+                compact = true,
+                imageUrl = record.thumbnailUrl,
+                contentDescription = "${record.title} cover art",
+            )
             Spacer(Modifier.width(VinylSpacing.SpaceMd))
             Column(
                 modifier = Modifier.weight(1f),
