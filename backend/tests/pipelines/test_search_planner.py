@@ -198,6 +198,31 @@ def test_search_plan_compacts_split_track_title_before_context_queries() -> None
     ]
 
 
+def test_search_plan_skips_malformed_bracket_raw_lines() -> None:
+    identifiers = ExtractedIdentifiers(
+        title="TOOL LATE",
+        raw_text="\n".join(
+            [
+                "A.SIDE TOOL LATE 06:38",
+                "[DEEP VOCAL MIX]",
+                "[UNDERGROUND DUB]",
+                "©2023 South Street",
+                "NDERGROUND DUB]",
+            ]
+        ),
+        ocr_roles=(
+            OcrRoleEvidence(role="release_title", text="[DEEP VOCAL MIX]", confidence=None, source="mlx_vlm"),
+            OcrRoleEvidence(role="release_title", text="[UNDERGROUND DUB]", confidence=None, source="mlx_vlm"),
+        ),
+    )
+
+    search_steps = build_search_plan(identifiers)
+    searched_queries = [step.params.get("query") for step in search_steps]
+
+    assert all(not (query or "").startswith("NDERGROUND") for query in searched_queries)
+    assert all(" NDERGROUND" not in (query or "") for query in searched_queries)
+
+
 def test_search_plan_filters_credit_prose_from_stamped_label_queries() -> None:
     identifiers = ExtractedIdentifiers(
         catalog_numbers=("RNVO3", "RNV03"),

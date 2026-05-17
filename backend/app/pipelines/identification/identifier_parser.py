@@ -82,6 +82,8 @@ NOISE_TERMS = {
     "mono",
     "this side",
     "other side",
+    "that side",
+    "side",
     "side a",
     "side b",
     "33 rpm",
@@ -479,6 +481,10 @@ def _extract_artist_and_title(
     if labeled_artist or labeled_title:
         return labeled_artist, labeled_title
 
+    top_stacked_pair = _select_top_stacked_artist_title(cleaned_lines, blocked_values=blocked_values)
+    if top_stacked_pair is not None:
+        return top_stacked_pair
+
     for line in cleaned_lines:
         if line.lower() in blocked_values:
             continue
@@ -525,6 +531,9 @@ def _extract_artist_and_title(
     scored_pair = _select_artist_title_pair(candidate_entries)
     if scored_pair is not None:
         return scored_pair
+    track_listing_title = _select_single_track_listing_title(candidate_entries)
+    if track_listing_title is not None:
+        return None, track_listing_title
     if len(candidate_lines) == 1 and _metadata_line_quality(candidate_lines[0]) > 0:
         return None, candidate_lines[0]
 
@@ -549,6 +558,47 @@ def _extract_slash_separated_identity(value: str) -> tuple[str, str, str] | None
     return catalog_number, artist, title
 
 
+def _select_top_stacked_artist_title(
+    cleaned_lines: list[str],
+    *,
+    blocked_values: set[str],
+) -> tuple[str, str] | None:
+    first_side_index = next((index for index, line in enumerate(cleaned_lines) if _is_side_heading(line)), None)
+    if first_side_index is None or first_side_index < 2:
+        return None
+    if first_side_index > 4:
+        return None
+
+    candidates: list[str] = []
+    for line in cleaned_lines[:first_side_index]:
+        if line.lower() in blocked_values:
+            continue
+        candidate = _clean_candidate_line(line)
+        if candidate is None:
+            continue
+        if not _is_strict_metadata_line(candidate) and not _is_release_type_line(candidate):
+            continue
+        candidates.append(candidate)
+
+    if len(candidates) < 2:
+        return None
+    if len(candidates) > 3:
+        return None
+
+    artist = candidates[0]
+    title = candidates[1]
+    if len(candidates) > 2 and _is_release_type_line(candidates[2]):
+        title = f"{title} {candidates[2].upper()}"
+
+    if not (_is_strict_metadata_line(artist) and _is_strict_metadata_line(title)):
+        return None
+    return artist, title
+
+
+def _is_release_type_line(value: str) -> bool:
+    return value.strip().upper() in {"EP", "LP"}
+
+
 def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None:
     counts: dict[str, int] = {}
     values: dict[str, str] = {}
@@ -567,6 +617,13 @@ def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None
     if len(repeated_titles) != 1:
         return None
     return repeated_titles[0]
+
+
+def _select_single_track_listing_title(candidate_entries: list[tuple[str, bool]]) -> str | None:
+    track_titles = [value for value, is_track in candidate_entries if is_track]
+    if len(track_titles) != 1:
+        return None
+    return track_titles[0]
 
 
 def _select_repeated_track_listing_artist_title(
@@ -726,6 +783,8 @@ def _is_candidate_metadata_line(value: str) -> bool:
         return False
     if _looks_like_side_marker_line(value):
         return False
+    if _has_unbalanced_bracket_edge(value):
+        return False
     if lowered_value.startswith(("http://", "https://", "www.")):
         return False
     if lowered_value.startswith(NOISE_PREFIXES):
@@ -760,6 +819,15 @@ def _looks_like_credit_line(value: str) -> bool:
 
 def _looks_like_side_marker_line(value: str) -> bool:
     return re.fullmatch(rf"\s*{SIDE_MARKER_PATTERN}[.)]?\s*side\s*", value, re.IGNORECASE) is not None
+
+
+def _has_unbalanced_bracket_edge(value: str) -> bool:
+    stripped_value = value.strip()
+    opens_at_edge = stripped_value.startswith(("[", "("))
+    closes_at_edge = stripped_value.endswith(("]", ")"))
+    contains_open = any(character in stripped_value for character in "[(")
+    contains_close = any(character in stripped_value for character in "])")
+    return (opens_at_edge and not contains_close) or (closes_at_edge and not contains_open)
 
 
 def _looks_like_legal_rights_line(value: str) -> bool:
@@ -1263,7 +1331,7 @@ def _looks_like_track_listing(value: str) -> bool:
 
 
 def _is_side_heading(value: str) -> bool:
-    return value.strip().lower() in {"this side", "other side"}
+    return value.strip().lower() in {"this side", "that side", "other side"}
 
 
 def _extract_track_listing_title(value: str) -> str | None:
