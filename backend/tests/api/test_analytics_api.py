@@ -16,6 +16,7 @@ class StubAnalyticsService:
             discogs_release_id=555123,
             artist="Boards of Canada",
             title="Music Has The Right To Children",
+            cover_image_url="https://img.discogs.com/cover.jpg",
         )
 
     def get_monthly_plays(self, _db):
@@ -74,6 +75,7 @@ def test_top_records_endpoint_returns_records_and_forwards_limit() -> None:
                 "discogs_release_id": 555123,
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
+                "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "plays": 5,
                 "average_rating": 4.5,
             }

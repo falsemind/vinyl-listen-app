@@ -80,6 +80,7 @@ class HomeRecentSessionItem(BaseModel):
     release_id: str
     artist: str
     title: str
+    thumbnail_url: str | None = None
     date: str | None
     played_at: datetime | None = None
     side: str | None
@@ -92,6 +93,7 @@ class HomeTopRecordItem(BaseModel):
     release_id: str
     artist: str
     title: str
+    thumbnail_url: str | None = None
     plays: int
     average_rating: float | None
 

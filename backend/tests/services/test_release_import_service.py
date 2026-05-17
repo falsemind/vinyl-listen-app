@@ -19,6 +19,7 @@ def test_import_release_creates_a_new_internal_release(
     assert result.status == "created"
     assert result.release.id == "release-123"
     assert result.release.discogs_release_id == 555123
+    assert result.release.cover_image_url == "https://img.discogs.com/thumb.jpg"
     assert discogs_service.calls == [(555123, False)]
 
 
@@ -54,6 +55,7 @@ def test_import_release_updates_existing_release_when_present(
     assert result.release.id == "release-123"
     assert result.release.artist == "Boards of Canada"
     assert result.release.title == "Music Has The Right To Children"
+    assert result.release.cover_image_url == "https://img.discogs.com/thumb.jpg"
     assert discogs_service.calls == [(555123, True)]
 
 

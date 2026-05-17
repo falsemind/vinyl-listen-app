@@ -104,6 +104,7 @@ def get_home_summary(
                 release_id=item.release.id,
                 artist=item.release.artist,
                 title=item.release.title,
+                thumbnail_url=item.release.cover_image_url,
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
                 played_at=item.session.played_at,
                 side=item.session.vinyl_side,
@@ -120,6 +121,7 @@ def get_home_summary(
                 release_id=item.release.id,
                 artist=item.release.artist,
                 title=item.release.title,
+                thumbnail_url=item.release.cover_image_url,
                 plays=item.plays,
                 average_rating=round(item.average_rating, 1) if item.average_rating is not None else None,
             )

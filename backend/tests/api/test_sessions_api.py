@@ -135,6 +135,7 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "release_id": "release-123",
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
+                "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "date": "2026-03-14",
                 "played_at": "2026-03-14T19:21:00Z",
                 "side": "A",
@@ -150,6 +151,7 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "release_id": "release-123",
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
+                "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "plays": 2,
                 "average_rating": 4.5,
             }

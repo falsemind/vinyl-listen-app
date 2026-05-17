@@ -67,6 +67,7 @@ def get_top_records(
                 discogs_release_id=item.release.discogs_release_id,
                 artist=item.release.artist,
                 title=item.release.title,
+                thumbnail_url=item.release.cover_image_url,
                 plays=item.plays,
                 average_rating=round(item.average_rating, 1) if item.average_rating is not None else None,
             )

@@ -15,6 +15,7 @@ class AnalyticsTopRecordItem(BaseModel):
     discogs_release_id: int
     artist: str
     title: str
+    thumbnail_url: str | None = None
     plays: int
     average_rating: float | None
 

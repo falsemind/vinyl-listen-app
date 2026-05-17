@@ -87,6 +87,7 @@ def discogs_release_payload() -> dict:
         "id": 555123,
         "artists_sort": "Boards of Canada",
         "title": "Music Has The Right To Children",
+        "thumb": "https://img.discogs.com/thumb.jpg",
         "genres": ["Electronic"],
         "styles": ["IDM"],
     }
