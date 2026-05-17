@@ -24,11 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.SubcomposeAsyncImage
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -114,6 +116,8 @@ internal fun CaptureCircleButton(
 internal fun AlbumArtBlock(
     accentColor: androidx.compose.ui.graphics.Color,
     compact: Boolean = false,
+    imageUrl: String? = null,
+    contentDescription: String = "Album artwork",
 ) {
     val outerSize = if (compact) 54.dp else 64.dp
     val recordSize = if (compact) 32.dp else 38.dp
@@ -124,29 +128,59 @@ internal fun AlbumArtBlock(
         modifier =
             Modifier
                 .size(outerSize)
+                .clip(VinylShapes.Card)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(recordSize)
-                    .background(accentColor.copy(alpha = 0.2f), CircleShape)
-                    .border(1.dp, accentColor.copy(alpha = 0.45f), CircleShape),
-        )
-        Box(
-            modifier =
-                Modifier
-                    .size(dotSize)
-                    .offset(x = dotOffset, y = -dotOffset)
-                    .background(accentColor, CircleShape),
-        )
+        if (imageUrl.isNullOrBlank()) {
+            AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset)
+        } else {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset) },
+                error = { AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset) },
+            )
+        }
     }
 }
 
 @Composable
-internal fun RecordDetailAlbumArtBlock() {
+private fun AlbumArtFallback(
+    accentColor: androidx.compose.ui.graphics.Color,
+    recordSize: androidx.compose.ui.unit.Dp,
+    dotSize: androidx.compose.ui.unit.Dp,
+    dotOffset: androidx.compose.ui.unit.Dp,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(recordSize)
+                .background(accentColor.copy(alpha = 0.2f), CircleShape)
+                .border(1.dp, accentColor.copy(alpha = 0.45f), CircleShape),
+    )
+    Box(
+        modifier =
+            Modifier
+                .size(dotSize)
+                .offset(x = dotOffset, y = -dotOffset)
+                .background(accentColor, CircleShape),
+    )
+}
+
+@Composable
+internal fun RecordDetailAlbumArtBlock(
+    imageUrl: String? = null,
+    contentDescription: String = "Album artwork",
+) {
+    val recordSize = 56.dp
+    val dotSize = 12.dp
+    val dotOffset = 18.dp
+    val accentColor = VinylColors.AccentGreen
+
     Box(
         modifier =
             Modifier
@@ -163,20 +197,18 @@ internal fun RecordDetailAlbumArtBlock() {
                 ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(56.dp)
-                    .background(VinylColors.AccentGreen.copy(alpha = 0.18f), CircleShape)
-                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.45f), CircleShape),
-        )
-        Box(
-            modifier =
-                Modifier
-                    .size(12.dp)
-                    .offset(x = 18.dp, y = -18.dp)
-                    .background(VinylColors.AccentOrange, CircleShape),
-        )
+        if (imageUrl.isNullOrBlank()) {
+            AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset)
+        } else {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset) },
+                error = { AlbumArtFallback(accentColor, recordSize, dotSize, dotOffset) },
+            )
+        }
     }
 }
 

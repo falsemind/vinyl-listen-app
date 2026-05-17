@@ -163,6 +163,7 @@ class VinylApiClient(
                             playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
                             mood = item.optNullableString("mood") ?: "Unspecified",
                             rating = item.optNullableInt("rating") ?: 0,
+                            thumbnailUrl = item.optNullableString("thumbnail_url"),
                             side = item.optNullableString("side"),
                             hasNotes = item.optBoolean("has_notes", false),
                         )
@@ -183,6 +184,7 @@ class VinylApiClient(
                                     format = "Vinyl",
                                     rating = 0,
                                     lastPlayed = "",
+                                    coverImageUrl = item.optNullableString("thumbnail_url"),
                                 ),
                             plays = item.optInt("plays", 0),
                             averageRating = item.optNullableDouble("average_rating")?.let { String.format(Locale.US, "%.1f", it) } ?: "-",
@@ -221,6 +223,7 @@ class VinylApiClient(
                                         format = "Vinyl",
                                         rating = 0,
                                         lastPlayed = "",
+                                        coverImageUrl = item.optNullableString("thumbnail_url"),
                                     ),
                                 plays = item.optInt("plays", 0),
                                 averageRating =

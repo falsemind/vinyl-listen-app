@@ -1,6 +1,13 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -19,8 +27,10 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.ui.components.AccentCard
+import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.theme.VinylColors
+import com.example.vinyllistenapp.ui.theme.VinylSpacing
 
 @Composable
 fun RecentSessionsScreen(
@@ -102,9 +112,29 @@ private fun SessionListItem(
     AccentCard(
         modifier = Modifier.clickable(onClickLabel = "Open ${session.title}", role = Role.Button, onClick = onClick),
     ) {
-        Text(session.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(session.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(relativeLastPlayedLabel(session.playedAt), color = VinylColors.TextSecondary)
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumArtBlock(
+                accentColor = VinylColors.AccentGreen,
+                compact = true,
+                imageUrl = session.thumbnailUrl,
+                contentDescription = "${session.title} cover art",
+            )
+            Spacer(Modifier.width(VinylSpacing.SpaceMd))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            ) {
+                Text(session.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(relativeLastPlayedLabel(session.playedAt), color = VinylColors.TextSecondary)
+            }
+        }
     }
 }
 
@@ -116,9 +146,29 @@ private fun TopRecordListItem(
     AccentCard(
         modifier = Modifier.clickable(onClickLabel = "Open ${record.record.title}", role = Role.Button, onClick = onClick),
     ) {
-        Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${record.plays} plays", color = VinylColors.AccentGreen)
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AlbumArtBlock(
+                accentColor = VinylColors.AccentGreen,
+                compact = true,
+                imageUrl = record.record.coverImageUrl,
+                contentDescription = "${record.record.title} cover art",
+            )
+            Spacer(Modifier.width(VinylSpacing.SpaceMd))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            ) {
+                Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${record.plays} plays", color = VinylColors.AccentGreen)
+            }
+        }
     }
 }
 

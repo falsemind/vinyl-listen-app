@@ -42,6 +42,7 @@ data class ListeningSession(
     val playedAt: String,
     val mood: String,
     val rating: Int,
+    val thumbnailUrl: String? = null,
     val side: String? = null,
     val hasNotes: Boolean = false,
 )

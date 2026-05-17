@@ -30,12 +30,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import coil.compose.SubcomposeAsyncImage
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
@@ -207,7 +209,11 @@ private fun MatchCandidateCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top,
             ) {
-                MatchAlbumArtBlock(accentColor = accentColor)
+                MatchAlbumArtBlock(
+                    accentColor = accentColor,
+                    imageUrl = candidate.coverImageUrl,
+                    contentDescription = "${candidate.title} cover art",
+                )
                 Spacer(Modifier.width(VinylSpacing.SpaceLg))
                 Column(
                     modifier = Modifier.weight(1f),
@@ -310,7 +316,11 @@ private fun MatchDetailsPlaceholderPopup(
 }
 
 @Composable
-private fun MatchAlbumArtBlock(accentColor: androidx.compose.ui.graphics.Color) {
+private fun MatchAlbumArtBlock(
+    accentColor: androidx.compose.ui.graphics.Color,
+    imageUrl: String?,
+    contentDescription: String,
+) {
     Box(
         modifier =
             Modifier
@@ -327,21 +337,37 @@ private fun MatchAlbumArtBlock(accentColor: androidx.compose.ui.graphics.Color) 
                 ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(46.dp)
-                    .background(accentColor.copy(alpha = 0.20f), CircleShape)
-                    .border(1.dp, accentColor.copy(alpha = 0.50f), CircleShape),
-        )
-        Box(
-            modifier =
-                Modifier
-                    .size(10.dp)
-                    .offset(x = 14.dp, y = -14.dp)
-                    .background(accentColor, CircleShape),
-        )
+        if (imageUrl.isNullOrBlank()) {
+            MatchAlbumArtFallback(accentColor)
+        } else {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { MatchAlbumArtFallback(accentColor) },
+                error = { MatchAlbumArtFallback(accentColor) },
+            )
+        }
     }
+}
+
+@Composable
+private fun MatchAlbumArtFallback(accentColor: androidx.compose.ui.graphics.Color) {
+    Box(
+        modifier =
+            Modifier
+                .size(46.dp)
+                .background(accentColor.copy(alpha = 0.20f), CircleShape)
+                .border(1.dp, accentColor.copy(alpha = 0.50f), CircleShape),
+    )
+    Box(
+        modifier =
+            Modifier
+                .size(10.dp)
+                .offset(x = 14.dp, y = -14.dp)
+                .background(accentColor, CircleShape),
+    )
 }
 
 @Composable

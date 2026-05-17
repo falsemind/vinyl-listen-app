@@ -511,6 +511,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "release_id": "release-123",
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
+      "thumbnail_url": "https://...",
       "date": "2026-05-10",
       "played_at": "2026-05-10T23:30:00Z",
       "side": "A",
@@ -526,6 +527,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "release_id": "release-123",
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
+      "thumbnail_url": "https://...",
       "plays": 1,
       "average_rating": 5.0
     }
@@ -650,6 +652,7 @@ Backend calculates metrics using configurable time windows (e.g. last 90 days).
       "discogs_release_id": "555123",
       "artist": "Boards of Canada",
       "title": "Music Has The Right To Children",
+      "thumbnail_url": "https://...",
       "plays": 12,
       "average_rating": 4.5
     }
