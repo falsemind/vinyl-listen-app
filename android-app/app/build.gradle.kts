@@ -11,6 +11,7 @@ val vinylApiBaseUrl =
     providers.gradleProperty("vinylApiBaseUrl").orNull
         ?: providers.environmentVariable("VINYL_API_BASE_URL").orNull
         ?: localProperties.getProperty("vinylApiBaseUrl")
+        ?: localProperties.getProperty("VINYL_API_BASE_URL")
         ?: "http://10.0.2.2:8000/api/v1"
 
 plugins {
