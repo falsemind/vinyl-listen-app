@@ -662,6 +662,9 @@ def _extract_raw_search_lines(raw_text: str) -> list[str]:
     lines: list[str] = []
 
     for raw_line in raw_text.splitlines():
+        if _has_unbalanced_bracket_edge(raw_line):
+            continue
+
         line = _clean_query_line(raw_line)
         if line is not None and _has_query_value(line):
             lines.append(line)
@@ -732,6 +735,15 @@ def _free_text_fragment_queries(fragment: str) -> tuple[str, ...]:
         return ()
 
     return (line,)
+
+
+def _has_unbalanced_bracket_edge(value: str) -> bool:
+    stripped_value = value.strip()
+    opens_at_edge = stripped_value.startswith(("[", "("))
+    closes_at_edge = stripped_value.endswith(("]", ")"))
+    contains_open = any(character in stripped_value for character in "[(")
+    contains_close = any(character in stripped_value for character in "])")
+    return (opens_at_edge and not contains_close) or (closes_at_edge and not contains_open)
 
 
 def _extract_credit_name_queries(value: str) -> tuple[str, ...]:

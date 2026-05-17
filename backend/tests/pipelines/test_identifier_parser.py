@@ -299,6 +299,62 @@ def test_identifier_parser_uses_repeated_side_title_over_credit_and_band_noise()
     assert all(not value.startswith("Licensed courtesy") for value in identifiers.text_fragments)
 
 
+def test_identifier_parser_does_not_promote_fragmented_band_ocr_to_identity() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "A.SIDE TOOL LATE 06:38",
+                "[DEEP VOCAL MIX]",
+                "Written by Carroll Thompson",
+                "Produced by Daryl B & Matt Coleman",
+                "[UNDERGROUND DUB]",
+                "Licensed courtesy of Daryl B & Pointblank Records",
+                "©2023 South Street",
+                "B",
+                "45",
+                "so",
+                "SIDE",
+                "TOOLATE",
+                "06:56",
+                "NDERGROUND DUB]",
+            ]
+        )
+    )
+
+    assert identifiers.artist is None
+    assert identifiers.title == "TOOL LATE"
+    assert identifiers.label is None
+    assert "SIDE" not in identifiers.text_fragments
+    assert "NDERGROUND DUB]" not in identifiers.text_fragments
+
+
+def test_identifier_parser_reads_top_stacked_artist_title_before_side_tracks() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "WARLOK",
+                "DARKSIDE SWING",
+                "EP",
+                "THIS SIDE",
+                "FEELINGS",
+                "IN LOVE WITH THE RHYTHM",
+                "THAT SIDE",
+                "READY FOR YOUR LOVE",
+                "BANSHEE",
+                "N LOVE WITH THE RHYTHM",
+            ]
+        )
+    )
+
+    assert identifiers.artist == "WARLOK"
+    assert identifiers.title == "DARKSIDE SWING EP"
+    assert "THAT SIDE" not in identifiers.text_fragments
+
+
 def test_identifier_parser_keeps_catalog_number_near_side_marker() -> None:
     parser = IdentifierParser()
 
