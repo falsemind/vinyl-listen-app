@@ -157,6 +157,7 @@ candidate ranking
       "catalog_number": "SHVL 804",
       "barcode": null,
       "cover_image_url": "https://...",
+      "format": "Vinyl, LP",
       "match_source": "discogs",
       "matched_on": ["catalog_number"],
       "confidence": 0.92
