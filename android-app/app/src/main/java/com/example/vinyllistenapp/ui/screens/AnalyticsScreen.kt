@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +50,7 @@ import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.components.SectionActionHeader
@@ -104,7 +104,7 @@ fun AnalyticsScreen(
             innerPadding = innerPadding,
         ) {
             loadError?.let { message ->
-                AnalyticsRecoveryCard(message = message, onRetry = { retryKey += 1 })
+                ErrorRetryCard(message = message, onRetry = { retryKey += 1 })
             }
             SectionTitle("Plays Over Time")
             MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
@@ -366,28 +366,6 @@ private fun ProgressTrack(
                     .height(8.dp)
                     .clip(VinylShapes.Chip)
                     .background(accentColor),
-        )
-    }
-}
-
-@Composable
-private fun AnalyticsRecoveryCard(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    AccentCard(
-        modifier =
-            Modifier.clickable(
-                onClickLabel = "Retry loading analytics",
-                role = Role.Button,
-                onClick = onRetry,
-            ),
-        borderColor = VinylColors.AccentOrange.copy(alpha = 0.35f),
-    ) {
-        Text(
-            text = "$message Tap to retry.",
-            color = VinylColors.AccentOrange,
-            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }

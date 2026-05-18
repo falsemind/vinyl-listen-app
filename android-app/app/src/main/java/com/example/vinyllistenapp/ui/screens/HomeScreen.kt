@@ -47,6 +47,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
@@ -109,10 +110,10 @@ fun HomeScreen(
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
         ) {
-            SectionActionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
             loadError?.let { message ->
-                HomeRecoveryCard(message = message, onRetry = { retryKey += 1 })
+                ErrorRetryCard(message = message, onRetry = { retryKey += 1 })
             }
+            SectionActionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
             if (homeSummary.recentSessions.isEmpty()) {
                 EmptyHomeState("No sessions logged yet.")
             } else {
@@ -191,23 +192,6 @@ private fun SnapshotCard(
             fontWeight = FontWeight.Bold,
         )
         Text(label, color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-private fun HomeRecoveryCard(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    AccentCard(
-        modifier = Modifier.clickable(onClick = onRetry),
-        borderColor = VinylColors.AccentOrange.copy(alpha = 0.35f),
-    ) {
-        Text(
-            text = "$message Tap to retry.",
-            color = VinylColors.AccentOrange,
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
 }
 
