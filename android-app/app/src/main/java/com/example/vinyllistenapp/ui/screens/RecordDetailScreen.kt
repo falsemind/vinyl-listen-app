@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
@@ -36,6 +37,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
@@ -95,20 +97,20 @@ fun RecordDetailScreen(
                         .padding(horizontal = VinylSpacing.SpaceMd),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
             ) {
-                RecordDetailHeroCard(record = record)
                 detailError?.let { message ->
-                    RecordDetailRecoveryCard(
+                    ErrorRetryCard(
                         message = message,
                         onRetry = { retryKey += 1 },
                     )
                 }
+                RecordDetailHeroCard(record = record)
                 SectionTitle("Listening Stats")
                 RecordDetailStatsRow(record = record, sessions = sessions)
                 SectionTitle("Mood Summary")
                 RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId, sessions))
                 SectionTitle("Recent Sessions")
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                    recordDetailHistory(record.releaseId, sessions).forEach { history ->
+                    recordDetailHistory(record.releaseId, sessions).take(10).forEach { history ->
                         RecordHistoryCard(history = history)
                     }
                 }
@@ -132,6 +134,8 @@ fun RecordDetailScreen(
 
 @Composable
 private fun RecordDetailHeroCard(record: RecordSummary) {
+    val uriHandler = LocalUriHandler.current
+
     Box(
         modifier =
             Modifier
@@ -190,13 +194,17 @@ private fun RecordDetailHeroCard(record: RecordSummary) {
                     )
                 }
             }
-            RecordDiscogsButton()
+            RecordDiscogsButton(
+                onClick = {
+                    uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun RecordDiscogsButton() {
+private fun RecordDiscogsButton(onClick: () -> Unit) {
     Box(
         modifier =
             Modifier
@@ -205,7 +213,7 @@ private fun RecordDiscogsButton() {
                 .clip(VinylShapes.Button)
                 .background(VinylColors.SurfaceSecondary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
-                .clickable(onClick = {}),
+                .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -216,28 +224,7 @@ private fun RecordDiscogsButton() {
     }
 }
 
-@Composable
-private fun RecordDetailRecoveryCard(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(VinylShapes.Card)
-                .background(VinylColors.SurfacePrimary)
-                .border(1.dp, VinylColors.AccentOrange.copy(alpha = 0.35f), VinylShapes.Card)
-                .clickable(onClick = onRetry)
-                .padding(VinylSpacing.SpaceLg),
-    ) {
-        Text(
-            text = "$message Tap to retry.",
-            color = VinylColors.AccentOrange,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
+private fun discogsReleaseUrl(discogsReleaseId: Long): String = "https://www.discogs.com/release/$discogsReleaseId"
 
 @Composable
 private fun RecordDetailStatsRow(

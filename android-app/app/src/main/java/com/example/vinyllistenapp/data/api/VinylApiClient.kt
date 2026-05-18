@@ -303,7 +303,7 @@ class VinylApiClient(
                 throw error
             } catch (error: IOException) {
                 throw ApiException(
-                    message = "Backend unavailable. Start the local API and retry.",
+                    message = "Service unavailable.",
                     kind = ApiErrorKind.Offline,
                     cause = error,
                 )

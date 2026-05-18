@@ -90,6 +90,36 @@ internal fun SectionTitle(label: String) {
 }
 
 @Composable
+internal fun ErrorRetryCard(
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentOrange.copy(alpha = 0.35f), VinylShapes.Card)
+                .clickable(
+                    onClickLabel = "Retry",
+                    role = Role.Button,
+                    onClick = onRetry,
+                ).padding(VinylSpacing.SpaceLg),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = "$message Tap to retry.",
+            color = VinylColors.AccentOrange,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 internal fun SectionActionHeader(
     label: String,
     action: String,

@@ -30,6 +30,7 @@ import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -60,7 +61,7 @@ fun RecentSessionsScreen(
         topPadding = 48.dp,
         topStartContent = { BackText(onBack) },
     ) {
-        error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
+        error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         sessions.forEach { session ->
             SessionListItem(session = session, onClick = { onOpenRecord(session.releaseId) })
         }
@@ -98,7 +99,7 @@ fun TopRecordsScreen(
         topPadding = 48.dp,
         topStartContent = { BackText(onBack) },
     ) {
-        error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
+        error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         records.forEach { record ->
             TopRecordListItem(record = record, onClick = { onOpenRecord(record.record.releaseId) })
         }
@@ -131,7 +132,7 @@ fun MoodDistributionScreen(
         topPadding = 48.dp,
         topStartContent = { BackText(onBack) },
     ) {
-        error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
+        error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         MoodDistributionCard(moods = moods)
         BackText(onBack)
     }
@@ -212,19 +213,6 @@ private fun TopRecordListItem(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-@Composable
-private fun RetryMessage(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    AccentCard(
-        modifier = Modifier.clickable(onClickLabel = "Retry", role = Role.Button, onClick = onRetry),
-        borderColor = VinylColors.AccentOrange.copy(alpha = 0.35f),
-    ) {
-        Text("$message Tap to retry.", color = VinylColors.AccentOrange)
     }
 }
 

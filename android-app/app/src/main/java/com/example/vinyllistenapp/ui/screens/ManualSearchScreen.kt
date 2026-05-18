@@ -40,6 +40,7 @@ import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
@@ -61,6 +62,8 @@ fun ManualSearchScreen(
     var yearQuery by rememberSaveable { mutableStateOf("") }
     var state by remember { mutableStateOf<ManualSearchUiState>(ManualSearchUiState.Idle) }
     var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }
+    var retryError by remember { mutableStateOf<String?>(null) }
+    var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
 
     fun runSearch(loadMore: Boolean = false) {
         val artist = artistQuery.trim()
@@ -78,6 +81,8 @@ fun ManualSearchScreen(
         scope.launch {
             val currentResults = (state as? ManualSearchUiState.Success)?.results.orEmpty()
             val offset = if (loadMore) currentResults.size else 0
+            retryError = null
+            failedImportResult = null
             state =
                 if (loadMore && currentResults.isNotEmpty()) {
                     ManualSearchUiState.Success(currentResults, hasMore = true, isLoadingMore = true)
@@ -100,7 +105,8 @@ fun ManualSearchScreen(
                         state = ManualSearchUiState.Success(currentResults, hasMore = true)
                         return@launch
                     }
-                    state = ManualSearchUiState.Error(error.toUserMessage("Search failed. Retry in a moment."))
+                    retryError = error.toUserMessage("Search failed. Retry in a moment.")
+                    state = ManualSearchUiState.Idle
                     return@launch
                 }
             val combinedResults = if (loadMore) currentResults + results else results
@@ -126,7 +132,8 @@ fun ManualSearchScreen(
                 runCatching { apiClient.importRelease(result.discogsReleaseId) }
                     .getOrElse { error ->
                         selectingDiscogsReleaseId = null
-                        state = ManualSearchUiState.Error(error.toUserMessage("Could not import that record. Retry."))
+                        failedImportResult = result
+                        retryError = error.toUserMessage("Could not import that record. Retry.")
                         return@launch
                     }
             selectingDiscogsReleaseId = null
@@ -149,6 +156,15 @@ fun ManualSearchScreen(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
         )
+        retryError?.let { message ->
+            Spacer(Modifier.height(VinylSpacing.SpaceLg))
+            ErrorRetryCard(
+                message = message,
+                onRetry = {
+                    failedImportResult?.let(::selectResult) ?: runSearch()
+                },
+            )
+        }
         Spacer(Modifier.height(VinylSpacing.SpaceLg))
         Column(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),

@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -61,6 +62,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -93,8 +95,10 @@ fun SessionLoggingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var isSaving by rememberSaveable { mutableStateOf(false) }
     var saveError by rememberSaveable { mutableStateOf<String?>(null) }
-    var customMoodError by rememberSaveable { mutableStateOf<String?>(null) }
+    var customMoodValidationError by rememberSaveable { mutableStateOf<String?>(null) }
+    var customMoodServerError by rememberSaveable { mutableStateOf<String?>(null) }
     var loadRetryKey by remember { mutableIntStateOf(0) }
+    var customMoodRetryKey by remember { mutableIntStateOf(0) }
     var loadError by remember(releaseId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(releaseId, loadRetryKey) {
@@ -115,16 +119,16 @@ fun SessionLoggingScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(customMoodRetryKey) {
         runCatching { apiClient.getCustomMoods() }
             .onSuccess { moodsFromApi ->
                 customMoods =
                     moodsFromApi
                         .filter { isValidCustomMood(it) && !isBuiltInMood(it, moods) }
                         .distinctBy { it.lowercase() }
-                customMoodError = null
+                customMoodServerError = null
             }.onFailure { error ->
-                customMoodError = error.toUserMessage("Custom moods could not be loaded.")
+                customMoodServerError = error.toUserMessage("Custom moods could not be loaded.")
             }
     }
 
@@ -150,6 +154,16 @@ fun SessionLoggingScreen(
         }
     }
 
+    fun retryServerError() {
+        when {
+            saveError != null -> saveSession()
+            loadError != null -> loadRetryKey += 1
+            customMoodServerError != null -> customMoodRetryKey += 1
+        }
+    }
+
+    val serverError = saveError ?: loadError ?: customMoodServerError
+
     Column(
         modifier =
             Modifier
@@ -158,6 +172,10 @@ fun SessionLoggingScreen(
                 .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         SessionLoggingHeader(onCancel = onCancel)
+        serverError?.let { message ->
+            ErrorRetryCard(message = message, onRetry = ::retryServerError)
+            Spacer(Modifier.height(VinylSpacing.SpaceXl))
+        }
         Column(
             modifier =
                 Modifier
@@ -166,19 +184,6 @@ fun SessionLoggingScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
         ) {
             SessionRecordCard(record = record)
-            loadError?.let { message ->
-                Text(
-                    modifier =
-                        Modifier
-                            .clip(VinylShapes.Chip)
-                            .background(VinylColors.SurfacePrimary)
-                            .clickable { loadRetryKey += 1 }
-                            .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceMd),
-                    text = "$message Tap to retry.",
-                    color = VinylColors.AccentOrange,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
             SessionFieldLabel("Side Played")
             SessionSideSelector(
                 selectedSide = selectedSideOption,
@@ -192,25 +197,30 @@ fun SessionLoggingScreen(
                 moods = moods,
                 customMoods = customMoods,
                 selectedMood = selectedMood,
-                onMoodSelected = { selectedMood = it },
+                onMoodSelected = {
+                    selectedMood = it
+                    customMoodValidationError = null
+                },
                 onSaveCustomMood = { mood ->
                     val normalizedMood = sanitizeCustomMood(mood).trim()
                     if (isExistingMood(normalizedMood, moods, customMoods)) {
-                        customMoodError = "That mood already exists."
+                        customMoodValidationError = "That mood already exists."
                     } else {
                         scope.launch {
                             runCatching { apiClient.createCustomMood(normalizedMood) }
                                 .onSuccess { savedMood ->
                                     val cleanedMood = sanitizeCustomMood(savedMood).trim()
                                     if (isExistingMood(cleanedMood, moods, customMoods)) {
-                                        customMoodError = "That mood already exists."
+                                        customMoodValidationError = "That mood already exists."
                                     } else {
                                         customMoods = saveCustomMood(customMoods, cleanedMood, moods)
                                         selectedMood = cleanedMood
-                                        customMoodError = null
+                                        customMoodValidationError = null
+                                        customMoodServerError = null
                                     }
                                 }.onFailure { error ->
-                                    customMoodError = error.toUserMessage("Custom mood could not be saved.")
+                                    customMoodValidationError = null
+                                    customMoodServerError = error.toUserMessage("Custom mood could not be saved.")
                                 }
                         }
                     }
@@ -221,14 +231,15 @@ fun SessionLoggingScreen(
                             .onSuccess {
                                 customMoods = deleteCustomMood(customMoods, mood)
                                 if (selectedMood == mood) selectedMood = "Calm"
-                                customMoodError = null
+                                customMoodValidationError = null
+                                customMoodServerError = null
                             }.onFailure { error ->
-                                customMoodError = error.toUserMessage("Custom mood could not be deleted.")
+                                customMoodServerError = error.toUserMessage("Custom mood could not be deleted.")
                             }
                     }
                 },
             )
-            customMoodError?.let { message ->
+            customMoodValidationError?.let { message ->
                 Text(
                     text = message,
                     color = VinylColors.AccentOrange,
@@ -237,13 +248,6 @@ fun SessionLoggingScreen(
             }
             SessionFieldLabel("Notes (Optional)")
             SessionNotesField(notes = notes, onNotesChange = { notes = it })
-            saveError?.let { message ->
-                Text(
-                    text = message,
-                    color = VinylColors.AccentOrange,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
         }
         Row(
@@ -567,45 +571,37 @@ private fun SessionMoodGrid(
                 },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-            moods.chunked(3).forEach { rowMoods ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                ) {
-                    rowMoods.forEach { mood ->
-                        SessionMoodChip(
-                            label = mood,
-                            selected = mood == selectedMood,
-                            onClick = { onMoodSelected(mood) },
-                        )
-                    }
+            WrappingChipRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalSpacing = VinylSpacing.SpaceSm,
+                verticalSpacing = VinylSpacing.SpaceMd,
+            ) {
+                moods.forEach { mood ->
+                    SessionMoodChip(
+                        label = mood,
+                        selected = mood == selectedMood,
+                        onClick = { onMoodSelected(mood) },
+                    )
                 }
-            }
-            customMoods.chunked(2).forEach { rowMoods ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                ) {
-                    rowMoods.forEach { mood ->
-                        SessionMoodChip(
-                            label = mood,
-                            selected = mood == selectedMood,
-                            showDeleteIcon = true,
-                            onClick = { onMoodSelected(mood) },
-                            onLongClick = { deleteCandidate = mood },
-                        )
-                    }
+                customMoods.forEach { mood ->
+                    SessionMoodChip(
+                        label = mood,
+                        selected = mood == selectedMood,
+                        showDeleteIcon = true,
+                        onClick = { onMoodSelected(mood) },
+                        onLongClick = { deleteCandidate = mood },
+                    )
                 }
+                SessionMoodChip(
+                    label = "Custom",
+                    selected = false,
+                    leadingIcon = Icons.Filled.Add,
+                    onClick = {
+                        inputValue = ""
+                        inputVisible = true
+                    },
+                )
             }
-            SessionMoodChip(
-                label = "Custom",
-                selected = false,
-                leadingIcon = Icons.Filled.Add,
-                onClick = {
-                    inputValue = ""
-                    inputVisible = true
-                },
-            )
         }
         if (inputVisible) {
             Popup(
@@ -644,6 +640,62 @@ private fun SessionMoodGrid(
                     },
                     modifier = Modifier.sessionMoodPopupWidth(popupWidth),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WrappingChipRow(
+    modifier: Modifier = Modifier,
+    horizontalSpacing: Dp,
+    verticalSpacing: Dp,
+    content: @Composable () -> Unit,
+) {
+    val density = LocalDensity.current
+    val horizontalGap = with(density) { horizontalSpacing.roundToPx() }
+    val verticalGap = with(density) { verticalSpacing.roundToPx() }
+
+    Layout(
+        modifier = modifier,
+        content = content,
+    ) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
+        val positions = mutableListOf<IntOffset>()
+        val maxWidth = constraints.maxWidth
+        var rowWidth = 0
+        var rowHeight = 0
+        var layoutWidth = 0
+        var layoutHeight = 0
+
+        placeables.forEach { placeable ->
+            val nextWidth =
+                if (rowWidth == 0) {
+                    placeable.width
+                } else {
+                    rowWidth + horizontalGap + placeable.width
+                }
+            if (rowWidth > 0 && nextWidth > maxWidth) {
+                layoutHeight += rowHeight + verticalGap
+                rowWidth = 0
+                rowHeight = 0
+            }
+
+            val x = if (rowWidth == 0) 0 else rowWidth + horizontalGap
+            positions += IntOffset(x, layoutHeight)
+            rowWidth = x + placeable.width
+            rowHeight = maxOf(rowHeight, placeable.height)
+            layoutWidth = maxOf(layoutWidth, rowWidth)
+        }
+
+        layoutHeight += rowHeight
+        layout(
+            width = layoutWidth.coerceIn(constraints.minWidth, constraints.maxWidth),
+            height = layoutHeight.coerceIn(constraints.minHeight, constraints.maxHeight),
+        ) {
+            placeables.forEachIndexed { index, placeable ->
+                val position = positions[index]
+                placeable.placeRelative(position.x, position.y)
             }
         }
     }

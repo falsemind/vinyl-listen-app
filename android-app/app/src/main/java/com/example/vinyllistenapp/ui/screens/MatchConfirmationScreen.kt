@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +48,7 @@ import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
+import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.InfoCircleButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
@@ -63,6 +67,7 @@ fun MatchConfirmationScreen(
     var detailCandidate by remember { mutableStateOf<MatchCandidate?>(null) }
     var confirmingDiscogsId by remember { mutableStateOf<Long?>(null) }
     var confirmError by remember { mutableStateOf<String?>(null) }
+    var failedConfirmCandidate by remember { mutableStateOf<MatchCandidate?>(null) }
 
     fun confirmCandidate(candidate: MatchCandidate) {
         candidate.releaseId?.let {
@@ -71,11 +76,13 @@ fun MatchConfirmationScreen(
         }
         confirmingDiscogsId = candidate.discogsReleaseId
         confirmError = null
+        failedConfirmCandidate = null
         scope.launch {
             runCatching { apiClient.importRelease(candidate.discogsReleaseId) }
                 .onSuccess { releaseId -> onConfirm(releaseId) }
                 .onFailure { error ->
                     confirmError = error.toUserMessage("Could not prepare this release. Retry or use Manual Search.")
+                    failedConfirmCandidate = candidate
                     confirmingDiscogsId = null
                 }
         }
@@ -104,6 +111,13 @@ fun MatchConfirmationScreen(
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyLarge,
             )
+            confirmError?.let { message ->
+                ErrorRetryCard(
+                    message = message,
+                    onRetry = { failedConfirmCandidate?.let(::confirmCandidate) },
+                )
+                Spacer(Modifier.height(VinylSpacing.SpaceXl))
+            }
             Column(
                 modifier =
                     Modifier
@@ -111,13 +125,6 @@ fun MatchConfirmationScreen(
                         .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
             ) {
-                confirmError?.let { message ->
-                    Text(
-                        text = message,
-                        color = VinylColors.AccentOrange,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
                 candidates.forEachIndexed { index, candidate ->
                     val record = matchFallbackRecord(candidate)
                     MatchCandidateCard(
@@ -443,10 +450,11 @@ private fun MatchConfirmButton(
             horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "✓",
-                color = VinylColors.TextOnAccent,
-                style = MaterialTheme.typography.labelLarge,
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = VinylColors.TextOnAccent,
+                modifier = Modifier.size(18.dp),
             )
             Text(
                 text = label,
