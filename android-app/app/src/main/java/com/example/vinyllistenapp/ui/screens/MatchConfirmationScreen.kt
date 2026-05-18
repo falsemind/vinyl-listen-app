@@ -42,6 +42,7 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.InfoCircleButton
@@ -118,16 +119,12 @@ fun MatchConfirmationScreen(
                     )
                 }
                 candidates.forEachIndexed { index, candidate ->
-                    val record =
-                        candidate.releaseId?.let { MockVinylData.record(it) }
-                            ?: MockVinylData.recordByDiscogsId(candidate.discogsReleaseId)
+                    val record = matchFallbackRecord(candidate)
                     MatchCandidateCard(
                         candidate = candidate,
-                        year = candidate.year ?: record?.year,
-                        catalogNumber =
-                            candidate.catalogNumber
-                                ?: record?.catalogNumber
-                                ?: matchCatalogNumber(candidate.releaseId ?: candidate.discogsReleaseId.toString(), index),
+                        year = matchDisplayYear(candidate, record),
+                        catalogNumber = matchDisplayCatalogNumber(candidate, record, index),
+                        format = matchDisplayFormat(candidate, record),
                         isConfirming = confirmingDiscogsId == candidate.discogsReleaseId,
                         onConfirm = { confirmCandidate(candidate) },
                         onDetails = { detailCandidate = candidate },
@@ -190,6 +187,7 @@ private fun MatchCandidateCard(
     candidate: MatchCandidate,
     year: Int?,
     catalogNumber: String,
+    format: String,
     isConfirming: Boolean,
     onConfirm: () -> Unit,
     onDetails: () -> Unit,
@@ -250,7 +248,7 @@ private fun MatchCandidateCard(
                     MatchMetadataRow(label = "Year:", value = year?.toString() ?: "Unknown")
                     MatchMetadataRow(label = "Label:", value = candidate.label)
                     MatchMetadataRow(label = "Cat#:", value = catalogNumber)
-                    MatchMetadataRow(label = "Format:", value = candidate.format ?: "Unknown format")
+                    MatchMetadataRow(label = "Format:", value = format)
                 }
             }
             Row(
@@ -506,3 +504,34 @@ private fun matchConfidenceLabel(confidence: Int): String =
         confidence >= 70 -> "Medium"
         else -> "Low"
     }
+
+internal fun matchFallbackRecord(candidate: MatchCandidate): RecordSummary? =
+    candidate.releaseId
+        ?.let { releaseId -> MockVinylData.records.firstOrNull { it.releaseId == releaseId } }
+        ?: MockVinylData.recordByDiscogsId(candidate.discogsReleaseId)
+
+internal fun matchDisplayYear(
+    candidate: MatchCandidate,
+    fallbackRecord: RecordSummary?,
+): Int? = candidate.year ?: fallbackRecord?.year
+
+internal fun matchDisplayCatalogNumber(
+    candidate: MatchCandidate,
+    fallbackRecord: RecordSummary?,
+    index: Int,
+): String =
+    candidate.catalogNumber
+        ?: fallbackRecord?.catalogNumber
+        ?: matchCatalogNumber(candidate.releaseId ?: candidate.discogsReleaseId.toString(), index)
+
+internal fun matchDisplayFormat(
+    candidate: MatchCandidate,
+    fallbackRecord: RecordSummary?,
+): String =
+    candidate.format
+        ?: fallbackRecord?.format
+        ?: if (candidate.releaseId != null || candidate.matchSource == "local") {
+            "Vinyl"
+        } else {
+            "Unknown format"
+        }

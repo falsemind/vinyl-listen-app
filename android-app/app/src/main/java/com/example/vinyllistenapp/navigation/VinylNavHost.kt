@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -32,7 +34,9 @@ fun VinylNavHost(
     modifier: Modifier = Modifier,
 ) {
     val apiClient = remember { VinylApiClient() }
-    var latestCandidates by remember { mutableStateOf<List<MatchCandidate>>(MockVinylData.matchCandidates) }
+    var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
+        mutableStateOf(MockVinylData.matchCandidates)
+    }
 
     NavHost(
         navController = navController,
@@ -177,4 +181,60 @@ fun VinylNavHost(
             )
         }
     }
+}
+
+private const val MATCHED_ON_SEPARATOR = "\u001F"
+
+private val MatchCandidateListSaver: Saver<List<MatchCandidate>, List<List<String?>>> =
+    Saver(
+        save = { candidates -> encodeMatchCandidatesForSavedState(candidates) },
+        restore = { value -> decodeMatchCandidatesFromSavedState(value) },
+    )
+
+internal fun encodeMatchCandidatesForSavedState(candidates: List<MatchCandidate>): List<List<String?>> =
+    candidates.map { candidate ->
+        listOf(
+            candidate.releaseId,
+            candidate.discogsReleaseId.toString(),
+            candidate.artist,
+            candidate.title,
+            candidate.label,
+            candidate.confidence.toString(),
+            candidate.year?.toString(),
+            candidate.catalogNumber,
+            candidate.barcode,
+            candidate.coverImageUrl,
+            candidate.format,
+            candidate.matchSource,
+            candidate.matchedOn.joinToString(MATCHED_ON_SEPARATOR),
+        )
+    }
+
+internal fun decodeMatchCandidatesFromSavedState(value: List<List<String?>>): List<MatchCandidate> {
+    val decodedCandidates =
+        value.mapNotNull { candidate ->
+            val discogsReleaseId = candidate.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
+            MatchCandidate(
+                releaseId = candidate.getOrNull(0),
+                discogsReleaseId = discogsReleaseId,
+                artist = candidate.getOrNull(2) ?: "Unknown artist",
+                title = candidate.getOrNull(3) ?: "Unknown title",
+                label = candidate.getOrNull(4) ?: "Unknown label",
+                confidence = candidate.getOrNull(5)?.toIntOrNull() ?: 0,
+                year = candidate.getOrNull(6)?.toIntOrNull(),
+                catalogNumber = candidate.getOrNull(7),
+                barcode = candidate.getOrNull(8),
+                coverImageUrl = candidate.getOrNull(9),
+                format = candidate.getOrNull(10),
+                matchSource = candidate.getOrNull(11),
+                matchedOn =
+                    candidate
+                        .getOrNull(12)
+                        ?.split(MATCHED_ON_SEPARATOR)
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty(),
+            )
+        }
+
+    return decodedCandidates.ifEmpty { MockVinylData.matchCandidates }
 }
