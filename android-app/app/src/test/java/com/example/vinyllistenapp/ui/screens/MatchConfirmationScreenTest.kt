@@ -11,11 +11,23 @@ class MatchConfirmationScreenTest {
         val candidate =
             matchCandidate(
                 releaseId = "real-backend-release-id",
-                discogsReleaseId = 999999,
+                discogsReleaseId = 249504,
                 matchSource = "local",
             )
 
         assertNull(matchFallbackRecord(candidate))
+    }
+
+    @Test
+    fun discogsCandidateCanStillUseMockRecordFallback() {
+        val candidate =
+            matchCandidate(
+                releaseId = null,
+                discogsReleaseId = 249504,
+                matchSource = "discogs",
+            )
+
+        assertEquals(249504L, matchFallbackRecord(candidate)?.discogsReleaseId)
     }
 
     @Test

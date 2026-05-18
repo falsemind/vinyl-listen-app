@@ -508,7 +508,11 @@ private fun matchConfidenceLabel(confidence: Int): String =
 internal fun matchFallbackRecord(candidate: MatchCandidate): RecordSummary? =
     candidate.releaseId
         ?.let { releaseId -> MockVinylData.records.firstOrNull { it.releaseId == releaseId } }
-        ?: MockVinylData.recordByDiscogsId(candidate.discogsReleaseId)
+        ?: if (candidate.releaseId == null) {
+            MockVinylData.recordByDiscogsId(candidate.discogsReleaseId)
+        } else {
+            null
+        }
 
 internal fun matchDisplayYear(
     candidate: MatchCandidate,
