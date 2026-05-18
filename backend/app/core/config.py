@@ -22,10 +22,15 @@ class Settings(BaseSettings):
 
     api_rate_limit_per_minute: int = 60
     inbound_rate_limit_enabled: bool = True
-    inbound_default_rate_limit_per_minute: int = 300
-    inbound_identify_rate_limit_per_minute: int = 30
-    inbound_rate_limit_window_seconds: float = 60.0
+    inbound_rate_limit_backend: Literal["memory", "redis"] = "redis"
+    inbound_default_rate_limit_per_minute: int = 2
+    inbound_identify_rate_limit_per_minute: int = 1
+    inbound_rate_limit_window_seconds: float = 30.0
     inbound_rate_limit_trust_proxy_headers: bool = False
+    inbound_rate_limit_redis_url: str | None = None
+    inbound_rate_limit_redis_key_prefix: str = "vinyl-listen-app:rate-limit"
+    inbound_rate_limit_redis_fail_open: bool = True
+    inbound_rate_limit_redis_timeout_seconds: float = 0.25
 
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
     identify_max_concurrent_jobs: int = 1
