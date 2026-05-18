@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -184,6 +185,14 @@ class IdentifyJobService:
                 active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
             )
             if active_job_count >= self._max_active_jobs_per_client:
+                logger.info(
+                    "Identify admission rejected reason=client_active_limit client_active_jobs=%s "
+                    "max_active_jobs_per_client=%s code=%s retry_after_seconds=%s",
+                    active_job_count,
+                    self._max_active_jobs_per_client,
+                    IDENTIFY_CAPACITY_EXCEEDED_CODE,
+                    settings.identify_capacity_retry_after_seconds,
+                )
                 raise IdentifyCapacityExceededError
 
             if self._max_active_jobs_global > 0:
@@ -192,6 +201,14 @@ class IdentifyJobService:
                     active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
                 )
                 if active_global_job_count >= self._max_active_jobs_global:
+                    logger.info(
+                        "Identify admission rejected reason=global_active_limit active_jobs=%s "
+                        "max_active_jobs_global=%s code=%s retry_after_seconds=%s",
+                        active_global_job_count,
+                        self._max_active_jobs_global,
+                        IDENTIFY_CAPACITY_EXCEEDED_CODE,
+                        settings.identify_capacity_retry_after_seconds,
+                    )
                     raise IdentifyCapacityExceededError
 
             admission_ticket = self._admission_controller.acquire_global_slot()
@@ -213,6 +230,12 @@ class IdentifyJobService:
                 raise
             with self._admission_tickets_lock:
                 self._admission_tickets[job_id] = admission_ticket
+            logger.info(
+                "Identify admission allowed job_id=%s client_active_jobs=%s max_active_jobs_per_client=%s",
+                job_id,
+                active_job_count + 1,
+                self._max_active_jobs_per_client,
+            )
             return self._to_response(job)
 
     def get_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
@@ -224,6 +247,7 @@ class IdentifyJobService:
         return self._to_response(job)
 
     def process_job(self, job_id: str, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        started_at = time.monotonic()
         admission_ticket = self._pop_admission_ticket(job_id)
         try:
             with self._session_factory() as db:
@@ -231,6 +255,7 @@ class IdentifyJobService:
                 if job is None:
                     logger.warning("Identify job disappeared before processing job_id=%s", job_id)
                     return
+                logger.info("Identify job started job_id=%s status=%s", job_id, job.status)
 
                 progress_reporter = DatabaseIdentifyProgressReporter(
                     db=db,
@@ -250,7 +275,12 @@ class IdentifyJobService:
                 except Exception as error:  # noqa: BLE001
                     job = self._repository.get(db, job_id)
                     failure = _map_exception_to_failure(error, job.status if job else None)
-                    logger.exception("Identify job failed job_id=%s code=%s", job_id, failure.code)
+                    logger.exception(
+                        "Identify job failed job_id=%s code=%s duration_seconds=%.3f",
+                        job_id,
+                        failure.code,
+                        time.monotonic() - started_at,
+                    )
                     if job is not None:
                         self._repository.fail(
                             db,
@@ -276,12 +306,27 @@ class IdentifyJobService:
                     message="Identify completed",
                     updated_at=self._now_provider(),
                 )
+                logger.info(
+                    "Identify job completed job_id=%s duration_seconds=%.3f",
+                    job_id,
+                    time.monotonic() - started_at,
+                )
         finally:
             if admission_ticket is not None:
                 admission_ticket.release()
 
     def acquire_sync_identify_slot(self) -> IdentifyAdmissionTicket:
-        return self._admission_controller.acquire_global_slot()
+        try:
+            ticket = self._admission_controller.acquire_global_slot()
+        except IdentifyCapacityExceededError:
+            logger.info(
+                "Identify admission rejected reason=sync_global_slot code=%s retry_after_seconds=%s",
+                IDENTIFY_CAPACITY_EXCEEDED_CODE,
+                settings.identify_capacity_retry_after_seconds,
+            )
+            raise
+        logger.debug("Identify admission allowed mode=sync")
+        return ticket
 
     def _pop_admission_ticket(self, job_id: str) -> IdentifyAdmissionTicket | None:
         with self._admission_tickets_lock:

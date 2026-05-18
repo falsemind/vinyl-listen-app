@@ -69,12 +69,29 @@ async def rate_limit_middleware(request: Request, call_next):
     client_key = app.state.client_key_resolver.resolve(request)
     result = app.state.rate_limiter.acquire(client_key=client_key, policy=policy)
     if result.allowed:
+        logger.debug(
+            "API rate limit allowed method=%s path=%s policy=%s backend=%s remaining=%s",
+            request.method,
+            request.url.path,
+            policy.name,
+            settings.inbound_rate_limit_backend,
+            result.remaining,
+        )
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(policy.limit)
         response.headers["X-RateLimit-Remaining"] = str(result.remaining)
         return response
 
     retry_after_seconds = math.ceil(result.retry_after_seconds)
+    logger.info(
+        "API rate limit rejected method=%s path=%s policy=%s backend=%s retry_after_seconds=%s code=%s",
+        request.method,
+        request.url.path,
+        policy.name,
+        settings.inbound_rate_limit_backend,
+        retry_after_seconds,
+        RATE_LIMIT_ERROR_CODE,
+    )
     return JSONResponse(
         status_code=429,
         content={
