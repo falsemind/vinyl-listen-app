@@ -32,6 +32,11 @@ def test_runtime_health_endpoint_reports_required_dependency_readiness(monkeypat
             ),
         ),
     )
+    monkeypatch.setattr(
+        health,
+        "get_identify_operations_status",
+        lambda: {"max_concurrency": 1, "active_jobs": 0, "queued_jobs": None},
+    )
 
     response = client.get("/api/v1/health/runtime")
 
@@ -41,6 +46,15 @@ def test_runtime_health_endpoint_reports_required_dependency_readiness(monkeypat
     assert payload["ready"] is False
     assert payload["dependencies"][0]["required"] is True
     assert payload["dependencies"][1]["required"] is False
+    assert payload["operations"]["rate_limiter"] == {
+        "enabled": health.settings.inbound_rate_limit_enabled,
+        "backend": health.settings.inbound_rate_limit_backend,
+    }
+    assert payload["operations"]["identify"] == {
+        "max_concurrency": 1,
+        "active_jobs": 0,
+        "queued_jobs": None,
+    }
 
 
 def test_favicon_endpoint_returns_no_content() -> None:
