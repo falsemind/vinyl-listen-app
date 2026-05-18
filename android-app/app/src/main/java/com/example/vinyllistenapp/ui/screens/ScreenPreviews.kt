@@ -54,6 +54,7 @@ private fun AnalyticsScreenPreview() {
             onOpenRecord = {},
             onSettings = {},
             onViewAllTopRecords = {},
+            onViewAllMoods = {},
         )
     }
 }

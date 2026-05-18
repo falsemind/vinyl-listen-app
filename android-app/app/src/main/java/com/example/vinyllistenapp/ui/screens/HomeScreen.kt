@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +50,7 @@ import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
+import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
@@ -106,7 +109,7 @@ fun HomeScreen(
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
         ) {
-            SectionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
+            SectionActionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
             loadError?.let { message ->
                 HomeRecoveryCard(message = message, onRetry = { retryKey += 1 })
             }
@@ -161,32 +164,6 @@ private fun mockHomeSummary(): HomeSummary =
         recordsThisMonth = 24,
         topRecords = MockVinylData.topRecords,
     )
-
-@Composable
-private fun SectionHeader(
-    label: String,
-    action: String,
-    onActionClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SectionTitle(label)
-        Text(
-            modifier =
-                Modifier.clickable(
-                    onClickLabel = action,
-                    role = androidx.compose.ui.semantics.Role.Button,
-                    onClick = onActionClick,
-                ),
-            text = action,
-            color = VinylColors.AccentGreen,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
 
 private fun homeTopRecordHighlights(records: List<TopRecordSummary>): List<TopRecordSummary> {
     val mostPlayed = records.maxByOrNull { it.plays }
@@ -315,19 +292,21 @@ private fun TopRecordRow(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = "${topRecord.plays} plays",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
                     )
                     Text(
                         text = if (compact) "Avg ${topRecord.averageRating}" else "Avg Rating: ${topRecord.averageRating}",
                         color = VinylColors.TextPrimary,
                         style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.End,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
                 }
                 if (compact) {
@@ -427,10 +406,14 @@ private fun SessionRow(
                 }
             }
             Text(
-                modifier = Modifier.padding(start = VinylSpacing.SpaceSm),
+                modifier =
+                    Modifier
+                        .padding(start = VinylSpacing.SpaceSm)
+                        .widthIn(min = 72.dp),
                 text = relativeLastPlayedLabel(session.playedAt),
                 color = VinylColors.TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.End,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

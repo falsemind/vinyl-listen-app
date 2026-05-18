@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -20,6 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -537,6 +545,16 @@ private fun SessionMoodGrid(
     var deleteCandidate by remember { mutableStateOf<String?>(null) }
     var popupWidth by remember { mutableStateOf(Dp.Unspecified) }
     val density = LocalDensity.current
+    val inputPopupTargetOffset =
+        if (WindowInsets.ime.getBottom(density) > 0) {
+            with(density) { (-72).dp.roundToPx() }
+        } else {
+            0
+        }
+    val inputPopupYOffset by animateIntAsState(
+        targetValue = inputPopupTargetOffset,
+        label = "custom-mood-input-offset",
+    )
     val sanitizedInput = sanitizeCustomMood(inputValue)
     val canSave = isValidCustomMood(sanitizedInput)
 
@@ -570,8 +588,9 @@ private fun SessionMoodGrid(
                 ) {
                     rowMoods.forEach { mood ->
                         SessionMoodChip(
-                            label = "X $mood",
+                            label = mood,
                             selected = mood == selectedMood,
+                            showDeleteIcon = true,
                             onClick = { onMoodSelected(mood) },
                             onLongClick = { deleteCandidate = mood },
                         )
@@ -579,8 +598,9 @@ private fun SessionMoodGrid(
                 }
             }
             SessionMoodChip(
-                label = "+ Custom",
+                label = "Custom",
                 selected = false,
+                leadingIcon = Icons.Filled.Add,
                 onClick = {
                     inputValue = ""
                     inputVisible = true
@@ -590,7 +610,7 @@ private fun SessionMoodGrid(
         if (inputVisible) {
             Popup(
                 alignment = Alignment.TopStart,
-                offset = IntOffset(x = 0, y = with(density) { 44.dp.roundToPx() }),
+                offset = IntOffset(x = 0, y = inputPopupYOffset),
                 onDismissRequest = { inputVisible = false },
                 properties = PopupProperties(focusable = true),
             ) {
@@ -636,6 +656,8 @@ private fun SessionMoodChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    showDeleteIcon: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
     val fill = if (selected) VinylColors.GreenTint20 else VinylColors.SurfacePrimary
@@ -656,14 +678,35 @@ private fun SessionMoodChip(
                 ).padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceSm),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = textColor,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            leadingIcon?.let { icon ->
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            if (showDeleteIcon) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Text(
+                text = label,
+                color = textColor,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -714,18 +757,19 @@ private fun SessionCustomMoodInput(
                 innerTextField()
             },
         )
-        Text(
+        Icon(
             modifier =
                 Modifier
+                    .size(40.dp)
                     .clip(VinylShapes.Chip)
                     .clickable(
                         onClickLabel = if (canSave) "Save custom mood" else "Dismiss custom mood input",
                         role = Role.Button,
                         onClick = { if (canSave) onSave() else onDismiss() },
-                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
-            text = if (canSave) "✓" else "X",
-            color = if (canSave) VinylColors.AccentGreen else VinylColors.TextSecondary,
-            style = MaterialTheme.typography.titleMedium,
+                    ).padding(VinylSpacing.SpaceSm),
+            imageVector = if (canSave) Icons.Filled.Check else Icons.Filled.Close,
+            contentDescription = null,
+            tint = if (canSave) VinylColors.AccentGreen else VinylColors.TextSecondary,
         )
     }
 }

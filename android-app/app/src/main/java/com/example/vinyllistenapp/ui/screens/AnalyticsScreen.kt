@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
@@ -51,6 +53,7 @@ import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
+import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
@@ -66,6 +69,7 @@ fun AnalyticsScreen(
     onOpenRecord: (String) -> Unit,
     onSettings: () -> Unit,
     onViewAllTopRecords: () -> Unit,
+    onViewAllMoods: () -> Unit,
 ) {
     var dashboard by remember { mutableStateOf(mockAnalyticsDashboard()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -104,7 +108,7 @@ fun AnalyticsScreen(
             }
             SectionTitle("Plays Over Time")
             MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
-            AnalyticsSectionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
+            SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
             dashboard.topRecords.take(5).forEachIndexed { index, record ->
                 TopRecordAnalyticsCard(
                     record = record,
@@ -115,11 +119,17 @@ fun AnalyticsScreen(
             }
             SectionTitle("Rating Distribution")
             RatingDistributionCard(ratings = dashboard.ratingDistribution)
-            SectionTitle("Mood Distribution")
-            MoodDistributionCard(moods = dashboard.moodDistribution)
+            if (dashboard.moodDistribution.size > MOOD_DISTRIBUTION_PREVIEW_LIMIT) {
+                SectionActionHeader("Mood Distribution", action = "View All", onActionClick = onViewAllMoods)
+            } else {
+                SectionTitle("Mood Distribution")
+            }
+            MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
         }
     }
 }
+
+private const val MOOD_DISTRIBUTION_PREVIEW_LIMIT = 10
 
 @Composable
 private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
@@ -245,6 +255,11 @@ private fun TopRecordAnalyticsCard(
                 color = accentColor,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.End,
+                modifier =
+                    Modifier
+                        .padding(start = VinylSpacing.SpaceMd)
+                        .widthIn(min = 72.dp),
             )
         }
         ProgressTrack(fraction = fraction, accentColor = accentColor)
@@ -301,33 +316,7 @@ private fun RatingDistributionCard(ratings: List<RatingDistributionItem>) {
 }
 
 @Composable
-private fun AnalyticsSectionHeader(
-    label: String,
-    action: String,
-    onActionClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SectionTitle(label)
-        Text(
-            modifier =
-                Modifier.clickable(
-                    onClickLabel = action,
-                    role = Role.Button,
-                    onClick = onActionClick,
-                ),
-            text = action,
-            color = VinylColors.AccentGreen,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-@Composable
-private fun MoodDistributionCard(moods: List<MoodDistributionItem>) {
+internal fun MoodDistributionCard(moods: List<MoodDistributionItem>) {
     val total = moods.sumOf { it.count }.coerceAtLeast(1)
     val maxCount = moods.maxOfOrNull { it.count }?.takeIf { it > 0 } ?: 1
 
@@ -426,7 +415,7 @@ internal fun lastTwelveMonths(
     }
 }
 
-private fun mockAnalyticsDashboard(): AnalyticsDashboard =
+internal fun mockAnalyticsDashboard(): AnalyticsDashboard =
     AnalyticsDashboard(
         monthlyPlays =
             listOf(

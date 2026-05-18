@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.MockVinylData
@@ -105,6 +107,37 @@ fun TopRecordsScreen(
 }
 
 @Composable
+fun MoodDistributionScreen(
+    apiClient: VinylApiClient,
+    onBack: () -> Unit,
+) {
+    var moods by remember { mutableStateOf(mockAnalyticsDashboard().moodDistribution) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(retryKey) {
+        runCatching { apiClient.getAnalyticsDashboard() }
+            .onSuccess {
+                moods = it.moodDistribution
+                error = null
+            }.onFailure { failure ->
+                error = failure.toUserMessage("Could not load moods.")
+            }
+    }
+
+    ScreenContent(
+        title = "Mood Distribution",
+        subtitle = "All listening moods",
+        topPadding = 48.dp,
+        topStartContent = { BackText(onBack) },
+    ) {
+        error?.let { RetryMessage(it, onRetry = { retryKey += 1 }) }
+        MoodDistributionCard(moods = moods)
+        BackText(onBack)
+    }
+}
+
+@Composable
 private fun SessionListItem(
     session: ListeningSession,
     onClick: () -> Unit,
@@ -166,8 +199,18 @@ private fun TopRecordListItem(
             ) {
                 Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${record.plays} plays", color = VinylColors.AccentGreen)
             }
+            Text(
+                text = "${record.plays} plays",
+                color = VinylColors.AccentGreen,
+                modifier =
+                    Modifier
+                        .padding(start = VinylSpacing.SpaceMd)
+                        .widthIn(min = 72.dp),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
@@ -85,6 +87,43 @@ internal fun SectionTitle(label: String) {
         color = VinylColors.TextPrimary,
         style = MaterialTheme.typography.titleLarge,
     )
+}
+
+@Composable
+internal fun SectionActionHeader(
+    label: String,
+    action: String,
+    onActionClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = label,
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            modifier =
+                Modifier
+                    .padding(start = VinylSpacing.SpaceMd, end = VinylSpacing.SpaceLg)
+                    .clickable(
+                        onClickLabel = action,
+                        role = Role.Button,
+                        onClick = onActionClick,
+                    ),
+            text = action,
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.End,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
 
 @Composable
