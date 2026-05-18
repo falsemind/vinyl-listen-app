@@ -12,6 +12,7 @@ object VinylRoutes {
     const val MANUAL_SEARCH = "manual_search"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
+    const val MOOD_DISTRIBUTION = "mood_distribution"
     const val RELEASE_ID = "releaseId"
     const val SESSION_LOGGING_PATTERN = "session_logging/{$RELEASE_ID}"
     const val RECORD_DETAIL_PATTERN = "record_detail/{$RELEASE_ID}"

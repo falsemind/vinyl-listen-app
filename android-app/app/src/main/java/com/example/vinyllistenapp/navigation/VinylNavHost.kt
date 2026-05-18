@@ -21,6 +21,7 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
+import com.example.vinyllistenapp.ui.screens.MoodDistributionScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
 import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
@@ -160,6 +161,7 @@ fun VinylNavHost(
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
                 onViewAllTopRecords = { navController.navigate(VinylRoutes.TOP_RECORDS) },
+                onViewAllMoods = { navController.navigate(VinylRoutes.MOOD_DISTRIBUTION) },
             )
         }
         composable(VinylRoutes.TOP_RECORDS) {
@@ -167,6 +169,12 @@ fun VinylNavHost(
                 apiClient = apiClient,
                 onBack = { navController.popBackStack() },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+            )
+        }
+        composable(VinylRoutes.MOOD_DISTRIBUTION) {
+            MoodDistributionScreen(
+                apiClient = apiClient,
+                onBack = { navController.popBackStack() },
             )
         }
         composable(VinylRoutes.SETTINGS) {
