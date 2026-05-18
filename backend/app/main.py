@@ -13,8 +13,8 @@ from app.core.rate_limit import (
     RATE_LIMIT_ERROR_CODE,
     RATE_LIMIT_ERROR_MESSAGE,
     ClientKeyResolver,
-    InMemoryRateLimiter,
     build_rate_limit_policies,
+    build_rate_limiter,
     resolve_rate_limit_policy,
 )
 from app.core.runtime_dependencies import log_runtime_dependency_statuses
@@ -36,7 +36,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Vinyl Listening App API", version="0.1.0", lifespan=lifespan)
-app.state.rate_limiter = InMemoryRateLimiter()
+app.state.rate_limiter = build_rate_limiter(
+    backend=settings.inbound_rate_limit_backend,
+    redis_url=settings.inbound_rate_limit_redis_url,
+    redis_key_prefix=settings.inbound_rate_limit_redis_key_prefix,
+    redis_fail_open=settings.inbound_rate_limit_redis_fail_open,
+    redis_timeout_seconds=settings.inbound_rate_limit_redis_timeout_seconds,
+)
 app.state.client_key_resolver = ClientKeyResolver(
     trust_proxy_headers=settings.inbound_rate_limit_trust_proxy_headers,
 )

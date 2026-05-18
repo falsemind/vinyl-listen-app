@@ -65,8 +65,10 @@ When a progress reporter is provided, the service emits backend status updates b
 
 Identify work has two protection layers:
 
-- Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses.
+- Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses. The default backend is in-memory. Set `inbound_rate_limit_backend=redis` with `inbound_rate_limit_redis_url` to share general API limits across backend workers or instances.
 - `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local or configured DB-backed capacity is full.
+
+The Redis limiter uses token-bucket state with expiring keys and a short socket/connect timeout from `inbound_rate_limit_redis_timeout_seconds`. MVP behavior is fail-open by default: Redis limiter errors are logged and the request is allowed, so Redis outages do not make the API unavailable. Set `inbound_rate_limit_redis_fail_open=false` before public launch if strict protection is more important than availability during Redis outages.
 
 Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. Active rows older than the current service instance startup are also expired before admission, which handles backend restarts that leave orphaned `upload_received` or processing rows without an in-memory worker ticket. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
 

@@ -1,10 +1,15 @@
+import hashlib
+import logging
 import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from fastapi import Request
+
+logger = logging.getLogger(__name__)
 
 RATE_LIMIT_ERROR_CODE = "rate_limited"
 RATE_LIMIT_ERROR_MESSAGE = "Too many requests. Please retry later."
@@ -38,6 +43,20 @@ class RateLimitResult:
     allowed: bool
     retry_after_seconds: float
     remaining: int
+
+
+class RateLimiter(Protocol):
+    def acquire(self, *, client_key: str, policy: RateLimitPolicy) -> RateLimitResult: ...
+
+    def reset(self) -> None: ...
+
+
+class RedisClientProtocol(Protocol):
+    def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object: ...
+
+    def scan_iter(self, match: str) -> object: ...
+
+    def delete(self, *names: object) -> object: ...
 
 
 @dataclass(slots=True)
@@ -134,6 +153,133 @@ class InMemoryRateLimiter:
         ]
         for bucket_key in expired_keys:
             del self._buckets[bucket_key]
+
+
+class RedisRateLimiter:
+    _ACQUIRE_SCRIPT = """
+local key = KEYS[1]
+local redis_time = redis.call("TIME")
+local now = tonumber(redis_time[1]) + (tonumber(redis_time[2]) / 1000000)
+local limit = tonumber(ARGV[1])
+local window_seconds = tonumber(ARGV[2])
+local refill_rate = limit / window_seconds
+local values = redis.call("HMGET", key, "tokens", "updated_at")
+local tokens = tonumber(values[1])
+local updated_at = tonumber(values[2])
+
+if tokens == nil or updated_at == nil then
+    tokens = limit
+    updated_at = now
+end
+
+local elapsed_seconds = math.max(0, now - updated_at)
+tokens = math.min(limit, tokens + (elapsed_seconds * refill_rate))
+
+local allowed = 0
+local retry_after_ms = 0
+if tokens >= 1 then
+    tokens = tokens - 1
+    allowed = 1
+else
+    retry_after_ms = math.ceil(((1 - tokens) / refill_rate) * 1000)
+end
+
+redis.call("HSET", key, "tokens", tokens, "updated_at", now)
+redis.call("EXPIRE", key, math.ceil(window_seconds * 2))
+
+return {allowed, retry_after_ms, math.floor(tokens)}
+"""
+
+    def __init__(
+        self,
+        *,
+        redis_client: RedisClientProtocol,
+        key_prefix: str,
+        fail_open: bool = True,
+    ) -> None:
+        self._redis_client = redis_client
+        self._key_prefix = key_prefix.rstrip(":")
+        self._fail_open = fail_open
+
+    def acquire(self, *, client_key: str, policy: RateLimitPolicy) -> RateLimitResult:
+        try:
+            result = self._redis_client.eval(
+                self._ACQUIRE_SCRIPT,
+                1,
+                self._redis_key(client_key=client_key, policy=policy),
+                policy.limit,
+                policy.window_seconds,
+            )
+            return self._parse_result(result)
+        except Exception:
+            if not self._fail_open:
+                raise
+            logger.warning(
+                "Redis rate limiter unavailable; allowing request policy=%s",
+                policy.name,
+                exc_info=True,
+            )
+            return RateLimitResult(allowed=True, retry_after_seconds=0.0, remaining=policy.limit)
+
+    def reset(self) -> None:
+        try:
+            keys = list(self._redis_client.scan_iter(match=f"{self._key_prefix}:*"))
+            if keys:
+                self._redis_client.delete(*keys)
+        except Exception:
+            if not self._fail_open:
+                raise
+            logger.warning("Redis rate limiter reset failed", exc_info=True)
+
+    def _redis_key(self, *, client_key: str, policy: RateLimitPolicy) -> str:
+        key_hash = hashlib.sha256(f"{policy.name}:{client_key}".encode()).hexdigest()
+        return f"{self._key_prefix}:{policy.name}:{key_hash}"
+
+    @staticmethod
+    def _parse_result(result: object) -> RateLimitResult:
+        if not isinstance(result, list | tuple) or len(result) != 3:
+            raise ValueError("Redis rate limiter returned an invalid response.")
+
+        allowed_raw, retry_after_ms_raw, remaining_raw = result
+        return RateLimitResult(
+            allowed=bool(int(allowed_raw)),
+            retry_after_seconds=max(0.0, int(retry_after_ms_raw) / 1000.0),
+            remaining=max(0, int(remaining_raw)),
+        )
+
+
+def build_rate_limiter(
+    *,
+    backend: str,
+    redis_url: str | None,
+    redis_key_prefix: str,
+    redis_fail_open: bool,
+    redis_timeout_seconds: float,
+) -> RateLimiter:
+    if backend == "memory":
+        return InMemoryRateLimiter()
+
+    if backend != "redis":
+        raise ValueError(f"Unsupported rate limiter backend: {backend}")
+    if not redis_url:
+        raise ValueError("Redis rate limiter backend requires inbound_rate_limit_redis_url.")
+    if redis_timeout_seconds <= 0:
+        raise ValueError("Redis rate limiter timeout must be positive.")
+
+    try:
+        from redis import Redis
+    except ImportError as exc:
+        raise RuntimeError("Redis rate limiter backend requires the redis package.") from exc
+
+    return RedisRateLimiter(
+        redis_client=Redis.from_url(
+            redis_url,
+            socket_connect_timeout=redis_timeout_seconds,
+            socket_timeout=redis_timeout_seconds,
+        ),
+        key_prefix=redis_key_prefix,
+        fail_open=redis_fail_open,
+    )
 
 
 def build_rate_limit_policies(

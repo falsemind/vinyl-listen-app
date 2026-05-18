@@ -115,6 +115,11 @@ Suggested defaults:
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | `api_rate_limiting_enabled` | `true` | Master switch. |
+| `inbound_rate_limit_backend` | `memory` | Selects the general API limiter backend. Use `redis` for shared limits across workers. |
+| `inbound_rate_limit_redis_url` | unset | Redis connection URL required only when `inbound_rate_limit_backend=redis`. |
+| `inbound_rate_limit_redis_key_prefix` | `vinyl-listen-app:rate-limit` | Prefix for Redis limiter keys. |
+| `inbound_rate_limit_redis_fail_open` | `true` | Allows requests when Redis limiter checks fail. Revisit before public launch. |
+| `inbound_rate_limit_redis_timeout_seconds` | `0.25` | Short Redis socket/connect timeout so fail-open does not stall requests. |
 | `api_default_rate_limit_per_minute` | `120` | General API quota per client. |
 | `api_default_burst_size` | `40` | Allows short normal bursts. |
 | `api_rate_limit_window_seconds` | `60` | Fixed-window/token-bucket window. |
@@ -391,11 +396,11 @@ Why Redis:
 
 Tasks:
 
-1. Add Redis dependency and settings.
-2. Add config to choose limiter backend: `memory` or `redis`.
-3. Implement Redis token bucket or use a maintained rate-limit library.
-4. Preserve the same rate-limiter interface from Phase 1.
-5. Define fail-open or fail-closed behavior for Redis outages.
+1. Add Redis dependency and settings. **Done.**
+2. Add config to choose limiter backend: `memory` or `redis`. **Done.**
+3. Implement Redis token bucket or use a maintained rate-limit library. **Done with Redis token bucket.**
+4. Preserve the same rate-limiter interface from Phase 1. **Done.**
+5. Define fail-open or fail-closed behavior for Redis outages. **Done: default fail-open for MVP.**
 6. Add integration tests guarded by optional Redis availability.
 7. Update deployment docs.
 
@@ -406,11 +411,11 @@ Done criteria:
 - Production can share limits across workers or instances.
 - Redis key TTL prevents unbounded limiter state growth.
 
-Open decision:
+Decision:
 
-- Fail open favors availability when Redis is down.
+- Fail open is the MVP default because it keeps the app usable when Redis is down.
 - Fail closed favors protection when Redis is down.
-- For this MVP, fail open is probably less disruptive unless the app becomes public.
+- Revisit fail closed before public launch or if abuse risk increases.
 
 ## Future Phase: Durable Identify Queue
 

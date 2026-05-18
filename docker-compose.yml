@@ -17,6 +17,18 @@ services:
       retries: 5
       start_period: 5s
 
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    container_name: vinyl_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   backend:
     build:
       context: .
@@ -26,6 +38,8 @@ services:
     container_name: vinyl_backend
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl
@@ -47,6 +61,11 @@ services:
       IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR: ${IDENTIFY_DEBUG_PREPROCESS_IMAGES_DIR:-identify_ocr_images}
       LOG_LEVEL: ${LOG_LEVEL:-}
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: ${PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK:-True}
+      INBOUND_RATE_LIMIT_BACKEND: ${INBOUND_RATE_LIMIT_BACKEND:-memory}
+      INBOUND_RATE_LIMIT_REDIS_URL: ${INBOUND_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
+      INBOUND_RATE_LIMIT_REDIS_KEY_PREFIX: ${INBOUND_RATE_LIMIT_REDIS_KEY_PREFIX:-vinyl-listen-app:rate-limit}
+      INBOUND_RATE_LIMIT_REDIS_FAIL_OPEN: ${INBOUND_RATE_LIMIT_REDIS_FAIL_OPEN:-true}
+      INBOUND_RATE_LIMIT_REDIS_TIMEOUT_SECONDS: ${INBOUND_RATE_LIMIT_REDIS_TIMEOUT_SECONDS:-0.25}
     volumes:
       - ./backend/identify_ocr_images:/app/backend/identify_ocr_images
     ports:

@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13.4-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,8 +18,9 @@ RUN apt-get update \
 COPY backend/pyproject.toml backend/poetry.lock /app/backend/
 
 ARG POETRY_EXTRAS=""
+ARG POETRY_VERSION=2.3.3
 
-RUN pip install --upgrade pip poetry \
+RUN pip install --upgrade pip "poetry==$POETRY_VERSION" \
     && poetry config virtualenvs.create false \
     && if [ -n "$POETRY_EXTRAS" ]; then \
         poetry install --only main --extras "$POETRY_EXTRAS" --no-root --no-interaction --no-ansi; \
