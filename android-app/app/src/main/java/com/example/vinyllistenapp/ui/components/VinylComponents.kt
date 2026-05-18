@@ -24,7 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -374,9 +376,19 @@ fun BottomNavBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .drawWithContent {
+                    drawContent()
+                    drawLine(
+                        color = VinylColors.BorderDefault,
+                        start = Offset.Zero,
+                        end = Offset(size.width, 0f),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                },
         color = VinylColors.SurfaceSecondary,
-        border = BorderStroke(1.dp, VinylColors.BorderDefault),
     ) {
         Row(
             modifier =
