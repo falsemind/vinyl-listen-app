@@ -5,10 +5,12 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -56,7 +58,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
@@ -68,6 +73,7 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.math.max
 
 @Composable
 fun CaptureRecordScreen(
@@ -76,16 +82,17 @@ fun CaptureRecordScreen(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
-    var cameraPermissionGranted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
+    var cameraPermissionGranted by remember { mutableStateOf(context.hasCameraPermission()) }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
+    var cameraPrivacyBlocked by rememberSaveable { mutableStateOf(false) }
+    var cameraRetryAttempt by rememberSaveable { mutableStateOf(0) }
     val photoCaptured = capturedImageUri != null
 
     LaunchedEffect(capturedImageUri) {
@@ -94,8 +101,54 @@ fun CaptureRecordScreen(
         onImageSelected(Uri.parse(uri))
     }
 
+    fun refreshCameraPermission(markDenied: Boolean): Boolean {
+        val granted = context.hasCameraPermission()
+        cameraPermissionGranted = granted
+        if (granted) {
+            permissionDenied = false
+        } else {
+            imageCapture = null
+            isTakingPhoto = false
+            cameraPrivacyBlocked = false
+            if (markDenied) permissionDenied = true
+        }
+        return granted
+    }
+
+    fun retryCameraPrivacyAccess(): Boolean {
+        if (!refreshCameraPermission(markDenied = true)) return false
+        imageCapture = null
+        isTakingPhoto = false
+        cameraPrivacyBlocked = false
+        captureError = null
+        cameraRetryAttempt += 1
+        return true
+    }
+
+    DisposableEffect(context, lifecycleOwner) {
+        val owner = lifecycleOwner ?: return@DisposableEffect onDispose {}
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    if (refreshCameraPermission(markDenied = cameraPermissionGranted || permissionDenied)) {
+                        cameraPrivacyBlocked = false
+                    }
+                }
+            }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
     fun takePhotoInApp() {
         if (photoCaptured) return
+        if (!refreshCameraPermission(markDenied = true)) {
+            captureError = null
+            return
+        }
+        if (cameraPrivacyBlocked) {
+            captureError = CAMERA_PRIVACY_BLOCKED_MESSAGE
+            return
+        }
         val capture = imageCapture
         if (capture == null) {
             captureError = "Camera is starting. Try again in a moment."
@@ -112,7 +165,14 @@ fun CaptureRecordScreen(
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     isTakingPhoto = false
-                    capturedImageUri = createImageCaptureUri(context, imageFile).toString()
+                    if (imageFile.isLikelyCameraPrivacyPlaceholder()) {
+                        imageFile.delete()
+                        imageCapture = null
+                        cameraPrivacyBlocked = true
+                        captureError = CAMERA_PRIVACY_BLOCKED_MESSAGE
+                    } else {
+                        capturedImageUri = createImageCaptureUri(context, imageFile).toString()
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -127,9 +187,12 @@ fun CaptureRecordScreen(
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             cameraPermissionGranted = granted
             permissionDenied = !granted
-            if (!granted) {
+            if (granted) {
+                cameraPrivacyBlocked = false
+            } else {
                 imageCapture = null
                 captureError = null
+                cameraPrivacyBlocked = false
             }
         }
 
@@ -155,10 +218,18 @@ fun CaptureRecordScreen(
                 onInfoClick = { showCaptureInfo = !showCaptureInfo },
             )
             CameraPreviewSurface(
-                cameraPermissionGranted = cameraPermissionGranted,
+                cameraPermissionGranted = cameraPermissionGranted && !cameraPrivacyBlocked,
                 photoCaptured = photoCaptured,
+                retryAttempt = cameraRetryAttempt,
                 onImageCaptureReady = { imageCapture = it },
                 onCameraError = { captureError = it },
+                onCameraPrivacyBlockedChange = { blocked ->
+                    cameraPrivacyBlocked = blocked
+                    if (blocked) {
+                        imageCapture = null
+                        isTakingPhoto = false
+                    }
+                },
                 modifier =
                     Modifier
                         .weight(1f)
@@ -173,11 +244,16 @@ fun CaptureRecordScreen(
                         else -> "Take Photo"
                     },
                 onClick = {
-                    if (cameraPermissionGranted) {
-                        permissionDenied = false
-                        if (!isTakingPhoto && !photoCaptured) takePhotoInApp()
+                    if (!isTakingPhoto && !photoCaptured) {
+                        if (cameraPrivacyBlocked) {
+                            retryCameraPrivacyAccess()
+                        } else if (refreshCameraPermission(markDenied = false)) {
+                            takePhotoInApp()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
                     } else {
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                        refreshCameraPermission(markDenied = true)
                     }
                 },
             )
@@ -242,6 +318,14 @@ private fun createImageCaptureUri(
     imageFile: File,
 ): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
 
+private fun Context.hasCameraPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by system privacy controls."
+private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
+private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
+private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
+
 private tailrec fun Context.findActivity(): Activity? =
     when (this) {
         is Activity -> this
@@ -250,6 +334,48 @@ private tailrec fun Context.findActivity(): Activity? =
     }
 
 private fun Context.findLifecycleOwner(): LifecycleOwner? = findActivity() as? LifecycleOwner
+
+private fun File.isLikelyCameraPrivacyPlaceholder(): Boolean {
+    val bounds =
+        BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
+
+    val sampleSize =
+        generateSequence(1) { it * 2 }
+            .first { bounds.outWidth / it <= PRIVACY_PLACEHOLDER_SAMPLE_SIZE && bounds.outHeight / it <= PRIVACY_PLACEHOLDER_SAMPLE_SIZE }
+    val bitmap =
+        BitmapFactory.decodeFile(
+            path,
+            BitmapFactory.Options().apply { inSampleSize = max(1, sampleSize) },
+        ) ?: return false
+
+    var minLuma = 255
+    var maxLuma = 0
+    var totalLuma = 0L
+    val pixelCount = bitmap.width * bitmap.height
+    for (y in 0 until bitmap.height) {
+        for (x in 0 until bitmap.width) {
+            val pixel = bitmap.getPixel(x, y)
+            val luma =
+                (
+                    0.2126f * android.graphics.Color.red(pixel) +
+                        0.7152f * android.graphics.Color.green(pixel) +
+                        0.0722f * android.graphics.Color.blue(pixel)
+                ).toInt()
+            minLuma = minOf(minLuma, luma)
+            maxLuma = maxOf(maxLuma, luma)
+            totalLuma += luma
+        }
+    }
+    bitmap.recycle()
+
+    val averageLuma = totalLuma / pixelCount
+    return averageLuma <= PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA &&
+        maxLuma - minLuma <= PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE
+}
 
 @Composable
 private fun CaptureHeader(
@@ -317,8 +443,10 @@ private fun CaptureInfoPopup(onDismiss: () -> Unit) {
 private fun CameraPreviewSurface(
     cameraPermissionGranted: Boolean,
     photoCaptured: Boolean,
+    retryAttempt: Int,
     onImageCaptureReady: (ImageCapture?) -> Unit,
     onCameraError: (String?) -> Unit,
+    onCameraPrivacyBlockedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val previewBrush =
@@ -344,7 +472,7 @@ private fun CameraPreviewSurface(
             }
         }
 
-    DisposableEffect(lifecycleOwner, previewView) {
+    DisposableEffect(lifecycleOwner, previewView, retryAttempt) {
         val owner = lifecycleOwner
         if (owner == null) {
             onImageCaptureReady(null)
@@ -352,9 +480,13 @@ private fun CameraPreviewSurface(
             return@DisposableEffect onDispose {}
         }
 
+        onImageCaptureReady(null)
+        var disposed = false
+        var removeCameraStateObserver: (() -> Unit)? = null
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener =
             Runnable {
+                if (disposed) return@Runnable
                 runCatching {
                     val cameraProvider = cameraProviderFuture.get()
                     val preview =
@@ -369,14 +501,39 @@ private fun CameraPreviewSurface(
                             .build()
 
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        owner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        imageCapture,
-                    )
-                    onImageCaptureReady(imageCapture)
-                    onCameraError(null)
+                    val camera =
+                        cameraProvider.bindToLifecycle(
+                            owner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            imageCapture,
+                        )
+                    val cameraState = camera.cameraInfo.cameraState
+                    val cameraStateObserver =
+                        Observer<CameraState> { state ->
+                            when {
+                                state.error?.code == CameraState.ERROR_CAMERA_DISABLED -> {
+                                    onCameraPrivacyBlockedChange(true)
+                                    onImageCaptureReady(null)
+                                    onCameraError(CAMERA_PRIVACY_BLOCKED_MESSAGE)
+                                }
+
+                                state.type == CameraState.Type.OPEN -> {
+                                    onCameraPrivacyBlockedChange(false)
+                                    onImageCaptureReady(imageCapture)
+                                    onCameraError(null)
+                                }
+
+                                state.error?.type == CameraState.ErrorType.CRITICAL -> {
+                                    onImageCaptureReady(null)
+                                    onCameraError("Camera could not start. Check camera access and try again.")
+                                }
+
+                                else -> onImageCaptureReady(null)
+                            }
+                        }
+                    cameraState.observe(owner, cameraStateObserver)
+                    removeCameraStateObserver = { cameraState.removeObserver(cameraStateObserver) }
                 }.onFailure {
                     onImageCaptureReady(null)
                     onCameraError("Camera could not start. Check camera permission and try again.")
@@ -385,6 +542,8 @@ private fun CameraPreviewSurface(
         cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))
 
         onDispose {
+            disposed = true
+            removeCameraStateObserver?.invoke()
             onImageCaptureReady(null)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
