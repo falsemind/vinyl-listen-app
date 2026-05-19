@@ -357,6 +357,7 @@ class IdentifyJobService:
             message=job.message,
             created_at=job.created_at,
             updated_at=job.updated_at,
+            cancel_requested=job.cancel_requested_at is not None,
             result=result,
             error=error,
         )

@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.models.identify_job import IdentifyJob
 
+TERMINAL_IDENTIFY_JOB_STATUSES = {"completed", "failed", "expired", "canceled"}
+
 
 class IdentifyJobRepository:
     @staticmethod
@@ -39,6 +41,31 @@ class IdentifyJobRepository:
     @staticmethod
     def get(db: Session, job_id: str) -> IdentifyJob | None:
         return db.query(IdentifyJob).filter(IdentifyJob.id == job_id).one_or_none()
+
+    @staticmethod
+    def request_cancel(db: Session, job_id: str, *, requested_at: datetime) -> IdentifyJob | None:
+        job = IdentifyJobRepository.get(db, job_id)
+        if job is None:
+            return None
+        if job.status in TERMINAL_IDENTIFY_JOB_STATUSES or job.cancel_requested_at is not None:
+            return job
+
+        job.cancel_requested_at = requested_at
+        job.updated_at = requested_at
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    @staticmethod
+    def is_cancel_requested(db: Session, job_id: str) -> bool:
+        return (
+            db.query(IdentifyJob.cancel_requested_at)
+            .filter(IdentifyJob.id == job_id)
+            .filter(IdentifyJob.cancel_requested_at.isnot(None))
+            .scalar()
+            is not None
+        )
 
     @staticmethod
     def count_active_by_client(db: Session, *, client_key: str, active_statuses: set[str]) -> int:
@@ -121,6 +148,25 @@ class IdentifyJobRepository:
         job.message = message
         job.result = result
         job.error = None
+        job.updated_at = updated_at
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    @staticmethod
+    def mark_canceled(
+        db: Session,
+        job: IdentifyJob,
+        *,
+        message: str,
+        updated_at: datetime,
+    ) -> IdentifyJob:
+        job.status = "canceled"
+        job.message = message
+        job.error = None
+        job.result = None
+        job.cancel_requested_at = job.cancel_requested_at or updated_at
         job.updated_at = updated_at
         db.add(job)
         db.commit()

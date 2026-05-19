@@ -36,6 +36,7 @@ class IdentifyJobStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     EXPIRED = "expired"
+    CANCELED = "canceled"
 
 
 class IdentifyJobError(BaseModel):
@@ -50,5 +51,6 @@ class IdentifyJobStatusResponse(BaseModel):
     message: str
     created_at: datetime
     updated_at: datetime
+    cancel_requested: bool = False
     result: IdentifyResponse | None = None
     error: IdentifyJobError | None = None
