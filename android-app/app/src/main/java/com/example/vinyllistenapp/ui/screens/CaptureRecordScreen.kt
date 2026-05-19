@@ -177,6 +177,7 @@ fun CaptureRecordScreen(
 
                 override fun onError(exception: ImageCaptureException) {
                     isTakingPhoto = false
+                    imageFile.delete()
                     captureError = "Photo could not be captured. Try again."
                 }
             },
