@@ -61,6 +61,8 @@ When a progress reporter is provided, the service emits backend status updates b
 - `searching_discogs`
 - `ranking_candidates`
 
+When a cancellation checker is provided, the service checks it before and after backend-controlled expensive phases. Cancellation is cooperative: an in-flight OCR, VLM, Discogs, or database call may finish before the next checkpoint observes the request.
+
 ## Identify Admission Control
 
 Identify work has two protection layers:
@@ -70,7 +72,7 @@ Identify work has two protection layers:
 
 The Redis limiter uses token-bucket state with expiring keys and a short socket/connect timeout from `inbound_rate_limit_redis_timeout_seconds`. MVP behavior is fail-open by default: Redis limiter errors are logged and the request is allowed, so Redis outages do not make the API unavailable. Set `inbound_rate_limit_redis_fail_open=false` before public launch if strict protection is more important than availability during Redis outages.
 
-Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. Active rows older than the current service instance startup are also expired before admission, which handles backend restarts that leave orphaned `upload_received` or processing rows without an in-memory worker ticket. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds or fails.
+Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. Active rows older than the current service instance startup are also expired before admission, which handles backend restarts that leave orphaned `upload_received` or processing rows without an in-memory worker ticket. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds, fails, expires, or is acknowledged as canceled.
 
 Both generic rate-limit rejects and identify capacity rejects include `Retry-After` so clients can wait before retrying. Android should honor this header before using local exponential backoff with jitter.
 
@@ -113,7 +115,7 @@ The ranker adds:
 
 ## IdentifyJobService
 
-`IdentifyJobService` powers `POST /api/v1/identify/jobs` and `GET /api/v1/identify/jobs/{job_id}`. It exists so clients can show server-backed Processing screen progress instead of guessing from local HTTP state.
+`IdentifyJobService` powers `POST /api/v1/identify/jobs`, `GET /api/v1/identify/jobs/{job_id}`, and `POST /api/v1/identify/jobs/{job_id}/cancel`. It exists so clients can show server-backed Processing screen progress instead of guessing from local HTTP state.
 
 ### Create flow
 
@@ -131,6 +133,21 @@ The current job TTL is 24 hours.
 `process_job(job_id, image_bytes, filename, content_type)` opens a fresh database session, loads the job, and runs `IdentifyService.identify` with a database-backed progress reporter.
 
 The reporter persists status and message updates at each major identify phase. On success, the service stores the serialized `IdentifyResponse` in `result` and marks the job `completed`.
+
+### Cancellation flow
+
+`cancel_job(db, job_id)` is idempotent. For an active job, it records `cancel_requested_at` and returns the current job status with `cancel_requested=true`. It does not immediately rewrite the phase status to `canceled`.
+
+`process_job` passes an `IdentifyJobCancellationToken` into `IdentifyService.identify`. The token checks persisted job state at backend-controlled checkpoints. When cancellation is observed, the job is marked `status="canceled"` with message `Identify canceled`, no `error` payload, and no `result` payload. If cancellation is requested after identify work returns but before the completion write, the result is discarded and the job is still marked `canceled`.
+
+If `cancel_job` is called for a terminal job, the service returns the existing terminal status without rewriting it. Completed jobs remain `completed`, failed jobs remain `failed`, expired jobs remain `expired`, and already canceled jobs remain `canceled`.
+
+Structured cancellation logs distinguish:
+
+- `Identify job cancellation requested`: active job accepted the cancel request.
+- `Identify job canceled`: background processing acknowledged cancellation at a checkpoint.
+- `Identify job canceled before completion`: cancellation was observed after identify work returned but before result persistence.
+- `Identify job cancellation ignored`: cancel request was a duplicate or targeted a terminal job.
 
 ### Failure mapping
 

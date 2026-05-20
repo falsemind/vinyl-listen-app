@@ -306,6 +306,8 @@ Cancellation is idempotent. If the job is active, the backend records the cancel
 
 If the job is already terminal, the endpoint returns the current terminal status without rewriting it. For example, completed jobs remain `completed`, expired jobs remain `expired`, and canceled jobs remain `canceled`.
 
+Operational logs distinguish cancellation requests, duplicate or terminal no-op cancellation attempts, and backend acknowledgment when processing marks the job `canceled`.
+
 ### Response
 
 ```json
