@@ -71,6 +71,14 @@ class ApiRetryPolicyTest {
     }
 
     @Test
+    fun retryablePostCallsRetryRateLimitServerAndNetworkFailuresBeforeMaxAttempts() {
+        assertTrue(policy.shouldRetry(ApiHttpMethod.RetryablePost, attempt = 1, statusCode = 429))
+        assertTrue(policy.shouldRetry(ApiHttpMethod.RetryablePost, attempt = 2, statusCode = 503))
+        assertTrue(policy.shouldRetry(ApiHttpMethod.RetryablePost, attempt = 1, isNetworkFailure = true))
+        assertFalse(policy.shouldRetry(ApiHttpMethod.RetryablePost, attempt = 3, statusCode = 429))
+    }
+
+    @Test
     fun postCallsDoNotAutoRetry() {
         assertFalse(policy.shouldRetry(ApiHttpMethod.Post, attempt = 1, statusCode = 429))
         assertFalse(policy.shouldRetry(ApiHttpMethod.Post, attempt = 1, statusCode = 503))
