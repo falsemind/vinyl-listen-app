@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -35,6 +35,10 @@ class IdentifyValidationError(Exception):
         self.message = message
         self.status_code = status_code
         self.code = code
+
+
+class IdentifyCanceledError(Exception):
+    """Raised when cooperative identify cancellation is requested."""
 
 
 @dataclass(frozen=True)
@@ -76,12 +80,14 @@ class IdentifyService:
         filename: str,
         content_type: str,
         progress_reporter: IdentifyProgressReporter | None = None,
+        cancellation_checker: Callable[[], bool] | None = None,
     ) -> IdentifyResult:
         self.validate_upload(
             image_bytes=image_bytes,
             filename=filename,
             content_type=content_type,
         )
+        _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "preprocessing_image", "Preparing image for identification")
         prepared_image = self._image_processor.prepare(
             filename=filename,
@@ -95,8 +101,10 @@ class IdentifyService:
             prepared_image.height,
             len(prepared_image.variants),
         )
+        _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "extracting_text", "Extracting text from image")
         identifiers = self._identifier_extractor.extract(prepared_image)
+        _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "parsing_identifiers", "Parsing identifiers from extracted text")
 
         logger.info(
@@ -114,8 +122,10 @@ class IdentifyService:
             len(identifiers.text_fragments),
             len(identifiers.identifier_evidence),
         )
+        _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "searching_local", "Searching local releases")
         local_candidates = self._find_local_candidates(db, identifiers)
+        _raise_if_cancel_requested(cancellation_checker)
         if local_candidates:
             logger.info(
                 "Returning local identify matches filename=%s count=%s discogs_query_count=0",
@@ -123,10 +133,15 @@ class IdentifyService:
                 len(local_candidates),
             )
             _report_progress(progress_reporter, "ranking_candidates", "Ranking candidate releases")
-            return IdentifyResult(candidates=tuple(self._rank_candidates(local_candidates, identifiers)))
+            _raise_if_cancel_requested(cancellation_checker)
+            local_ranked_candidates = self._rank_candidates(local_candidates, identifiers)
+            _raise_if_cancel_requested(cancellation_checker)
+            return IdentifyResult(candidates=tuple(local_ranked_candidates))
 
+        _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "searching_discogs", "Searching Discogs candidates")
-        external_result = self._find_external_candidates(identifiers)
+        external_result = self._find_external_candidates(identifiers, cancellation_checker=cancellation_checker)
+        _raise_if_cancel_requested(cancellation_checker)
         logger.info(
             "Returning Discogs identify matches filename=%s count=%s discogs_query_count=%s",
             filename,
@@ -134,7 +149,10 @@ class IdentifyService:
             external_result.query_count,
         )
         _report_progress(progress_reporter, "ranking_candidates", "Ranking candidate releases")
-        return IdentifyResult(candidates=tuple(self._rank_candidates(external_result.candidates, identifiers)))
+        _raise_if_cancel_requested(cancellation_checker)
+        external_ranked_candidates = self._rank_candidates(external_result.candidates, identifiers)
+        _raise_if_cancel_requested(cancellation_checker)
+        return IdentifyResult(candidates=tuple(external_ranked_candidates))
 
     def validate_upload(
         self,
@@ -194,11 +212,17 @@ class IdentifyService:
 
         return [self._map_local_release(release) for release in release_map.values()]
 
-    def _find_external_candidates(self, identifiers: ExtractedIdentifiers) -> "_ExternalSearchResult":
+    def _find_external_candidates(
+        self,
+        identifiers: ExtractedIdentifiers,
+        *,
+        cancellation_checker: Callable[[], bool] | None = None,
+    ) -> "_ExternalSearchResult":
         candidate_map: dict[int, IdentifyCandidate] = {}
         query_count = 0
 
         for search_step in self._build_search_plan(identifiers):
+            _raise_if_cancel_requested(cancellation_checker)
             if candidate_map and search_step.strategy not in {"catalog_number", "ocr_role_context"}:
                 should_continue_to_identity = search_step.strategy in {
                     "artist_title",
@@ -214,6 +238,7 @@ class IdentifyService:
             logger.info("Searching Discogs identify strategy=%s", search_step.strategy)
             query_count += 1
             payload = self._execute_search_step(search_step)
+            _raise_if_cancel_requested(cancellation_checker)
             candidates = self._map_external_candidates(payload.get("results", []))
             if candidates and search_step.strategy == "barcode":
                 return _ExternalSearchResult(candidates=candidates, query_count=query_count)
@@ -346,6 +371,11 @@ class _ExternalSearchResult:
 def _report_progress(progress_reporter: IdentifyProgressReporter | None, status: str, message: str) -> None:
     if progress_reporter is not None:
         progress_reporter.update(status, message)
+
+
+def _raise_if_cancel_requested(cancellation_checker: Callable[[], bool] | None) -> None:
+    if cancellation_checker is not None and cancellation_checker():
+        raise IdentifyCanceledError
 
 
 def _parse_discogs_title(value: str | None) -> tuple[str | None, str | None]:

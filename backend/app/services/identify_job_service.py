@@ -21,7 +21,12 @@ from app.schemas.identify import (
     IdentifyResponse,
 )
 from app.services.discogs_service import DiscogsClientError
-from app.services.identify_service import IdentifyResult, IdentifyService, IdentifyValidationError
+from app.services.identify_service import (
+    IdentifyCanceledError,
+    IdentifyResult,
+    IdentifyService,
+    IdentifyValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +135,16 @@ class DatabaseIdentifyProgressReporter:
             message=message,
             updated_at=self._now_provider(),
         )
+
+
+@dataclass(frozen=True)
+class IdentifyJobCancellationToken:
+    db: Session
+    job_id: str
+    repository: IdentifyJobRepository
+
+    def is_cancel_requested(self) -> bool:
+        return self.repository.is_cancel_requested(self.db, self.job_id)
 
 
 class IdentifyJobService:
@@ -275,6 +290,11 @@ class IdentifyJobService:
                     repository=self._repository,
                     now_provider=self._now_provider,
                 )
+                cancellation_token = IdentifyJobCancellationToken(
+                    db=db,
+                    job_id=job_id,
+                    repository=self._repository,
+                )
 
                 try:
                     result = self._identify_service.identify(
@@ -283,7 +303,25 @@ class IdentifyJobService:
                         filename=filename,
                         content_type=content_type,
                         progress_reporter=progress_reporter,
+                        cancellation_checker=cancellation_token.is_cancel_requested,
                     )
+                except IdentifyCanceledError:
+                    job = self._repository.get(db, job_id)
+                    if job is None:
+                        logger.warning("Identify job disappeared before cancellation job_id=%s", job_id)
+                        return
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    logger.info(
+                        "Identify job canceled job_id=%s duration_seconds=%.3f",
+                        job_id,
+                        time.monotonic() - started_at,
+                    )
+                    return
                 except Exception as error:  # noqa: BLE001
                     job = self._repository.get(db, job_id)
                     failure = _map_exception_to_failure(error, job.status if job else None)
@@ -310,6 +348,19 @@ class IdentifyJobService:
                 job = self._repository.get(db, job_id)
                 if job is None:
                     logger.warning("Identify job disappeared before completion job_id=%s", job_id)
+                    return
+                if cancellation_token.is_cancel_requested():
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    logger.info(
+                        "Identify job canceled before completion job_id=%s duration_seconds=%.3f",
+                        job_id,
+                        time.monotonic() - started_at,
+                    )
                     return
                 self._repository.complete(
                     db,

@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.models.identify_job import IdentifyJob
 from app.pipelines.identification import IdentifyCandidate
+from app.repositories.identify_job_repository import IdentifyJobRepository
 from app.services.discogs_service import DiscogsClientError
 from app.services.identify_job_service import (
     IdentifyAdmissionController,
@@ -15,17 +16,30 @@ from app.services.identify_job_service import (
     IdentifyJobNotFoundError,
     IdentifyJobService,
 )
-from app.services.identify_service import IdentifyResult, IdentifyValidationError
+from app.services.identify_service import IdentifyCanceledError, IdentifyResult, IdentifyValidationError
 
 
 class SuccessfulIdentifyService:
     def validate_upload(self, *, image_bytes: bytes, filename: str, content_type: str) -> None:
         _ = (image_bytes, filename, content_type)
 
-    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
+    def identify(
+        self,
+        _db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        progress_reporter=None,
+        cancellation_checker=None,
+    ):
         _ = (image_bytes, filename, content_type)
+        if cancellation_checker is not None and cancellation_checker():
+            raise IdentifyCanceledError
         if progress_reporter is not None:
             progress_reporter.update("searching_local", "Searching local releases")
+        if cancellation_checker is not None and cancellation_checker():
+            raise IdentifyCanceledError
         return IdentifyResult(
             candidates=(
                 IdentifyCandidate(
@@ -50,17 +64,96 @@ class FailingIdentifyService(SuccessfulIdentifyService):
     def __init__(self, error: Exception) -> None:
         self._error = error
 
-    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
-        _ = (image_bytes, filename, content_type, progress_reporter)
+    def identify(
+        self,
+        _db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        progress_reporter=None,
+        cancellation_checker=None,
+    ):
+        _ = (image_bytes, filename, content_type, progress_reporter, cancellation_checker)
         raise self._error
 
 
 class ProgressFailingIdentifyService(SuccessfulIdentifyService):
-    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str, progress_reporter=None):
-        _ = (image_bytes, filename, content_type)
+    def identify(
+        self,
+        _db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        progress_reporter=None,
+        cancellation_checker=None,
+    ):
+        _ = (image_bytes, filename, content_type, cancellation_checker)
         if progress_reporter is not None:
             progress_reporter.update("extracting_text", "Extracting text from image")
         raise RuntimeError("OCR failed")
+
+
+class MidPipelineCancelingIdentifyService(SuccessfulIdentifyService):
+    def __init__(self, requested_at: datetime) -> None:
+        self._requested_at = requested_at
+
+    def identify(
+        self,
+        db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        progress_reporter=None,
+        cancellation_checker=None,
+    ):
+        _ = (image_bytes, filename, content_type)
+        if progress_reporter is not None:
+            progress_reporter.update("extracting_text", "Extracting text from image")
+        job_id = db.query(IdentifyJob.id).one()[0]
+        IdentifyJobRepository.request_cancel(db, job_id, requested_at=self._requested_at)
+        if cancellation_checker is not None and cancellation_checker():
+            raise IdentifyCanceledError
+        raise AssertionError("Expected cancellation checker to stop processing")
+
+
+class CompletionCancelingIdentifyService(SuccessfulIdentifyService):
+    def __init__(self, requested_at: datetime) -> None:
+        self._requested_at = requested_at
+
+    def identify(
+        self,
+        db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        progress_reporter=None,
+        cancellation_checker=None,
+    ):
+        _ = (image_bytes, filename, content_type, progress_reporter, cancellation_checker)
+        job_id = db.query(IdentifyJob.id).one()[0]
+        IdentifyJobRepository.request_cancel(db, job_id, requested_at=self._requested_at)
+        return IdentifyResult(
+            candidates=(
+                IdentifyCandidate(
+                    discogs_release_id=123,
+                    release_id="release-123",
+                    artist="Artist",
+                    title="Title",
+                    year=2026,
+                    label="Label",
+                    catalog_number="CAT-1",
+                    barcode=None,
+                    cover_image_url=None,
+                    match_source="local",
+                    matched_on=("local_lookup",),
+                    confidence=0.9,
+                ),
+            )
+        )
 
 
 def test_identify_job_service_completes_job() -> None:
@@ -512,6 +605,79 @@ def test_identify_job_service_cancel_job_raises_not_found() -> None:
             pass
         else:
             raise AssertionError("Expected IdentifyJobNotFoundError")
+
+
+def test_identify_job_service_marks_canceled_before_first_work() -> None:
+    now = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        service.cancel_job(db, job.job_id)
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        canceled = service.get_job(db, job.job_id)
+
+    assert canceled.status == "canceled"
+    assert canceled.message == "Identify canceled"
+    assert canceled.cancel_requested is True
+    assert canceled.error is None
+    assert canceled.result is None
+
+
+def test_identify_job_service_marks_canceled_mid_pipeline() -> None:
+    now = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=MidPipelineCancelingIdentifyService(requested_at=now),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        canceled = service.get_job(db, job.job_id)
+
+    assert canceled.status == "canceled"
+    assert canceled.message == "Identify canceled"
+    assert canceled.cancel_requested is True
+    assert canceled.error is None
+    assert canceled.result is None
+
+
+def test_identify_job_service_discards_result_when_cancel_requested_before_completion() -> None:
+    now = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=CompletionCancelingIdentifyService(requested_at=now),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+    with session_factory() as db:
+        canceled = service.get_job(db, job.job_id)
+
+    assert canceled.status == "canceled"
+    assert canceled.message == "Identify canceled"
+    assert canceled.cancel_requested is True
+    assert canceled.error is None
+    assert canceled.result is None
 
 
 class FailingValidationIdentifyService(SuccessfulIdentifyService):

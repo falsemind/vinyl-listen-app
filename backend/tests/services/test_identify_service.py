@@ -1,5 +1,5 @@
 from app.pipelines.identification import ExtractedIdentifiers, OcrRoleEvidence
-from app.services.identify_service import IdentifyValidationError
+from app.services.identify_service import IdentifyCanceledError, IdentifyValidationError
 
 
 class RecordingProgressReporter:
@@ -60,6 +60,27 @@ def test_identify_service_reports_progress(build_identify_service) -> None:
         "searching_discogs",
         "ranking_candidates",
     ]
+
+
+def test_identify_service_stops_before_first_work_when_canceled(build_identify_service) -> None:
+    service = build_identify_service()
+    reporter = RecordingProgressReporter()
+
+    try:
+        service.identify(
+            db=object(),
+            image_bytes=b"fake-image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+            progress_reporter=reporter,
+            cancellation_checker=lambda: True,
+        )
+    except IdentifyCanceledError:
+        pass
+    else:
+        raise AssertionError("Expected IdentifyCanceledError")
+
+    assert reporter.updates == []
 
 
 def test_identify_service_falls_back_to_discogs_search_in_priority_order(
