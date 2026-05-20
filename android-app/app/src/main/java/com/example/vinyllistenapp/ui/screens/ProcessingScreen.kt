@@ -73,47 +73,47 @@ fun ProcessingScreen(
     var currentJobId by remember(imageUri, retryKey) { mutableStateOf<String?>(null) }
     var cancelRequested by remember(imageUri, retryKey) { mutableStateOf(false) }
 
+    suspend fun cancelAndLeave(jobId: String) {
+        val cancelResult =
+            runCatching {
+                apiClient.cancelIdentifyJob(jobId)
+            }.getOrElse {
+                onDismiss()
+                return
+            }
+        currentJobId = cancelResult.jobId
+        when (cancelResult.status) {
+            IdentifyJobStatus.Completed -> {
+                val candidates = cancelResult.candidates.orEmpty()
+                if (candidates.isEmpty()) {
+                    onDismiss()
+                } else {
+                    state = IdentifyUiState.Success(candidates)
+                    delay(SUCCESS_CONFIRMATION_DELAY_MS)
+                    onComplete(candidates)
+                }
+            }
+
+            IdentifyJobStatus.Failed,
+            IdentifyJobStatus.Expired,
+            IdentifyJobStatus.Canceled,
+            -> onDismiss()
+
+            else -> onDismiss()
+        }
+    }
+
     fun requestCancel() {
         if (cancelRequested) return
         cancelRequested = true
         state = IdentifyUiState.Canceling(state.currentStatus)
-        val jobId = currentJobId
+        val jobId = currentJobId ?: return
         scope.launch {
-            if (jobId == null) {
-                onDismiss()
-                return@launch
-            }
-            val cancelResult =
-                runCatching {
-                    apiClient.cancelIdentifyJob(jobId)
-                }.getOrElse {
-                    onDismiss()
-                    return@launch
-                }
-            currentJobId = cancelResult.jobId
-            when (cancelResult.status) {
-                IdentifyJobStatus.Completed -> {
-                    val candidates = cancelResult.candidates.orEmpty()
-                    if (candidates.isEmpty()) {
-                        onDismiss()
-                    } else {
-                        state = IdentifyUiState.Success(candidates)
-                        delay(SUCCESS_CONFIRMATION_DELAY_MS)
-                        onComplete(candidates)
-                    }
-                }
-
-                IdentifyJobStatus.Failed,
-                IdentifyJobStatus.Expired,
-                IdentifyJobStatus.Canceled,
-                -> onDismiss()
-
-                else -> onDismiss()
-            }
+            cancelAndLeave(jobId)
         }
     }
 
-    BackHandler(enabled = state.blocksBackNavigation && !cancelRequested) {
+    BackHandler(enabled = state.blocksBackNavigation) {
         // Active identify jobs leave through the explicit cancel action only.
     }
 
@@ -133,6 +133,11 @@ fun ProcessingScreen(
             runCatching {
                 var job = apiClient.startIdentifyJob(context, Uri.parse(imageUri))
                 currentJobId = job.jobId
+                if (cancelRequested) {
+                    state = IdentifyUiState.Canceling(job.status)
+                    cancelAndLeave(job.jobId)
+                    return@LaunchedEffect
+                }
                 state = IdentifyUiState.Loading(job.status, job.cancelRequested)
                 while (!job.status.isTerminal) {
                     delay(IDENTIFY_POLL_DELAY_MS)
@@ -144,7 +149,9 @@ fun ProcessingScreen(
                 }
                 job
             }.getOrElse { error ->
-                if (!cancelRequested) {
+                if (cancelRequested) {
+                    onDismiss()
+                } else {
                     state = IdentifyUiState.Error(error.toIdentifyErrorMessage())
                 }
                 return@LaunchedEffect
@@ -295,7 +302,7 @@ private val IdentifyUiState.currentStatus: IdentifyJobStatus?
         }
 
 private val IdentifyUiState.blocksBackNavigation: Boolean
-    get() = this is IdentifyUiState.Loading
+    get() = this is IdentifyUiState.Loading || this is IdentifyUiState.Canceling
 
 private val IdentifyUiState.isCancelable: Boolean
     get() = this is IdentifyUiState.Loading || this is IdentifyUiState.Canceling
