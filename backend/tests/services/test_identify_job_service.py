@@ -12,6 +12,7 @@ from app.services.discogs_service import DiscogsClientError
 from app.services.identify_job_service import (
     IdentifyAdmissionController,
     IdentifyCapacityExceededError,
+    IdentifyJobNotFoundError,
     IdentifyJobService,
 )
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
@@ -447,6 +448,70 @@ def test_identify_job_service_releases_capacity_after_worker_failure() -> None:
         )
 
     assert second_job.status == "upload_received"
+
+
+def test_identify_job_service_cancel_job_requests_cancel_for_active_job() -> None:
+    now = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+    )
+
+    with session_factory() as db:
+        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        canceled = service.cancel_job(db, job.job_id)
+
+    assert canceled.status == "upload_received"
+    assert canceled.cancel_requested is True
+
+
+def test_identify_job_service_cancel_job_returns_terminal_job_without_rewriting_status() -> None:
+    now = datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC)
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+        now_provider=lambda: now,
+    )
+
+    with session_factory() as db:
+        db.add(
+            IdentifyJob(
+                id="completed-job",
+                status="completed",
+                client_key="client-a",
+                message="Identify completed",
+                filename="cover.jpg",
+                content_type="image/jpeg",
+                created_at=now,
+                updated_at=now,
+                expires_at=now + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+        canceled = service.cancel_job(db, "completed-job")
+
+    assert canceled.status == "completed"
+    assert canceled.cancel_requested is False
+
+
+def test_identify_job_service_cancel_job_raises_not_found() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        try:
+            service.cancel_job(db, "missing")
+        except IdentifyJobNotFoundError:
+            pass
+        else:
+            raise AssertionError("Expected IdentifyJobNotFoundError")
 
 
 class FailingValidationIdentifyService(SuccessfulIdentifyService):
