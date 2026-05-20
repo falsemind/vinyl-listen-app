@@ -259,6 +259,7 @@ This table supports the Android Processing screen. It lets the client poll backe
 |content_type|TEXT|Upload content type|
 |result|JSONB|Serialized identify response when completed|
 |error|JSONB|Serialized terminal error when failed|
+|cancel_requested_at|TIMESTAMP|Set when a client requests cooperative cancellation|
 |created_at|TIMESTAMP|Job creation time|
 |updated_at|TIMESTAMP|Last status update time|
 |expires_at|TIMESTAMP|Retention cutoff|
@@ -277,6 +278,7 @@ ranking_candidates
 completed
 failed
 expired
+canceled
 ```
 
 ### Indexes
@@ -299,9 +301,11 @@ INDEX (expires_at)
 upload received
    -> row inserted
    -> background identify task updates status/message
-   -> completed result or failed error stored
+   -> completed result, failed error, expired state, or canceled state stored
    -> job expires after retention window
 ```
+
+Cancellation is cooperative. `POST /api/v1/identify/jobs/{job_id}/cancel` sets `cancel_requested_at` for active jobs. The worker marks the row `canceled` after the next cancellation checkpoint. If the job reaches `completed`, `failed`, or `expired` first, that terminal status is preserved.
 
 Image bytes are not stored in this table.
 

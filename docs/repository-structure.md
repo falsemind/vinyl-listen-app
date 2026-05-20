@@ -48,6 +48,7 @@ docs/
 │   ├── backend-rate-limiting-and-throttling-plan.md
 │   ├── discogs-integration-plan.md
 │   ├── identify-progress-status-plan.md
+│   ├── identify-job-cooperative-cancellation-plan.md
 │   ├── image-identify-ocr-backend-upgrade-plan.md
 │   ├── image-identify-pipeline-plan.md
 │   ├── listening-session-api-plan.md
@@ -239,6 +240,7 @@ backend/alembic/
     ├── b7f3c9d2a4e1_add_identify_jobs.py
     ├── 7ab6c5d4e3f2_add_identify_job_client_key.py
     ├── d2b8c7e9f041_add_identify_job_stale_recovery_index.py
+    ├── f3a4b5c6d7e8_add_identify_job_cancel_requested_at.py
     └── eed6974773b8_init.py
 
 backend/scripts/
@@ -320,6 +322,7 @@ android-app/
 │       │   │   └── ui/
 │       │   │       ├── components/
 │       │   │       │   ├── PrototypeComponents.kt
+│       │   │       │   ├── StatusFeedback.kt
 │       │   │       │   └── VinylComponents.kt
 │       │   │       ├── screens/
 │       │   │       │   ├── AnalyticsScreen.kt
@@ -327,13 +330,13 @@ android-app/
 │       │   │       │   ├── HomeScreen.kt
 │       │   │       │   ├── ManualSearchScreen.kt
 │       │   │       │   ├── MatchConfirmationScreen.kt
-│       │   │       │   ├── PlaceholderScreen.kt
 │       │   │       │   ├── ProcessingScreen.kt
 │       │   │       │   ├── RecordDetailScreen.kt
 │       │   │       │   ├── RecordDisplayFormatters.kt
 │       │   │       │   ├── RelativeDateFormatter.kt
 │       │   │       │   ├── ScreenPreviews.kt
 │       │   │       │   ├── SessionLoggingScreen.kt
+│       │   │       │   ├── SettingsScreen.kt
 │       │   │       │   └── ViewAllScreens.kt
 │       │   │       └── theme/
 │       │   │           ├── Theme.kt
@@ -350,9 +353,13 @@ android-app/
 │       │   └── java/com/example/vinyllistenapp/
 │       │       ├── ExampleUnitTest.kt
 │       │       ├── data/api/
-│       │       │   └── ApiRetryPolicyTest.kt
+│       │       │   ├── ApiRetryPolicyTest.kt
+│       │       │   └── IdentifyJobStateParsingTest.kt
+│       │       ├── navigation/
+│       │       │   └── VinylNavHostStateTest.kt
 │       │       └── ui/screens/
 │       │           ├── AnalyticsMonthsTest.kt
+│       │           ├── MatchConfirmationScreenTest.kt
 │       │           ├── RelativeDateFormatterTest.kt
 │       │           └── SessionSideOptionsTest.kt
 │       └── androidTest/
@@ -385,10 +392,10 @@ android-app/
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - The Recent Sessions and Top Records expanded screens live in `ViewAllScreens.kt`; they show up to 25 sessions or records.
 - Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
-- The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, and maps backend statuses into upload, extraction, and candidate-search phases.
+- The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
 - `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.
-- Local Android unit tests live under `android-app/app/src/test/`; focused coverage includes retry policy, analytics month padding, relative date labels, and side-option selection.
+- Local Android unit tests live under `android-app/app/src/test/`; focused coverage includes API retry policy, identify job state parsing, navigation saved-state encoding, analytics month padding, match confirmation selection, relative date labels, and side-option selection.
 - Android navigation smoke coverage lives under `android-app/app/src/androidTest/`.
 
 ## Source Of Truth

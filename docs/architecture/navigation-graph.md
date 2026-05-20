@@ -80,6 +80,7 @@ Current backend endpoints used by these routes:
 |Load Home dashboard data|`GET /api/v1/sessions/summary`|
 |Load Recent Sessions expanded list|`GET /api/v1/sessions/summary?recent_limit=25`|
 |Identify uploaded/captured image with progress|`POST /api/v1/identify/jobs`, then `GET /api/v1/identify/jobs/{job_id}`|
+|Cancel active identify job|`POST /api/v1/identify/jobs/{job_id}/cancel`|
 |Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
 |Manual Discogs search|`GET /api/v1/releases/search`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
@@ -218,7 +219,9 @@ processing?imageUri={imageUri}
 
 Displays processing progress while the backend identifies the record.
 
-The screen starts an identify job, polls the job endpoint, and maps backend statuses into upload, text extraction, and candidate search phases. Terminal job errors include `failed_step`, which identifies whether upload, extraction, search, or an unknown backend phase failed.
+The screen starts an identify job, polls the job endpoint, and maps backend statuses into upload, text extraction, candidate search, and canceled states. Terminal job errors include `failed_step`, which identifies whether upload, extraction, search, or an unknown backend phase failed.
+
+While the identify job is active, normal system back navigation is consumed by the screen. The top-left cancel button is the only supported active-job exit path. It sends a best-effort cancel request, stops local polling pressure, and returns home once the local cancel flow starts or a terminal backend status is received.
 
 ### Possible Results
 
@@ -226,6 +229,7 @@ The screen starts an identify job, polls the job endpoint, and maps backend stat
 |---|---|
 |Matches found|`match_confirmation`|
 |No matches|`manual_search`|
+|Cancel active identify|`home`|
 
 ---
 

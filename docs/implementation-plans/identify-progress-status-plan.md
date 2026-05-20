@@ -44,6 +44,7 @@ Use server-owned statuses:
 | `completed` | Final candidates are available. | Navigate to match confirmation or empty state. |
 | `failed` | Processing failed with structured error. | Show failed step and recovery actions. |
 | `expired` | Job result is no longer available. | Retry from capture/manual search. |
+| `canceled` | Client requested cancellation and the backend acknowledged it. | Leave Processing or show canceled state. |
 
 Response shape:
 
@@ -54,12 +55,13 @@ Response shape:
   "message": "Extracting text from label image",
   "created_at": "2026-05-12T00:00:00Z",
   "updated_at": "2026-05-12T00:00:02Z",
+  "cancel_requested": false,
   "result": null,
   "error": null
 }
 ```
 
-`completed` includes the existing `IdentifyResponse` payload in `result`. `failed` includes `{ "code": "...", "message": "...", "failed_step": "..." }`.
+`completed` includes the existing `IdentifyResponse` payload in `result`. `failed` includes `{ "code": "...", "message": "...", "failed_step": "..." }`. Cancellation is now documented in `docs/implementation-plans/identify-job-cooperative-cancellation-plan.md` and implemented through `POST /api/v1/identify/jobs/{job_id}/cancel`.
 
 ## Backend Phases
 
