@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.identify import get_identify_service
 from app.main import app
+from app.schemas.identify import IdentifyJobStatus
 from app.services.identify_job_service import IdentifyCapacityExceededError, IdentifyJobNotFoundError
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
 
@@ -237,3 +238,111 @@ def test_identify_job_status_endpoint_returns_not_found(
             "message": "Identify job was not found.",
         }
     }
+
+
+def test_cancel_identify_job_endpoint_requests_cancel_for_active_job(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/jobs/job-456/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-456"
+    assert response.json()["status"] == "upload_received"
+    assert response.json()["cancel_requested"] is True
+    assert service.cancel_calls == ["job-456"]
+
+
+def test_cancel_identify_job_endpoint_is_idempotent_for_canceled_job(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.cancel_response = service.response.model_copy(
+        update={
+            "status": IdentifyJobStatus.CANCELED,
+            "message": "Identify canceled",
+            "cancel_requested": True,
+        }
+    )
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/jobs/job-456/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "canceled"
+    assert response.json()["message"] == "Identify canceled"
+    assert response.json()["cancel_requested"] is True
+    assert service.cancel_calls == ["job-456"]
+
+
+def test_cancel_identify_job_endpoint_noops_for_completed_job(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.cancel_response = service.response.model_copy(
+        update={
+            "status": IdentifyJobStatus.COMPLETED,
+            "message": "Identify completed",
+            "cancel_requested": False,
+        }
+    )
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/jobs/job-456/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["cancel_requested"] is False
+    assert service.cancel_calls == ["job-456"]
+
+
+def test_cancel_identify_job_endpoint_noops_for_expired_job(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.cancel_response = service.response.model_copy(
+        update={
+            "status": IdentifyJobStatus.EXPIRED,
+            "message": "Identify job expired before completion. Please retry.",
+            "cancel_requested": False,
+        }
+    )
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/jobs/job-456/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "expired"
+    assert response.json()["cancel_requested"] is False
+    assert service.cancel_calls == ["job-456"]
+
+
+def test_cancel_identify_job_endpoint_returns_not_found(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    service.cancel_error = IdentifyJobNotFoundError("missing")
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/jobs/missing/cancel")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "identify_job_not_found",
+            "message": "Identify job was not found.",
+        }
+    }
+    assert service.cancel_calls == ["missing"]

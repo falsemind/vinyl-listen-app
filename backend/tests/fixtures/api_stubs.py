@@ -67,6 +67,9 @@ class StubIdentifyJobService:
         )
         self.create_error: Exception | None = None
         self.get_error: Exception | None = None
+        self.cancel_error: Exception | None = None
+        self.cancel_response: IdentifyJobStatusResponse | None = None
+        self.cancel_calls: list[str] = []
 
     def create_job(
         self,
@@ -114,6 +117,13 @@ class StubIdentifyJobService:
         if self.get_error is not None:
             raise self.get_error
         return self.response.model_copy(update={"job_id": job_id})
+
+    def cancel_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+        self.cancel_calls.append(job_id)
+        if self.cancel_error is not None:
+            raise self.cancel_error
+        response = self.cancel_response or self.response.model_copy(update={"cancel_requested": True})
+        return response.model_copy(update={"job_id": job_id})
 
 
 @dataclass

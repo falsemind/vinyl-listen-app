@@ -205,6 +205,7 @@ Fields:
   "message": "Image upload received",
   "created_at": "2026-05-11T20:00:00Z",
   "updated_at": "2026-05-11T20:00:00Z",
+  "cancel_requested": false,
   "result": null,
   "error": null
 }
@@ -244,6 +245,7 @@ Returns the current identify job status, terminal result, or terminal error.
   "message": "Identify completed",
   "created_at": "2026-05-11T20:00:00Z",
   "updated_at": "2026-05-11T20:00:04Z",
+  "cancel_requested": false,
   "result": {
     "candidates": []
   },
@@ -266,6 +268,7 @@ Returns the current identify job status, terminal result, or terminal error.
 | `completed` | `result` contains the identify response. |
 | `failed` | `error` contains a terminal failure. |
 | `expired` | Job is outside the retention window. |
+| `canceled` | Client requested cancellation and the backend acknowledged it. |
 
 ### Error Payload
 
@@ -276,6 +279,7 @@ Returns the current identify job status, terminal result, or terminal error.
   "message": "Candidate search failed. Retry in a moment.",
   "created_at": "2026-05-11T20:00:00Z",
   "updated_at": "2026-05-11T20:00:04Z",
+  "cancel_requested": false,
   "result": null,
   "error": {
     "code": "candidate_search_failed",
@@ -293,6 +297,35 @@ Returns the current identify job status, terminal result, or terminal error.
 | ------ | ------- |
 | `404 Not Found` | No job exists for `job_id`. |
 | `410 Gone` | Job exists but has expired. |
+
+## POST /identify/jobs/{job_id}/cancel
+
+Requests cooperative cancellation for an async identify job.
+
+Cancellation is idempotent. If the job is active, the backend records the cancellation request and returns the current job status with `cancel_requested: true`. The response does not report `status: "canceled"` until backend processing acknowledges cancellation at a safe checkpoint.
+
+If the job is already terminal, the endpoint returns the current terminal status without rewriting it. For example, completed jobs remain `completed`, expired jobs remain `expired`, and canceled jobs remain `canceled`.
+
+### Response
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "extracting_text",
+  "message": "Extracting text from image",
+  "created_at": "2026-05-11T20:00:00Z",
+  "updated_at": "2026-05-11T20:00:02Z",
+  "cancel_requested": true,
+  "result": null,
+  "error": null
+}
+```
+
+### Errors
+
+| Status | Meaning |
+| ------ | ------- |
+| `404 Not Found` | No job exists for `job_id`. |
 
 ---
 

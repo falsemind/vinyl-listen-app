@@ -158,6 +158,26 @@ def get_identify_job(
         )
 
 
+@router.post(
+    "/jobs/{job_id}/cancel",
+    response_model=IdentifyJobStatusResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def cancel_identify_job(
+    job_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
+):
+    try:
+        return job_service.cancel_job(db, job_id)
+    except IdentifyJobNotFoundError:
+        return _error_response(
+            status_code=404,
+            code="identify_job_not_found",
+            message="Identify job was not found.",
+        )
+
+
 async def _read_image_bytes(image: UploadFile) -> bytes:
     chunks: list[bytes] = []
     total_size = 0

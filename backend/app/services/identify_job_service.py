@@ -246,6 +246,18 @@ class IdentifyJobService:
             raise IdentifyJobExpiredError(job_id)
         return self._to_response(job)
 
+    def cancel_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
+        job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider())
+        if job is None:
+            raise IdentifyJobNotFoundError(job_id)
+        logger.info(
+            "Identify job cancellation requested job_id=%s status=%s cancel_requested=%s",
+            job_id,
+            job.status,
+            job.cancel_requested_at is not None,
+        )
+        return self._to_response(job)
+
     def process_job(self, job_id: str, *, image_bytes: bytes, filename: str, content_type: str) -> None:
         started_at = time.monotonic()
         admission_ticket = self._pop_admission_ticket(job_id)
