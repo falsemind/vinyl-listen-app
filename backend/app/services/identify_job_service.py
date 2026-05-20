@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.db import SessionLocal
 from app.models.identify_job import IdentifyJob
-from app.repositories.identify_job_repository import IdentifyJobRepository
+from app.repositories.identify_job_repository import TERMINAL_IDENTIFY_JOB_STATUSES, IdentifyJobRepository
 from app.schemas.identify import (
     IdentifyCandidateResponse,
     IdentifyJobError,
@@ -262,15 +262,33 @@ class IdentifyJobService:
         return self._to_response(job)
 
     def cancel_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
+        existing_job = self._repository.get(db, job_id)
+        if existing_job is None:
+            raise IdentifyJobNotFoundError(job_id)
+
+        was_terminal = existing_job.status in TERMINAL_IDENTIFY_JOB_STATUSES
+        was_cancel_requested = existing_job.cancel_requested_at is not None
         job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider())
         if job is None:
             raise IdentifyJobNotFoundError(job_id)
-        logger.info(
-            "Identify job cancellation requested job_id=%s status=%s cancel_requested=%s",
-            job_id,
-            job.status,
-            job.cancel_requested_at is not None,
-        )
+        if was_terminal:
+            logger.info(
+                "Identify job cancellation ignored job_id=%s reason=terminal status=%s",
+                job_id,
+                job.status,
+            )
+        elif was_cancel_requested:
+            logger.info(
+                "Identify job cancellation ignored job_id=%s reason=already_requested status=%s",
+                job_id,
+                job.status,
+            )
+        else:
+            logger.info(
+                "Identify job cancellation requested job_id=%s status=%s",
+                job_id,
+                job.status,
+            )
         return self._to_response(job)
 
     def process_job(self, job_id: str, *, image_bytes: bytes, filename: str, content_type: str) -> None:
