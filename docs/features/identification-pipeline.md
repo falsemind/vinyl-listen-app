@@ -27,7 +27,7 @@ CandidateRanker.rank
 IdentifyResponse
 ```
 
-Clients can call the pipeline directly with `POST /api/v1/identify`, or use the async job wrapper with `POST /api/v1/identify/jobs` and `GET /api/v1/identify/jobs/{job_id}`. The job wrapper does not change identification behavior; it persists progress and terminal results for polling clients.
+Clients can call the pipeline directly with `POST /api/v1/identify`, or use the async job wrapper with `POST /api/v1/identify/jobs`, `GET /api/v1/identify/jobs/{job_id}`, and `POST /api/v1/identify/jobs/{job_id}/cancel`. The job wrapper preserves identification behavior, persists progress and terminal results for polling clients, and supports cooperative cancellation for active jobs.
 
 ## Data Model
 
@@ -276,6 +276,10 @@ This makes API results explainable and helps tests assert why a candidate won.
 6. Final candidates are ranked and limited before response serialization.
 
 When called by `IdentifyJobService`, the same flow reports persisted status before image preprocessing, OCR extraction, identifier parsing, local search, Discogs search, and candidate ranking. This is the backend source for the Android Processing screen progress states.
+
+Async job cancellation is cooperative. `IdentifyJobService` records `cancel_requested_at` and passes a cancellation checker into the identify pipeline. `IdentifyService` checks that callback before and after backend-controlled expensive phases, including before completion result persistence. A blocking OCR, VLM, Discogs, or database call may still finish before the next checkpoint observes cancellation.
+
+When cancellation is acknowledged, the job becomes terminal `canceled` with no `result` and no failure `error` payload. If the job already reached a terminal state, the cancel endpoint returns the existing terminal state without rewriting it.
 
 ## Test Coverage
 
