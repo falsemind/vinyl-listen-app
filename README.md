@@ -2,6 +2,8 @@
 
 A mobile-first system for **identifying vinyl records from photos and logging listening sessions**.
 
+![identify and session logging flow](docs/product/IdentifyAndLogSessionFlow.jpg)
+
 The project consists of:
 
 * **Android application** built with Kotlin + Jetpack Compose
@@ -420,4 +422,4 @@ Planned improvements beyond MVP:
 
 # License
 
-This project is currently private and under active development.
+This project is for personal use and experimentation only. Commercial use is strictly prohibited.
