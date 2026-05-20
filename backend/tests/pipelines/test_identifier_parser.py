@@ -241,6 +241,28 @@ def test_identifier_parser_does_not_promote_track_lines_with_stray_digits_to_cat
     assert identifiers.title == "LUMINARY EP"
 
 
+def test_identifier_parser_does_not_promote_numbered_track_suffix_to_catalog() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "ThieveryCorporation",
+                "Treasures from the Temple",
+                "A",
+                "an San Rock 01",
+                "History 02",
+                "Music to Make You Stagger 03",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist == "ThieveryCorporation"
+    assert identifiers.title == "Treasures from the Temple"
+    assert identifiers.text_fragments == ("San Rock", "History", "Music to Make You Stagger")
+
+
 def test_identifier_parser_does_not_promote_track_duration_to_catalog_number() -> None:
     parser = IdentifierParser()
 

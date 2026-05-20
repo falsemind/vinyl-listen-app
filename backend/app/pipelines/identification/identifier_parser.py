@@ -60,6 +60,7 @@ TRACK_LISTING_PREFIX_PATTERN = re.compile(
 TRACK_SIDE_QUALIFIER_PATTERN = re.compile(r"^\(?\s*(?:there|here|this side|other side)\s*\)?\s*", re.IGNORECASE)
 TRACK_SIDE_WORD_PREFIX_PATTERN = re.compile(r"^side\b[.)]?\s*", re.IGNORECASE)
 TRACK_DURATION_SUFFIX_PATTERN = re.compile(r"\s+\d{1,2}:\d{2}(?::\d{2})?\s*$")
+TRACK_NUMBER_SUFFIX_PATTERN = re.compile(r"\s+(0?[1-9]|[12]\d|30)\s*$")
 SEPARATOR_PATTERNS = (" - ", " / ", " + ", " – ", " — ", ": ")
 EDGE_JUNK_CHARACTERS = " \t\r\n'\"“”‘’`_-:#*/.,;|\\"
 MAX_TEXT_FRAGMENTS = 8
@@ -328,6 +329,9 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
         slash_identity = _extract_slash_separated_identity(line)
         if slash_identity is not None:
             _append_catalog_number_candidates(slash_identity[0], detected_catalog_numbers, seen, scores)
+            continue
+
+        if _looks_like_numbered_track_listing(line):
             continue
 
         catalog_tokens = _extract_catalog_number_tokens(line)
@@ -1319,6 +1323,13 @@ def _strip_leading_lowercase_ocr_prefix(value: str) -> str:
     return value
 
 
+def _strip_leading_lowercase_ocr_word(value: str) -> str:
+    tokens = value.split()
+    if len(tokens) >= 2 and len(tokens[0]) <= 2 and tokens[0].islower() and tokens[1][0].isupper():
+        return " ".join(tokens[1:])
+    return value
+
+
 def _looks_like_track_listing(value: str) -> bool:
     if _extract_track_listing_title(value) is not None:
         return True
@@ -1328,6 +1339,10 @@ def _looks_like_track_listing(value: str) -> bool:
         return True
 
     return len(tokens) >= 3 and tokens[-1].isdigit() and all(token.isalpha() for token in tokens[:-1])
+
+
+def _looks_like_numbered_track_listing(value: str) -> bool:
+    return _extract_numbered_track_listing_title(value) is not None
 
 
 def _is_side_heading(value: str) -> bool:
@@ -1340,16 +1355,61 @@ def _extract_track_listing_title(value: str) -> str | None:
     if match is None:
         match = SIDE_PREFIX_PATTERN.match(stripped_value)
     if match is None:
-        return None
+        return _extract_numbered_track_listing_title(stripped_value)
 
     title = " ".join(stripped_value[match.end() :].strip(EDGE_JUNK_CHARACTERS).split())
     title = TRACK_SIDE_QUALIFIER_PATTERN.sub("", title)
     title = TRACK_SIDE_WORD_PREFIX_PATTERN.sub("", title)
     title = TRACK_DURATION_SUFFIX_PATTERN.sub("", title)
+    title = _strip_numbered_track_suffix(title)
     title = " ".join(title.strip(EDGE_JUNK_CHARACTERS).split())
     if not title or not any(character.isalpha() for character in title):
         return None
     return title
+
+
+def _extract_numbered_track_listing_title(value: str) -> str | None:
+    stripped_value = value.strip()
+    for pattern in (TRACK_LISTING_PREFIX_PATTERN, SIDE_PREFIX_PATTERN):
+        match = pattern.match(stripped_value)
+        if match is not None:
+            stripped_value = stripped_value[match.end() :]
+            break
+
+    title = " ".join(stripped_value.strip(EDGE_JUNK_CHARACTERS).split())
+    title = TRACK_SIDE_QUALIFIER_PATTERN.sub("", title)
+    title = TRACK_SIDE_WORD_PREFIX_PATTERN.sub("", title)
+    title = TRACK_DURATION_SUFFIX_PATTERN.sub("", title)
+    stripped_title = _strip_numbered_track_suffix(title)
+    if stripped_title == title:
+        return None
+    return stripped_title
+
+
+def _strip_numbered_track_suffix(value: str) -> str:
+    match = TRACK_NUMBER_SUFFIX_PATTERN.search(value)
+    if match is None:
+        return value
+
+    title = " ".join(value[: match.start()].strip(EDGE_JUNK_CHARACTERS).split())
+    title = _strip_leading_lowercase_ocr_word(title)
+    if not _is_plausible_numbered_track_title(title, match.group(1)):
+        return value
+    return title
+
+
+def _is_plausible_numbered_track_title(title: str, number: str) -> bool:
+    title = _strip_leading_lowercase_ocr_prefix(title)
+    tokens = TOKEN_PATTERN.findall(title)
+    if not tokens:
+        return False
+    if all(len(token) <= 2 for token in tokens):
+        return False
+    if any(any(character.isdigit() for character in token) for token in tokens):
+        return False
+    if not all(any(character.isalpha() for character in token) for token in tokens):
+        return False
+    return number.startswith("0") or len(tokens) >= 3
 
 
 def _track_listing_prefix_end(value: str) -> int | None:
