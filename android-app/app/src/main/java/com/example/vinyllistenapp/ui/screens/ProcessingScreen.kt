@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -28,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.ApiErrorKind
 import com.example.vinyllistenapp.data.api.ApiException
+import com.example.vinyllistenapp.data.api.IdentifyJobState
 import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -51,6 +54,9 @@ import com.example.vinyllistenapp.ui.components.SuccessStatusFeedback
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private const val IDENTIFY_POLL_DELAY_MS = 750L
 
 @Composable
 fun ProcessingScreen(
@@ -61,33 +67,116 @@ fun ProcessingScreen(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var retryKey by remember { mutableIntStateOf(0) }
     var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
+    var currentJobId by remember(imageUri, retryKey) { mutableStateOf<String?>(null) }
+    var cancelRequested by remember(imageUri, retryKey) { mutableStateOf(false) }
 
-    LaunchedEffect(imageUri, retryKey) {
-        state = IdentifyUiState.Loading()
-        val candidates =
-            if (imageUri == null) {
-                MockVinylData.matchCandidates
-            } else {
-                runCatching {
-                    apiClient.identifyImage(context, Uri.parse(imageUri)) { job ->
-                        state = IdentifyUiState.Loading(job.status)
-                    }
-                }.getOrElse { error ->
-                    state =
-                        IdentifyUiState.Error(
-                            error.toIdentifyErrorMessage(),
-                        )
-                    return@LaunchedEffect
+    suspend fun cancelAndLeave(jobId: String) {
+        val cancelResult =
+            runCatching {
+                apiClient.cancelIdentifyJob(jobId)
+            }.getOrElse {
+                onDismiss()
+                return
+            }
+        currentJobId = cancelResult.jobId
+        when (cancelResult.status) {
+            IdentifyJobStatus.Completed -> {
+                val candidates = cancelResult.candidates.orEmpty()
+                if (candidates.isEmpty()) {
+                    onDismiss()
+                } else {
+                    state = IdentifyUiState.Success(candidates)
+                    delay(SUCCESS_CONFIRMATION_DELAY_MS)
+                    onComplete(candidates)
                 }
             }
-        if (candidates.isEmpty()) {
-            state = IdentifyUiState.Empty
-        } else {
+
+            IdentifyJobStatus.Failed,
+            IdentifyJobStatus.Expired,
+            IdentifyJobStatus.Canceled,
+            -> onDismiss()
+
+            else -> onDismiss()
+        }
+    }
+
+    fun requestCancel() {
+        if (cancelRequested) return
+        cancelRequested = true
+        state = IdentifyUiState.Canceling(state.currentStatus)
+        val jobId = currentJobId ?: return
+        scope.launch {
+            cancelAndLeave(jobId)
+        }
+    }
+
+    BackHandler(enabled = state.blocksBackNavigation) {
+        // Active identify jobs leave through the explicit cancel action only.
+    }
+
+    LaunchedEffect(imageUri, retryKey) {
+        cancelRequested = false
+        currentJobId = null
+        state = IdentifyUiState.Loading()
+        if (imageUri == null) {
+            val candidates = MockVinylData.matchCandidates
             state = IdentifyUiState.Success(candidates)
             delay(SUCCESS_CONFIRMATION_DELAY_MS)
             onComplete(candidates)
+            return@LaunchedEffect
+        }
+
+        val terminalJob =
+            runCatching {
+                var job = apiClient.startIdentifyJob(context, Uri.parse(imageUri))
+                currentJobId = job.jobId
+                if (cancelRequested) {
+                    state = IdentifyUiState.Canceling(job.status)
+                    cancelAndLeave(job.jobId)
+                    return@LaunchedEffect
+                }
+                state = IdentifyUiState.Loading(job.status, job.cancelRequested)
+                while (!job.status.isTerminal) {
+                    delay(IDENTIFY_POLL_DELAY_MS)
+                    if (cancelRequested) return@LaunchedEffect
+                    job = apiClient.getIdentifyJobStatus(job.jobId)
+                    currentJobId = job.jobId
+                    if (cancelRequested) return@LaunchedEffect
+                    state = IdentifyUiState.Loading(job.status, job.cancelRequested)
+                }
+                job
+            }.getOrElse { error ->
+                if (cancelRequested) {
+                    onDismiss()
+                } else {
+                    state = IdentifyUiState.Error(error.toIdentifyErrorMessage())
+                }
+                return@LaunchedEffect
+            }
+
+        if (cancelRequested) return@LaunchedEffect
+        val candidates = terminalJob.candidates.orEmpty()
+        when (terminalJob.status) {
+            IdentifyJobStatus.Completed -> {
+                if (candidates.isEmpty()) {
+                    state = IdentifyUiState.Empty
+                } else {
+                    state = IdentifyUiState.Success(candidates)
+                    delay(SUCCESS_CONFIRMATION_DELAY_MS)
+                    onComplete(candidates)
+                }
+            }
+
+            IdentifyJobStatus.Failed,
+            IdentifyJobStatus.Expired,
+            -> state = IdentifyUiState.Error(terminalJob.toIdentifyErrorMessage())
+
+            IdentifyJobStatus.Canceled -> state = IdentifyUiState.Canceled
+
+            else -> state = IdentifyUiState.Empty
         }
     }
 
@@ -105,8 +194,17 @@ fun ProcessingScreen(
                     .padding(top = 48.dp, bottom = VinylSpacing.SpaceXl),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (state is IdentifyUiState.Error) {
-                CloseCircleButton(onClick = onDismiss)
+            if (state.showsTopLeftAction) {
+                CloseCircleButton(
+                    onClick = {
+                        if (state.isCancelable) {
+                            requestCancel()
+                        } else {
+                            onDismiss()
+                        }
+                    },
+                    contentDescription = if (state.isCancelable) "Cancel identify" else "Close",
+                )
             } else {
                 Spacer(Modifier.width(40.dp))
             }
@@ -156,7 +254,11 @@ fun ProcessingScreen(
                                 onManualSearch = onManualSearch,
                             )
 
-                        is IdentifyUiState.Loading, is IdentifyUiState.Success -> Unit
+                        IdentifyUiState.Canceled,
+                        is IdentifyUiState.Canceling,
+                        is IdentifyUiState.Loading,
+                        is IdentifyUiState.Success,
+                        -> Unit
                     }
                 }
             }
@@ -167,6 +269,11 @@ fun ProcessingScreen(
 private sealed interface IdentifyUiState {
     data class Loading(
         val status: IdentifyJobStatus? = null,
+        val cancelRequested: Boolean = false,
+    ) : IdentifyUiState
+
+    data class Canceling(
+        val status: IdentifyJobStatus? = null,
     ) : IdentifyUiState
 
     data class Success(
@@ -175,13 +282,38 @@ private sealed interface IdentifyUiState {
 
     data object Empty : IdentifyUiState
 
+    data object Canceled : IdentifyUiState
+
     data class Error(
         val message: String,
     ) : IdentifyUiState
 }
 
+private val IdentifyUiState.currentStatus: IdentifyJobStatus?
+    get() =
+        when (this) {
+            is IdentifyUiState.Canceling -> status
+            is IdentifyUiState.Loading -> status
+            IdentifyUiState.Canceled,
+            IdentifyUiState.Empty,
+            is IdentifyUiState.Error,
+            is IdentifyUiState.Success,
+            -> null
+        }
+
+private val IdentifyUiState.blocksBackNavigation: Boolean
+    get() = this is IdentifyUiState.Loading || this is IdentifyUiState.Canceling
+
+private val IdentifyUiState.isCancelable: Boolean
+    get() = this is IdentifyUiState.Loading || this is IdentifyUiState.Canceling
+
+private val IdentifyUiState.showsTopLeftAction: Boolean
+    get() = isCancelable || this is IdentifyUiState.Error || this is IdentifyUiState.Empty || this is IdentifyUiState.Canceled
+
 private fun processingSubtitle(state: IdentifyUiState): String =
     when (state) {
+        is IdentifyUiState.Canceling -> "Canceling identify"
+        IdentifyUiState.Canceled -> "Identify canceled"
         is IdentifyUiState.Loading -> state.status.toProcessingMessage()
         is IdentifyUiState.Success -> "Matches found"
         IdentifyUiState.Empty -> "No matches found"
@@ -208,6 +340,7 @@ private fun IdentifyJobStatus?.toProcessingMessage(): String =
         IdentifyJobStatus.Completed -> "Matches found"
         IdentifyJobStatus.Failed -> "The identify request could not finish"
         IdentifyJobStatus.Expired -> "Identify result expired"
+        IdentifyJobStatus.Canceled -> "Identify canceled"
         IdentifyJobStatus.Unknown -> "Identifying record"
     }
 
@@ -222,14 +355,24 @@ private fun Throwable.toIdentifyErrorMessage(): String {
 @Composable
 private fun ProcessingStateIndicator(state: IdentifyUiState) {
     when (state) {
-        is IdentifyUiState.Loading -> ProcessingSpinner(animated = true)
+        is IdentifyUiState.Canceling,
+        is IdentifyUiState.Loading,
+        -> ProcessingSpinner(animated = true)
 
+        IdentifyUiState.Canceled,
         IdentifyUiState.Empty,
         is IdentifyUiState.Error,
         is IdentifyUiState.Success,
         -> ProcessingSpinner(animated = false)
     }
 }
+
+private fun IdentifyJobState.toIdentifyErrorMessage(): String =
+    when (status) {
+        IdentifyJobStatus.Failed -> error?.message ?: "Identify failed. Retry or use Manual Search."
+        IdentifyJobStatus.Expired -> "Identify result expired. Try another image or search manually."
+        else -> message.ifBlank { "The identify request could not finish" }
+    }
 
 @Composable
 private fun ProcessingRecoveryActions(

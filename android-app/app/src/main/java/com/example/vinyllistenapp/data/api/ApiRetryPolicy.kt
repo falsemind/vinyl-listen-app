@@ -5,6 +5,7 @@ import kotlin.math.min
 enum class ApiHttpMethod {
     Get,
     Post,
+    RetryablePost,
 }
 
 data class ApiRetryPolicy(
@@ -27,7 +28,7 @@ data class ApiRetryPolicy(
         statusCode: Int? = null,
         isNetworkFailure: Boolean = false,
     ): Boolean {
-        if (method != ApiHttpMethod.Get || attempt >= maxAttempts) return false
+        if (method !in setOf(ApiHttpMethod.Get, ApiHttpMethod.RetryablePost) || attempt >= maxAttempts) return false
         return isNetworkFailure || statusCode == 429 || statusCode in 500..599
     }
 

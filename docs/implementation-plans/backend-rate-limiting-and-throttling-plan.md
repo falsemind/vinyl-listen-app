@@ -547,7 +547,7 @@ Phase 4:
 Future durable queue phase:
 
 - `docs/features/identify-progress-jobs.md`: document queued jobs, input storage, retries, and worker behavior.
-- `docs/architecture/api-spec.md`: clarify longer-lived `queued` status.
+- `docs/architecture/api-spec.md`: clarify longer-lived `queued` status while preserving the existing `cancel_requested` and `canceled` contract.
 - `docs/repository-structure.md`: add worker/input-store files.
 
 ## Test Plan

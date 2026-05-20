@@ -181,14 +181,22 @@ Visible phases map to backend statuses:
 | Uploading image | `queued`, `upload_received` |
 | Extracting text | `preprocessing_image`, `extracting_text`, `parsing_identifiers` |
 | Searching candidates | `searching_local`, `searching_discogs`, `ranking_candidates` |
+| Identify canceled | `canceled` |
 
 If the job fails, the backend returns `failed_step` so the client can mark upload, extraction, or search as the failed phase.
+
+### Cancel Behavior
+
+Processing has a top-left cancel button while the identify job is active. This is the only intentional exit path during active processing.
+
+The screen blocks normal phone back navigation, including the system back button and back gesture, until the user taps cancel or the job reaches a terminal state. On cancel, Android sends a best-effort `POST /api/v1/identify/jobs/{job_id}/cancel`, stops local polling pressure, and leaves Processing once cancellation has started locally or a terminal backend status is returned.
 
 ## Navigation
 
 ```
 If matches found → Match Confirmation Screen
 If no results → Manual Search Screen
+Cancel active identify → Home
 ```
 
 ---

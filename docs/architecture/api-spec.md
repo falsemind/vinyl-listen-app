@@ -308,6 +308,17 @@ If the job is already terminal, the endpoint returns the current terminal status
 
 Operational logs distinguish cancellation requests, duplicate or terminal no-op cancellation attempts, and backend acknowledgment when processing marks the job `canceled`.
 
+Common outcomes:
+
+| Current job state | Response behavior |
+| --- | --- |
+| Active job | Returns current status with `cancel_requested=true`. |
+| Cancellation acknowledged by worker | Returns `status="canceled"` with no `result` or `error`. |
+| Completed before cancel | Returns `status="completed"` with the completed `result`. |
+| Failed, expired, or already canceled | Returns the existing terminal state. |
+
+Missing jobs return the same `404` shape as `GET /identify/jobs/{job_id}`.
+
 ### Response
 
 ```json

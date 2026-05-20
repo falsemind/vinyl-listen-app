@@ -19,7 +19,7 @@ Source mockups:
 - `docs/product/app-screens-mockups/SessionLogging.tsx`
 - `docs/product/app-screens-mockups/RecordDetail.tsx`
 
-Analytics is intentionally out of scope for the current Android prototype.
+Analytics now uses implemented dashboard screens and follows the same dark UI tokens. Dedicated analytics mockups can be added later if the charts need a separate visual system.
 
 ## Color Tokens
 
@@ -195,12 +195,14 @@ Use for upload, manual search, cancel, view details.
 
 ### Icon Button
 
-Used for close, info, details, and navigation controls.
+Used for close, cancel, info, details, and navigation controls.
 
 - Shape: circle
 - Fill: `SurfaceSecondary`
 - Border: `BorderDefault`
 - Icon: `TextPrimary` for close/info, `TextSecondary` for inactive states.
+
+On active Processing, the top-left circle icon is the cancel affordance. It keeps the same visual treatment as close buttons, but its accessibility label should describe the action as canceling identify work.
 
 ### Status And Confidence Chips
 
@@ -256,7 +258,7 @@ Home mockup includes a bottom nav shell:
 - Use edge-to-edge dark system bars if possible.
 - Scrollable screens need bottom padding so fixed/floating CTAs do not cover content.
 - Home and Record Detail use floating primary CTAs at bottom-right above the bottom bar.
-- Modal-like screens use a top close button and centered title.
+- Modal-like screens use a top close button and centered title. Processing uses the same placement for its active-job cancel action.
 - Image thumbnails are rounded and should use real/mock album imagery where available.
 
 ## Compose Implementation Notes

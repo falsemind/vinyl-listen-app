@@ -79,6 +79,11 @@ class VinylApiClient(
             getJson("identify/jobs/${Uri.encode(jobId)}").toIdentifyJobState()
         }
 
+    suspend fun cancelIdentifyJob(jobId: String): IdentifyJobState =
+        apiCall {
+            postRetryableJson("identify/jobs/${Uri.encode(jobId)}/cancel", JSONObject()).toIdentifyJobState()
+        }
+
     suspend fun importRelease(discogsReleaseId: Long): String =
         apiCall {
             val body =
@@ -357,6 +362,14 @@ class VinylApiClient(
         return readJsonResponse(connection)
     }
 
+    private suspend fun postRetryableJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject =
+        withRetry(ApiHttpMethod.RetryablePost) {
+            postJson(path, body)
+        }
+
     private fun deleteJson(path: String): JSONObject {
         val connection = openConnection(path)
         connection.requestMethod = "DELETE"
@@ -493,6 +506,7 @@ data class IdentifyJobState(
     val message: String,
     val candidates: List<MatchCandidate>? = null,
     val error: IdentifyJobError? = null,
+    val cancelRequested: Boolean = false,
 )
 
 enum class IdentifyJobStatus(
@@ -509,11 +523,12 @@ enum class IdentifyJobStatus(
     Completed("completed"),
     Failed("failed"),
     Expired("expired"),
+    Canceled("canceled"),
     Unknown("unknown"),
     ;
 
     val isTerminal: Boolean
-        get() = this == Completed || this == Failed || this == Expired
+        get() = this == Completed || this == Failed || this == Expired || this == Canceled
 
     companion object {
         fun fromWireValue(value: String): IdentifyJobStatus = entries.firstOrNull { it.wireValue == value } ?: Unknown
@@ -526,7 +541,7 @@ data class IdentifyJobError(
     val failedStep: String,
 )
 
-private fun JSONObject.toIdentifyJobState(): IdentifyJobState {
+internal fun JSONObject.toIdentifyJobState(): IdentifyJobState {
     val result = optJSONObject("result")
     val error = optJSONObject("error")
     return IdentifyJobState(
@@ -542,6 +557,7 @@ private fun JSONObject.toIdentifyJobState(): IdentifyJobState {
                     failedStep = it.optString("failed_step", "unknown"),
                 )
             },
+        cancelRequested = optBoolean("cancel_requested", false),
     )
 }
 

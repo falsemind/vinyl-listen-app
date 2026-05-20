@@ -18,7 +18,8 @@ The original synchronous endpoint remains available at `POST /api/v1/identify`. 
 3. The backend creates an `identify_jobs` row with the resolved `client_key`.
 4. The backend starts the identify pipeline in a background task.
 5. The client polls `GET /api/v1/identify/jobs/{job_id}`.
-6. The job returns `completed` with `result`, `failed` with `error`, or `expired`.
+6. The client may request cancellation with `POST /api/v1/identify/jobs/{job_id}/cancel`.
+7. The job returns `completed` with `result`, `failed` with `error`, `expired`, or `canceled`.
 
 Upload validation still happens before a job is created. Invalid content type, empty files, or files larger than the configured identify upload limit return the same structured errors as the synchronous endpoint.
 
@@ -39,6 +40,7 @@ When identify capacity is full, `POST /api/v1/identify` and `POST /api/v1/identi
 | `completed` | Identification finished and `result` contains candidates. |
 | `failed` | Identification failed and `error` explains the terminal failure. |
 | `expired` | The job is past its retention window or was stale before completion. |
+| `canceled` | The client requested cancellation and the backend worker acknowledged it. |
 
 ## Storage
 
@@ -53,11 +55,25 @@ Important fields:
 - `filename` and `content_type`: upload metadata for diagnostics.
 - `result`: completed `IdentifyResponse` payload.
 - `error`: terminal failure payload with `code`, `message`, and `failed_step`.
+- `cancel_requested_at`: set when a client asks the backend to cancel an active job.
 - `expires_at`: retention cutoff. Current jobs expire after 24 hours.
 
 Image bytes are not stored in the table. They are held only long enough for the background task to process the upload.
 
 Before creating a new job, the backend expires active rows whose status has not advanced within `identify_stale_active_job_timeout_seconds`. It also expires active rows older than the current `IdentifyJobService` instance startup. This covers backend restarts where the database still has an active job row, but the new process no longer has the in-memory background worker ticket for that job. These stale rows are marked `expired` with `identify_job_stale` so one interrupted upload does not block a client's active-job limit until the full timeout passes.
+
+## Cancellation
+
+Cancellation is cooperative, not preemptive. `POST /api/v1/identify/jobs/{job_id}/cancel` records the request for active jobs and returns the current job status with `cancel_requested=true`.
+
+The background worker checks for cancellation before and after backend-controlled expensive phases. An OCR, VLM, Discogs, or database call that is already in flight may finish before cancellation is observed. When the worker sees the request, it marks the job `canceled`, clears `result` and `error`, and releases identify capacity.
+
+The cancel endpoint is idempotent. Terminal jobs keep their terminal state:
+
+- Completed jobs remain `completed`.
+- Failed jobs remain `failed`.
+- Expired jobs remain `expired`.
+- Already canceled jobs remain `canceled`.
 
 ## Error Handling
 
@@ -74,7 +90,7 @@ The Android client can use `failed_step` for diagnostics or future step-level UI
 
 ## Android Polling Behavior
 
-`VinylApiClient.identifyImage` starts a job, polls job status, and returns candidates once the job is completed.
+The Android Processing screen starts a job, polls job status, and returns candidates once the job is completed.
 
 The Processing screen maps backend statuses into one concise status line under the spinner:
 
@@ -83,6 +99,8 @@ The Processing screen maps backend statuses into one concise status line under t
 - `searching_local`, `searching_discogs`, `ranking_candidates`: candidate search and ranking.
 
 When the job fails, the client uses the persisted backend message. Offline/local API failures are collapsed to a generic identify-failure message, while backend capacity or validation responses keep their structured API messages.
+
+While a job is active, Processing blocks the normal phone back gesture/button. The top-left cancel action is the supported exit path. On cancel, Android sends a best-effort cancel request, stops local polling pressure, and leaves Processing once the local cancel flow has started or a terminal status is returned.
 
 ## Compatibility
 

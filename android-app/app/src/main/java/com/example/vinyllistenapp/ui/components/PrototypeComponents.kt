@@ -191,10 +191,11 @@ internal fun CircleIconButton(
 internal fun CloseCircleButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    contentDescription: String = "Close",
 ) {
     CircleIconButton(
         icon = Icons.Filled.Close,
-        contentDescription = "Close",
+        contentDescription = contentDescription,
         onClick = onClick,
         modifier = modifier,
     )
