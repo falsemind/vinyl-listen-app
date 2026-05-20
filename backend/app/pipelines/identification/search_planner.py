@@ -55,6 +55,7 @@ LOW_VALUE_QUERY_LINES = {
     "side b",
     "limited edition",
 }
+LOW_VALUE_QUERY_PREFIXES = ("image variant",)
 SIDE_MARKER_PATTERN = r"(?:[A-H]{1,2}|[A-H](?:\d{1,2}|[IL]{1,3}|IV|V))"
 TRACK_QUERY_PREFIX_PATTERN = re.compile(rf"^{SIDE_MARKER_PATTERN}[.)]?\s+", re.IGNORECASE)
 TRACK_QUERY_DOTTED_PREFIX_PATTERN = re.compile(
@@ -704,7 +705,10 @@ def _has_query_value(line: str) -> bool:
 
 
 def _is_low_value_query_line(line: str) -> bool:
-    return _normalize_credit_query(line) in LOW_VALUE_QUERY_LINES
+    normalized_line = _normalize_credit_query(line)
+    return normalized_line in LOW_VALUE_QUERY_LINES or any(
+        normalized_line.startswith(prefix) for prefix in LOW_VALUE_QUERY_PREFIXES
+    )
 
 
 def _strip_numeric_track_query_prefix(line: str) -> str:

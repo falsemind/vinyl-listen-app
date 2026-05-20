@@ -223,6 +223,25 @@ def test_search_plan_skips_malformed_bracket_raw_lines() -> None:
     assert all(" NDERGROUND" not in (query or "") for query in searched_queries)
 
 
+def test_search_plan_filters_ocr_variant_boilerplate_from_raw_queries() -> None:
+    identifiers = ExtractedIdentifiers(
+        raw_text="\n".join(
+            [
+                "Image variant: normalized.",
+                "ORCERER",
+                "A1. Take Me Higher",
+                "Clouds",
+            ]
+        ),
+        text_fragments=("Take Me Higher", "Clouds"),
+    )
+
+    search_steps = build_search_plan(identifiers)
+    searched_queries = [step.params.get("query") for step in search_steps]
+
+    assert all("Image variant" not in (query or "") for query in searched_queries)
+
+
 def test_search_plan_filters_credit_prose_from_stamped_label_queries() -> None:
     identifiers = ExtractedIdentifiers(
         catalog_numbers=("RNVO3", "RNV03"),

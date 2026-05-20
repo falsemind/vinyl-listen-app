@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable
@@ -36,6 +37,7 @@ DEFAULT_MLX_VLM_VARIANT_NAMES = ("normalized", "label_catalog_band", "label_bott
 DEFAULT_MLX_VLM_MAX_VARIANTS = 3
 MLX_VLM_SOURCE = "mlx_vlm"
 PADDLEOCR_SOURCE = "paddleocr_vl"
+OCR_VARIANT_BOILERPLATE_PATTERN = re.compile(r"^\s*image\s+variant\s*:?\s+[-_a-z0-9 ]+\.?\s*$", re.IGNORECASE)
 _PADDLEOCR_PIPELINE_CACHE_LOCK = Lock()
 _PADDLEOCR_PIPELINE_CACHE: dict["_PaddleOcrPipelineCacheKey", Any] = {}
 _PADDLEOCR_VL_CLASS: Any | None = None
@@ -901,7 +903,7 @@ def _normalize_paddleocr_output(raw_output: Any) -> tuple[OcrTextLine, ...]:
     seen: set[str] = set()
     for candidate in _iter_paddle_text_lines(raw_output):
         key = _normalize_text_key(candidate.text)
-        if not key or key in seen:
+        if not key or key in seen or _is_ocr_variant_boilerplate(candidate.text):
             continue
         seen.add(key)
         normalized_lines.append(
@@ -923,7 +925,7 @@ def _normalize_mlx_vlm_output(raw_output: Any, *, variant_name: str | None = Non
 
     for candidate in _iter_mlx_vlm_text_lines(parsed_content):
         key = _normalize_text_key(candidate.text)
-        if not key or key in seen:
+        if not key or key in seen or _is_ocr_variant_boilerplate(candidate.text):
             continue
         seen.add(key)
         normalized_lines.append(
@@ -1212,3 +1214,7 @@ def _normalize_text(value: str) -> str:
 
 def _normalize_text_key(value: str) -> str:
     return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _is_ocr_variant_boilerplate(value: str) -> bool:
+    return OCR_VARIANT_BOILERPLATE_PATTERN.fullmatch(value) is not None
