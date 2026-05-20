@@ -143,6 +143,26 @@ def test_mlx_vlm_backend_posts_openai_request_and_normalizes_json_response() -> 
     assert image_url.startswith("data:image/png;base64,")
 
 
+def test_mlx_vlm_backend_filters_variant_prompt_echo_lines() -> None:
+    def requester(_url: str, _payload: dict[str, object], _headers: dict[str, str], _timeout: float) -> object:
+        return {
+            "choices": [
+                {"message": {"content": "Image variant: normalized.\nCat No: JJJ001\nImage variant normalized."}}
+            ]
+        }
+
+    backend = MlxVlmOcrBackend(
+        service_url="http://ocr-service:8111",
+        prompt="extract text",
+        requester=requester,
+    )
+
+    result = backend.extract(_build_prepared_image(width=1200, height=800))
+
+    assert [line.text for line in result.lines] == ["Cat No: JJJ001"]
+    assert result.raw_text == "Cat No: JJJ001"
+
+
 def test_tesseract_backend_records_elapsed_time() -> None:
     backend = ocr_backends.TesseractOcrBackend(StubOcrExtractor())
 
