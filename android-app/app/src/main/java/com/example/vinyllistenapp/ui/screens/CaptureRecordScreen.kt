@@ -395,7 +395,7 @@ private fun CaptureHeader(
         Text(
             text = "Capture Record",
             color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
         )
         InfoCircleButton(onClick = onInfoClick)
     }

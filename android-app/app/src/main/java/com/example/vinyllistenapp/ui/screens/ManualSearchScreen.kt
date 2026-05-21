@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +48,12 @@ import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
+import java.time.Year
+
+private const val RELEASE_YEAR_MIN = 1900
+private const val RELEASE_YEAR_DIGITS = 4
+private const val BARCODE_MIN_DIGITS = 8
+private const val BARCODE_MAX_DIGITS = 14
 
 @Composable
 fun ManualSearchScreen(
@@ -64,6 +72,8 @@ fun ManualSearchScreen(
     var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }
     var retryError by remember { mutableStateOf<String?>(null) }
     var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
+    val yearValidationError = validateReleaseYear(yearQuery)
+    val barcodeValidationError = validateBarcode(barcodeQuery)
 
     fun runSearch(loadMore: Boolean = false) {
         val artist = artistQuery.trim()
@@ -75,6 +85,11 @@ fun ManualSearchScreen(
             listOf(artist, title, catalog, barcode).any { it.isNotBlank() } || year != null
         if (!hasSearchTerm) {
             state = ManualSearchUiState.Error("Enter at least one search field.")
+            return
+        }
+        val validationError = yearValidationError ?: barcodeValidationError
+        if (validationError != null) {
+            state = ManualSearchUiState.Error(validationError)
             return
         }
 
@@ -196,15 +211,19 @@ fun ManualSearchScreen(
                     label = "Year",
                     placeholder = "Year",
                     value = yearQuery,
-                    onValueChange = { yearQuery = it.filter(Char::isDigit).take(4) },
+                    onValueChange = { yearQuery = it.digitsOnly(maxLength = RELEASE_YEAR_DIGITS) },
                     modifier = Modifier.weight(1f),
+                    error = yearValidationError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
             ManualSearchField(
                 label = "Barcode",
                 placeholder = "Search by barcode",
                 value = barcodeQuery,
-                onValueChange = { barcodeQuery = it },
+                onValueChange = { barcodeQuery = it.digitsOnly(maxLength = BARCODE_MAX_DIGITS) },
+                error = barcodeValidationError,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
         }
         Spacer(Modifier.height(VinylSpacing.SpaceLg))
@@ -331,7 +350,7 @@ private fun ManualSearchHeader(onDismiss: () -> Unit) {
         Text(
             text = "Manual Search",
             color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.width(40.dp))
     }
@@ -344,6 +363,8 @@ private fun ManualSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    error: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     Column(
         modifier = modifier,
@@ -370,6 +391,7 @@ private fun ManualSearchField(
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                keyboardOptions = keyboardOptions,
                 textStyle =
                     MaterialTheme.typography.bodyMedium.copy(
                         color = VinylColors.TextPrimary,
@@ -389,8 +411,37 @@ private fun ManualSearchField(
                 },
             )
         }
+        error?.let { message ->
+            Text(
+                text = message,
+                color = VinylColors.AccentOrange,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
+            )
+        }
     }
 }
+
+private fun String.digitsOnly(maxLength: Int): String = filter(Char::isDigit).take(maxLength)
+
+private fun validateReleaseYear(value: String): String? {
+    if (value.isBlank()) return null
+    if (value.length < RELEASE_YEAR_DIGITS) return "Year must be 4 digits."
+    val year = value.toIntOrNull() ?: return "Year must be 4 digits."
+    val maxYear = Year.now().value
+    return if (year in RELEASE_YEAR_MIN..maxYear) {
+        null
+    } else {
+        "Year must be between $RELEASE_YEAR_MIN and $maxYear."
+    }
+}
+
+private fun validateBarcode(value: String): String? =
+    when {
+        value.isBlank() -> null
+        value.length !in BARCODE_MIN_DIGITS..BARCODE_MAX_DIGITS ->
+            "Barcode must be $BARCODE_MIN_DIGITS-$BARCODE_MAX_DIGITS digits."
+        else -> null
+    }
 
 @Composable
 private fun ManualSearchResultRow(

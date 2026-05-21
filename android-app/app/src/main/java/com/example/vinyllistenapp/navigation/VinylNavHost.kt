@@ -12,10 +12,12 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
@@ -38,6 +40,8 @@ fun VinylNavHost(
     var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
         mutableStateOf(MockVinylData.matchCandidates)
     }
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    LockPortraitOrientation(enabled = backStackEntry?.destination?.route.isPortraitLockedOverflowRoute())
 
     NavHost(
         navController = navController,
@@ -190,6 +194,16 @@ fun VinylNavHost(
         }
     }
 }
+
+private fun String?.isPortraitLockedOverflowRoute(): Boolean =
+    this in
+        setOf(
+            VinylRoutes.CAPTURE_RECORD,
+            VinylRoutes.PROCESSING_PATTERN,
+            VinylRoutes.MATCH_CONFIRMATION,
+            VinylRoutes.MANUAL_SEARCH,
+            VinylRoutes.SESSION_LOGGING_PATTERN,
+        )
 
 private const val MATCHED_ON_SEPARATOR = "\u001F"
 

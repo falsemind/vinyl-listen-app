@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,10 +69,10 @@ fun ProcessingScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var retryKey by remember { mutableIntStateOf(0) }
+    var retryKey by rememberSaveable { mutableIntStateOf(0) }
     var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
-    var currentJobId by remember(imageUri, retryKey) { mutableStateOf<String?>(null) }
-    var cancelRequested by remember(imageUri, retryKey) { mutableStateOf(false) }
+    var currentJobId by rememberSaveable(imageUri, retryKey) { mutableStateOf<String?>(null) }
+    var cancelRequested by rememberSaveable(imageUri, retryKey) { mutableStateOf(false) }
 
     suspend fun cancelAndLeave(jobId: String) {
         val cancelResult =
@@ -119,7 +120,6 @@ fun ProcessingScreen(
 
     LaunchedEffect(imageUri, retryKey) {
         cancelRequested = false
-        currentJobId = null
         state = IdentifyUiState.Loading()
         if (imageUri == null) {
             val candidates = MockVinylData.matchCandidates
@@ -131,7 +131,10 @@ fun ProcessingScreen(
 
         val terminalJob =
             runCatching {
-                var job = apiClient.startIdentifyJob(context, Uri.parse(imageUri))
+                var job =
+                    currentJobId
+                        ?.let { apiClient.getIdentifyJobStatus(it) }
+                        ?: apiClient.startIdentifyJob(context, Uri.parse(imageUri))
                 currentJobId = job.jobId
                 if (cancelRequested) {
                     state = IdentifyUiState.Canceling(job.status)
