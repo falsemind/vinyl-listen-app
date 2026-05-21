@@ -541,6 +541,156 @@ def test_identifier_parser_does_not_treat_label_url_text_as_catalog() -> None:
     assert identifiers.catalog_numbers == ()
 
 
+def test_identifier_parser_rejects_contact_lines_as_title_candidates() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "STORMING DUB",
+                "RECORDS",
+                "SIDE A",
+                "45 rpm",
+                "P© 2022",
+                "PRODUCED BY",
+                "KING ALPHA",
+                "FOR STORMING DUB",
+                "SDR75",
+                "HORNS OF JERICHO",
+                "stormingdub@gmail.com",
+                "www.stormingdub.com",
+                "info@onandler.com",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("SDR75",)
+    assert identifiers.artist == "KING ALPHA"
+    assert identifiers.title == "HORNS OF JERICHO"
+    assert "stormingdub@gmail.com" not in identifiers.text_fragments
+    assert "info@onandler.com" not in identifiers.text_fragments
+
+
+def test_identifier_parser_filters_credit_tail_from_title_first_label_layout() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "Yi Mds Gdn",
+                "Records",
+                "We Are The Generation",
+                "Daba Makourejah",
+                "Compose & Mix",
+                "by Rootical 45",
+                "EXECUTIVE PRODUCER YANNICK DAVENEL",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist == "Daba Makourejah"
+    assert identifiers.title == "We Are The Generation"
+    assert identifiers.label == "Yi Mds Gdn Records"
+    assert "Rootical 45" not in identifiers.text_fragments
+    assert "EXECUTIVE PRODUCER YANNICK DAVENEL" not in identifiers.text_fragments
+
+
+def test_identifier_parser_suppresses_catalogs_from_noisy_tesseract_fallback_text() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "a = C23,",
+                "wD a",
+                "a as Mas G dQ AX a",
+                "epee",
+                "HDA RSS ESS",
+                "Y > > Daba Makourejah kK",
+                "Ne Compose & Mix <éS",
+                "by Rootical 45 My yw",
+                "YANNICK DAVENEL",
+                "C2",
+                "A",
+                "We Are The Generation",
+                "Daba Makourejah",
+                "Compose & Mix",
+                "by Rootical 45",
+                "YANNICK DAVENEL",
+                "JB as Records nkX a",
+                "WOE 46 WAY",
+                "oN We Are The Generation 437% mS",
+                "Daba Makourejah q",
+                "Compose & Mix SS",
+                "by Rootical 45 no) Y",
+                "Yg O40 5",
+                "Records “2K",
+                "We Are The Generation",
+                "se & Mix",
+                "Rootical 45",
+                "YANNICK DAVENEL",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.artist == "Daba Makourejah"
+    assert identifiers.title == "We Are The Generation"
+
+
+def test_identifier_parser_does_not_promote_track_title_year_suffix_to_catalog() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "RUFF GUIDANCE",
+                "RECORDS RECORDS",
+                "REMASTERED",
+                "BAY B KANE",
+                "The Rise Of The Phoenix EP",
+                "A1. Jungle Warriors 95",
+                "A2. Seconds & Hours",
+                "B1. The Breeze",
+                "B2. If You Believe 95",
+                "All Tracks Written & Produced By Bay B Kane",
+                "Licensed With Thanks By Kniteforce Records",
+                "www.kniteforcerevolution.com",
+                "www.kniteforce-radio.com",
+                "33RPM",
+                "KRG01",
+                "UNAUTHORIZED PUBLIC PERFORMANCE, BROADCASTING, COPYING AND RENTAL OF THIS RECORD PROHIBITED.",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("KRG01",)
+    assert identifiers.artist == "BAY B KANE"
+    assert identifiers.title == "The Rise Of The Phoenix EP"
+    assert "Warriors 95" not in identifiers.catalog_numbers
+    assert "Believe 95" not in identifiers.catalog_numbers
+
+
+def test_identifier_parser_strips_colon_side_markers_and_reads_catalog_before_credit() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "Infra Ltd 026 / Written and Produced by D.Hook P + C Infrared Records 2023",
+                "A: Empires Of The Future",
+                "AA: Above and Beyond / Immortal",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("Infra Ltd 026",)
+    assert identifiers.artist is None
+    assert identifiers.title is None
+    assert {"Empires Of The Future", "Above and Beyond / Immortal"}.issubset(identifiers.text_fragments)
+
+
 def test_identifier_parser_treats_side_markers_as_track_titles_not_catalogs() -> None:
     parser = IdentifierParser()
 
