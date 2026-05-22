@@ -250,7 +250,8 @@ Home mockup includes a bottom nav shell:
 - Top border: `BorderDefault`
 - Active item: `AccentGreen`
 - Inactive items: `TextSecondary`
-- Keep Analytics/Stats route as a placeholder until backend/analytics scope begins.
+- Analytics/Stats is implemented as a dark dashboard with monthly plays, top records, rating distribution, mood distribution, and style distribution.
+- Mood and style distribution sections use the same progress-bar card behavior; style analytics should show specific Discogs styles such as `Dub Techno`, `House`, and `Deep House`, not broad genres.
 
 ## Layout Notes
 

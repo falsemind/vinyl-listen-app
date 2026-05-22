@@ -308,6 +308,20 @@ Errors are typed:
 - `get_session` returns one session by ID or raises `SessionNotFoundError`.
 - `get_sessions_by_release` validates the release ID, confirms the release exists, and returns all sessions for that release.
 
+## AnalyticsService
+
+`AnalyticsService` owns dashboard aggregations used by the Android Analytics screens.
+
+Analytics endpoints read from persisted releases and sessions:
+
+- `GET /api/v1/analytics/plays/monthly` groups logged sessions by month.
+- `GET /api/v1/analytics/top-records` ranks releases by session count and average rating.
+- `GET /api/v1/analytics/rating-distribution` counts 1-5 star ratings.
+- `GET /api/v1/analytics/mood-distribution` counts saved session mood text and groups case variants together.
+- `GET /api/v1/analytics/style-distribution` counts Discogs release styles through logged sessions, preserving specific style labels such as `Dub Techno`, `House`, and `Deep House`.
+
+Style distribution intentionally uses `releases.styles`, not broad `genres`, because the Analytics screen is meant to expose specific listening patterns.
+
 ## Service Error Boundaries
 
 Routes translate service errors into HTTP status codes:
