@@ -10,7 +10,10 @@ REPO_ROOT = BACKEND_ROOT.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(REPO_ROOT / ".env", BACKEND_ROOT / ".env"), extra="ignore")
 
-    database_url: str
+    database_profile: Literal["dev", "collection"] = "dev"
+    database_url: str | None = None
+    database_dev_url: str = "postgresql://vinyl:vinyl@localhost:5432/vinyl_dev"
+    database_collection_url: str = "postgresql://vinyl:vinyl@localhost:5432/vinyl_collection"
 
     database_echo: bool = False
 
@@ -22,7 +25,7 @@ class Settings(BaseSettings):
 
     api_rate_limit_per_minute: int = 60
     inbound_rate_limit_enabled: bool = True
-    inbound_rate_limit_backend: Literal["memory", "redis"] = "memory"
+    inbound_rate_limit_backend: Literal["memory", "redis"] = "redis"
     inbound_default_rate_limit_per_minute: int = 300
     inbound_identify_rate_limit_per_minute: int = 30
     inbound_rate_limit_window_seconds: float = 60.0
@@ -72,6 +75,17 @@ class Settings(BaseSettings):
     identify_debug_preprocess_images_dir: str = "identify_ocr_images"
 
     log_level: str = "INFO"
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.database_url and self.database_url.strip():
+            return self.database_url
+
+        profile_urls = {
+            "dev": self.database_dev_url,
+            "collection": self.database_collection_url,
+        }
+        return profile_urls[self.database_profile]
 
 
 settings = Settings()
