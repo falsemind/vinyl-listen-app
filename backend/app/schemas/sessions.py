@@ -68,6 +68,7 @@ class ReleaseSessionHistoryItem(BaseModel):
     side: str | None
     rating: int | None
     mood: str | None
+    notes: str | None = None
     has_notes: bool
 
 

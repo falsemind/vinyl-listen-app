@@ -149,6 +149,7 @@ class VinylApiClient(
                     rating = item.optNullableInt("rating") ?: 0,
                     side = item.optNullableString("side"),
                     hasNotes = item.optBoolean("has_notes", false),
+                    notes = item.optNullableString("notes"),
                 )
             }
         }
@@ -172,6 +173,7 @@ class VinylApiClient(
                             thumbnailUrl = item.optNullableString("thumbnail_url"),
                             side = item.optNullableString("side"),
                             hasNotes = item.optBoolean("has_notes", false),
+                            notes = item.optNullableString("notes"),
                         )
                     },
                 totalSessions = response.optInt("total_sessions", 0),

@@ -38,7 +38,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
@@ -46,7 +45,6 @@ import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
-import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.BottomNavBar
@@ -83,8 +81,7 @@ fun AnalyticsScreen(
                 dashboard = it
                 loadError = null
             }.onFailure { error ->
-                dashboard = mockAnalyticsDashboard()
-                loadError = error.toUserMessage("Could not load analytics. Showing local prototype data.")
+                loadError = error.toUserMessage("Could not load analytics.")
             }
     }
 
@@ -434,7 +431,7 @@ internal fun lastTwelveMonths(
     }
 }
 
-private fun emptyAnalyticsDashboard(): AnalyticsDashboard =
+internal fun emptyAnalyticsDashboard(): AnalyticsDashboard =
     AnalyticsDashboard(
         monthlyPlays = emptyList(),
         topRecords = emptyList(),
@@ -442,65 +439,3 @@ private fun emptyAnalyticsDashboard(): AnalyticsDashboard =
         moodDistribution = emptyList(),
         styleDistribution = emptyList(),
     )
-
-internal fun mockAnalyticsDashboard(): AnalyticsDashboard =
-    AnalyticsDashboard(
-        monthlyPlays =
-            listOf(
-                MonthlyPlayCount("2026-01", 8),
-                MonthlyPlayCount("2026-02", 12),
-                MonthlyPlayCount("2026-03", 15),
-                MonthlyPlayCount("2026-04", 24),
-                MonthlyPlayCount("2026-05", 18),
-            ),
-        topRecords =
-            listOf(
-                AnalyticsTopRecordSummary(mockRecord("release-101", "Kind of Blue"), 12, "4.8"),
-                AnalyticsTopRecordSummary(mockRecord("release-102", "Blue Train"), 10, "4.5"),
-                AnalyticsTopRecordSummary(mockRecord("release-103", "Rumours"), 8, "4.2"),
-                AnalyticsTopRecordSummary(mockRecord("release-104", "The Dark Side"), 6, "4.0"),
-            ),
-        ratingDistribution =
-            listOf(
-                RatingDistributionItem(5, 28),
-                RatingDistributionItem(4, 18),
-                RatingDistributionItem(3, 8),
-                RatingDistributionItem(2, 3),
-                RatingDistributionItem(1, 1),
-            ),
-        moodDistribution =
-            listOf(
-                MoodDistributionItem("Calm", 25),
-                MoodDistributionItem("Energetic", 18),
-                MoodDistributionItem("Focused", 15),
-                MoodDistributionItem("Melancholic", 10),
-                MoodDistributionItem("Nostalgic", 4),
-            ),
-        styleDistribution =
-            listOf(
-                StyleDistributionItem("Dub Techno", 14),
-                StyleDistributionItem("House", 11),
-                StyleDistributionItem("Deep House", 8),
-                StyleDistributionItem("Ambient", 6),
-                StyleDistributionItem("Minimal", 5),
-            ),
-    )
-
-private fun mockRecord(
-    releaseId: String,
-    title: String,
-): RecordSummary {
-    val fallback = MockVinylData.records.first()
-    return fallback.copy(
-        releaseId = releaseId,
-        title = title,
-        artist =
-            when (title) {
-                "Kind of Blue" -> "Miles Davis"
-                "Blue Train" -> "John Coltrane"
-                "Rumours" -> "Fleetwood Mac"
-                else -> "Pink Floyd"
-            },
-        lastPlayed = "",
-    )
-}

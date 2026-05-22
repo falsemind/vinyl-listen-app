@@ -45,6 +45,7 @@ data class ListeningSession(
     val thumbnailUrl: String? = null,
     val side: String? = null,
     val hasNotes: Boolean = false,
+    val notes: String? = null,
 )
 
 data class TopRecordSummary(

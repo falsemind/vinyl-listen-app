@@ -650,6 +650,7 @@ Used for listening history.
       "side": "B",
       "rating": 4,
       "mood": "Calm",
+      "notes": "The low end opened up after a clean.",
       "has_notes": true
     }
   ]
