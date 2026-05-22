@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -77,6 +78,7 @@ fun GlassPrimaryButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val brush =
         Brush.linearGradient(
@@ -91,10 +93,12 @@ fun GlassPrimaryButton(
             modifier
                 .fillMaxWidth()
                 .height(56.dp)
+                .alpha(if (enabled) 1f else 0.55f)
                 .clip(VinylShapes.Button)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Button)
                 .clickable(
+                    enabled = enabled,
                     onClickLabel = label,
                     role = Role.Button,
                     onClick = onClick,

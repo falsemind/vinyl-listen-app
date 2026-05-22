@@ -74,6 +74,13 @@ fun ManualSearchScreen(
     var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
     val yearValidationError = validateReleaseYear(yearQuery)
     val barcodeValidationError = validateBarcode(barcodeQuery)
+    val hasSearchTerm = hasManualSearchTerm(artistQuery, titleQuery, catalogQuery, barcodeQuery, yearQuery)
+    val canSearch =
+        hasSearchTerm &&
+            yearValidationError == null &&
+            barcodeValidationError == null &&
+            state != ManualSearchUiState.Loading &&
+            selectingDiscogsReleaseId == null
 
     fun runSearch(loadMore: Boolean = false) {
         val artist = artistQuery.trim()
@@ -87,9 +94,7 @@ fun ManualSearchScreen(
             state = ManualSearchUiState.Error("Enter at least one search field.")
             return
         }
-        val validationError = yearValidationError ?: barcodeValidationError
-        if (validationError != null) {
-            state = ManualSearchUiState.Error(validationError)
+        if (yearValidationError != null || barcodeValidationError != null) {
             return
         }
 
@@ -229,8 +234,9 @@ fun ManualSearchScreen(
         Spacer(Modifier.height(VinylSpacing.SpaceLg))
         GlassPrimaryButton(
             label = if (state == ManualSearchUiState.Loading) "Searching" else "Search",
+            enabled = canSearch,
             onClick = {
-                if (state != ManualSearchUiState.Loading && selectingDiscogsReleaseId == null) {
+                if (canSearch) {
                     runSearch()
                 }
             },
@@ -422,6 +428,14 @@ private fun ManualSearchField(
 }
 
 private fun String.digitsOnly(maxLength: Int): String = filter(Char::isDigit).take(maxLength)
+
+private fun hasManualSearchTerm(
+    artist: String,
+    title: String,
+    catalog: String,
+    barcode: String,
+    year: String,
+): Boolean = listOf(artist, title, catalog, barcode, year).any { it.trim().isNotEmpty() }
 
 private fun validateReleaseYear(value: String): String? {
     if (value.isBlank()) return null
