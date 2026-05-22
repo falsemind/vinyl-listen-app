@@ -13,6 +13,7 @@ from app.schemas.analytics import (
     MonthlyPlaysResponse,
     MoodDistributionResponse,
     RatingDistributionResponse,
+    StyleDistributionResponse,
 )
 from app.schemas.sessions import ErrorResponse
 from app.services.analytics_service import AnalyticsService, AnalyticsValidationError
@@ -90,3 +91,11 @@ def get_mood_distribution(
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
 ):
     return MoodDistributionResponse(moods=service.get_mood_distribution(db))
+
+
+@router.get("/style-distribution", response_model=StyleDistributionResponse)
+def get_style_distribution(
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[AnalyticsService, Depends(get_analytics_service)],
+):
+    return StyleDistributionResponse(styles=service.get_style_distribution(db))

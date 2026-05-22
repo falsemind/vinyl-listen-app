@@ -30,3 +30,7 @@ class RatingDistributionResponse(BaseModel):
 
 class MoodDistributionResponse(BaseModel):
     moods: dict[str, int]
+
+
+class StyleDistributionResponse(BaseModel):
+    styles: dict[str, int]
