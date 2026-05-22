@@ -47,6 +47,7 @@ import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
@@ -70,8 +71,9 @@ fun AnalyticsScreen(
     onSettings: () -> Unit,
     onViewAllTopRecords: () -> Unit,
     onViewAllMoods: () -> Unit,
+    onViewAllStyles: () -> Unit,
 ) {
-    var dashboard by remember { mutableStateOf(mockAnalyticsDashboard()) }
+    var dashboard by remember { mutableStateOf(emptyAnalyticsDashboard()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
@@ -81,6 +83,7 @@ fun AnalyticsScreen(
                 dashboard = it
                 loadError = null
             }.onFailure { error ->
+                dashboard = mockAnalyticsDashboard()
                 loadError = error.toUserMessage("Could not load analytics. Showing local prototype data.")
             }
     }
@@ -125,11 +128,18 @@ fun AnalyticsScreen(
                 SectionTitle("Mood Distribution")
             }
             MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+            if (dashboard.styleDistribution.size > STYLE_DISTRIBUTION_PREVIEW_LIMIT) {
+                SectionActionHeader("Style Distribution", action = "View All", onActionClick = onViewAllStyles)
+            } else {
+                SectionTitle("Style Distribution")
+            }
+            StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
         }
     }
 }
 
 private const val MOOD_DISTRIBUTION_PREVIEW_LIMIT = 10
+private const val STYLE_DISTRIBUTION_PREVIEW_LIMIT = 10
 
 @Composable
 private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
@@ -199,21 +209,29 @@ private fun MonthlyPlayBar(
                     .fillMaxWidth(),
             contentAlignment = Alignment.BottomCenter,
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .width(46.dp)
-                        .height(height)
-                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    VinylColors.AccentGreen,
-                                    VinylColors.AccentGreen.copy(alpha = 0.45f),
+            if (item.plays == 0) {
+                Text(
+                    text = "0",
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(46.dp)
+                            .height(height)
+                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        VinylColors.AccentGreen,
+                                        VinylColors.AccentGreen.copy(alpha = 0.45f),
+                                    ),
                                 ),
                             ),
-                        ),
-            )
+                )
+            }
         }
         Text(
             text = shortMonthLabel(item.month),
@@ -317,27 +335,50 @@ private fun RatingDistributionCard(ratings: List<RatingDistributionItem>) {
 
 @Composable
 internal fun MoodDistributionCard(moods: List<MoodDistributionItem>) {
-    val total = moods.sumOf { it.count }.coerceAtLeast(1)
-    val maxCount = moods.maxOfOrNull { it.count }?.takeIf { it > 0 } ?: 1
+    DistributionBarCard(
+        items = moods,
+        label = { it.mood },
+        count = { it.count },
+    )
+}
+
+@Composable
+internal fun StyleDistributionCard(styles: List<StyleDistributionItem>) {
+    DistributionBarCard(
+        items = styles,
+        label = { it.style },
+        count = { it.count },
+    )
+}
+
+@Composable
+private fun <T> DistributionBarCard(
+    items: List<T>,
+    label: (T) -> String,
+    count: (T) -> Int,
+) {
+    val total = items.sumOf(count).coerceAtLeast(1)
+    val maxCount = items.maxOfOrNull(count)?.takeIf { it > 0 } ?: 1
 
     AccentCard {
-        moods.forEachIndexed { index, item ->
+        items.forEachIndexed { index, item ->
             val accentColor = analyticsAccent(index)
-            val percent = ((item.count.toFloat() / total.toFloat()) * 100).toInt()
+            val itemCount = count(item)
+            val percent = ((itemCount.toFloat() / total.toFloat()) * 100).toInt()
             Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(item.mood, color = VinylColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                    Text(label(item), color = VinylColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
-                        Text(item.count.toString(), color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text(itemCount.toString(), color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                         Text("$percent%", color = accentColor, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 ProgressTrack(
-                    fraction = (item.count.toFloat() / maxCount.toFloat()).coerceIn(0f, 1f),
+                    fraction = (itemCount.toFloat() / maxCount.toFloat()).coerceIn(0f, 1f),
                     accentColor = accentColor,
                 )
             }
@@ -393,6 +434,15 @@ internal fun lastTwelveMonths(
     }
 }
 
+private fun emptyAnalyticsDashboard(): AnalyticsDashboard =
+    AnalyticsDashboard(
+        monthlyPlays = emptyList(),
+        topRecords = emptyList(),
+        ratingDistribution = emptyList(),
+        moodDistribution = emptyList(),
+        styleDistribution = emptyList(),
+    )
+
 internal fun mockAnalyticsDashboard(): AnalyticsDashboard =
     AnalyticsDashboard(
         monthlyPlays =
@@ -425,6 +475,14 @@ internal fun mockAnalyticsDashboard(): AnalyticsDashboard =
                 MoodDistributionItem("Focused", 15),
                 MoodDistributionItem("Melancholic", 10),
                 MoodDistributionItem("Nostalgic", 4),
+            ),
+        styleDistribution =
+            listOf(
+                StyleDistributionItem("Dub Techno", 14),
+                StyleDistributionItem("House", 11),
+                StyleDistributionItem("Deep House", 8),
+                StyleDistributionItem("Ambient", 6),
+                StyleDistributionItem("Minimal", 5),
             ),
     )
 

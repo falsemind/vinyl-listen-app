@@ -28,6 +28,9 @@ class StubAnalyticsRepository:
     def get_mood_distribution(self, _db):
         return [("Calm", 3), ("", 2), (None, 1)]
 
+    def get_style_distribution(self, _db):
+        return [("Dub Techno", 4), ("", 2), (None, 1)]
+
 
 def test_get_monthly_plays_maps_repository_rows() -> None:
     service = AnalyticsService(analytics_repository=StubAnalyticsRepository())
@@ -73,3 +76,11 @@ def test_get_mood_distribution_skips_blank_moods() -> None:
     result = service.get_mood_distribution(db=object())
 
     assert result == {"Calm": 3}
+
+
+def test_get_style_distribution_skips_blank_styles() -> None:
+    service = AnalyticsService(analytics_repository=StubAnalyticsRepository())
+
+    result = service.get_style_distribution(db=object())
+
+    assert result == {"Dub Techno": 4}

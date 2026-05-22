@@ -75,3 +75,11 @@ class AnalyticsService:
             for mood, plays in self._analytics_repository.get_mood_distribution(db)
             if mood is not None and str(mood).strip()
         }
+
+    def get_style_distribution(self, db: Session) -> dict[str, int]:
+        logger.info("Loading analytics style distribution")
+        return {
+            str(style): int(plays)
+            for style, plays in self._analytics_repository.get_style_distribution(db)
+            if style is not None and str(style).strip()
+        }

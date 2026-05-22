@@ -43,6 +43,9 @@ class StubAnalyticsService:
     def get_mood_distribution(self, _db):
         return {"Calm": 3, "Focused": 2}
 
+    def get_style_distribution(self, _db):
+        return {"Dub Techno": 4, "House": 2}
+
 
 def test_monthly_plays_endpoint_returns_chart_data() -> None:
     service = StubAnalyticsService()
@@ -108,8 +111,11 @@ def test_distribution_endpoints_return_chart_data() -> None:
     with TestClient(app) as client:
         rating_response = client.get("/api/v1/analytics/rating-distribution")
         mood_response = client.get("/api/v1/analytics/mood-distribution")
+        style_response = client.get("/api/v1/analytics/style-distribution")
 
     assert rating_response.status_code == 200
     assert rating_response.json() == {"ratings": {"1": 0, "2": 1, "3": 0, "4": 2, "5": 3}}
     assert mood_response.status_code == 200
     assert mood_response.json() == {"moods": {"Calm": 3, "Focused": 2}}
+    assert style_response.status_code == 200
+    assert style_response.json() == {"styles": {"Dub Techno": 4, "House": 2}}

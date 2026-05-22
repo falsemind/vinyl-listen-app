@@ -50,7 +50,7 @@ discogs_release_cache
 identify_jobs
 ```
 
-Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP.
+Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP. Style analytics reads `releases.styles` and counts those release styles through logged sessions.
 
 Relationships:
 
@@ -141,6 +141,7 @@ Using `TEXT[]` allows:
 - direct mapping from API → database
     
 - simple analytics queries
+  - style distribution can count specific Discogs styles such as `Dub Techno`, `House`, and `Deep House` without adding a separate style table
     
 - efficient filtering
     

@@ -745,6 +745,26 @@ Mood names are grouped case-insensitively so historical values such as `LateNigh
 
 ---
 
+## GET /analytics/style-distribution
+
+Counts Discogs release `styles` across logged listening sessions. Each session contributes one count to every style on its release, so specific styles such as `Dub Techno`, `House`, and `Deep House` can appear separately from broader genres.
+
+Style names are grouped case-insensitively so imported values such as `Dub Techno` and `dub techno` count under one displayed style.
+
+### Response
+
+```json
+{
+  "styles": {
+    "Dub Techno": 12,
+    "House": 8,
+    "Deep House": 5
+  }
+}
+```
+
+---
+
 # 10. System Endpoint
 
 Used by the **Settings screen**.
