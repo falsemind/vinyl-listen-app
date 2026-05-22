@@ -15,6 +15,8 @@ DEFAULT_TRACKLIST_QUERY_LIMIT = 6
 DEFAULT_TRACKLIST_TRACK_LIMIT = 8
 STRONG_PADDLEOCR_EVIDENCE_MIN_CONFIDENCE = 0.85
 QUERY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9#./-]+")
+LICENSED_CREDIT_TERMS = ("licenced", "licensed")
+CREDIT_ADMIN_TERMS = ("manufactured", "distributed", *LICENSED_CREDIT_TERMS)
 CREDIT_PREFIXES = (
     "all tracks",
     "additional production",
@@ -25,10 +27,7 @@ CREDIT_PREFIXES = (
     "written",
     "published",
     "copyright",
-    "manufactured",
-    "distributed",
-    "licenced",
-    "licensed",
+    *CREDIT_ADMIN_TERMS,
     "a r",
 )
 CREDIT_QUERY_TERMS = (
@@ -40,10 +39,7 @@ CREDIT_QUERY_TERMS = (
     " mastered ",
     " mixed ",
     " engineered ",
-    " manufactured ",
-    " distributed ",
-    " licenced ",
-    " licensed ",
+    *(f" {term} " for term in CREDIT_ADMIN_TERMS),
 )
 LOW_VALUE_QUERY_LINES = {
     "45 rpm",
