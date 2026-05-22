@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import com.example.vinyllistenapp.domain.AnalyticsDashboard
 import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,5 +20,19 @@ class AnalyticsMonthsTest {
         assertEquals(0, months.first().plays)
         assertEquals("2026-05", months.last().month)
         assertEquals(3, months.last().plays)
+    }
+
+    @Test
+    fun emptyAnalyticsDashboardContainsNoPrototypeData() {
+        val dashboard =
+            AnalyticsDashboard(
+                monthlyPlays = emptyList(),
+                topRecords = emptyList(),
+                ratingDistribution = emptyList(),
+                moodDistribution = emptyList(),
+                styleDistribution = emptyList(),
+            )
+
+        assertEquals(dashboard, emptyAnalyticsDashboard())
     }
 }

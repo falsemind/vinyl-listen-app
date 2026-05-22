@@ -41,7 +41,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
@@ -60,7 +59,7 @@ fun RecentSessionsScreen(
     onBack: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
-    var sessions by remember { mutableStateOf(MockVinylData.recentSessions.take(25)) }
+    var sessions by remember { mutableStateOf(emptyList<ListeningSession>()) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
@@ -92,11 +91,7 @@ fun TopRecordsScreen(
     onBack: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
-    var records by remember {
-        mutableStateOf(
-            MockVinylData.topRecords.map { AnalyticsTopRecordSummary(it.record, it.plays, it.averageRating) }.take(25),
-        )
-    }
+    var records by remember { mutableStateOf(emptyList<AnalyticsTopRecordSummary>()) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
@@ -127,7 +122,7 @@ fun MoodDistributionScreen(
     apiClient: VinylApiClient,
     onBack: () -> Unit,
 ) {
-    var moods by remember { mutableStateOf(mockAnalyticsDashboard().moodDistribution) }
+    var moods by remember { mutableStateOf(emptyAnalyticsDashboard().moodDistribution) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
@@ -156,7 +151,7 @@ fun StyleDistributionScreen(
     apiClient: VinylApiClient,
     onBack: () -> Unit,
 ) {
-    var styles by remember { mutableStateOf(mockAnalyticsDashboard().styleDistribution) }
+    var styles by remember { mutableStateOf(emptyAnalyticsDashboard().styleDistribution) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
