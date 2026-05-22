@@ -139,6 +139,37 @@ fun MoodDistributionScreen(
 }
 
 @Composable
+fun StyleDistributionScreen(
+    apiClient: VinylApiClient,
+    onBack: () -> Unit,
+) {
+    var styles by remember { mutableStateOf(mockAnalyticsDashboard().styleDistribution) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(retryKey) {
+        runCatching { apiClient.getAnalyticsDashboard() }
+            .onSuccess {
+                styles = it.styleDistribution
+                error = null
+            }.onFailure { failure ->
+                error = failure.toUserMessage("Could not load styles.")
+            }
+    }
+
+    ScreenContent(
+        title = "Style Distribution",
+        subtitle = "All listened release styles",
+        topPadding = 48.dp,
+        topStartContent = { BackText(onBack) },
+    ) {
+        error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
+        StyleDistributionCard(styles = styles)
+        BackText(onBack)
+    }
+}
+
+@Composable
 private fun SessionListItem(
     session: ListeningSession,
     onClick: () -> Unit,

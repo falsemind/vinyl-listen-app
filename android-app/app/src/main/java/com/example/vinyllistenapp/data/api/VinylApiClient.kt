@@ -14,6 +14,7 @@ import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
+import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -252,6 +253,13 @@ class VinylApiClient(
                         .orEmpty()
                         .intEntries()
                         .map { (mood, count) -> MoodDistributionItem(mood = mood, count = count) }
+                        .sortedByDescending { it.count },
+                styleDistribution =
+                    getJson("analytics/style-distribution")
+                        .optJSONObject("styles")
+                        .orEmpty()
+                        .intEntries()
+                        .map { (style, count) -> StyleDistributionItem(style = style, count = count) }
                         .sortedByDescending { it.count },
             )
         }

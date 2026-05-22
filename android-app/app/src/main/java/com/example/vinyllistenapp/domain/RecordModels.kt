@@ -81,11 +81,17 @@ data class MoodDistributionItem(
     val count: Int,
 )
 
+data class StyleDistributionItem(
+    val style: String,
+    val count: Int,
+)
+
 data class AnalyticsDashboard(
     val monthlyPlays: List<MonthlyPlayCount>,
     val topRecords: List<AnalyticsTopRecordSummary>,
     val ratingDistribution: List<RatingDistributionItem>,
     val moodDistribution: List<MoodDistributionItem>,
+    val styleDistribution: List<StyleDistributionItem>,
 )
 
 data class MatchCandidate(

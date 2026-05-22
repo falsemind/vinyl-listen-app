@@ -55,6 +55,7 @@ private fun AnalyticsScreenPreview() {
             onSettings = {},
             onViewAllTopRecords = {},
             onViewAllMoods = {},
+            onViewAllStyles = {},
         )
     }
 }
