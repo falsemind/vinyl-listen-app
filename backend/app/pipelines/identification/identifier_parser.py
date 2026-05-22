@@ -109,6 +109,9 @@ COPYRIGHT_YEAR_RANGE_PATTERN = re.compile(
     r"^\s*(?:[©℗]|\([cp]\))?\s*(?:19|20)\d{2}\s*/\s*(?:19|20)\d{2}\s*$",
     re.IGNORECASE,
 )
+LICENSED_TERMS = ("licenced", "licensed")
+AUTHORIZED_TERMS = ("authorised", "authorized")
+UNAUTHORIZED_TERMS = ("unauthorised", "unauthorized")
 NOISE_PREFIXES = (
     "all rights",
     "all tracks",
@@ -130,16 +133,13 @@ NOISE_PREFIXES = (
     "produced by",
     "recorded by",
     "published by",
-    "licenced",
-    "licensed",
+    *LICENSED_TERMS,
     "licensed from",
-    "unauthorised",
-    "unauthorized",
+    *UNAUTHORIZED_TERMS,
 )
 LEGAL_RIGHTS_TERMS = frozenset(
     {
-        "authorised",
-        "authorized",
+        *AUTHORIZED_TERMS,
         "broadcasting",
         "copyright",
         "copying",
@@ -147,8 +147,7 @@ LEGAL_RIGHTS_TERMS = frozenset(
         "prohibited",
         "reserved",
         "rights",
-        "unauthorised",
-        "unauthorized",
+        *UNAUTHORIZED_TERMS,
     }
 )
 CREDIT_LINE_TERMS = (
