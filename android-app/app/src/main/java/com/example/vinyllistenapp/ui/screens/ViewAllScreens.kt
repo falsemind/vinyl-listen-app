@@ -1,24 +1,42 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,9 +49,10 @@ import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
-import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.theme.VinylColors
+import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun RecentSessionsScreen(
@@ -55,17 +74,15 @@ fun RecentSessionsScreen(
             }
     }
 
-    ScreenContent(
+    ViewAllScreenContent(
         title = "Recent Sessions",
         subtitle = "Latest logged listens",
-        topPadding = 48.dp,
-        topStartContent = { BackText(onBack) },
+        onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         sessions.forEach { session ->
             SessionListItem(session = session, onClick = { onOpenRecord(session.releaseId) })
         }
-        BackText(onBack)
     }
 }
 
@@ -93,17 +110,15 @@ fun TopRecordsScreen(
             }
     }
 
-    ScreenContent(
+    ViewAllScreenContent(
         title = "Top Records",
         subtitle = "Most played records",
-        topPadding = 48.dp,
-        topStartContent = { BackText(onBack) },
+        onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         records.forEach { record ->
             TopRecordListItem(record = record, onClick = { onOpenRecord(record.record.releaseId) })
         }
-        BackText(onBack)
     }
 }
 
@@ -126,15 +141,13 @@ fun MoodDistributionScreen(
             }
     }
 
-    ScreenContent(
+    ViewAllScreenContent(
         title = "Mood Distribution",
         subtitle = "All listening moods",
-        topPadding = 48.dp,
-        topStartContent = { BackText(onBack) },
+        onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         MoodDistributionCard(moods = moods)
-        BackText(onBack)
     }
 }
 
@@ -157,15 +170,118 @@ fun StyleDistributionScreen(
             }
     }
 
-    ScreenContent(
+    ViewAllScreenContent(
         title = "Style Distribution",
         subtitle = "All listened release styles",
-        topPadding = 48.dp,
-        topStartContent = { BackText(onBack) },
+        onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         StyleDistributionCard(styles = styles)
-        BackText(onBack)
+    }
+}
+
+@Composable
+private fun ViewAllScreenContent(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val headerHiddenThreshold = with(LocalDensity.current) { 120.dp.roundToPx() }
+    val showScrollToTop by remember {
+        derivedStateOf {
+            scrollState.maxValue > 0 && scrollState.value > headerHiddenThreshold
+        }
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(VinylColors.AppBackground),
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = VinylSpacing.SpaceMd)
+                    .padding(top = 48.dp, bottom = VinylSpacing.Space2Xl),
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+        ) {
+            Text(
+                text = title,
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.headlineLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            BackText(onBack)
+            content()
+            Spacer(Modifier.height(96.dp))
+        }
+
+        if (showScrollToTop) {
+            ScrollToTopButton(
+                onClick = {
+                    scope.launch {
+                        scrollState.animateScrollTo(0)
+                    }
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = VinylSpacing.SpaceMd, bottom = VinylSpacing.SpaceLg),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScrollToTopButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val brush =
+        Brush.linearGradient(
+            listOf(
+                VinylColors.AccentGreen.copy(alpha = 0.85f),
+                VinylColors.AccentGreen.copy(alpha = 0.70f),
+            ),
+        )
+
+    Box(
+        modifier =
+            modifier
+                .size(56.dp)
+                .shadow(
+                    elevation = 12.dp,
+                    shape = VinylShapes.Floating,
+                    ambientColor = VinylColors.ShadowBlack,
+                    spotColor = VinylColors.ShadowBlack,
+                ).clip(VinylShapes.Floating)
+                .background(brush)
+                .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
+                .clickable(
+                    onClickLabel = "Scroll to top",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(28.dp),
+        )
     }
 }
 
@@ -251,7 +367,7 @@ private fun TopRecordListItem(
 private fun BackText(onBack: () -> Unit) {
     Text(
         modifier = Modifier.clickable(onClickLabel = "Go back", role = Role.Button, onClick = onBack),
-        text = "< Go Back",
+        text = "Back",
         color = VinylColors.AccentGreen,
     )
 }
