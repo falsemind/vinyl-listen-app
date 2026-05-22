@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -28,9 +31,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
@@ -58,6 +66,7 @@ fun RecordDetailScreen(
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
     var sessions by remember(releaseId) { mutableStateOf<List<ListeningSession>>(emptyList()) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(releaseId, retryKey) {
@@ -111,7 +120,10 @@ fun RecordDetailScreen(
                 SectionTitle("Recent Sessions")
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
                     recordDetailHistory(record.releaseId, sessions).take(10).forEach { history ->
-                        RecordHistoryCard(history = history)
+                        RecordHistoryCard(
+                            history = history,
+                            onNotesClick = { selectedNote = it },
+                        )
                     }
                 }
                 Spacer(Modifier.height(128.dp))
@@ -129,6 +141,12 @@ fun RecordDetailScreen(
             onClick = onHome,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+        selectedNote?.let { history ->
+            SessionNotesPopup(
+                history = history,
+                onDismiss = { selectedNote = null },
+            )
+        }
     }
 }
 
@@ -370,7 +388,10 @@ private fun RecordMoodRow(
 }
 
 @Composable
-private fun RecordHistoryCard(history: RecordHistoryEntry) {
+private fun RecordHistoryCard(
+    history: RecordHistoryEntry,
+    onNotesClick: (RecordHistoryEntry) -> Unit,
+) {
     Box(
         modifier =
             Modifier
@@ -398,12 +419,13 @@ private fun RecordHistoryCard(history: RecordHistoryEntry) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (history.hasNotes) {
+                if (history.hasNotes && !history.notes.isNullOrBlank()) {
                     Text(
                         modifier =
                             Modifier
                                 .clip(VinylShapes.Chip)
                                 .background(VinylColors.SurfaceSecondary)
+                                .clickable { onNotesClick(history) }
                                 .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceXs),
                         text = "Has notes",
                         color = VinylColors.TextSecondary,
@@ -443,6 +465,97 @@ private fun RecordHistoryCard(history: RecordHistoryEntry) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SessionNotesPopup(
+    history: RecordHistoryEntry,
+    onDismiss: () -> Unit,
+) {
+    Popup(
+        alignment = Alignment.Center,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .width(300.dp)
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.35f), VinylShapes.Card)
+                    .padding(VinylSpacing.SpaceLg),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
+                Text(
+                    text = "Session Notes",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = history.date,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                ScrollableSessionNoteText(note = history.notes.orEmpty())
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScrollableSessionNoteText(note: String) {
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val maxNoteHeight = with(density) { 20.sp.toDp() * 25f }
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxNoteHeight)
+                .onSizeChanged { viewportHeightPx = it.height },
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = if (scrollState.maxValue > 0) VinylSpacing.SpaceMd else 0.dp)
+                    .verticalScroll(scrollState),
+            text = note,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+        )
+        if (scrollState.maxValue > 0 && viewportHeightPx > 0) {
+            val viewportHeight = viewportHeightPx.toFloat()
+            val contentHeight = viewportHeight + scrollState.maxValue
+            val minThumbHeight = with(density) { 24.dp.toPx() }
+            val thumbHeight = (viewportHeight * viewportHeight / contentHeight).coerceAtLeast(minThumbHeight)
+            val thumbOffset =
+                scrollState.value / scrollState.maxValue.toFloat() * (viewportHeight - thumbHeight)
+
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(3.dp)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(VinylColors.BorderDefault.copy(alpha = 0.55f)),
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(y = with(density) { thumbOffset.toDp() })
+                        .width(3.dp)
+                        .height(with(density) { thumbHeight.toDp() })
+                        .clip(CircleShape)
+                        .background(VinylColors.AccentGreen),
+            )
         }
     }
 }
@@ -489,6 +602,7 @@ private data class RecordHistoryEntry(
     val rating: Int,
     val mood: String,
     val hasNotes: Boolean,
+    val notes: String?,
 )
 
 private fun recordDetailTotalPlays(
@@ -579,12 +693,14 @@ private fun recordDetailHistory(
 ): List<RecordHistoryEntry> {
     val sessionHistory =
         sessions.map { session ->
+            val notes = session.notes?.trim()?.takeIf { it.isNotEmpty() }
             RecordHistoryEntry(
                 date = absolutePlayedDateLabel(session.playedAt),
                 side = session.side?.removePrefix("Side ") ?: "-",
                 rating = session.rating,
                 mood = session.mood,
-                hasNotes = session.hasNotes,
+                hasNotes = session.hasNotes || notes != null,
+                notes = notes,
             )
         }
     if (sessionHistory.isNotEmpty()) return sessionHistory
@@ -592,23 +708,65 @@ private fun recordDetailHistory(
     return when (releaseId) {
         "release-002" ->
             listOf(
-                RecordHistoryEntry("2026-04-25", "A", 4, "Late night", true),
-                RecordHistoryEntry("2026-04-18", "B", 4, "Focused", false),
-                RecordHistoryEntry("2026-04-03", "A", 5, "Social", true),
+                RecordHistoryEntry(
+                    "2026-04-25",
+                    "A",
+                    4,
+                    "Late night",
+                    true,
+                    "Warm late-night listen with a clean low end.",
+                ),
+                RecordHistoryEntry("2026-04-18", "B", 4, "Focused", false, null),
+                RecordHistoryEntry(
+                    "2026-04-03",
+                    "A",
+                    5,
+                    "Social",
+                    true,
+                    "Played loud with friends; side A sounded especially open.",
+                ),
             )
 
         "release-003" ->
             listOf(
-                RecordHistoryEntry("2026-04-21", "A", 5, "Calm", true),
-                RecordHistoryEntry("2026-04-12", "B", 4, "Nostalgic", false),
-                RecordHistoryEntry("2026-03-30", "A", 5, "Relaxed", true),
+                RecordHistoryEntry(
+                    "2026-04-21",
+                    "A",
+                    5,
+                    "Calm",
+                    true,
+                    "Quiet pressing, perfect for a slower evening.",
+                ),
+                RecordHistoryEntry("2026-04-12", "B", 4, "Nostalgic", false, null),
+                RecordHistoryEntry(
+                    "2026-03-30",
+                    "A",
+                    5,
+                    "Relaxed",
+                    true,
+                    "The vocal detail stood out more than last time.",
+                ),
             )
 
         else ->
             listOf(
-                RecordHistoryEntry("2026-04-25", "A", 5, "Calm", true),
-                RecordHistoryEntry("2026-04-20", "B", 5, "Focused", false),
-                RecordHistoryEntry("2026-04-15", "A", 4, "Nostalgic", true),
+                RecordHistoryEntry(
+                    "2026-04-25",
+                    "A",
+                    5,
+                    "Calm",
+                    true,
+                    "Great clarity after cleaning; bass stayed tight.",
+                ),
+                RecordHistoryEntry("2026-04-20", "B", 5, "Focused", false, null),
+                RecordHistoryEntry(
+                    "2026-04-15",
+                    "A",
+                    4,
+                    "Nostalgic",
+                    true,
+                    "Slight surface noise near the end, but still a lovely play.",
+                ),
             )
     }
 }
