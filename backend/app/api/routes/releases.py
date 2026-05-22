@@ -234,6 +234,7 @@ def get_release_sessions(
                 side=session.vinyl_side,
                 rating=session.rating,
                 mood=session.mood,
+                notes=session.notes.strip() if session.notes and session.notes.strip() else None,
                 has_notes=bool(session.notes and session.notes.strip()),
             )
             for session in sessions

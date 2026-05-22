@@ -256,23 +256,24 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
     override_sessions_service(service)
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/releases/release-123/sessions?limit=1&offset=1")
+        response = client.get("/api/v1/releases/release-123/sessions?limit=1&offset=0")
 
     assert response.status_code == 200
     assert response.json() == {
         "sessions": [
             {
-                "session_id": "session-456",
-                "date": "2026-03-10",
-                "played_at": "2026-03-10T14:00:00Z",
-                "side": "B",
-                "rating": 4,
-                "mood": None,
-                "has_notes": False,
+                "session_id": "session-123",
+                "date": "2026-03-14",
+                "played_at": "2026-03-14T19:21:00Z",
+                "side": "A",
+                "rating": 5,
+                "mood": "Calm",
+                "notes": "Great pressing.",
+                "has_notes": True,
             }
         ]
     }
-    assert service.list_calls == [("release-123", 1, 1)]
+    assert service.list_calls == [("release-123", 1, 0)]
 
 
 def test_get_release_sessions_endpoint_returns_404_for_missing_release(
