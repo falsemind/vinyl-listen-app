@@ -28,13 +28,31 @@ class FakeHttpResponse:
         return self.body.read()
 
 
+@pytest.fixture(autouse=True)
+def clear_ai_chat_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "AI_CHAT_ENABLED",
+        "AI_CHAT_BASE_URL",
+        "AI_CHAT_ENDPOINT_PATH",
+        "AI_CHAT_MODEL",
+        "AI_CHAT_API_KEY",
+        "AI_CHAT_TIMEOUT_SECONDS",
+        "AI_CHAT_TEMPERATURE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def make_settings(**overrides: object) -> Settings:
     values = {
         "database_url": "postgresql://test:test@localhost/testdb",
         "discogs_base_url": "https://api.discogs.com",
+        "ai_chat_enabled": False,
+        "ai_chat_base_url": None,
+        "ai_chat_model": None,
+        "ai_chat_api_key": None,
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 def test_build_ai_chat_adapter_returns_disabled_when_chat_is_off() -> None:
@@ -47,6 +65,17 @@ def test_build_ai_chat_adapter_returns_disabled_when_required_provider_config_is
     adapter = build_ai_chat_adapter(make_settings(ai_chat_enabled=True, ai_chat_base_url="http://localhost:1234"))
 
     assert isinstance(adapter, DisabledAiChatAdapter)
+
+
+def test_openai_compatible_adapter_repr_hides_api_key() -> None:
+    adapter = OpenAiCompatibleChatAdapter(
+        base_url="http://localhost:1234",
+        endpoint_path="/api/v1/chat",
+        model="local-model",
+        api_key="secret-key",
+    )
+
+    assert "secret-key" not in repr(adapter)
 
 
 def test_disabled_adapter_returns_safe_content() -> None:

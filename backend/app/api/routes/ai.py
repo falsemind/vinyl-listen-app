@@ -27,7 +27,7 @@ def chat(
         reply = service.chat(
             message=request.message,
             conversation_id=request.conversation_id,
-            client_context=request.client_context,
+            client_context=request.client_context.model_dump(exclude_none=True) if request.client_context else None,
         )
     except AiInsightsValidationError as error:
         return JSONResponse(

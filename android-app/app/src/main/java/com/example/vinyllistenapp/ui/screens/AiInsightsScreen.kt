@@ -50,6 +50,7 @@ import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private val suggestedPrompts =
@@ -87,18 +88,21 @@ fun AiInsightsScreen(
         isTyping = true
         inputValue = ""
         scope.launch {
-            runCatching { apiClient.chatWithAi(message = message, conversationId = conversationId) }
-                .onSuccess { response ->
-                    conversationId = response.conversationId
-                    messages.add(ChatMessage.Assistant(response.content))
-                }.onFailure { error ->
-                    messages.add(
-                        ChatMessage.Assistant(
-                            error.toUserMessage("Could not reach AI Insights. Check backend connection."),
-                        ),
-                    )
-                }
-            isTyping = false
+            try {
+                val response = apiClient.chatWithAi(message = message, conversationId = conversationId)
+                conversationId = response.conversationId
+                messages.add(ChatMessage.Assistant(response.content))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                messages.add(
+                    ChatMessage.Assistant(
+                        error.toUserMessage("Could not reach AI Insights. Check backend connection."),
+                    ),
+                )
+            } finally {
+                isTyping = false
+            }
         }
     }
 

@@ -84,3 +84,29 @@ def test_chat_endpoint_rejects_missing_message() -> None:
         response = client.post("/api/v1/ai/chat", json={})
 
     assert response.status_code == 422
+
+
+def test_chat_endpoint_rejects_unknown_client_context_fields() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/chat",
+            json={
+                "message": "What should I listen to?",
+                "client_context": {"timezone": "America/Los_Angeles", "large_blob": "x"},
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_chat_endpoint_rejects_oversized_client_context_value() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/chat",
+            json={
+                "message": "What should I listen to?",
+                "client_context": {"timezone": "x" * 65},
+            },
+        )
+
+    assert response.status_code == 422

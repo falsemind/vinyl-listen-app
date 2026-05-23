@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
@@ -64,7 +64,7 @@ class OpenAiCompatibleChatAdapter:
     base_url: str
     endpoint_path: str
     model: str
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     timeout_seconds: float = 30.0
     temperature: float = 0.2
     provider_name: str = "openai-compatible"
