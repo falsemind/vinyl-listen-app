@@ -67,6 +67,7 @@ private fun AnalyticsScreenPreview() {
 private fun AiInsightsScreenPreview() {
     VinylListenAppTheme {
         AiInsightsScreen(
+            apiClient = VinylApiClient(),
             onHome = {},
             onStats = {},
             onSettings = {},

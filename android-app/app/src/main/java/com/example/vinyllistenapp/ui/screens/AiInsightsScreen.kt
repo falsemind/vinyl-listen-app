@@ -30,11 +30,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,12 +43,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val suggestedPrompts =
     listOf(
@@ -60,6 +62,7 @@ private val suggestedPrompts =
 
 @Composable
 fun AiInsightsScreen(
+    apiClient: VinylApiClient,
     onHome: () -> Unit,
     onStats: () -> Unit,
     onSettings: () -> Unit,
@@ -74,23 +77,27 @@ fun AiInsightsScreen(
         }
     var inputValue by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
-    var pendingReply by remember { mutableStateOf<String?>(null) }
+    var conversationId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     fun sendMessage(text: String) {
         val message = text.trim()
         if (message.isEmpty() || isTyping) return
         messages.add(ChatMessage.User(message))
-        pendingReply = shellReply(message)
         isTyping = true
         inputValue = ""
-    }
-
-    LaunchedEffect(isTyping, pendingReply) {
-        val reply = pendingReply
-        if (isTyping && reply != null) {
-            delay(650)
-            messages.add(ChatMessage.Assistant(reply))
-            pendingReply = null
+        scope.launch {
+            runCatching { apiClient.chatWithAi(message = message, conversationId = conversationId) }
+                .onSuccess { response ->
+                    conversationId = response.conversationId
+                    messages.add(ChatMessage.Assistant(response.content))
+                }.onFailure { error ->
+                    messages.add(
+                        ChatMessage.Assistant(
+                            error.toUserMessage("Could not reach AI Insights. Check backend connection."),
+                        ),
+                    )
+                }
             isTyping = false
         }
     }
@@ -365,17 +372,3 @@ private sealed class ChatMessage(
         text: String,
     ) : ChatMessage(text)
 }
-
-private fun shellReply(prompt: String): String =
-    when {
-        prompt.contains("style", ignoreCase = true) ->
-            "I will compare your style distribution once the AI service is connected."
-        prompt.contains("mood", ignoreCase = true) ->
-            "I will use mood history to recommend known records from your collection."
-        prompt.contains("night", ignoreCase = true) ->
-            "I will look for late-session listening patterns in your saved history."
-        prompt.contains("jazz", ignoreCase = true) ->
-            "I will rank known jazz records from your collection by listening history."
-        else ->
-            "I will answer from your known collection and listening history once the AI service is connected."
-    }

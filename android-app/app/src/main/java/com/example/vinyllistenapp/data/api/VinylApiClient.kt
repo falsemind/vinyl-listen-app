@@ -310,6 +310,22 @@ class VinylApiClient(
         }
     }
 
+    suspend fun chatWithAi(
+        message: String,
+        conversationId: String? = null,
+    ): AiChatResponse =
+        apiCall {
+            val body = JSONObject().put("message", message)
+            conversationId?.let { body.put("conversation_id", it) }
+            val response = postJson("ai/chat", body)
+            val assistantMessage = response.getJSONObject("message")
+            AiChatResponse(
+                conversationId = response.getString("conversation_id"),
+                content = assistantMessage.getString("content"),
+                usedTools = response.optJSONArray("used_tools").orEmpty().mapStrings(),
+            )
+        }
+
     private suspend fun <T> apiCall(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
             try {
@@ -463,6 +479,12 @@ class ApiException(
     val retryAfterMillis: Long? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+data class AiChatResponse(
+    val conversationId: String,
+    val content: String,
+    val usedTools: List<String>,
+)
 
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
 

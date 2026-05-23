@@ -175,6 +175,7 @@ fun VinylNavHost(
         }
         composable(VinylRoutes.AI_INSIGHTS) {
             AiInsightsScreen(
+                apiClient = apiClient,
                 onHome = {
                     navController.navigate(VinylRoutes.HOME) {
                         popUpTo(VinylRoutes.HOME) { inclusive = true }
