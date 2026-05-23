@@ -2,6 +2,7 @@ package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
@@ -20,6 +21,7 @@ fun SettingsScreen(
     message: String,
     onHome: () -> Unit,
     onStats: () -> Unit,
+    onInsights: () -> Unit,
 ) {
     Scaffold(
         containerColor = VinylColors.AppBackground,
@@ -29,6 +31,7 @@ fun SettingsScreen(
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onStats),
+                        BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem("Settings", Icons.Filled.Settings, selected = true, onClick = {}),
                     ),
             )

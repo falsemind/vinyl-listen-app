@@ -18,6 +18,7 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
+import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
@@ -55,6 +56,7 @@ fun VinylNavHost(
                 onLogSession = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
+                onOpenInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                 onOpenSettings = { navController.navigate(VinylRoutes.SETTINGS) },
                 onViewAllSessions = { navController.navigate(VinylRoutes.RECENT_SESSIONS) },
             )
@@ -164,10 +166,22 @@ fun VinylNavHost(
                     }
                 },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                 onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
                 onViewAllTopRecords = { navController.navigate(VinylRoutes.TOP_RECORDS) },
                 onViewAllMoods = { navController.navigate(VinylRoutes.MOOD_DISTRIBUTION) },
                 onViewAllStyles = { navController.navigate(VinylRoutes.STYLE_DISTRIBUTION) },
+            )
+        }
+        composable(VinylRoutes.AI_INSIGHTS) {
+            AiInsightsScreen(
+                onHome = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
+                onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
+                onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
             )
         }
         composable(VinylRoutes.TOP_RECORDS) {
@@ -198,6 +212,7 @@ fun VinylNavHost(
                     }
                 },
                 onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
+                onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
             )
         }
     }

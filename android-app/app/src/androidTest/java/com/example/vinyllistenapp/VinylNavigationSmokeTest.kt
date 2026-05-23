@@ -47,6 +47,20 @@ class VinylNavigationSmokeTest {
     }
 
     @Test
+    fun homeInsightsTabCanReachAiInsights() {
+        composeRule.setContent {
+            VinylListenAppTheme {
+                VinylNavHost(navController = rememberNavController())
+            }
+        }
+
+        composeRule.onNodeWithText("Insights").performClick()
+
+        composeRule.onNodeWithText("Listening patterns, moods, styles, and records").assertIsDisplayed()
+        composeRule.onNodeWithText("What style did I explore most this month?").assertIsDisplayed()
+    }
+
+    @Test
     fun processingSuccessIsRemovedBeforeMatchConfirmation() {
         lateinit var navController: NavHostController
         composeRule.setContent {

@@ -326,6 +326,7 @@ android-app/
 │       │   │       │   ├── StatusFeedback.kt
 │       │   │       │   └── VinylComponents.kt
 │       │   │       ├── screens/
+│       │   │       │   ├── AiInsightsScreen.kt
 │       │   │       │   ├── AnalyticsScreen.kt
 │       │   │       │   ├── CaptureRecordScreen.kt
 │       │   │       │   ├── HomeScreen.kt
@@ -381,9 +382,9 @@ android-app/
 | `data/` | Prototype fallback data and backend API client code. |
 | `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
 | `domain/` | UI-facing domain models for records, release side options, sessions, candidates, Home summaries, and analytics dashboard data. |
-| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, settings, and View All screens. |
+| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
-| `ui/screens/` | Home, analytics, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, AI insights, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes

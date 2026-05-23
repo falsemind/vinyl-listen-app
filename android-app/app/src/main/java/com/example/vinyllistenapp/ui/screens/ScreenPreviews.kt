@@ -40,6 +40,7 @@ private fun SettingsScreenPreview() {
             message = "Settings stays out of this prototype pass.",
             onHome = {},
             onStats = {},
+            onInsights = {},
         )
     }
 }
@@ -52,10 +53,23 @@ private fun AnalyticsScreenPreview() {
             apiClient = VinylApiClient(),
             onHome = {},
             onOpenRecord = {},
+            onInsights = {},
             onSettings = {},
             onViewAllTopRecords = {},
             onViewAllMoods = {},
             onViewAllStyles = {},
+        )
+    }
+}
+
+@Preview(name = "Insights", showBackground = true, backgroundColor = 0xFF101010, widthDp = 390, heightDp = 844)
+@Composable
+private fun AiInsightsScreenPreview() {
+    VinylListenAppTheme {
+        AiInsightsScreen(
+            onHome = {},
+            onStats = {},
+            onSettings = {},
         )
     }
 }
