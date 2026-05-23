@@ -7,6 +7,8 @@ import pytest
 from app.ai.chat_adapter import (
     DISABLED_AI_CHAT_CONTENT,
     AiChatAdapterError,
+    AiChatHistoryMessage,
+    AiChatToolResult,
     DisabledAiChatAdapter,
     OpenAiCompatibleChatAdapter,
     build_ai_chat_adapter,
@@ -121,6 +123,8 @@ def test_lm_studio_native_adapter_posts_input_payload(monkeypatch: pytest.Monkey
         message="Recommend a known release",
         conversation_id="local-single-thread",
         client_context={"timezone": "America/Los_Angeles"},
+        history=[AiChatHistoryMessage(role="assistant", content="Earlier answer")],
+        tool_context=[AiChatToolResult(name="get_top_records", content="Rhythm & Sound - Carrier: plays=4")],
     )
 
     assert reply.content == "Play your highest-rated ambient record."
@@ -129,6 +133,8 @@ def test_lm_studio_native_adapter_posts_input_payload(monkeypatch: pytest.Monkey
     assert captured["timeout"] == 12.5
     assert captured["payload"]["model"] == "local-model"
     assert captured["payload"]["temperature"] == 0.1
+    assert "assistant: Earlier answer" in captured["payload"]["input"]
+    assert "Rhythm & Sound - Carrier: plays=4" in captured["payload"]["input"]
     assert "Recommend a known release" in captured["payload"]["input"]
     assert "messages" not in captured["payload"]
 
@@ -152,10 +158,14 @@ def test_openai_compatible_adapter_posts_chat_completion_payload(monkeypatch: py
     reply = adapter.generate_reply(
         message="Recommend a known release",
         conversation_id="local-single-thread",
+        history=[AiChatHistoryMessage(role="assistant", content="Earlier answer")],
+        tool_context=[AiChatToolResult(name="get_top_records", content="Rhythm & Sound - Carrier: plays=4")],
     )
 
     assert reply.content == "Play your highest-rated ambient record."
     assert captured["url"] == "http://localhost:1234/v1/chat/completions"
+    assert "Rhythm & Sound - Carrier: plays=4" in captured["payload"]["messages"][1]["content"]
+    assert captured["payload"]["messages"][2] == {"role": "assistant", "content": "Earlier answer"}
     assert captured["payload"]["messages"][-1] == {"role": "user", "content": "Recommend a known release"}
     assert "input" not in captured["payload"]
 
