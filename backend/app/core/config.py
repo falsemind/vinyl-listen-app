@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     inbound_rate_limit_redis_fail_open: bool = True
     inbound_rate_limit_redis_timeout_seconds: float = 0.25
 
+    ai_chat_enabled: bool = False
+    ai_chat_base_url: str | None = None
+    ai_chat_endpoint_path: str = "/api/v1/chat"
+    ai_chat_model: str | None = None
+    ai_chat_api_key: str | None = None
+    ai_chat_timeout_seconds: float = 30.0
+    ai_chat_temperature: float = 0.2
+
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
     identify_max_concurrent_jobs: int = 1
     identify_max_active_jobs_per_client: int = 1

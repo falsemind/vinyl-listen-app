@@ -251,6 +251,7 @@ Home mockup includes a bottom nav shell:
 - Active item: `AccentGreen`
 - Inactive items: `TextSecondary`
 - Analytics/Stats is implemented as a dark dashboard with monthly plays, top records, rating distribution, mood distribution, and style distribution.
+- Insights is implemented as the initial AI chat shell and should reuse the same bottom navigation styling.
 - Mood and style distribution sections use the same progress-bar card behavior; style analytics should show specific Discogs styles such as `Dub Techno`, `House`, and `Deep House`, not broad genres.
 
 ## Layout Notes

@@ -40,6 +40,13 @@ def test_analytics_route_is_versioned() -> None:
     assert response.status_code == 200
 
 
+def test_ai_route_is_versioned() -> None:
+    response = client.post("/api/v1/ai/chat", json={"message": "Hello"})
+
+    assert response.status_code == 200
+    assert response.json()["conversation_id"] == "local-single-thread"
+
+
 def test_identify_route_is_versioned() -> None:
     response = client.post("/api/v1/identify")
 

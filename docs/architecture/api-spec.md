@@ -89,6 +89,7 @@ Main API domains:
 /releases
 /sessions
 /analytics
+/ai
 /system
 ```
 
@@ -766,7 +767,61 @@ Style names are grouped case-insensitively so imported values such as `Dub Techn
 
 ---
 
-# 10. System Endpoint
+# 10. AI Insights
+
+Used by the **Insights screen** chat shell.
+
+The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. It does not persist chat history or query listening data yet.
+
+## POST /ai/chat
+
+### Request
+
+```json
+{
+  "conversation_id": "local-single-thread",
+  "message": "What style did I explore most this month?",
+  "client_context": {
+    "timezone": "America/Los_Angeles"
+  }
+}
+```
+
+`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`.
+
+`client_context` currently supports only the optional `timezone` field. `timezone` must be 64 characters or fewer, and unknown `client_context` fields are rejected with `422`.
+
+### Response
+
+```json
+{
+  "conversation_id": "local-single-thread",
+  "message": {
+    "role": "assistant",
+    "content": "AI Insights is ready..."
+  },
+  "used_tools": []
+}
+```
+
+### Validation Errors
+
+Blank `message` values return:
+
+```json
+{
+  "error": {
+    "code": "empty_message",
+    "message": "message must not be blank."
+  }
+}
+```
+
+Blank provided `conversation_id` values return `empty_conversation_id`.
+
+---
+
+# 11. System Endpoint
 
 Used by the **Settings screen**.
 

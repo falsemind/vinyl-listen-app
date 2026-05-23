@@ -378,6 +378,7 @@ data class BottomNavItem(
 fun BottomNavBar(
     items: List<BottomNavItem>,
     modifier: Modifier = Modifier,
+    drawTopBorder: Boolean = true,
 ) {
     Surface(
         modifier =
@@ -385,12 +386,14 @@ fun BottomNavBar(
                 .fillMaxWidth()
                 .drawWithContent {
                     drawContent()
-                    drawLine(
-                        color = VinylColors.BorderDefault,
-                        start = Offset.Zero,
-                        end = Offset(size.width, 0f),
-                        strokeWidth = 1.dp.toPx(),
-                    )
+                    if (drawTopBorder) {
+                        drawLine(
+                            color = VinylColors.BorderDefault,
+                            start = Offset.Zero,
+                            end = Offset(size.width, 0f),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    }
                 },
         color = VinylColors.SurfaceSecondary,
     ) {
