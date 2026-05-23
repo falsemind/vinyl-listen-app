@@ -15,7 +15,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
-| `ai_insights_service.py` | Own the AI Insights chat service boundary and Phase 2 deterministic stub response. | Future agent runtime and read-only analytics/session/release tools. |
+| `ai_insights_service.py` | Own the AI Insights chat service boundary and provider fallback behavior. | `app/ai` runtime adapter, future read-only analytics/session/release tools. |
 
 ## IdentifyService
 
@@ -327,14 +327,16 @@ Style distribution intentionally uses `releases.styles`, not broad `genres`, bec
 
 `AiInsightsService` powers `POST /api/v1/ai/chat` for the Insights screen chat shell.
 
-Phase 2 intentionally keeps the service deterministic:
+The service keeps the HTTP contract stable while the runtime is still experimental:
 
 - It validates the chat message and optional conversation id.
 - It returns `local-single-thread` when no conversation id is supplied.
-- It returns one assistant message and an empty `used_tools` list.
-- It does not call an LLM, persist chat history, or query listening data yet.
+- It calls the configured `app/ai` adapter when `AI_CHAT_ENABLED=true`.
+- It returns a clear disabled assistant response when AI chat is off or provider config is incomplete.
+- It logs provider, latency, and tool names without message content.
+- It does not persist chat history or query listening data yet.
 
-The service boundary is meant to stay stable when the later ChatOpenAI-compatible LangChain adapter is added. Future read-only tools should call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
+The first runtime adapter targets LM Studio's native `/api/v1/chat` path by default while still supporting OpenAI-compatible chat completions through `AI_CHAT_ENDPOINT_PATH`. Future LangChain or LangGraph orchestration should stay behind the same service boundary. Read-only tools should call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
 
 ## Service Error Boundaries
 

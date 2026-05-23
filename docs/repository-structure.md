@@ -91,6 +91,8 @@ backend/
 ```text
 backend/app/
 ├── main.py
+├── ai/
+│   └── chat_adapter.py
 ├── api/
 │   ├── router.py
 │   └── routes/
@@ -145,6 +147,7 @@ backend/app/
 | Layer | Responsibility |
 | --- | --- |
 | `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
+| `ai/` | AI runtime adapters owned by the backend, currently disabled fallback plus LM Studio native chat and OpenAI-compatible chat completions support. |
 | `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, `/analytics`, and `/ai`. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |

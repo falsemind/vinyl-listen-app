@@ -210,7 +210,7 @@ Use Server-Sent Events or chunked streaming only after the basic request/respons
 - Add `backend/app/api/routes/ai.py`.
 - Add schemas under `backend/app/schemas/ai.py`.
 - Add `backend/app/services/ai_insights_service.py`.
-- Add `backend/app/agents/` or `backend/app/ai/` for runtime adapter code.
+- Add `backend/app/ai/` for runtime adapter code.
 - Add repositories/migrations only when persistent sessions are introduced.
 - Register route under `/api/v1/ai`.
 - Reuse analytics/session/release services rather than duplicating SQL.
@@ -265,7 +265,14 @@ Use Server-Sent Events or chunked streaming only after the basic request/respons
 | Add runtime adapter | Service can call one LLM implementation behind an interface. |
 | Add safe fallback | Missing provider config returns a clear disabled response. |
 | Add minimal observability | Logs include latency, provider, and tool names without message content by default. |
-| Validate LM Studio path | Backend can point at a local ChatOpenAI-compatible LM Studio endpoint through settings. |
+| Validate LM Studio path | Backend can point at a local LM Studio `/api/v1/chat` endpoint through settings. |
+
+Implemented Phase 3 adapter shape:
+
+- `backend/app/ai/chat_adapter.py` owns disabled, LM Studio native chat, and OpenAI-compatible chat completions adapter behavior.
+- `AiInsightsService` depends on the adapter boundary and keeps provider failures as safe assistant replies.
+- Backend settings use `AI_CHAT_ENABLED`, `AI_CHAT_BASE_URL`, `AI_CHAT_ENDPOINT_PATH`, `AI_CHAT_MODEL`, `AI_CHAT_API_KEY`, `AI_CHAT_TIMEOUT_SECONDS`, and `AI_CHAT_TEMPERATURE`.
+- The adapter keeps the current non-streaming API contract and leaves grounded analytics tools for Phase 4.
 
 ### Phase 4: Grounded Insight Tools
 

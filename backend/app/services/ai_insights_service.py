@@ -1,4 +1,21 @@
+import logging
 from dataclasses import dataclass
+from time import perf_counter
+
+from app.ai.chat_adapter import (
+    AiChatAdapter,
+    AiChatAdapterError,
+    AiChatAdapterReply,
+    build_ai_chat_adapter,
+)
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+PROVIDER_UNAVAILABLE_CONTENT = (
+    "AI Insights is configured, but the model provider is unavailable right now. "
+    "Check the backend AI chat settings and the LM Studio server."
+)
 
 
 class AiInsightsServiceError(Exception):
@@ -24,6 +41,9 @@ class AiInsightsReply:
 class AiInsightsService:
     DEFAULT_CONVERSATION_ID = "local-single-thread"
 
+    def __init__(self, adapter: AiChatAdapter | None = None) -> None:
+        self.adapter = adapter or build_ai_chat_adapter(settings)
+
     def chat(
         self,
         *,
@@ -36,16 +56,36 @@ class AiInsightsService:
             raise AiInsightsValidationError("empty_message", "message must not be blank.")
 
         cleaned_conversation_id = self._conversation_id(conversation_id)
-        _ = client_context
+        started_at = perf_counter()
+
+        try:
+            adapter_reply = self.adapter.generate_reply(
+                message=cleaned_message,
+                conversation_id=cleaned_conversation_id,
+                client_context=client_context,
+            )
+        except AiChatAdapterError:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.warning(
+                "AI insights provider failure provider=%s elapsed_ms=%.2f",
+                self.adapter.provider_name,
+                elapsed_ms,
+                exc_info=True,
+            )
+            adapter_reply = AiChatAdapterReply(content=PROVIDER_UNAVAILABLE_CONTENT, used_tools=[])
+        else:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.info(
+                "AI insights reply generated provider=%s elapsed_ms=%.2f used_tools=%s",
+                self.adapter.provider_name,
+                elapsed_ms,
+                adapter_reply.used_tools,
+            )
 
         return AiInsightsReply(
             conversation_id=cleaned_conversation_id,
-            content=(
-                "AI Insights received your question. This backend skeleton is ready for "
-                "a ChatOpenAI-compatible agent and will answer from known collection data "
-                "once the agent runtime is connected."
-            ),
-            used_tools=[],
+            content=adapter_reply.content,
+            used_tools=adapter_reply.used_tools,
         )
 
     def _conversation_id(self, conversation_id: str | None) -> str:

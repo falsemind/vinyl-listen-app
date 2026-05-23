@@ -771,7 +771,7 @@ Style names are grouped case-insensitively so imported values such as `Dub Techn
 
 Used by the **Insights screen** chat shell.
 
-The Phase 2 backend returns a deterministic stub response. It does not call an LLM, persist chat history, or query listening data yet.
+The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. It does not persist chat history or query listening data yet.
 
 ## POST /ai/chat
 
@@ -796,7 +796,7 @@ The Phase 2 backend returns a deterministic stub response. It does not call an L
   "conversation_id": "local-single-thread",
   "message": {
     "role": "assistant",
-    "content": "AI Insights received your question..."
+    "content": "AI Insights is ready..."
   },
   "used_tools": []
 }

@@ -230,8 +230,15 @@ IDENTIFY_OCR_BACKEND=auto
 IDENTIFY_MLX_VLM_SERVICE_URL=http://localhost:8111
 IDENTIFY_MLX_VLM_ENDPOINT_PATH=/v1/chat/completions
 IDENTIFY_MLX_VLM_MODEL_NAME=PaddlePaddle/PaddleOCR-VL-1.5
+AI_CHAT_ENABLED=false
+AI_CHAT_BASE_URL=http://localhost:1234
+AI_CHAT_ENDPOINT_PATH=/api/v1/chat
+AI_CHAT_MODEL=local-model-name
+AI_CHAT_API_KEY=
 LOG_LEVEL=INFO
 ```
+
+When the backend runs in Docker and LM Studio runs on the host machine, use `AI_CHAT_BASE_URL=http://host.docker.internal:1234` instead of `localhost`. Inside the backend container, `localhost` points at the container itself.
 
 ### 5. Start the local VLM OCR server
 
