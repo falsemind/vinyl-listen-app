@@ -94,6 +94,7 @@ backend/app/
 ├── api/
 │   ├── router.py
 │   └── routes/
+│       ├── ai.py
 │       ├── analytics.py
 │       ├── health.py
 │       ├── identify.py
@@ -124,11 +125,13 @@ backend/app/
 │   ├── sessions_moods_repository.py
 │   └── sessions_repository.py
 ├── schemas/
+│   ├── ai.py
 │   ├── analytics.py
 │   ├── identify.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
+│   ├── ai_insights_service.py
 │   ├── analytics_service.py
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
@@ -142,14 +145,14 @@ backend/app/
 | Layer | Responsibility |
 | --- | --- |
 | `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
-| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, and `/analytics`. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, `/analytics`, and `/ai`. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
 | `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -176,6 +179,7 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/rating-distribution` | `api/routes/analytics.py` | `AnalyticsService` rating frequency aggregation. |
 | `GET /analytics/mood-distribution` | `api/routes/analytics.py` | `AnalyticsService` mood frequency aggregation. |
 | `GET /analytics/style-distribution` | `api/routes/analytics.py` | `AnalyticsService` release style frequency aggregation. |
+| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` deterministic chat skeleton. |
 
 ### Identification Pipeline Package
 

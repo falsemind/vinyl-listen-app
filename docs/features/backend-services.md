@@ -15,6 +15,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
+| `ai_insights_service.py` | Own the AI Insights chat service boundary and Phase 2 deterministic stub response. | Future agent runtime and read-only analytics/session/release tools. |
 
 ## IdentifyService
 
@@ -322,6 +323,19 @@ Analytics endpoints read from persisted releases and sessions:
 
 Style distribution intentionally uses `releases.styles`, not broad `genres`, because the Analytics screen is meant to expose specific listening patterns.
 
+## AiInsightsService
+
+`AiInsightsService` powers `POST /api/v1/ai/chat` for the Insights screen chat shell.
+
+Phase 2 intentionally keeps the service deterministic:
+
+- It validates the chat message and optional conversation id.
+- It returns `local-single-thread` when no conversation id is supplied.
+- It returns one assistant message and an empty `used_tools` list.
+- It does not call an LLM, persist chat history, or query listening data yet.
+
+The service boundary is meant to stay stable when the later ChatOpenAI-compatible LangChain adapter is added. Future read-only tools should call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
+
 ## Service Error Boundaries
 
 Routes translate service errors into HTTP status codes:
@@ -330,6 +344,7 @@ Routes translate service errors into HTTP status codes:
 - Discogs import validation: `422`.
 - Missing local release/session: `404`.
 - Discogs upstream failures: `404` for missing Discogs releases when detectable, otherwise `502`.
+- AI chat validation errors: `422`.
 
 ## Testing Coverage
 
