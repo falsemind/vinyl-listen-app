@@ -344,6 +344,36 @@ class VinylApiClient(
             )
         }
 
+    suspend fun clearAiChatHistory(conversationId: String? = null): AiChatClearResponse =
+        apiCall {
+            val query = mutableListOf<String>()
+            query.addQueryParam("conversation_id", conversationId)
+            val response = deleteJson("ai/chat/history${query.toQueryString()}")
+            AiChatClearResponse(
+                conversationId = response.getString("conversation_id"),
+                deletedMessages = response.optInt("deleted_messages", 0),
+            )
+        }
+
+    suspend fun exportAiChatHistory(conversationId: String? = null): AiChatExportResponse =
+        apiCall {
+            val query = mutableListOf<String>()
+            query.addQueryParam("conversation_id", conversationId)
+            val response = getJson("ai/chat/export${query.toQueryString()}")
+            AiChatExportResponse(
+                conversationId = response.getString("conversation_id"),
+                exportedAt = response.getString("exported_at"),
+                messages =
+                    response.optJSONArray("messages").orEmpty().mapObjects { item ->
+                        AiChatMessage(
+                            role = item.optString("role", "assistant"),
+                            content = item.getString("content"),
+                            usedTools = item.optJSONArray("used_tools").orEmpty().mapStrings(),
+                        )
+                    },
+            )
+        }
+
     private suspend fun <T> apiCall(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
             try {
@@ -506,6 +536,17 @@ data class AiChatResponse(
 
 data class AiChatHistoryResponse(
     val conversationId: String,
+    val messages: List<AiChatMessage>,
+)
+
+data class AiChatClearResponse(
+    val conversationId: String,
+    val deletedMessages: Int,
+)
+
+data class AiChatExportResponse(
+    val conversationId: String,
+    val exportedAt: String,
     val messages: List<AiChatMessage>,
 )
 
