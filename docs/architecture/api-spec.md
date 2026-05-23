@@ -789,6 +789,8 @@ The backend owns the AI boundary. When AI chat settings are disabled or incomple
 
 `conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`.
 
+`client_context` currently supports only the optional `timezone` field. `timezone` must be 64 characters or fewer, and unknown `client_context` fields are rejected with `422`.
+
 ### Response
 
 ```json
