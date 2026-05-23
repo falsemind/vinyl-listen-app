@@ -282,6 +282,13 @@ Implemented Phase 3 adapter shape:
 | Add answer rules | Assistant states when data is missing or too sparse. |
 | Add tests | Tool selection and response grounding are covered with deterministic tests/mocks. |
 
+Implemented Phase 4 shape:
+
+- `backend/app/ai/insight_tools.py` runs deterministic read-only tools before the model call.
+- Tool context covers listening summary, recent sessions, top records, style distribution, mood distribution, and rating distribution.
+- `AiInsightsService` passes tool context to the adapter and returns persisted `used_tools` names.
+- Tools stay behind backend services/repositories; the model never receives direct database access.
+
 ### Phase 5: Persistent Chat History
 
 | Task | Done Criteria |
@@ -291,6 +298,13 @@ Implemented Phase 3 adapter shape:
 | Load history | Android can resume a conversation. |
 | Add delete/reset path | User can clear AI chat history. |
 | Add export path | User can export AI chat history. |
+
+Implemented Phase 5 shape:
+
+- `ai_chat_sessions` and `ai_chat_messages` persist one local conversation thread.
+- `POST /api/v1/ai/chat` stores user and assistant messages and passes recent history to the runtime adapter.
+- `GET /api/v1/ai/chat/history`, `GET /api/v1/ai/chat/export`, and `DELETE /api/v1/ai/chat/history` provide load, export, and clear paths.
+- Android loads persisted history when opening the Insights screen.
 
 ## Open Questions
 

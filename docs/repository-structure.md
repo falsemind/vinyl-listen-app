@@ -92,7 +92,8 @@ backend/
 backend/app/
 ├── main.py
 ├── ai/
-│   └── chat_adapter.py
+│   ├── chat_adapter.py
+│   └── insight_tools.py
 ├── api/
 │   ├── router.py
 │   └── routes/
@@ -112,6 +113,7 @@ backend/app/
 │   ├── db.py
 │   └── session.py
 ├── models/
+│   ├── ai_chat.py
 │   ├── discogs_release_cache.py
 │   ├── identify_job.py
 │   ├── releases.py
@@ -120,6 +122,7 @@ backend/app/
 ├── pipelines/
 │   └── identification/
 ├── repositories/
+│   ├── ai_chat_repository.py
 │   ├── analytics_repository.py
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
@@ -152,7 +155,7 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, listening sessions, and moods. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, AI chat history, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
 | `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
@@ -249,6 +252,7 @@ backend/alembic/
     ├── 7ab6c5d4e3f2_add_identify_job_client_key.py
     ├── d2b8c7e9f041_add_identify_job_stale_recovery_index.py
     ├── f3a4b5c6d7e8_add_identify_job_cancel_requested_at.py
+    ├── c8f2d4a9b6e1_add_ai_chat_history.py
     └── eed6974773b8_init.py
 
 backend/scripts/

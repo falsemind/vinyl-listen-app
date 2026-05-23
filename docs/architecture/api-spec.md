@@ -771,7 +771,9 @@ Style names are grouped case-insensitively so imported values such as `Dub Techn
 
 Used by the **Insights screen** chat shell.
 
-The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. It does not persist chat history or query listening data yet.
+The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted in the backend so the assistant can receive recent conversation history and the user has clear/export paths.
+
+Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn.
 
 ## POST /ai/chat
 
@@ -787,7 +789,7 @@ The backend owns the AI boundary. When AI chat settings are disabled or incomple
 }
 ```
 
-`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`.
+`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`. Provided `conversation_id` values must be 36 characters or fewer.
 
 `client_context` currently supports only the optional `timezone` field. `timezone` must be 64 characters or fewer, and unknown `client_context` fields are rejected with `422`.
 
@@ -798,7 +800,9 @@ The backend owns the AI boundary. When AI chat settings are disabled or incomple
   "conversation_id": "local-single-thread",
   "message": {
     "role": "assistant",
-    "content": "AI Insights is ready..."
+    "content": "AI Insights is ready...",
+    "used_tools": [],
+    "created_at": null
   },
   "used_tools": []
 }
@@ -818,6 +822,45 @@ Blank `message` values return:
 ```
 
 Blank provided `conversation_id` values return `empty_conversation_id`.
+
+## GET /ai/chat/history
+
+Returns the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+
+```json
+{
+  "conversation_id": "local-single-thread",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What style did I explore most this month?",
+      "used_tools": [],
+      "created_at": "2026-05-23T12:00:00Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Your recent sessions lean toward...",
+      "used_tools": ["get_style_distribution"],
+      "created_at": "2026-05-23T12:00:01Z"
+    }
+  ]
+}
+```
+
+## GET /ai/chat/export
+
+Returns the same persisted messages plus `exported_at` for privacy/data export.
+
+## DELETE /ai/chat/history
+
+Deletes the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+
+```json
+{
+  "conversation_id": "local-single-thread",
+  "deleted_messages": 2
+}
+```
 
 ---
 
