@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +81,29 @@ fun AiInsightsScreen(
     var isTyping by remember { mutableStateOf(false) }
     var conversationId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        try {
+            val history = apiClient.getAiChatHistory()
+            conversationId = history.conversationId
+            if (history.messages.isNotEmpty()) {
+                messages.clear()
+                messages.addAll(
+                    history.messages.map { message ->
+                        if (message.role == "user") {
+                            ChatMessage.User(message.content)
+                        } else {
+                            ChatMessage.Assistant(message.content)
+                        }
+                    },
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            messages.add(ChatMessage.Assistant(error.toUserMessage("Could not load AI Insights history.")))
+        }
+    }
 
     fun sendMessage(text: String) {
         val message = text.trim()
