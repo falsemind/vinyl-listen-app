@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -91,9 +92,11 @@ fun AiInsightsScreen(
     var isClearingHistory by remember { mutableStateOf(false) }
     var isExportingHistory by remember { mutableStateOf(false) }
     var showClearConfirmation by remember { mutableStateOf(false) }
+    var shouldFocusLoadedHistory by remember { mutableStateOf(false) }
     var conversationId by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val chatListState = rememberLazyListState()
     val isInteractionEnabled = !isLoadingHistory && !isTyping && !isClearingHistory && !isExportingHistory
 
     LaunchedEffect(Unit) {
@@ -111,6 +114,7 @@ fun AiInsightsScreen(
                         }
                     },
                 )
+                shouldFocusLoadedHistory = true
             }
         } catch (error: CancellationException) {
             throw error
@@ -118,6 +122,13 @@ fun AiInsightsScreen(
             messages.add(ChatMessage.Assistant(error.toUserMessage("Could not load AI Insights history.")))
         } finally {
             isLoadingHistory = false
+        }
+    }
+
+    LaunchedEffect(isLoadingHistory, shouldFocusLoadedHistory, messages.size) {
+        if (!isLoadingHistory && shouldFocusLoadedHistory && messages.isNotEmpty()) {
+            chatListState.scrollToItem(suggestedPrompts.size + messages.lastIndex)
+            shouldFocusLoadedHistory = false
         }
     }
 
@@ -251,6 +262,7 @@ fun AiInsightsScreen(
                         .fillMaxWidth(),
             ) {
                 LazyColumn(
+                    state = chatListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding =
                         PaddingValues(
