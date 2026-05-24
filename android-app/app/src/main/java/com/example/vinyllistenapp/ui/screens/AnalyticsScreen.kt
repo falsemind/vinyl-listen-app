@@ -30,11 +30,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,6 +61,8 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -111,35 +116,64 @@ fun AnalyticsScreen(
             }
             SectionTitle("Plays Over Time")
             MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
-            SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
-            dashboard.topRecords.take(5).forEachIndexed { index, record ->
-                TopRecordAnalyticsCard(
-                    record = record,
-                    accentColor = analyticsAccent(index),
-                    maxPlays = dashboard.topRecords.maxOfOrNull { it.plays } ?: 1,
-                    onClick = { onOpenRecord(record.record.releaseId) },
-                )
+            if (dashboard.topRecords.isEmpty()) {
+                SectionTitle("Top Records")
+                AnalyticsEmptySectionText()
+            } else {
+                SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
+                dashboard.topRecords.take(5).forEachIndexed { index, record ->
+                    TopRecordAnalyticsCard(
+                        record = record,
+                        accentColor = analyticsAccent(index),
+                        maxPlays = dashboard.topRecords.maxOfOrNull { it.plays } ?: 1,
+                        onClick = { onOpenRecord(record.record.releaseId) },
+                    )
+                }
             }
             SectionTitle("Rating Distribution")
-            RatingDistributionCard(ratings = dashboard.ratingDistribution)
+            if (dashboard.ratingDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                RatingDistributionCard(ratings = dashboard.ratingDistribution)
+            }
             if (dashboard.moodDistribution.size > MOOD_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Mood Distribution", action = "View All", onActionClick = onViewAllMoods)
             } else {
                 SectionTitle("Mood Distribution")
             }
-            MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+            if (dashboard.moodDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+            }
             if (dashboard.styleDistribution.size > STYLE_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Style Distribution", action = "View All", onActionClick = onViewAllStyles)
             } else {
                 SectionTitle("Style Distribution")
             }
-            StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
+            if (dashboard.styleDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
+            }
         }
     }
 }
 
 private const val MOOD_DISTRIBUTION_PREVIEW_LIMIT = 10
 private const val STYLE_DISTRIBUTION_PREVIEW_LIMIT = 10
+private const val ANALYTICS_EMPTY_SECTION_TEXT = "No data yet. Start you listening journey!"
+private val MONTHLY_PLAY_BAR_WIDTH = 48.dp
+
+@Composable
+private fun AnalyticsEmptySectionText() {
+    Text(
+        modifier = Modifier.fillMaxWidth(),
+        text = ANALYTICS_EMPTY_SECTION_TEXT,
+        color = VinylColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
 
 @Composable
 private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
@@ -147,23 +181,59 @@ private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
     val monthScrollState = rememberScrollState(initial = Int.MAX_VALUE)
     val totalSessions = displayMonths.sumOf { it.plays }
     val maxPlays = displayMonths.maxOfOrNull { it.plays }?.takeIf { it > 0 } ?: 1
+    val monthGap = VinylSpacing.SpaceSm
+    val minimumChartWidth =
+        MONTHLY_PLAY_BAR_WIDTH * displayMonths.size +
+            monthGap * (displayMonths.size - 1).coerceAtLeast(0)
+    val density = LocalDensity.current
+    var availableChartWidthPx by remember { mutableIntStateOf(0) }
+    val availableChartWidth = with(density) { availableChartWidthPx.toDp() }
+    val shouldFillWidth = availableChartWidthPx > 0 && availableChartWidth >= minimumChartWidth
+    val shouldSnapToCurrentMonth = availableChartWidthPx > 0 && !shouldFillWidth
+
+    LaunchedEffect(shouldSnapToCurrentMonth, displayMonths.lastOrNull()?.month) {
+        if (shouldSnapToCurrentMonth) {
+            val maxScroll =
+                monthScrollState.maxValue.takeIf { it > 0 }
+                    ?: snapshotFlow { monthScrollState.maxValue }
+                        .filter { it > 0 }
+                        .first()
+            monthScrollState.scrollTo(maxScroll)
+        }
+    }
 
     AccentCard {
-        Row(
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(monthScrollState)
-                    .height(132.dp),
-            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-            verticalAlignment = Alignment.Bottom,
+                    .onSizeChanged { availableChartWidthPx = it.width },
         ) {
-            displayMonths.forEach { item ->
-                MonthlyPlayBar(
-                    item = item,
-                    maxPlays = maxPlays,
-                    modifier = Modifier.width(48.dp),
-                )
+            val rowModifier =
+                if (shouldFillWidth) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(monthScrollState)
+                }
+            Row(
+                modifier = rowModifier.height(132.dp),
+                horizontalArrangement = Arrangement.spacedBy(monthGap),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                displayMonths.forEach { item ->
+                    MonthlyPlayBar(
+                        item = item,
+                        maxPlays = maxPlays,
+                        modifier =
+                            if (shouldFillWidth) {
+                                Modifier.weight(1f)
+                            } else {
+                                Modifier.width(MONTHLY_PLAY_BAR_WIDTH)
+                            },
+                    )
+                }
             }
         }
         Spacer(
@@ -210,10 +280,12 @@ private fun MonthlyPlayBar(
             contentAlignment = Alignment.BottomCenter,
         ) {
             if (item.plays == 0) {
-                Text(
-                    text = "0",
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
+                Box(
+                    modifier =
+                        Modifier
+                            .width(46.dp)
+                            .height(2.dp)
+                            .background(VinylColors.TextSecondary.copy(alpha = 0.75f)),
                 )
             } else {
                 Box(

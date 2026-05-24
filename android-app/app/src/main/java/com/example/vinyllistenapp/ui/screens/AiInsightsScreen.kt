@@ -103,6 +103,8 @@ internal fun AiInsightsScreen(
     val messages = state.messages
     val isInteractionEnabled =
         !state.isLoadingHistory && !state.isTyping && !state.isClearingHistory && !state.isExportingHistory
+    val hasUserMessages = messages.any { it is ChatMessage.User }
+    val historyActionsEnabled = isInteractionEnabled && hasUserMessages
 
     LaunchedEffect(Unit) {
         if (!state.hasLoadedHistory && !state.isLoadingHistory) {
@@ -172,7 +174,7 @@ internal fun AiInsightsScreen(
     }
 
     fun clearHistory() {
-        if (!isInteractionEnabled) return
+        if (!historyActionsEnabled) return
         state.isClearingHistory = true
         requestScope.launch {
             try {
@@ -191,7 +193,7 @@ internal fun AiInsightsScreen(
     }
 
     fun exportHistory() {
-        if (!isInteractionEnabled) return
+        if (!historyActionsEnabled) return
         state.isExportingHistory = true
         requestScope.launch {
             try {
@@ -265,7 +267,7 @@ internal fun AiInsightsScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
         ) {
             InsightsHeader(
-                actionsEnabled = isInteractionEnabled,
+                actionsEnabled = historyActionsEnabled,
                 onClearHistory = { state.showClearConfirmation = true },
                 onExportHistory = ::exportHistory,
             )
