@@ -41,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +60,7 @@ import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 private val suggestedPrompts =
@@ -74,61 +74,77 @@ private val suggestedPrompts =
 private const val INTRO_MESSAGE = "Ask about your listening habits, collection patterns, moods, styles, or records."
 
 @Composable
-fun AiInsightsScreen(
+internal fun rememberAiInsightsScreenState(): AiInsightsScreenState = remember { AiInsightsScreenState() }
+
+internal class AiInsightsScreenState {
+    val messages = mutableStateListOf<ChatMessage>(ChatMessage.Assistant(INTRO_MESSAGE))
+    var inputValue by mutableStateOf("")
+    var isLoadingHistory by mutableStateOf(false)
+    var hasLoadedHistory by mutableStateOf(false)
+    var isTyping by mutableStateOf(false)
+    var isClearingHistory by mutableStateOf(false)
+    var isExportingHistory by mutableStateOf(false)
+    var showClearConfirmation by mutableStateOf(false)
+    var shouldFocusLoadedHistory by mutableStateOf(false)
+    var conversationId by mutableStateOf<String?>(null)
+}
+
+@Composable
+internal fun AiInsightsScreen(
     apiClient: VinylApiClient,
+    state: AiInsightsScreenState,
+    requestScope: CoroutineScope,
     onHome: () -> Unit,
     onStats: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val messages =
-        remember {
-            mutableStateListOf<ChatMessage>(
-                ChatMessage.Assistant(INTRO_MESSAGE),
-            )
-        }
-    var inputValue by remember { mutableStateOf("") }
-    var isLoadingHistory by remember { mutableStateOf(true) }
-    var isTyping by remember { mutableStateOf(false) }
-    var isClearingHistory by remember { mutableStateOf(false) }
-    var isExportingHistory by remember { mutableStateOf(false) }
-    var showClearConfirmation by remember { mutableStateOf(false) }
-    var shouldFocusLoadedHistory by remember { mutableStateOf(false) }
-    var conversationId by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val chatListState = rememberLazyListState()
-    val isInteractionEnabled = !isLoadingHistory && !isTyping && !isClearingHistory && !isExportingHistory
+    val messages = state.messages
+    val isInteractionEnabled =
+        !state.isLoadingHistory && !state.isTyping && !state.isClearingHistory && !state.isExportingHistory
+    val hasUserMessages = messages.any { it is ChatMessage.User }
+    val historyActionsEnabled = isInteractionEnabled && hasUserMessages
 
     LaunchedEffect(Unit) {
-        try {
-            val history = apiClient.getAiChatHistory()
-            conversationId = history.conversationId
-            if (history.messages.isNotEmpty()) {
-                messages.clear()
-                messages.addAll(
-                    history.messages.map { message ->
-                        if (message.role == "user") {
-                            ChatMessage.User(message.content)
-                        } else {
-                            ChatMessage.Assistant(message.content)
-                        }
-                    },
-                )
-                shouldFocusLoadedHistory = true
+        if (!state.hasLoadedHistory && !state.isLoadingHistory) {
+            state.isLoadingHistory = true
+            requestScope.launch {
+                try {
+                    val history = apiClient.getAiChatHistory()
+                    state.conversationId = history.conversationId
+                    if (history.messages.isNotEmpty() && !state.isTyping) {
+                        messages.clear()
+                        messages.addAll(
+                            history.messages.map { message ->
+                                if (message.role == "user") {
+                                    ChatMessage.User(message.content)
+                                } else {
+                                    ChatMessage.Assistant(message.content)
+                                }
+                            },
+                        )
+                        state.shouldFocusLoadedHistory = true
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    messages.add(ChatMessage.Assistant(error.toUserMessage("Could not load AI Insights history.")))
+                } finally {
+                    state.isLoadingHistory = false
+                    state.hasLoadedHistory = true
+                }
             }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            messages.add(ChatMessage.Assistant(error.toUserMessage("Could not load AI Insights history.")))
-        } finally {
-            isLoadingHistory = false
         }
     }
 
-    LaunchedEffect(isLoadingHistory, shouldFocusLoadedHistory, messages.size) {
-        if (!isLoadingHistory && shouldFocusLoadedHistory && messages.isNotEmpty()) {
-            chatListState.scrollToItem(suggestedPrompts.size + messages.lastIndex)
-            shouldFocusLoadedHistory = false
+    LaunchedEffect(state.isLoadingHistory, state.hasLoadedHistory, state.isTyping, messages.size) {
+        val hasChatContent = messages.any { it.text != INTRO_MESSAGE }
+        if (!state.isLoadingHistory && state.hasLoadedHistory && hasChatContent) {
+            val lastMessageIndex = suggestedPrompts.size + messages.lastIndex
+            val targetIndex = if (state.isTyping) lastMessageIndex + 1 else lastMessageIndex
+            chatListState.scrollToItem(targetIndex)
+            state.shouldFocusLoadedHistory = false
         }
     }
 
@@ -136,12 +152,12 @@ fun AiInsightsScreen(
         val message = text.trim()
         if (message.isEmpty() || !isInteractionEnabled) return
         messages.add(ChatMessage.User(message))
-        isTyping = true
-        inputValue = ""
-        scope.launch {
+        state.isTyping = true
+        state.inputValue = ""
+        requestScope.launch {
             try {
-                val response = apiClient.chatWithAi(message = message, conversationId = conversationId)
-                conversationId = response.conversationId
+                val response = apiClient.chatWithAi(message = message, conversationId = state.conversationId)
+                state.conversationId = response.conversationId
                 messages.add(ChatMessage.Assistant(response.content))
             } catch (error: CancellationException) {
                 throw error
@@ -152,18 +168,18 @@ fun AiInsightsScreen(
                     ),
                 )
             } finally {
-                isTyping = false
+                state.isTyping = false
             }
         }
     }
 
     fun clearHistory() {
-        if (!isInteractionEnabled) return
-        isClearingHistory = true
-        scope.launch {
+        if (!historyActionsEnabled) return
+        state.isClearingHistory = true
+        requestScope.launch {
             try {
-                val response = apiClient.clearAiChatHistory(conversationId = conversationId)
-                conversationId = response.conversationId
+                val response = apiClient.clearAiChatHistory(conversationId = state.conversationId)
+                state.conversationId = response.conversationId
                 messages.clear()
                 messages.add(ChatMessage.Assistant("Chat history cleared. $INTRO_MESSAGE"))
             } catch (error: CancellationException) {
@@ -171,17 +187,17 @@ fun AiInsightsScreen(
             } catch (error: Exception) {
                 messages.add(ChatMessage.Assistant(error.toUserMessage("Could not clear AI Insights history.")))
             } finally {
-                isClearingHistory = false
+                state.isClearingHistory = false
             }
         }
     }
 
     fun exportHistory() {
-        if (!isInteractionEnabled) return
-        isExportingHistory = true
-        scope.launch {
+        if (!historyActionsEnabled) return
+        state.isExportingHistory = true
+        requestScope.launch {
             try {
-                val response = apiClient.exportAiChatHistory(conversationId = conversationId)
+                val response = apiClient.exportAiChatHistory(conversationId = state.conversationId)
                 val exportIntent =
                     Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -194,20 +210,20 @@ fun AiInsightsScreen(
             } catch (error: Exception) {
                 messages.add(ChatMessage.Assistant(error.toUserMessage("Could not export AI Insights history.")))
             } finally {
-                isExportingHistory = false
+                state.isExportingHistory = false
             }
         }
     }
 
-    if (showClearConfirmation) {
+    if (state.showClearConfirmation) {
         AlertDialog(
-            onDismissRequest = { showClearConfirmation = false },
+            onDismissRequest = { state.showClearConfirmation = false },
             title = { Text("Clear chat history?") },
             text = { Text("This removes the saved AI Insights chat thread from backend history.") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showClearConfirmation = false
+                        state.showClearConfirmation = false
                         clearHistory()
                     },
                 ) {
@@ -215,7 +231,7 @@ fun AiInsightsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearConfirmation = false }) {
+                TextButton(onClick = { state.showClearConfirmation = false }) {
                     Text("Cancel")
                 }
             },
@@ -251,8 +267,8 @@ fun AiInsightsScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
         ) {
             InsightsHeader(
-                actionsEnabled = isInteractionEnabled,
-                onClearHistory = { showClearConfirmation = true },
+                actionsEnabled = historyActionsEnabled,
+                onClearHistory = { state.showClearConfirmation = true },
                 onExportHistory = ::exportHistory,
             )
             Box(
@@ -281,22 +297,22 @@ fun AiInsightsScreen(
                     items(messages) { message ->
                         ChatMessageBubble(message = message)
                     }
-                    if (isTyping) {
+                    if (state.isTyping) {
                         item {
                             TypingBubble()
                         }
                     }
-                    if (isLoadingHistory) {
+                    if (state.isLoadingHistory) {
                         item {
                             StatusBubble(text = "Loading history...")
                         }
                     }
                 }
                 ChatInputBar(
-                    value = inputValue,
+                    value = state.inputValue,
                     enabled = isInteractionEnabled,
-                    onValueChange = { inputValue = it },
-                    onSend = { sendMessage(inputValue) },
+                    onValueChange = { state.inputValue = it },
+                    onSend = { sendMessage(state.inputValue) },
                     modifier =
                         Modifier
                             .align(Alignment.BottomCenter)
@@ -557,7 +573,7 @@ private fun ChatInputBar(
     }
 }
 
-private sealed class ChatMessage(
+internal sealed class ChatMessage(
     val text: String,
 ) {
     class Assistant(

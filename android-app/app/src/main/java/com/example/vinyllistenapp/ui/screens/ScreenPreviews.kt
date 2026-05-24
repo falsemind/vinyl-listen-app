@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
@@ -68,6 +69,8 @@ private fun AiInsightsScreenPreview() {
     VinylListenAppTheme {
         AiInsightsScreen(
             apiClient = VinylApiClient(),
+            state = rememberAiInsightsScreenState(),
+            requestScope = rememberCoroutineScope(),
             onHome = {},
             onStats = {},
             onSettings = {},
