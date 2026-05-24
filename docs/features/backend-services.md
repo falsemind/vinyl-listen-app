@@ -336,6 +336,7 @@ The service keeps the HTTP contract stable while the runtime is still experiment
 - It persists user and assistant messages in `ai_chat_sessions` and `ai_chat_messages`.
 - It passes recent persisted chat history to the adapter for conversation continuity.
 - It runs deterministic read-only insight tools before the model call and includes their results as bounded prompt context.
+- It prioritizes saved session notes when present for recommendation, subjective insight, and "why" questions because notes capture the user's personal listening impressions.
 - It exposes history, clear, and export endpoints for private chat data.
 - It logs provider, latency, and tool names without message content.
 

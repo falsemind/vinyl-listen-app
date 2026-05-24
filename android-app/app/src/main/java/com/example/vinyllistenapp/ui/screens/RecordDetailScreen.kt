@@ -15,10 +15,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,9 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,7 +67,7 @@ fun RecordDetailScreen(
     releaseId: String?,
     apiClient: VinylApiClient,
     onAddSession: (String) -> Unit,
-    onHome: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
@@ -137,9 +144,12 @@ fun RecordDetailScreen(
                     .align(Alignment.BottomEnd)
                     .padding(end = VinylSpacing.SpaceXl, bottom = 104.dp),
         )
-        RecordDetailBackBar(
-            onClick = onHome,
-            modifier = Modifier.align(Alignment.BottomCenter),
+        RecordDetailGoBackButton(
+            onClick = onBack,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = VinylSpacing.SpaceXl, bottom = 104.dp),
         )
         selectedNote?.let { history ->
             SessionNotesPopup(
@@ -561,31 +571,42 @@ private fun ScrollableSessionNoteText(note: String) {
 }
 
 @Composable
-private fun RecordDetailBackBar(
+private fun RecordDetailGoBackButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val brush =
+        Brush.linearGradient(
+            listOf(
+                VinylColors.AccentGreen.copy(alpha = 0.85f),
+                VinylColors.AccentGreen.copy(alpha = 0.70f),
+            ),
+        )
+
     Box(
         modifier =
             modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .background(VinylColors.SurfaceSecondary)
-                .clickable(onClick = onClick),
+                .size(56.dp)
+                .shadow(
+                    elevation = 12.dp,
+                    shape = VinylShapes.Floating,
+                    ambientColor = VinylColors.ShadowBlack,
+                    spotColor = VinylColors.ShadowBlack,
+                ).clip(VinylShapes.Floating)
+                .background(brush)
+                .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
+                .clickable(
+                    onClickLabel = "Go Back",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(VinylColors.BorderDefault),
-        )
-        Text(
-            text = "Back to Home",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.labelLarge,
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(24.dp),
         )
     }
 }
