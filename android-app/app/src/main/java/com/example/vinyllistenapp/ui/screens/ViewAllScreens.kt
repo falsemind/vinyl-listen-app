@@ -1,7 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,14 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,9 +30,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -48,8 +42,8 @@ import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
+import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
-import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
@@ -224,7 +218,9 @@ private fun ViewAllScreenContent(
         }
 
         if (showScrollToTop) {
-            ScrollToTopButton(
+            FloatingIconButton(
+                icon = Icons.Filled.KeyboardArrowUp,
+                contentDescription = "Scroll to top",
                 onClick = {
                     scope.launch {
                         scrollState.animateScrollTo(0)
@@ -233,50 +229,9 @@ private fun ViewAllScreenContent(
                 modifier =
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = VinylSpacing.SpaceMd, bottom = VinylSpacing.SpaceLg),
+                        .padding(end = VinylSpacing.SpaceXl, bottom = 104.dp),
             )
         }
-    }
-}
-
-@Composable
-private fun ScrollToTopButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val brush =
-        Brush.linearGradient(
-            listOf(
-                VinylColors.AccentGreen.copy(alpha = 0.85f),
-                VinylColors.AccentGreen.copy(alpha = 0.70f),
-            ),
-        )
-
-    Box(
-        modifier =
-            modifier
-                .size(56.dp)
-                .shadow(
-                    elevation = 12.dp,
-                    shape = VinylShapes.Floating,
-                    ambientColor = VinylColors.ShadowBlack,
-                    spotColor = VinylColors.ShadowBlack,
-                ).clip(VinylShapes.Floating)
-                .background(brush)
-                .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
-                .clickable(
-                    onClickLabel = "Scroll to top",
-                    role = Role.Button,
-                    onClick = onClick,
-                ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.KeyboardArrowUp,
-            contentDescription = null,
-            tint = VinylColors.TextOnAccent,
-            modifier = Modifier.size(28.dp),
-        )
     }
 }
 
