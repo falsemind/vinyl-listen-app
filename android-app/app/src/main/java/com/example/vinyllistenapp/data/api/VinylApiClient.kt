@@ -326,6 +326,54 @@ class VinylApiClient(
             )
         }
 
+    suspend fun getAiChatHistory(conversationId: String? = null): AiChatHistoryResponse =
+        apiCall {
+            val query = mutableListOf<String>()
+            query.addQueryParam("conversation_id", conversationId)
+            val response = getJson("ai/chat/history${query.toQueryString()}")
+            AiChatHistoryResponse(
+                conversationId = response.getString("conversation_id"),
+                messages =
+                    response.optJSONArray("messages").orEmpty().mapObjects { item ->
+                        AiChatMessage(
+                            role = item.optString("role", "assistant"),
+                            content = item.getString("content"),
+                            usedTools = item.optJSONArray("used_tools").orEmpty().mapStrings(),
+                        )
+                    },
+            )
+        }
+
+    suspend fun clearAiChatHistory(conversationId: String? = null): AiChatClearResponse =
+        apiCall {
+            val query = mutableListOf<String>()
+            query.addQueryParam("conversation_id", conversationId)
+            val response = deleteJson("ai/chat/history${query.toQueryString()}")
+            AiChatClearResponse(
+                conversationId = response.getString("conversation_id"),
+                deletedMessages = response.optInt("deleted_messages", 0),
+            )
+        }
+
+    suspend fun exportAiChatHistory(conversationId: String? = null): AiChatExportResponse =
+        apiCall {
+            val query = mutableListOf<String>()
+            query.addQueryParam("conversation_id", conversationId)
+            val response = getJson("ai/chat/export${query.toQueryString()}")
+            AiChatExportResponse(
+                conversationId = response.getString("conversation_id"),
+                exportedAt = response.getString("exported_at"),
+                messages =
+                    response.optJSONArray("messages").orEmpty().mapObjects { item ->
+                        AiChatMessage(
+                            role = item.optString("role", "assistant"),
+                            content = item.getString("content"),
+                            usedTools = item.optJSONArray("used_tools").orEmpty().mapStrings(),
+                        )
+                    },
+            )
+        }
+
     private suspend fun <T> apiCall(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
             try {
@@ -486,6 +534,28 @@ data class AiChatResponse(
     val usedTools: List<String>,
 )
 
+data class AiChatHistoryResponse(
+    val conversationId: String,
+    val messages: List<AiChatMessage>,
+)
+
+data class AiChatClearResponse(
+    val conversationId: String,
+    val deletedMessages: Int,
+)
+
+data class AiChatExportResponse(
+    val conversationId: String,
+    val exportedAt: String,
+    val messages: List<AiChatMessage>,
+)
+
+data class AiChatMessage(
+    val role: String,
+    val content: String,
+    val usedTools: List<String>,
+)
+
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
 
 private fun OutputStream.writeUtf8(value: String) {
@@ -499,6 +569,8 @@ private fun MutableList<String>.addQueryParam(
     val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() } ?: return
     add("${Uri.encode(name)}=${Uri.encode(normalizedValue)}")
 }
+
+private fun List<String>.toQueryString(): String = if (isEmpty()) "" else "?${joinToString("&")}"
 
 private fun JSONObject.toRecordSummary(): RecordSummary =
     RecordSummary(

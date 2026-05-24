@@ -1,6 +1,7 @@
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -14,9 +15,8 @@ DISABLED_AI_CHAT_CONTENT = (
 
 SYSTEM_PROMPT = (
     "You are the Vinyl Listen AI Insights assistant. Answer only from the user's known vinyl collection, "
-    "listening history, ratings, moods, and style data that the backend provides. For this adapter spike, "
-    "no collection tools are connected yet, so be transparent when data is unavailable. Do not recommend "
-    "records outside the user's collection."
+    "listening history, ratings, moods, and style data that the backend tools provide. Be transparent when "
+    "data is unavailable or sparse. Do not recommend records outside the user's collection."
 )
 
 
@@ -30,6 +30,18 @@ class AiChatAdapterReply:
     used_tools: list[str]
 
 
+@dataclass(frozen=True)
+class AiChatHistoryMessage:
+    role: Literal["user", "assistant"]
+    content: str
+
+
+@dataclass(frozen=True)
+class AiChatToolResult:
+    name: str
+    content: str
+
+
 class AiChatAdapter(Protocol):
     provider_name: str
 
@@ -39,6 +51,8 @@ class AiChatAdapter(Protocol):
         message: str,
         conversation_id: str,
         client_context: dict[str, str] | None = None,
+        history: Sequence[AiChatHistoryMessage] | None = None,
+        tool_context: Sequence[AiChatToolResult] | None = None,
     ) -> AiChatAdapterReply:
         """Generate an assistant reply for a single chat turn."""
 
@@ -54,8 +68,10 @@ class DisabledAiChatAdapter:
         message: str,
         conversation_id: str,
         client_context: dict[str, str] | None = None,
+        history: Sequence[AiChatHistoryMessage] | None = None,
+        tool_context: Sequence[AiChatToolResult] | None = None,
     ) -> AiChatAdapterReply:
-        _ = message, conversation_id, client_context
+        _ = message, conversation_id, client_context, history, tool_context
         return AiChatAdapterReply(content=DISABLED_AI_CHAT_CONTENT, used_tools=[])
 
 
@@ -75,9 +91,11 @@ class OpenAiCompatibleChatAdapter:
         message: str,
         conversation_id: str,
         client_context: dict[str, str] | None = None,
+        history: Sequence[AiChatHistoryMessage] | None = None,
+        tool_context: Sequence[AiChatToolResult] | None = None,
     ) -> AiChatAdapterReply:
         _ = conversation_id, client_context
-        payload = self._payload(message)
+        payload = self._payload(message, history or [], tool_context or [])
         request = Request(
             self._chat_url(),
             data=json.dumps(payload).encode("utf-8"),
@@ -97,24 +115,59 @@ class OpenAiCompatibleChatAdapter:
 
         return AiChatAdapterReply(content=self._extract_content(response_body), used_tools=[])
 
-    def _payload(self, message: str) -> dict[str, object]:
+    def _payload(
+        self,
+        message: str,
+        history: Sequence[AiChatHistoryMessage],
+        tool_context: Sequence[AiChatToolResult],
+    ) -> dict[str, object]:
         if self._uses_lm_studio_native_chat():
             return {
                 "model": self.model,
-                "input": f"{SYSTEM_PROMPT}\n\nUser question: {message}",
+                "input": self._native_input(message, history, tool_context),
                 "temperature": self.temperature,
                 "stream": False,
             }
 
         return {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message},
-            ],
+            "messages": self._openai_messages(message, history, tool_context),
             "temperature": self.temperature,
             "stream": False,
         }
+
+    def _native_input(
+        self,
+        message: str,
+        history: Sequence[AiChatHistoryMessage],
+        tool_context: Sequence[AiChatToolResult],
+    ) -> str:
+        tool_context_block = self._tool_context_block(tool_context)
+        history_block = "\n".join(f"{item.role}: {item.content}" for item in history).strip()
+        if not history_block:
+            return f"{SYSTEM_PROMPT}\n\n{tool_context_block}\n\nUser question: {message}"
+        return (
+            f"{SYSTEM_PROMPT}\n\n{tool_context_block}\n\n"
+            f"Conversation history:\n{history_block}\n\nUser question: {message}"
+        )
+
+    def _openai_messages(
+        self,
+        message: str,
+        history: Sequence[AiChatHistoryMessage],
+        tool_context: Sequence[AiChatToolResult],
+    ) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.append({"role": "system", "content": self._tool_context_block(tool_context)})
+        messages.extend({"role": item.role, "content": item.content} for item in history)
+        messages.append({"role": "user", "content": message})
+        return messages
+
+    def _tool_context_block(self, tool_context: Sequence[AiChatToolResult]) -> str:
+        if not tool_context:
+            return "Backend collection data: no tool results were provided for this turn."
+        rendered_tools = "\n\n".join(f"[{result.name}]\n{result.content}" for result in tool_context)
+        return f"Backend collection data from read-only tools:\n{rendered_tools}"
 
     def _chat_url(self) -> str:
         base_url = self.base_url.rstrip("/") + "/"

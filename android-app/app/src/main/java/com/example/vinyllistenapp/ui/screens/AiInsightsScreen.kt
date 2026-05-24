@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,16 +21,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,9 +46,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.vinyllistenapp.data.api.AiChatExportResponse
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.ui.components.BottomNavBar
@@ -61,6 +70,8 @@ private val suggestedPrompts =
         "What style did I explore most this month?",
     )
 
+private const val INTRO_MESSAGE = "Ask about your listening habits, collection patterns, moods, styles, or records."
+
 @Composable
 fun AiInsightsScreen(
     apiClient: VinylApiClient,
@@ -71,19 +82,48 @@ fun AiInsightsScreen(
     val messages =
         remember {
             mutableStateListOf<ChatMessage>(
-                ChatMessage.Assistant(
-                    "Ask about your listening habits, collection patterns, moods, styles, or records.",
-                ),
+                ChatMessage.Assistant(INTRO_MESSAGE),
             )
         }
     var inputValue by remember { mutableStateOf("") }
+    var isLoadingHistory by remember { mutableStateOf(true) }
     var isTyping by remember { mutableStateOf(false) }
+    var isClearingHistory by remember { mutableStateOf(false) }
+    var isExportingHistory by remember { mutableStateOf(false) }
+    var showClearConfirmation by remember { mutableStateOf(false) }
     var conversationId by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isInteractionEnabled = !isLoadingHistory && !isTyping && !isClearingHistory && !isExportingHistory
+
+    LaunchedEffect(Unit) {
+        try {
+            val history = apiClient.getAiChatHistory()
+            conversationId = history.conversationId
+            if (history.messages.isNotEmpty()) {
+                messages.clear()
+                messages.addAll(
+                    history.messages.map { message ->
+                        if (message.role == "user") {
+                            ChatMessage.User(message.content)
+                        } else {
+                            ChatMessage.Assistant(message.content)
+                        }
+                    },
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            messages.add(ChatMessage.Assistant(error.toUserMessage("Could not load AI Insights history.")))
+        } finally {
+            isLoadingHistory = false
+        }
+    }
 
     fun sendMessage(text: String) {
         val message = text.trim()
-        if (message.isEmpty() || isTyping) return
+        if (message.isEmpty() || !isInteractionEnabled) return
         messages.add(ChatMessage.User(message))
         isTyping = true
         inputValue = ""
@@ -104,6 +144,74 @@ fun AiInsightsScreen(
                 isTyping = false
             }
         }
+    }
+
+    fun clearHistory() {
+        if (!isInteractionEnabled) return
+        isClearingHistory = true
+        scope.launch {
+            try {
+                val response = apiClient.clearAiChatHistory(conversationId = conversationId)
+                conversationId = response.conversationId
+                messages.clear()
+                messages.add(ChatMessage.Assistant("Chat history cleared. $INTRO_MESSAGE"))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                messages.add(ChatMessage.Assistant(error.toUserMessage("Could not clear AI Insights history.")))
+            } finally {
+                isClearingHistory = false
+            }
+        }
+    }
+
+    fun exportHistory() {
+        if (!isInteractionEnabled) return
+        isExportingHistory = true
+        scope.launch {
+            try {
+                val response = apiClient.exportAiChatHistory(conversationId = conversationId)
+                val exportIntent =
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "AI Insights chat export")
+                        putExtra(Intent.EXTRA_TEXT, response.toShareText())
+                    }
+                context.startActivity(Intent.createChooser(exportIntent, "Export AI Insights chat"))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                messages.add(ChatMessage.Assistant(error.toUserMessage("Could not export AI Insights history.")))
+            } finally {
+                isExportingHistory = false
+            }
+        }
+    }
+
+    if (showClearConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text("Clear chat history?") },
+            text = { Text("This removes the saved AI Insights chat thread from backend history.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearConfirmation = false
+                        clearHistory()
+                    },
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = VinylColors.SurfacePrimary,
+            titleContentColor = VinylColors.TextPrimary,
+            textContentColor = VinylColors.TextSecondary,
+        )
     }
 
     Scaffold(
@@ -131,7 +239,11 @@ fun AiInsightsScreen(
                     .padding(top = VinylSpacing.Space2Xl),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
         ) {
-            InsightsHeader()
+            InsightsHeader(
+                actionsEnabled = isInteractionEnabled,
+                onClearHistory = { showClearConfirmation = true },
+                onExportHistory = ::exportHistory,
+            )
             Box(
                 modifier =
                     Modifier
@@ -150,7 +262,7 @@ fun AiInsightsScreen(
                     items(suggestedPrompts) { prompt ->
                         SuggestedPromptBubble(
                             prompt = prompt,
-                            enabled = !isTyping,
+                            enabled = isInteractionEnabled,
                             onPromptClick = ::sendMessage,
                         )
                     }
@@ -162,10 +274,15 @@ fun AiInsightsScreen(
                             TypingBubble()
                         }
                     }
+                    if (isLoadingHistory) {
+                        item {
+                            StatusBubble(text = "Loading history...")
+                        }
+                    }
                 }
                 ChatInputBar(
                     value = inputValue,
-                    enabled = !isTyping,
+                    enabled = isInteractionEnabled,
                     onValueChange = { inputValue = it },
                     onSend = { sendMessage(inputValue) },
                     modifier =
@@ -179,19 +296,77 @@ fun AiInsightsScreen(
 }
 
 @Composable
-private fun InsightsHeader() {
-    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs)) {
-        Text(
-            text = "Insights",
-            color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.headlineLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = "Listening patterns, moods, styles, and records",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.bodyLarge,
+private fun InsightsHeader(
+    actionsEnabled: Boolean,
+    onClearHistory: () -> Unit,
+    onExportHistory: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        ) {
+            Text(
+                text = "Insights",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.headlineLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Listening patterns, moods, styles, and records",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
+            InsightActionButton(
+                icon = Icons.Filled.FileDownload,
+                contentDescription = "Export AI Insights chat",
+                enabled = actionsEnabled,
+                onClick = onExportHistory,
+            )
+            InsightActionButton(
+                icon = Icons.Filled.Delete,
+                contentDescription = "Clear AI Insights chat",
+                enabled = actionsEnabled,
+                onClick = onClearHistory,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(VinylColors.SurfaceSecondary)
+                .border(1.dp, VinylColors.BorderDefault, CircleShape)
+                .clickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClickLabel = contentDescription,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) VinylColors.TextPrimary else VinylColors.TextSecondary,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -230,6 +405,11 @@ private fun SuggestedPromptBubble(
 
 @Composable
 private fun TypingBubble() {
+    StatusBubble(text = "Thinking...")
+}
+
+@Composable
+private fun StatusBubble(text: String) {
     Row(modifier = Modifier.fillMaxWidth()) {
         AssistantAvatar()
         Spacer(modifier = Modifier.width(VinylSpacing.SpaceSm))
@@ -242,7 +422,7 @@ private fun TypingBubble() {
                     .padding(VinylSpacing.SpaceMd),
         ) {
             Text(
-                text = "Thinking...",
+                text = text,
                 color = VinylColors.TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -376,3 +556,18 @@ private sealed class ChatMessage(
         text: String,
     ) : ChatMessage(text)
 }
+
+private fun AiChatExportResponse.toShareText(): String =
+    buildString {
+        appendLine("AI Insights chat export")
+        appendLine("Conversation: $conversationId")
+        appendLine("Exported at: $exportedAt")
+        appendLine()
+        messages.forEach { message ->
+            appendLine("${message.role.uppercase()}: ${message.content}")
+            if (message.usedTools.isNotEmpty()) {
+                appendLine("Tools: ${message.usedTools.joinToString(", ")}")
+            }
+            appendLine()
+        }
+    }

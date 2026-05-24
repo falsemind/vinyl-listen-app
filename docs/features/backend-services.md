@@ -333,10 +333,13 @@ The service keeps the HTTP contract stable while the runtime is still experiment
 - It returns `local-single-thread` when no conversation id is supplied.
 - It calls the configured `app/ai` adapter when `AI_CHAT_ENABLED=true`.
 - It returns a clear disabled assistant response when AI chat is off or provider config is incomplete.
+- It persists user and assistant messages in `ai_chat_sessions` and `ai_chat_messages`.
+- It passes recent persisted chat history to the adapter for conversation continuity.
+- It runs deterministic read-only insight tools before the model call and includes their results as bounded prompt context.
+- It exposes history, clear, and export endpoints for private chat data.
 - It logs provider, latency, and tool names without message content.
-- It does not persist chat history or query listening data yet.
 
-The first runtime adapter targets LM Studio's native `/api/v1/chat` path by default while still supporting OpenAI-compatible chat completions through `AI_CHAT_ENDPOINT_PATH`. Future LangChain or LangGraph orchestration should stay behind the same service boundary. Read-only tools should call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
+The first runtime adapter targets LM Studio's native `/api/v1/chat` path by default while still supporting OpenAI-compatible chat completions through `AI_CHAT_ENDPOINT_PATH`. Future LangChain or LangGraph orchestration should stay behind the same service boundary. Read-only tools call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
 
 ## Service Error Boundaries
 

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,17 +13,35 @@ class AiChatClientContext(BaseModel):
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    conversation_id: str | None = None
+    conversation_id: str | None = Field(default=None, max_length=36)
     message: str = Field(min_length=1, max_length=4000)
     client_context: AiChatClientContext | None = None
 
 
 class AiChatMessage(BaseModel):
-    role: Literal["assistant"]
+    role: Literal["user", "assistant"]
     content: str
+    used_tools: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
 
 
 class AiChatResponse(BaseModel):
     conversation_id: str
     message: AiChatMessage
     used_tools: list[str] = Field(default_factory=list)
+
+
+class AiChatHistoryResponse(BaseModel):
+    conversation_id: str
+    messages: list[AiChatMessage] = Field(default_factory=list)
+
+
+class AiChatClearResponse(BaseModel):
+    conversation_id: str
+    deleted_messages: int
+
+
+class AiChatExportResponse(BaseModel):
+    conversation_id: str
+    exported_at: datetime
+    messages: list[AiChatMessage] = Field(default_factory=list)

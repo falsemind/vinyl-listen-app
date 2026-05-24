@@ -219,7 +219,7 @@ fun VinylNavHost(
     }
 }
 
-private fun String?.isPortraitLockedOverflowRoute(): Boolean =
+internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
     this in
         setOf(
             VinylRoutes.CAPTURE_RECORD,
@@ -227,6 +227,7 @@ private fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
+            VinylRoutes.AI_INSIGHTS,
         )
 
 private const val MATCHED_ON_SEPARATOR = "\u001F"
