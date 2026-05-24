@@ -111,35 +111,63 @@ fun AnalyticsScreen(
             }
             SectionTitle("Plays Over Time")
             MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
-            SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
-            dashboard.topRecords.take(5).forEachIndexed { index, record ->
-                TopRecordAnalyticsCard(
-                    record = record,
-                    accentColor = analyticsAccent(index),
-                    maxPlays = dashboard.topRecords.maxOfOrNull { it.plays } ?: 1,
-                    onClick = { onOpenRecord(record.record.releaseId) },
-                )
+            if (dashboard.topRecords.isEmpty()) {
+                SectionTitle("Top Records")
+                AnalyticsEmptySectionText()
+            } else {
+                SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
+                dashboard.topRecords.take(5).forEachIndexed { index, record ->
+                    TopRecordAnalyticsCard(
+                        record = record,
+                        accentColor = analyticsAccent(index),
+                        maxPlays = dashboard.topRecords.maxOfOrNull { it.plays } ?: 1,
+                        onClick = { onOpenRecord(record.record.releaseId) },
+                    )
+                }
             }
             SectionTitle("Rating Distribution")
-            RatingDistributionCard(ratings = dashboard.ratingDistribution)
+            if (dashboard.ratingDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                RatingDistributionCard(ratings = dashboard.ratingDistribution)
+            }
             if (dashboard.moodDistribution.size > MOOD_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Mood Distribution", action = "View All", onActionClick = onViewAllMoods)
             } else {
                 SectionTitle("Mood Distribution")
             }
-            MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+            if (dashboard.moodDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+            }
             if (dashboard.styleDistribution.size > STYLE_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Style Distribution", action = "View All", onActionClick = onViewAllStyles)
             } else {
                 SectionTitle("Style Distribution")
             }
-            StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
+            if (dashboard.styleDistribution.isEmpty()) {
+                AnalyticsEmptySectionText()
+            } else {
+                StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
+            }
         }
     }
 }
 
 private const val MOOD_DISTRIBUTION_PREVIEW_LIMIT = 10
 private const val STYLE_DISTRIBUTION_PREVIEW_LIMIT = 10
+private const val ANALYTICS_EMPTY_SECTION_TEXT = "No data yet. Start you listening journey!"
+
+@Composable
+private fun AnalyticsEmptySectionText() {
+    Text(
+        modifier = Modifier.fillMaxWidth(),
+        text = ANALYTICS_EMPTY_SECTION_TEXT,
+        color = VinylColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
 
 @Composable
 private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
