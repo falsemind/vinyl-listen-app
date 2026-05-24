@@ -22,6 +22,8 @@ class AiInsightToolRunner:
         normalized_message = message.lower()
         results = [self._listening_summary(db)]
 
+        if self._should_include_session_notes(normalized_message):
+            results.append(self._session_notes(db))
         if self._mentions_any(normalized_message, ("recent", "lately", "latest", "night", "month", "recommend")):
             results.append(self._recent_sessions(db))
         if self._mentions_any(normalized_message, ("top", "most", "record", "recommend", "played", "play")):
@@ -59,6 +61,28 @@ class AiInsightToolRunner:
                 details.append(f"side={session.vinyl_side}")
             lines.append("; ".join(details))
         return AiChatToolResult(name="get_recent_sessions", content="\n".join(lines))
+
+    def _session_notes(self, db: Session) -> AiChatToolResult:
+        rows = self.sessions_repository.get_recent_notes_with_releases(db, limit=8)
+        if not rows:
+            return AiChatToolResult(name="get_session_notes", content="No saved session notes are available yet.")
+
+        lines = []
+        for session, release in rows:
+            note = self._clean_note_text(session.notes)
+            if not note:
+                continue
+            played_at = self._format_datetime(session.played_at or session.created_at)
+            details = [f"{played_at}: {release.artist} - {release.title}"]
+            if session.mood:
+                details.append(f"mood={session.mood}")
+            if session.rating is not None:
+                details.append(f"rating={session.rating}")
+            if session.vinyl_side:
+                details.append(f"side={session.vinyl_side}")
+            details.append(f'note="{note}"')
+            lines.append("; ".join(details))
+        return AiChatToolResult(name="get_session_notes", content="\n".join(lines))
 
     def _top_records(self, db: Session) -> AiChatToolResult:
         records = self.analytics_service.get_top_records(db, limit=5)
@@ -104,6 +128,28 @@ class AiInsightToolRunner:
 
     def _mentions_any(self, message: str, terms: tuple[str, ...]) -> bool:
         return any(term in message for term in terms)
+
+    def _should_include_session_notes(self, message: str) -> bool:
+        return self._mentions_any(
+            message,
+            (
+                "note",
+                "thought",
+                "impression",
+                "feeling",
+                "felt",
+                "special",
+                "recommend",
+                "suggest",
+                "why",
+            ),
+        )
+
+    def _clean_note_text(self, value: str | None) -> str:
+        cleaned_value = " ".join((value or "").split())
+        if len(cleaned_value) <= 280:
+            return cleaned_value
+        return f"{cleaned_value[:277]}..."
 
     def _format_datetime(self, value: datetime | None) -> str:
         if value is None:

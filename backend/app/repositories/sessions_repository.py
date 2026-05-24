@@ -56,6 +56,22 @@ class SessionsRepository:
         )
 
     @staticmethod
+    def get_recent_notes_with_releases(
+        db: Session,
+        *,
+        limit: int,
+    ):
+        return (
+            db.query(Sessions, Releases)
+            .join(Releases, Sessions.release_id == Releases.id)
+            .filter(Sessions.notes.isnot(None))
+            .filter(Sessions.notes != "")
+            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
     def count_all(db: Session) -> int:
         return db.query(func.count(Sessions.id)).scalar() or 0
 
