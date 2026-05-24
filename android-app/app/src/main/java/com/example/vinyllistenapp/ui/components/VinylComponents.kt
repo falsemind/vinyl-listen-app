@@ -158,6 +158,49 @@ fun FloatingGlassButton(
 }
 
 @Composable
+fun FloatingIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val brush =
+        Brush.linearGradient(
+            listOf(
+                VinylColors.AccentGreen.copy(alpha = 0.85f),
+                VinylColors.AccentGreen.copy(alpha = 0.70f),
+            ),
+        )
+
+    Box(
+        modifier =
+            modifier
+                .size(56.dp)
+                .shadow(
+                    elevation = 12.dp,
+                    shape = VinylShapes.Floating,
+                    ambientColor = VinylColors.ShadowBlack,
+                    spotColor = VinylColors.ShadowBlack,
+                ).clip(VinylShapes.Floating)
+                .background(brush)
+                .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
+                .clickable(
+                    onClickLabel = contentDescription,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(28.dp),
+        )
+    }
+}
+
+@Composable
 fun SecondaryButton(
     label: String,
     onClick: () -> Unit,
