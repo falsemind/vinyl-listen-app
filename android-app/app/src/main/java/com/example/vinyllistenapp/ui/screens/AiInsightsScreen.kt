@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -37,10 +38,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +59,7 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
+import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -100,11 +104,15 @@ internal fun AiInsightsScreen(
 ) {
     val context = LocalContext.current
     val chatListState = rememberLazyListState()
+    val scrollShortcutScope = rememberCoroutineScope()
     val messages = state.messages
     val isInteractionEnabled =
         !state.isLoadingHistory && !state.isTyping && !state.isClearingHistory && !state.isExportingHistory
     val hasUserMessages = messages.any { it is ChatMessage.User }
     val historyActionsEnabled = isInteractionEnabled && hasUserMessages
+    val showScrollToLatest by remember {
+        derivedStateOf { chatListState.canScrollForward }
+    }
 
     LaunchedEffect(Unit) {
         if (!state.hasLoadedHistory && !state.isLoadingHistory) {
@@ -318,6 +326,26 @@ internal fun AiInsightsScreen(
                             .align(Alignment.BottomCenter)
                             .padding(bottom = innerPadding.calculateBottomPadding() + VinylSpacing.SpaceLg),
                 )
+                if (showScrollToLatest) {
+                    FloatingIconButton(
+                        icon = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "Scroll to latest message",
+                        onClick = {
+                            scrollShortcutScope.launch {
+                                val lastItemIndex = chatListState.layoutInfo.totalItemsCount - 1
+                                if (lastItemIndex >= 0) {
+                                    chatListState.animateScrollToItem(lastItemIndex)
+                                }
+                            }
+                        },
+                        modifier =
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(
+                                    bottom = innerPadding.calculateBottomPadding() + 80.dp,
+                                ),
+                    )
+                }
             }
         }
     }

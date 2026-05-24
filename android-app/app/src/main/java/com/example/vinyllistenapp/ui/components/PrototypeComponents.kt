@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.components
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,16 +49,19 @@ internal fun ScreenContent(
     subtitle: String,
     innerPadding: PaddingValues = PaddingValues(),
     topPadding: androidx.compose.ui.unit.Dp = VinylSpacing.Space2Xl,
+    scrollState: ScrollState? = null,
     topStartContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val contentScrollState = scrollState ?: rememberScrollState()
+
     Column(
         modifier =
             Modifier
                 .fillMaxSize()
                 .background(VinylColors.AppBackground)
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScrollState)
                 .padding(horizontal = VinylSpacing.SpaceMd)
                 .padding(top = topPadding, bottom = VinylSpacing.Space2Xl),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
