@@ -36,4 +36,9 @@ class VinylNavHostStateTest {
     fun aiInsightsRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.AI_INSIGHTS.isPortraitLockedOverflowRoute())
     }
+
+    @Test
+    fun recordDetailRouteIsPortraitLocked() {
+        assertTrue(VinylRoutes.RECORD_DETAIL_PATTERN.isPortraitLockedOverflowRoute())
+    }
 }
