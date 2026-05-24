@@ -773,7 +773,7 @@ Used by the **Insights screen** chat shell.
 
 The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted in the backend so the assistant can receive recent conversation history and the user has clear/export paths.
 
-Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn.
+Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn. Saved session notes are included as high-priority context for recommendation and subjective insight prompts when notes are present.
 
 ## POST /ai/chat
 

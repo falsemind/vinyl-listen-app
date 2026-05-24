@@ -285,7 +285,8 @@ Implemented Phase 3 adapter shape:
 Implemented Phase 4 shape:
 
 - `backend/app/ai/insight_tools.py` runs deterministic read-only tools before the model call.
-- Tool context covers listening summary, recent sessions, top records, style distribution, mood distribution, and rating distribution.
+- Tool context covers listening summary, session notes, recent sessions, top records, style distribution, mood distribution, and rating distribution.
+- Session notes are treated as high-priority context for recommendations and subjective insight questions because they contain user-entered listening impressions.
 - `AiInsightsService` passes tool context to the adapter and returns persisted `used_tools` names.
 - Tools stay behind backend services/repositories; the model never receives direct database access.
 
