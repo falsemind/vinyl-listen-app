@@ -42,6 +42,25 @@ def test_tool_runner_selects_mood_and_rating_tools() -> None:
     assert "5: 2" in rendered_context
 
 
+def test_tool_runner_prioritizes_session_notes_for_recommendations() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+    _create_collection_tables(engine)
+
+    with session_factory() as db:
+        results = AiInsightToolRunner().run(db, message="Recommend something special based on my notes")
+
+    assert [result.name for result in results] == [
+        "get_listening_summary",
+        "get_session_notes",
+        "get_recent_sessions",
+        "get_top_records",
+    ]
+    rendered_context = "\n".join(result.content for result in results)
+    assert 'note="Huge low end, felt meditative after a long day."' in rendered_context
+    assert 'note="Warm and loose, best for late-night focus."' in rendered_context
+
+
 def _create_collection_tables(engine) -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql("""
@@ -82,12 +101,15 @@ def _create_collection_tables(engine) -> None:
                  '["House"]', '2026-01-01', '2026-01-01')
             """)
         connection.exec_driver_sql("""
-            INSERT INTO sessions (id, release_id, rating, mood, played_at, vinyl_side, created_at)
+            INSERT INTO sessions (id, release_id, rating, mood, notes, played_at, vinyl_side, created_at)
             VALUES
                 ('session-1', 'release-1', 5, 'Focused',
+                 'Huge low end, felt meditative after a long day.',
                  '2026-01-03T10:00:00+00:00', 'A', '2026-01-03T10:00:00+00:00'),
                 ('session-2', 'release-1', 4, 'Focused',
+                 NULL,
                  '2026-01-02T10:00:00+00:00', 'B', '2026-01-02T10:00:00+00:00'),
                 ('session-3', 'release-2', 5, 'Late Night',
+                 'Warm and loose, best for late-night focus.',
                  '2026-01-01T10:00:00+00:00', 'A', '2026-01-01T10:00:00+00:00')
             """)
