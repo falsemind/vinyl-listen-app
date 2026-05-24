@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +61,8 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -186,6 +189,18 @@ private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
     var availableChartWidthPx by remember { mutableIntStateOf(0) }
     val availableChartWidth = with(density) { availableChartWidthPx.toDp() }
     val shouldFillWidth = availableChartWidthPx > 0 && availableChartWidth >= minimumChartWidth
+    val shouldSnapToCurrentMonth = availableChartWidthPx > 0 && !shouldFillWidth
+
+    LaunchedEffect(shouldSnapToCurrentMonth, displayMonths.lastOrNull()?.month) {
+        if (shouldSnapToCurrentMonth) {
+            val maxScroll =
+                monthScrollState.maxValue.takeIf { it > 0 }
+                    ?: snapshotFlow { monthScrollState.maxValue }
+                        .filter { it > 0 }
+                        .first()
+            monthScrollState.scrollTo(maxScroll)
+        }
+    }
 
     AccentCard {
         Box(
