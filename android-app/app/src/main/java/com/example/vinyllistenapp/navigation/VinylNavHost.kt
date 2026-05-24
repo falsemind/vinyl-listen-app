@@ -138,7 +138,26 @@ fun VinylNavHost(
             SessionLoggingScreen(
                 releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
                 apiClient = apiClient,
-                onSave = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                onSave = { releaseId ->
+                    val previousRoute = navController.previousBackStackEntry?.destination?.route
+                    navController.navigate(VinylRoutes.recordDetail(releaseId)) {
+                        when (previousRoute) {
+                            VinylRoutes.RECORD_DETAIL_PATTERN -> {
+                                popUpTo(VinylRoutes.RECORD_DETAIL_PATTERN) { inclusive = true }
+                            }
+
+                            VinylRoutes.MATCH_CONFIRMATION,
+                            VinylRoutes.MANUAL_SEARCH,
+                            -> {
+                                popUpTo(VinylRoutes.HOME)
+                            }
+
+                            else -> {
+                                popUpTo(backStackEntry.destination.id) { inclusive = true }
+                            }
+                        }
+                    }
+                },
                 onCancel = { navController.popBackStack() },
             )
         }
@@ -150,9 +169,9 @@ fun VinylNavHost(
                 releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
                 apiClient = apiClient,
                 onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
-                onHome = {
-                    navController.navigate(VinylRoutes.HOME) {
-                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(VinylRoutes.HOME)
                     }
                 },
             )
@@ -227,6 +246,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
+            VinylRoutes.RECORD_DETAIL_PATTERN,
             VinylRoutes.AI_INSIGHTS,
         )
 
