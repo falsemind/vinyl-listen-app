@@ -46,7 +46,7 @@ Home
  └── Settings
 ```
 
-Home, Analytics, and Settings are active bottom-navigation routes. Settings currently shows lightweight app information, while Analytics loads the implemented dashboard endpoints.
+Home, Analytics, Insights, and Settings are active bottom-navigation routes. Settings currently shows lightweight app information, Analytics loads the implemented dashboard endpoints, and Insights shows the initial single-thread AI chat shell.
 
 ---
 
@@ -63,6 +63,7 @@ Home, Analytics, and Settings are active bottom-navigation routes. Settings curr
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
 |Analytics|`analytics`|
+|AI Insights|`ai_insights`|
 |Top Records|`top_records`|
 |Settings|`settings`|
 ---
@@ -434,6 +435,36 @@ This screen exists to support future configuration features such as:
 |---|---|
 |Back|`home`|
 
+---
+
+# 12. AI Insights Screen
+
+### Route
+
+```
+ai_insights
+```
+
+### Purpose
+
+Single-thread chat shell for future AI-assisted listening insights.
+
+### Displays
+
+- Screen title: `Insights`
+- Suggested prompts
+- Message list
+- Text input
+- Send action
+
+### Navigation
+
+|Action|Destination|
+|---|---|
+|Tap Home tab|`home`|
+|Tap Stats tab|`analytics`|
+|Tap Settings tab|`settings`|
+
 # Navigation Argument Definitions
 
 |Argument|Type|Description|
@@ -499,6 +530,10 @@ NavHost(
 
     composable("analytics") {
         AnalyticsScreen()
+    }
+
+    composable("ai_insights") {
+        AiInsightsScreen()
     }
 
     composable("top_records") {

@@ -18,6 +18,7 @@ object VinylRoutes {
     const val SESSION_LOGGING_PATTERN = "session_logging/{$RELEASE_ID}"
     const val RECORD_DETAIL_PATTERN = "record_detail/{$RELEASE_ID}"
     const val ANALYTICS = "analytics"
+    const val AI_INSIGHTS = "ai_insights"
     const val SETTINGS = "settings"
 
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"

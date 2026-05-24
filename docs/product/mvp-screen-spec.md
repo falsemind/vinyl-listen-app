@@ -49,6 +49,7 @@ Primary tabs:
 ```
 Home
 Stats
+Insights
 Settings
 ```
 
@@ -96,6 +97,7 @@ Tap Session → Record Detail Screen
 Tap Record → Record Detail Screen
 Tap Recent Sessions View All → Recent Sessions Screen
 Tap Stats tab → Analytics Screen
+Tap Insights tab → AI Insights Screen
 Tap Settings tab → Settings Screen
 ```
 
@@ -598,6 +600,27 @@ Current MVP content is lightweight and informational.
 
 ---
 
+# Screen 12 — AI Insights
+
+## Purpose
+
+Provide the initial single-thread chat shell for future AI-assisted listening insights.
+
+## Content
+
+- Suggested prompts
+- Chat message list
+- Text input
+- Send action
+
+## Constraints
+
+- Use app design-system styling rather than mockup-specific visual details.
+- Use `style` wording for collection categories.
+- Keep the first implementation to one chat thread.
+
+---
+
 # MVP Navigation Flow
 
 ```
@@ -624,6 +647,7 @@ Record Detail → Add Session
 Home → Session → Record Detail
 Home → Recent Sessions → Record Detail
 Home → Analytics → Top Records → Record Detail
+Home → Insights
 Home → Settings
 ```
 

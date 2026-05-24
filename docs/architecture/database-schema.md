@@ -48,6 +48,8 @@ sessions
 session_moods
 discogs_release_cache
 identify_jobs
+ai_chat_sessions
+ai_chat_messages
 ```
 
 Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP. Style analytics reads `releases.styles` and counts those release styles through logged sessions.
@@ -65,6 +67,9 @@ releases
 
 identify_jobs
    └── stores short-lived identify progress, result, and error payloads
+
+ai_chat_sessions
+   └── ai_chat_messages
 ```
 
 ---
@@ -309,6 +314,62 @@ upload received
 Cancellation is cooperative. `POST /api/v1/identify/jobs/{job_id}/cancel` sets `cancel_requested_at` for active jobs. The worker marks the row `canceled` after the next cancellation checkpoint. If the job reaches `completed`, `failed`, or `expired` first, that terminal status is preserved.
 
 Image bytes are not stored in this table.
+
+---
+
+# Table: ai_chat_sessions
+
+Stores persistent AI Insights chat conversations. The MVP uses one local conversation by default: `local-single-thread`.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID/string|Primary key returned as `conversation_id`|
+|created_at|TIMESTAMP|Conversation creation time|
+|updated_at|TIMESTAMP|Last message time|
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (updated_at)
+```
+
+# Table: ai_chat_messages
+
+Stores persisted user and assistant messages for AI Insights.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID string|Primary key|
+|conversation_id|UUID/string|Foreign key to `ai_chat_sessions.id`|
+|role|TEXT|`user` or `assistant`|
+|content|TEXT|Message content|
+|used_tools|JSONB|Assistant tool names, empty for user messages|
+|client_context|JSONB|Bounded request context such as timezone on user messages|
+|created_at|TIMESTAMP|Message creation time|
+
+### Foreign Keys
+
+```
+ai_chat_messages.conversation_id -> ai_chat_sessions.id ON DELETE CASCADE
+```
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (conversation_id, created_at)
+
+INDEX (conversation_id, role)
+```
+
+`DELETE /api/v1/ai/chat/history` deletes both the session and its messages. `GET /api/v1/ai/chat/export` returns the persisted messages for user-controlled export.
 
 ---
 

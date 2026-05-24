@@ -2,6 +2,7 @@ package com.example.vinyllistenapp.navigation
 
 import com.example.vinyllistenapp.domain.MatchCandidate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VinylNavHostStateTest {
@@ -29,5 +30,15 @@ class VinylNavHostStateTest {
         val restored = decodeMatchCandidatesFromSavedState(encodeMatchCandidatesForSavedState(candidates))
 
         assertEquals(candidates, restored)
+    }
+
+    @Test
+    fun aiInsightsRouteIsPortraitLocked() {
+        assertTrue(VinylRoutes.AI_INSIGHTS.isPortraitLockedOverflowRoute())
+    }
+
+    @Test
+    fun recordDetailRouteIsPortraitLocked() {
+        assertTrue(VinylRoutes.RECORD_DETAIL_PATTERN.isPortraitLockedOverflowRoute())
     }
 }

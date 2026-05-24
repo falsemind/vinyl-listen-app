@@ -15,6 +15,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
+| `ai_insights_service.py` | Own the AI Insights chat service boundary and provider fallback behavior. | `app/ai` runtime adapter, future read-only analytics/session/release tools. |
 
 ## IdentifyService
 
@@ -322,6 +323,25 @@ Analytics endpoints read from persisted releases and sessions:
 
 Style distribution intentionally uses `releases.styles`, not broad `genres`, because the Analytics screen is meant to expose specific listening patterns.
 
+## AiInsightsService
+
+`AiInsightsService` powers `POST /api/v1/ai/chat` for the Insights screen chat shell.
+
+The service keeps the HTTP contract stable while the runtime is still experimental:
+
+- It validates the chat message and optional conversation id.
+- It returns `local-single-thread` when no conversation id is supplied.
+- It calls the configured `app/ai` adapter when `AI_CHAT_ENABLED=true`.
+- It returns a clear disabled assistant response when AI chat is off or provider config is incomplete.
+- It persists user and assistant messages in `ai_chat_sessions` and `ai_chat_messages`.
+- It passes recent persisted chat history to the adapter for conversation continuity.
+- It runs deterministic read-only insight tools before the model call and includes their results as bounded prompt context.
+- It prioritizes saved session notes when present for recommendation, subjective insight, and "why" questions because notes capture the user's personal listening impressions.
+- It exposes history, clear, and export endpoints for private chat data.
+- It logs provider, latency, and tool names without message content.
+
+The first runtime adapter targets LM Studio's native `/api/v1/chat` path by default while still supporting OpenAI-compatible chat completions through `AI_CHAT_ENDPOINT_PATH`. Future LangChain or LangGraph orchestration should stay behind the same service boundary. Read-only tools call existing analytics/session/release service or repository methods rather than exposing unrestricted database access to the agent runtime.
+
 ## Service Error Boundaries
 
 Routes translate service errors into HTTP status codes:
@@ -330,6 +350,7 @@ Routes translate service errors into HTTP status codes:
 - Discogs import validation: `422`.
 - Missing local release/session: `404`.
 - Discogs upstream failures: `404` for missing Discogs releases when detectable, otherwise `502`.
+- AI chat validation errors: `422`.
 
 ## Testing Coverage
 

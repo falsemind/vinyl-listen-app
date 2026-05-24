@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
@@ -66,6 +67,7 @@ fun AnalyticsScreen(
     apiClient: VinylApiClient,
     onHome: () -> Unit,
     onOpenRecord: (String) -> Unit,
+    onInsights: () -> Unit,
     onSettings: () -> Unit,
     onViewAllTopRecords: () -> Unit,
     onViewAllMoods: () -> Unit,
@@ -93,6 +95,7 @@ fun AnalyticsScreen(
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = true, onClick = {}),
+                        BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onSettings),
                     ),
             )

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
@@ -63,6 +64,7 @@ fun HomeScreen(
     onLogSession: () -> Unit,
     onOpenRecord: (String) -> Unit,
     onOpenAnalytics: () -> Unit,
+    onOpenInsights: () -> Unit,
     onOpenSettings: () -> Unit,
     onViewAllSessions: () -> Unit,
 ) {
@@ -88,6 +90,7 @@ fun HomeScreen(
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = true, onClick = {}),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
+                        BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onOpenInsights),
                         BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onOpenSettings),
                     ),
             )

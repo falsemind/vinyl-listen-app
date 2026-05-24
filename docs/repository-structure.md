@@ -91,9 +91,13 @@ backend/
 ```text
 backend/app/
 ├── main.py
+├── ai/
+│   ├── chat_adapter.py
+│   └── insight_tools.py
 ├── api/
 │   ├── router.py
 │   └── routes/
+│       ├── ai.py
 │       ├── analytics.py
 │       ├── health.py
 │       ├── identify.py
@@ -109,6 +113,7 @@ backend/app/
 │   ├── db.py
 │   └── session.py
 ├── models/
+│   ├── ai_chat.py
 │   ├── discogs_release_cache.py
 │   ├── identify_job.py
 │   ├── releases.py
@@ -117,6 +122,7 @@ backend/app/
 ├── pipelines/
 │   └── identification/
 ├── repositories/
+│   ├── ai_chat_repository.py
 │   ├── analytics_repository.py
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
@@ -124,11 +130,13 @@ backend/app/
 │   ├── sessions_moods_repository.py
 │   └── sessions_repository.py
 ├── schemas/
+│   ├── ai.py
 │   ├── analytics.py
 │   ├── identify.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
+│   ├── ai_insights_service.py
 │   ├── analytics_service.py
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
@@ -142,14 +150,15 @@ backend/app/
 | Layer | Responsibility |
 | --- | --- |
 | `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
-| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, and `/analytics`. |
+| `ai/` | AI runtime adapters owned by the backend, currently disabled fallback plus LM Studio native chat and OpenAI-compatible chat completions support. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/sessions`, `/analytics`, and `/ai`. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, listening sessions, and moods. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, AI chat history, listening sessions, and moods. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -176,6 +185,7 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/rating-distribution` | `api/routes/analytics.py` | `AnalyticsService` rating frequency aggregation. |
 | `GET /analytics/mood-distribution` | `api/routes/analytics.py` | `AnalyticsService` mood frequency aggregation. |
 | `GET /analytics/style-distribution` | `api/routes/analytics.py` | `AnalyticsService` release style frequency aggregation. |
+| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` deterministic chat skeleton. |
 
 ### Identification Pipeline Package
 
@@ -242,6 +252,7 @@ backend/alembic/
     ├── 7ab6c5d4e3f2_add_identify_job_client_key.py
     ├── d2b8c7e9f041_add_identify_job_stale_recovery_index.py
     ├── f3a4b5c6d7e8_add_identify_job_cancel_requested_at.py
+    ├── c8f2d4a9b6e1_add_ai_chat_history.py
     └── eed6974773b8_init.py
 
 backend/scripts/
@@ -326,6 +337,7 @@ android-app/
 │       │   │       │   ├── StatusFeedback.kt
 │       │   │       │   └── VinylComponents.kt
 │       │   │       ├── screens/
+│       │   │       │   ├── AiInsightsScreen.kt
 │       │   │       │   ├── AnalyticsScreen.kt
 │       │   │       │   ├── CaptureRecordScreen.kt
 │       │   │       │   ├── HomeScreen.kt
@@ -381,9 +393,9 @@ android-app/
 | `data/` | Prototype fallback data and backend API client code. |
 | `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
 | `domain/` | UI-facing domain models for records, release side options, sessions, candidates, Home summaries, and analytics dashboard data. |
-| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, settings, and View All screens. |
+| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
-| `ui/screens/` | Home, analytics, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, AI insights, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
