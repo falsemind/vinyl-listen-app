@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -32,6 +33,7 @@ import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
 import com.example.vinyllistenapp.ui.screens.SettingsScreen
 import com.example.vinyllistenapp.ui.screens.StyleDistributionScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
+import com.example.vinyllistenapp.ui.screens.rememberAiInsightsScreenState
 
 @Composable
 fun VinylNavHost(
@@ -39,6 +41,8 @@ fun VinylNavHost(
     modifier: Modifier = Modifier,
 ) {
     val apiClient = remember { VinylApiClient() }
+    val aiInsightsState = rememberAiInsightsScreenState()
+    val aiInsightsRequestScope = rememberCoroutineScope()
     var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
         mutableStateOf(MockVinylData.matchCandidates)
     }
@@ -195,6 +199,8 @@ fun VinylNavHost(
         composable(VinylRoutes.AI_INSIGHTS) {
             AiInsightsScreen(
                 apiClient = apiClient,
+                state = aiInsightsState,
+                requestScope = aiInsightsRequestScope,
                 onHome = {
                     navController.navigate(VinylRoutes.HOME) {
                         popUpTo(VinylRoutes.HOME) { inclusive = true }
