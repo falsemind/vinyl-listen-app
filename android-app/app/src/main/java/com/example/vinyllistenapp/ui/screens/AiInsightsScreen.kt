@@ -502,16 +502,16 @@ private fun ChatMessageBubble(message: ChatMessage) {
                 Modifier
                     .fillMaxWidth(0.82f)
                     .clip(VinylShapes.Card)
-                    .background(if (isUser) VinylColors.AccentGreen else VinylColors.SurfacePrimary)
+                    .background(VinylColors.SurfacePrimary)
                     .border(
                         width = 1.dp,
-                        color = if (isUser) Color.Transparent else VinylColors.BorderDefault,
+                        color = if (isUser) VinylColors.AccentGreen else VinylColors.AccentPurple,
                         shape = VinylShapes.Card,
                     ).padding(VinylSpacing.SpaceMd),
         ) {
             Text(
                 text = message.text,
-                color = if (isUser) VinylColors.TextOnAccent else VinylColors.TextPrimary,
+                color = VinylColors.TextPrimary,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
