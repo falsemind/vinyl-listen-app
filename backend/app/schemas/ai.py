@@ -57,7 +57,7 @@ class SpotifyListeningImportRequest(BaseModel):
 
 class SpotifyListeningImportResponse(BaseModel):
     batch_id: str
-    source_paths: list[str]
+    source_files: list[str]
     total_items: int
     imported_count: int
     duplicate_count: int

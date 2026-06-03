@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes.ai import get_ai_insights_service, get_spotify_listening_import_service
+from app.core.config import settings
 from app.database.session import get_db
 from app.main import app
 from app.services.ai_insights_service import (
@@ -101,7 +103,7 @@ class StubSpotifyListeningImportService:
     def import_files(
         self,
         db: object,
-        file_paths: list[str],
+        file_paths: list[Path],
         *,
         batch_size: int,
         refresh_rollups: bool,
@@ -257,7 +259,11 @@ def test_chat_history_endpoint_rejects_long_conversation_id() -> None:
     assert response.status_code == 422
 
 
-def test_spotify_import_endpoint_returns_import_counts() -> None:
+def test_spotify_import_endpoint_returns_import_counts(monkeypatch, tmp_path) -> None:
+    import_file = tmp_path / "Streaming_History_Audio_2019.json"
+    import_file.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
     service = StubSpotifyListeningImportService()
     app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
     app.dependency_overrides[get_db] = lambda: object()
@@ -266,7 +272,7 @@ def test_spotify_import_endpoint_returns_import_counts() -> None:
         response = client.post(
             "/api/v1/ai/spotify/import",
             json={
-                "file_paths": ["/data/spotify/Streaming_History_Audio_2019.json"],
+                "file_paths": ["Streaming_History_Audio_2019.json"],
                 "batch_size": 500,
                 "refresh_rollups": True,
             },
@@ -275,14 +281,14 @@ def test_spotify_import_endpoint_returns_import_counts() -> None:
     assert response.status_code == 200
     assert service.calls == [
         {
-            "file_paths": ["/data/spotify/Streaming_History_Audio_2019.json"],
+            "file_paths": [import_file],
             "batch_size": 500,
             "refresh_rollups": True,
         }
     ]
     assert response.json() == {
         "batch_id": "spotify-batch-1",
-        "source_paths": ["/data/spotify/Streaming_History_Audio_2019.json"],
+        "source_files": ["Streaming_History_Audio_2019.json"],
         "total_items": 3,
         "imported_count": 2,
         "duplicate_count": 1,
@@ -290,3 +296,44 @@ def test_spotify_import_endpoint_returns_import_counts() -> None:
         "error_count": 0,
         "error_summary": [],
     }
+
+
+def test_spotify_import_endpoint_rejects_absolute_paths(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
+    service = StubSpotifyListeningImportService()
+    app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
+    app.dependency_overrides[get_db] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/spotify/import",
+            json={"file_paths": ["/etc/passwd"]},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "spotify_import_path_invalid",
+            "message": "Spotify import files must be relative to the configured import directory.",
+        }
+    }
+    assert service.calls == []
+
+
+def test_spotify_import_endpoint_rejects_path_escape(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
+    service = StubSpotifyListeningImportService()
+    app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
+    app.dependency_overrides[get_db] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/spotify/import",
+            json={"file_paths": ["../outside.json"]},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "spotify_import_path_invalid"
+    assert service.calls == []

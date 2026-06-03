@@ -864,31 +864,33 @@ Deletes the persisted conversation for the requested `conversation_id`, or `loca
 
 ## POST /ai/spotify/import
 
-Imports local Spotify `end_song` JSON export files from backend-local file paths. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
+Imports local Spotify `end_song` JSON export files from the configured backend import directory. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
 
 ### Request
 
 ```json
 {
   "file_paths": [
-    "/data/spotify/Streaming_History_Audio_2019.json",
-    "/data/spotify/Streaming_History_Audio_2020.json"
+    "Streaming_History_Audio_2019.json",
+    "Streaming_History_Audio_2020.json"
   ],
   "batch_size": 1000,
   "refresh_rollups": true
 }
 ```
 
-`file_paths` must contain 1-8 paths visible to the backend process. `batch_size` defaults to `1000` and must be between `1` and `10000`. `refresh_rollups` defaults to `true`.
+`file_paths` must contain 1-8 relative file names under `SPOTIFY_IMPORT_DIR`, which defaults to `spotify_import` under the backend working directory. Absolute paths, `..` path escapes, symlinks, and directories are rejected. In Docker, `./spotify_import` is mounted to `/app/backend/spotify_import`.
+
+`batch_size` defaults to `1000` and must be between `1` and `10000`. `refresh_rollups` defaults to `true`.
 
 ### Response
 
 ```json
 {
   "batch_id": "spotify-batch-id",
-  "source_paths": [
-    "/data/spotify/Streaming_History_Audio_2019.json",
-    "/data/spotify/Streaming_History_Audio_2020.json"
+  "source_files": [
+    "Streaming_History_Audio_2019.json",
+    "Streaming_History_Audio_2020.json"
   ],
   "total_items": 12000,
   "imported_count": 11800,
