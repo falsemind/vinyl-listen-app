@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     ai_chat_api_key: str | None = None
     ai_chat_timeout_seconds: float = 30.0
     ai_chat_temperature: float = 0.2
+    spotify_import_dir: str = "spotify_import"
 
     identify_ocr_backend: Literal["auto", "mlx_vlm", "paddleocr_vl", "tesseract"] = "auto"
     identify_max_concurrent_jobs: int = 1

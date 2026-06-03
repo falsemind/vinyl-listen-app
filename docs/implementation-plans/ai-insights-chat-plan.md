@@ -326,7 +326,7 @@ Goal: enrich AI Insights with local Spotify listening-history signals while keep
 
 Starter scope:
 
-- Import Spotify `end_song` JSON export files from backend-local file paths. Android upload is out of scope for the first slice.
+- Import Spotify `end_song` JSON export files from relative file names under a configured backend import directory. Android upload is out of scope for the first slice.
 - Retain useful event fields: `ts`, `ms_played`, `conn_country`, `master_metadata_track_name`, `master_metadata_album_artist_name`, `master_metadata_album_album_name`, `reason_start`, `reason_end`, `shuffle`, `skipped`, `offline`, and `offline_timestamp`.
 - Skip fields for the first slice: `username`, `ip_addr_decrypted`, `user_agent_decrypted`, `incognito_mode`, `platform`, `spotify_track_uri`, and podcast/episode fields.
 - Derive query-friendly fields during import: local date, local hour, weekday, year-month, normalized artist/album/track names, and a meaningful-listen flag.
@@ -347,8 +347,17 @@ Implemented Phase 6 schema/import shape:
 
 - `spotify_listening_import_batches` tracks backend-local import status, source paths, counts, and error summaries.
 - `spotify_listening_events` stores filtered song events, normalized artist/album/track names, date buckets, meaningful-listen flag, indexes, and a unique dedupe key.
+- `POST /api/v1/ai/spotify/import` resolves relative file names under the configured import directory, rejects absolute paths/path escapes/symlinks, and passes validated files to `SpotifyListeningImportService.import_files(...)`.
 - `SpotifyListeningImportService.import_files(...)` reads local JSON exports, drops out-of-scope/private fields, batches inserts, dedupes repeated imports, and reports imported/duplicate/skipped/error counts.
-- No Android upload flow, rollup tables, collection matching, or AI tools are included in this slice.
+- No Android upload flow or AI tools are included in this slice.
+
+Implemented Phase 6 rollup/matching shape:
+
+- Summary tables cover artist, album, track, hourly, monthly artist, and skip/end-reason rollups.
+- `SpotifyListeningRollupService.refresh(...)` rebuilds summary tables from imported events and runs synchronously at the end of import.
+- Collection matching uses exact normalized artist matches and exact normalized artist+album matches against known local releases.
+- Match tables store release ids, confidence score, match type, and explanation so later AI tools can cite why a Spotify signal maps to a known release.
+- Track-level matching is not implemented in this slice because the known-release data used here does not expose reliable track metadata.
 
 Performance approach:
 
@@ -367,6 +376,7 @@ Risks and mitigations:
 Deferred:
 
 - Embeddings/RAG for Spotify history.
+- Track-level matching.
 
 ## Open Questions
 

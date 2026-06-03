@@ -1,8 +1,5 @@
-import hashlib
 import json
 import logging
-import re
-import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.models.spotify_listening import SpotifyListeningEvent
 from app.repositories.spotify_listening_repository import SpotifyListeningRepository
+from app.services.spotify_listening_rollup_service import SpotifyListeningRollupService
+from app.utils.spotify_text import normalize_spotify_text, stable_spotify_key
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +48,12 @@ class SpotifyListeningImportService:
     def __init__(
         self,
         repository: SpotifyListeningRepository | None = None,
+        rollup_service: SpotifyListeningRollupService | None = None,
         *,
         meaningful_listen_threshold_ms: int = DEFAULT_MEANINGFUL_LISTEN_THRESHOLD_MS,
     ) -> None:
         self._repository = repository or SpotifyListeningRepository()
+        self._rollup_service = rollup_service or SpotifyListeningRollupService(repository=self._repository)
         self._meaningful_listen_threshold_ms = meaningful_listen_threshold_ms
 
     def import_files(
@@ -61,6 +62,7 @@ class SpotifyListeningImportService:
         file_paths: Sequence[str | Path],
         *,
         batch_size: int = 1_000,
+        refresh_rollups: bool = True,
     ) -> SpotifyListeningImportResult:
         if not file_paths:
             raise ValueError("At least one Spotify listening-history file path is required")
@@ -105,6 +107,9 @@ class SpotifyListeningImportService:
 
             if pending_events:
                 self._flush_events(db, pending_events, counts)
+
+            if refresh_rollups:
+                self._rollup_service.refresh(db, commit=False)
 
             completed_batch = self._repository.mark_completed(
                 db,
@@ -221,12 +226,6 @@ class SpotifyListeningImportService:
             error_summary.append(message)
 
 
-def normalize_spotify_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    normalized = re.sub(r"[^\w\s]+", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
-
-
 def _parse_played_at(value: Any) -> datetime:
     if not isinstance(value, str) or not value.strip():
         raise SpotifyListeningImportItemError("ts is required")
@@ -291,4 +290,4 @@ def _event_key(
         reason_start or "",
         reason_end or "",
     ]
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return stable_spotify_key(parts)
