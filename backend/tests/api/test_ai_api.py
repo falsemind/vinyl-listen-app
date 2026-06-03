@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.ai import get_ai_insights_service
+from app.api.routes.ai import get_ai_insights_service, get_spotify_listening_import_service
+from app.core.config import settings
 from app.database.session import get_db
 from app.main import app
 from app.services.ai_insights_service import (
@@ -13,6 +15,7 @@ from app.services.ai_insights_service import (
     AiInsightsReply,
     AiInsightsValidationError,
 )
+from app.services.spotify_listening_import_service import SpotifyListeningImportResult
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +94,38 @@ class StubAiInsightsService:
         conversation_id: str | None = None,
     ) -> AiInsightsHistory:
         return self.get_history(db, conversation_id=conversation_id)
+
+
+class StubSpotifyListeningImportService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def import_files(
+        self,
+        db: object,
+        file_paths: list[Path],
+        *,
+        batch_size: int,
+        refresh_rollups: bool,
+    ) -> SpotifyListeningImportResult:
+        _ = db
+        self.calls.append(
+            {
+                "file_paths": file_paths,
+                "batch_size": batch_size,
+                "refresh_rollups": refresh_rollups,
+            }
+        )
+        return SpotifyListeningImportResult(
+            batch_id="spotify-batch-1",
+            source_paths=file_paths,
+            total_items=3,
+            imported_count=2,
+            duplicate_count=1,
+            skipped_count=0,
+            error_count=0,
+            error_summary=[],
+        )
 
 
 def test_chat_endpoint_returns_stub_response_and_forwards_request() -> None:
@@ -222,3 +257,83 @@ def test_chat_history_endpoint_rejects_long_conversation_id() -> None:
         response = client.get(f"/api/v1/ai/chat/history?conversation_id={'x' * 37}")
 
     assert response.status_code == 422
+
+
+def test_spotify_import_endpoint_returns_import_counts(monkeypatch, tmp_path) -> None:
+    import_file = tmp_path / "Streaming_History_Audio_2019.json"
+    import_file.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
+    service = StubSpotifyListeningImportService()
+    app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
+    app.dependency_overrides[get_db] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/spotify/import",
+            json={
+                "file_paths": ["Streaming_History_Audio_2019.json"],
+                "batch_size": 500,
+                "refresh_rollups": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert service.calls == [
+        {
+            "file_paths": [import_file],
+            "batch_size": 500,
+            "refresh_rollups": True,
+        }
+    ]
+    assert response.json() == {
+        "batch_id": "spotify-batch-1",
+        "source_files": ["Streaming_History_Audio_2019.json"],
+        "total_items": 3,
+        "imported_count": 2,
+        "duplicate_count": 1,
+        "skipped_count": 0,
+        "error_count": 0,
+        "error_summary": [],
+    }
+
+
+def test_spotify_import_endpoint_rejects_absolute_paths(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
+    service = StubSpotifyListeningImportService()
+    app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
+    app.dependency_overrides[get_db] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/spotify/import",
+            json={"file_paths": ["/etc/passwd"]},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "spotify_import_path_invalid",
+            "message": "Spotify import files must be relative to the configured import directory.",
+        }
+    }
+    assert service.calls == []
+
+
+def test_spotify_import_endpoint_rejects_path_escape(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "spotify_import_dir", str(tmp_path))
+
+    service = StubSpotifyListeningImportService()
+    app.dependency_overrides[get_spotify_listening_import_service] = lambda: service
+    app.dependency_overrides[get_db] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/ai/spotify/import",
+            json={"file_paths": ["../outside.json"]},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "spotify_import_path_invalid"
+    assert service.calls == []

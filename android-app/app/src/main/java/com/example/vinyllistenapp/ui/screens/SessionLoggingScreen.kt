@@ -1,6 +1,8 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,9 +29,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,12 +49,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -372,6 +377,11 @@ private fun SessionSideSelector(
     var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
     val density = LocalDensity.current
     val sideSelectorActionLabel = if (expanded) "Close side selector" else "Open side selector"
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Side selector arrow rotation",
+    )
     val anchorModifier =
         Modifier
             .fillMaxWidth()
@@ -402,13 +412,26 @@ private fun SessionSideSelector(
                 color = VinylColors.TextPrimary,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text(
-                text = if (expanded) "⌄" else "<",
-                color = VinylColors.TextSecondary,
-                style = MaterialTheme.typography.bodyLarge,
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.TextSecondary,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
             )
         }
         if (expanded) {
+            var dropdownVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                dropdownVisible = true
+            }
+            val dropdownAlpha by animateFloatAsState(
+                targetValue = if (dropdownVisible) 1f else 0f,
+                animationSpec = tween(durationMillis = 140),
+                label = "Side dropdown fade",
+            )
             Popup(
                 alignment = Alignment.TopStart,
                 offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
@@ -419,6 +442,7 @@ private fun SessionSideSelector(
                     modifier =
                         Modifier
                             .width(selectorWidth)
+                            .graphicsLayer { alpha = dropdownAlpha }
                             .clip(VinylShapes.Card)
                             .background(VinylColors.SurfacePrimary)
                             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
@@ -627,20 +651,29 @@ private fun SessionMoodGrid(
             }
         }
         deleteCandidate?.let { mood ->
-            Popup(
-                alignment = Alignment.TopStart,
+            AlertDialog(
                 onDismissRequest = { deleteCandidate = null },
-                properties = PopupProperties(focusable = true),
-            ) {
-                SessionDeleteMoodPopup(
-                    onCancel = { deleteCandidate = null },
-                    onConfirm = {
-                        onDeleteCustomMood(mood)
-                        deleteCandidate = null
-                    },
-                    modifier = Modifier.sessionMoodPopupWidth(popupWidth),
-                )
-            }
+                title = { Text("Delete custom mood?") },
+                text = { Text("This removes \"$mood\" from your custom mood list.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeleteCustomMood(mood)
+                            deleteCandidate = null
+                        },
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deleteCandidate = null }) {
+                        Text("Cancel")
+                    }
+                },
+                containerColor = VinylColors.SurfacePrimary,
+                titleContentColor = VinylColors.TextPrimary,
+                textContentColor = VinylColors.TextSecondary,
+            )
         }
     }
 }
@@ -824,69 +857,6 @@ private fun SessionCustomMoodInput(
             tint = if (canSave) VinylColors.AccentGreen else VinylColors.TextSecondary,
         )
     }
-}
-
-@Composable
-private fun SessionDeleteMoodPopup(
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier =
-            modifier
-                .clip(VinylShapes.Card)
-                .background(VinylColors.SurfacePrimary)
-                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                .padding(VinylSpacing.SpaceXl),
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
-    ) {
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            text = "Do you want to delete this mood?",
-            color = VinylColors.TextPrimary,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-        ) {
-            SessionMoodPopupAction(
-                label = "Cancel",
-                color = VinylColors.TextSecondary,
-                onClick = onCancel,
-                modifier = Modifier.weight(1f),
-            )
-            SessionMoodPopupAction(
-                label = "Confirm",
-                color = VinylColors.AccentGreen,
-                onClick = onConfirm,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SessionMoodPopupAction(
-    label: String,
-    color: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        modifier =
-            modifier
-                .clip(VinylShapes.Chip)
-                .background(VinylColors.SurfaceSecondary)
-                .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
-                .padding(vertical = VinylSpacing.SpaceMd),
-        text = label,
-        color = color,
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelLarge,
-    )
 }
 
 @Composable

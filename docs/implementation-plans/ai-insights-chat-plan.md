@@ -17,6 +17,7 @@ The first version should validate the product and architecture shape without ove
 - Android bottom navigation label: `Insights`.
 - Initial chat scope: single chat thread only.
 - Product vocabulary: use `style` rather than `genre` for collection categories exposed by current backend analytics.
+- Spotify export direction: use local Spotify listening-history exports as an optional future insight source, starting with SQL analytics and deterministic matching rather than embeddings/RAG.
 
 ## Current Context
 
@@ -28,6 +29,7 @@ The first version should validate the product and architecture shape without ove
   - rating distribution
   - mood distribution
   - style distribution
+- Spotify extended streaming-history exports can add multi-year listening signals that overlap with the local vinyl collection by artist, album, and track names.
 - Backend services already follow a route -> service -> repository boundary.
 - Existing docs expect new backend workflows to update API, schema, feature, repository-structure, navigation, and product screen documentation together.
 
@@ -60,6 +62,7 @@ The first version should validate the product and architecture shape without ove
 - Write actions such as creating listening sessions from chat.
 - Recommendations outside the user's known collection.
 - Vector/RAG indexing of the whole collection unless simple SQL-backed tools are insufficient.
+- Embedding or RAG pipelines for Spotify history in the first Spotify integration slice.
 - Fine-tuning.
 
 ## Architecture Recommendation
@@ -111,9 +114,16 @@ Use a stub adapter first only if Android/API wiring needs to be proven before th
 - `search_collection(query)`
 - `get_release_detail(release_id)`
 
-For MVP, these should be deterministic backend functions with narrow schemas. The agent should not receive raw unrestricted database access.
+Spotify-backed tools keep the same narrow, read-only shape:
 
-Recommendation tools must only return known releases from the local app database. If the user asks for outside recommendations, the assistant should say it can currently recommend from the user's collection and offer collection-based alternatives.
+- `get_spotify_vinyl_overlap_summary(range)`
+- `get_spotify_listening_time_patterns(range)`
+- `get_spotify_top_artists_by_period(range)`
+- `get_spotify_collection_recommendation_signals(range)`
+
+These are deterministic backend functions with narrow schemas. The agent does not receive raw unrestricted database access.
+
+Recommendation tools must only return known releases from the local app database. If the user asks for outside recommendations, the assistant should say it can currently recommend from the user's collection and offer collection-based alternatives. Spotify data may influence ranking and explanation, but it must not expand the recommendation universe.
 
 ## Persistence Options
 
@@ -224,6 +234,8 @@ Use Server-Sent Events or chunked streaming only after the basic request/respons
 | LLM-backed response | Medium | Provider config, secrets, tests, error handling. |
 | Tool-grounded listening insights | Medium-Large | Requires careful tool schemas and answer grounding. |
 | Persistent chat sessions | Medium | Migration, repositories, API contract, history loading. |
+| Spotify listening-history import | Medium-Large | Import validation, dedupe, privacy filtering, indexes, and summary tables. |
+| Spotify-to-vinyl matching tools | Medium-Large | Requires normalized names, deterministic confidence rules, and explainable collection-only recommendation signals. |
 | Streaming responses | Medium-Large | Backend streaming plus Android incremental rendering. |
 | LangGraph durable agent | Large | Useful later, likely too much for first experiment. |
 
@@ -307,6 +319,73 @@ Implemented Phase 5 shape:
 - `GET /api/v1/ai/chat/history`, `GET /api/v1/ai/chat/export`, and `DELETE /api/v1/ai/chat/history` provide load, export, and clear paths.
 - Android loads persisted history when opening the Insights screen.
 
+### Phase 6: Spotify Listening Data Integration
+
+Goal: enrich AI Insights with local Spotify listening-history signals while keeping chat answers grounded, private, and limited to known releases in the app collection.
+
+Starter scope:
+
+- Import Spotify `end_song` JSON export files from relative file names under a configured backend import directory. Android upload is out of scope for the first slice.
+- Retain useful event fields: `ts`, `ms_played`, `conn_country`, `master_metadata_track_name`, `master_metadata_album_artist_name`, `master_metadata_album_album_name`, `reason_start`, `reason_end`, `shuffle`, `skipped`, `offline`, and `offline_timestamp`.
+- Skip fields for the first slice: `username`, `ip_addr_decrypted`, `user_agent_decrypted`, `incognito_mode`, `platform`, `spotify_track_uri`, and podcast/episode fields.
+- Derive query-friendly fields during import: local date, local hour, weekday, year-month, normalized artist/album/track names, and a meaningful-listen flag.
+- Precompute summary tables for chat tools instead of scanning raw Spotify events during every assistant request.
+- Match Spotify artists/albums/tracks to known local releases offline, using exact normalized matches first and explainable confidence rules.
+
+| Task | Effort | Done Criteria |
+| --- | --- | --- |
+| Audit export files | 2-4h | Sample files are validated and required starter fields are confirmed. |
+| Add schema and migration | 4-8h | Raw event table, normalized fields, indexes, and dedupe key are defined. |
+| Build import service | 4-8h | Import filters skipped fields, batches inserts, dedupes events, and reports counts/errors. |
+| Add summary rollups | 4-8h | Artist, album, track, hourly, monthly, skip, and meaningful-listen summaries are queryable. |
+| Add collection matching | 4-8h | Spotify summaries can link to known releases with confidence and match explanation. |
+| Add AI tools | 4-8h | Assistant can use Spotify summaries through read-only tools with deterministic tests. |
+| Update docs/API notes | 2-4h | Import contract, privacy behavior, and tool limits are documented. |
+
+Implemented Phase 6 schema/import shape:
+
+- `spotify_listening_import_batches` tracks backend-local import status, source paths, counts, and error summaries.
+- `spotify_listening_events` stores filtered song events, normalized artist/album/track names, date buckets, meaningful-listen flag, indexes, and a unique dedupe key.
+- `POST /api/v1/ai/spotify/import` resolves relative file names under the configured import directory, rejects absolute paths/path escapes/symlinks, and passes validated files to `SpotifyListeningImportService.import_files(...)`.
+- `SpotifyListeningImportService.import_files(...)` reads local JSON exports, drops out-of-scope/private fields, batches inserts, dedupes repeated imports, and reports imported/duplicate/skipped/error counts.
+- No Android upload flow is included in this slice.
+
+Implemented Phase 6 rollup/matching shape:
+
+- Summary tables cover artist, album, track, hourly, monthly artist, and skip/end-reason rollups.
+- `SpotifyListeningRollupService.refresh(...)` rebuilds summary tables from imported events and runs synchronously at the end of import.
+- Collection matching uses exact normalized artist matches and exact normalized artist+album matches against known local releases.
+- Match tables store release ids, confidence score, match type, and explanation so later AI tools can cite why a Spotify signal maps to a known release.
+- Track-level matching is not implemented in this slice because the known-release data used here does not expose reliable track metadata.
+
+Implemented Phase 6 AI tool shape:
+
+- `AiInsightToolRunner` includes Spotify context only when the prompt explicitly mentions Spotify, streaming history, listening history, overlap, or correlation.
+- `get_spotify_vinyl_overlap_summary` returns exact artist/release overlap with known release ids, confidence, match type, and explanation.
+- `get_spotify_listening_time_patterns` returns the highest-signal listening hours from hourly rollups.
+- `get_spotify_top_artists_by_period` returns top Spotify artists plus recent monthly signals for the strongest artist.
+- `get_spotify_collection_recommendation_signals` returns only matched known releases from the local collection; Spotify can influence ranking/explanation but cannot expand the recommendation universe.
+- Tool tests cover Spotify prompt selection and ensure non-Spotify recommendation prompts keep using collection/session-note tools only.
+
+Performance approach:
+
+- Treat raw Spotify events as import/source data, not chat-time context.
+- Add indexes on normalized artist, album, track, played timestamp/date buckets, and dedupe keys.
+- For the first rollup slice, refresh summary tables synchronously at the end of import so AI Insights can use the new data immediately.
+- Keep assistant tools small: return ranked summaries and known-release candidates, not thousands of raw plays.
+
+Risks and mitigations:
+
+- Large exports can make imports slow: use streaming parse or chunked batches, plus resumable import metadata if needed.
+- Matching can be noisy: start with exact normalized matches, expose confidence/explanation, and defer fuzzy aliases.
+- Private data can leak into prompts: drop personal identifiers at import and pass only summaries to the AI adapter.
+- Spotify signals can overpower actual vinyl behavior: combine Spotify summaries with saved sessions, ratings, and high-priority session notes.
+
+Deferred:
+
+- Embeddings/RAG for Spotify history.
+- Track-level matching.
+
 ## Open Questions
 
 - Which specific LM Studio model should be used for the first spike?
@@ -316,4 +395,4 @@ Implemented Phase 5 shape:
 
 ## Recommended Next Step
 
-Build Phase 1 and Phase 2 with a deterministic stub response only as the transport/UI proof. Then prioritize a ChatOpenAI-compatible LangChain adapter pointed at LM Studio, plus a small set of read-only analytics tools. The key proof is whether the assistant can answer real listening-habit questions from known app data without changing the Android contract.
+Use imported Spotify history in real AI Insights prompts and evaluate answer quality. The key proof is whether summary-based Spotify context produces fast, explainable collection-overlap signals without changing the Android chat contract or recommending outside the known collection.

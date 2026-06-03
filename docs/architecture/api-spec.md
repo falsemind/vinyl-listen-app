@@ -775,6 +775,8 @@ The backend owns the AI boundary. When AI chat settings are disabled or incomple
 
 Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn. Saved session notes are included as high-priority context for recommendation and subjective insight prompts when notes are present.
 
+When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases already known to the local app collection.
+
 ## POST /ai/chat
 
 ### Request
@@ -806,6 +808,17 @@ Before calling the model, the backend runs deterministic read-only insight tools
   },
   "used_tools": []
 }
+```
+
+Spotify-specific prompts may return tool names such as:
+
+```json
+[
+  "get_spotify_vinyl_overlap_summary",
+  "get_spotify_top_artists_by_period",
+  "get_spotify_listening_time_patterns",
+  "get_spotify_collection_recommendation_signals"
+]
 ```
 
 ### Validation Errors
@@ -861,6 +874,47 @@ Deletes the persisted conversation for the requested `conversation_id`, or `loca
   "deleted_messages": 2
 }
 ```
+
+## POST /ai/spotify/import
+
+Imports local Spotify `end_song` JSON export files from the configured backend import directory. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
+
+### Request
+
+```json
+{
+  "file_paths": [
+    "Streaming_History_Audio_2019.json",
+    "Streaming_History_Audio_2020.json"
+  ],
+  "batch_size": 1000,
+  "refresh_rollups": true
+}
+```
+
+`file_paths` must contain 1-8 relative file names under `SPOTIFY_IMPORT_DIR`, which defaults to `spotify_import` under the backend working directory. Absolute paths, `..` path escapes, symlinks, and directories are rejected. In Docker, `./spotify_import` is mounted to `/app/backend/spotify_import`.
+
+`batch_size` defaults to `1000` and must be between `1` and `10000`. `refresh_rollups` defaults to `true`.
+
+### Response
+
+```json
+{
+  "batch_id": "spotify-batch-id",
+  "source_files": [
+    "Streaming_History_Audio_2019.json",
+    "Streaming_History_Audio_2020.json"
+  ],
+  "total_items": 12000,
+  "imported_count": 11800,
+  "duplicate_count": 150,
+  "skipped_count": 50,
+  "error_count": 0,
+  "error_summary": []
+}
+```
+
+The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events, then refreshes Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
 
 ---
 

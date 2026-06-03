@@ -1,5 +1,8 @@
 package com.example.vinyllistenapp.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +38,8 @@ import com.example.vinyllistenapp.ui.screens.StyleDistributionScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 import com.example.vinyllistenapp.ui.screens.rememberAiInsightsScreenState
 
+private const val NAV_FADE_DURATION_MILLIS = 140
+
 @Composable
 fun VinylNavHost(
     navController: NavHostController,
@@ -53,6 +58,10 @@ fun VinylNavHost(
         navController = navController,
         startDestination = VinylRoutes.HOME,
         modifier = modifier,
+        enterTransition = { fadeIn(animationSpec = tween(NAV_FADE_DURATION_MILLIS)) },
+        exitTransition = { fadeOut(animationSpec = tween(NAV_FADE_DURATION_MILLIS)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(NAV_FADE_DURATION_MILLIS)) },
+        popExitTransition = { fadeOut(animationSpec = tween(NAV_FADE_DURATION_MILLIS)) },
     ) {
         composable(VinylRoutes.HOME) {
             HomeScreen(
