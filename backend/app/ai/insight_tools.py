@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.chat_adapter import AiChatToolResult
 from app.repositories.sessions_repository import SessionsRepository
+from app.repositories.spotify_listening_repository import SpotifyListeningRepository
 from app.services.analytics_service import AnalyticsService
 
 
@@ -14,12 +15,15 @@ class AiInsightToolRunner:
         self,
         analytics_service: AnalyticsService | None = None,
         sessions_repository: SessionsRepository | None = None,
+        spotify_repository: SpotifyListeningRepository | None = None,
     ) -> None:
         self.analytics_service = analytics_service or AnalyticsService()
         self.sessions_repository = sessions_repository or SessionsRepository()
+        self.spotify_repository = spotify_repository or SpotifyListeningRepository()
 
     def run(self, db: Session, *, message: str) -> list[AiChatToolResult]:
         normalized_message = message.lower()
+        spotify_requested = self._should_include_spotify_tools(normalized_message)
         results = [self._listening_summary(db)]
 
         if self._should_include_session_notes(normalized_message):
@@ -34,6 +38,19 @@ class AiInsightToolRunner:
             results.append(self._mood_distribution(db))
         if "rating" in normalized_message or "rated" in normalized_message:
             results.append(self._rating_distribution(db))
+        if spotify_requested:
+            results.append(self._spotify_vinyl_overlap_summary(db))
+            results.append(self._spotify_top_artists_by_period(db))
+            if self._mentions_any(
+                normalized_message,
+                ("time", "hour", "night", "morning", "day", "pattern", "when"),
+            ):
+                results.append(self._spotify_listening_time_patterns(db))
+            if self._mentions_any(
+                normalized_message,
+                ("recommend", "recommendation", "suggest", "collection", "record", "vinyl"),
+            ):
+                results.append(self._spotify_collection_recommendation_signals(db))
 
         return [result for result in results if result.content.strip()]
 
@@ -120,6 +137,104 @@ class AiInsightToolRunner:
             content=self._render_distribution(distribution, empty_message="No rating data is available yet."),
         )
 
+    def _spotify_vinyl_overlap_summary(self, db: Session) -> AiChatToolResult:
+        artist_matches = self.spotify_repository.list_artist_matches(db, limit=5)
+        release_matches = self.spotify_repository.list_release_matches(db, limit=5)
+        if not artist_matches and not release_matches:
+            return AiChatToolResult(
+                name="get_spotify_vinyl_overlap_summary",
+                content=(
+                    "No Spotify-to-vinyl overlap is available yet. " "Import Spotify history and refresh rollups first."
+                ),
+            )
+
+        lines = []
+        for match in artist_matches:
+            release_ids = ", ".join(str(release_id) for release_id in match.release_ids[:3])
+            lines.append(
+                f"Artist overlap: {match.artist_name}; known_releases={match.release_count}; "
+                f"release_ids={release_ids}; confidence={match.confidence_score}; "
+                f"match_type={match.match_type}; reason={match.explanation}"
+            )
+        for match in release_matches:
+            lines.append(
+                f"Release overlap: {match.spotify_artist_name} - {match.spotify_album_name}; "
+                f"known_release={match.release_artist} - {match.release_title}; "
+                f"release_id={match.release_id}; confidence={match.confidence_score}; "
+                f"match_type={match.match_type}; reason={match.explanation}"
+            )
+        return AiChatToolResult(name="get_spotify_vinyl_overlap_summary", content="\n".join(lines))
+
+    def _spotify_listening_time_patterns(self, db: Session) -> AiChatToolResult:
+        hourly_stats = self.spotify_repository.list_hourly_stats(db)
+        if not hourly_stats:
+            return AiChatToolResult(
+                name="get_spotify_listening_time_patterns",
+                content="No Spotify listening time pattern data is available yet.",
+            )
+
+        top_hours = sorted(hourly_stats, key=lambda stat: stat.total_ms_played, reverse=True)[:5]
+        lines = [
+            (
+                f"{stat.played_hour:02d}:00: plays={stat.play_count}; meaningful={stat.meaningful_play_count}; "
+                f"skipped={stat.skipped_count}; total_minutes={self._format_minutes(stat.total_ms_played)}"
+            )
+            for stat in top_hours
+        ]
+        return AiChatToolResult(name="get_spotify_listening_time_patterns", content="\n".join(lines))
+
+    def _spotify_top_artists_by_period(self, db: Session) -> AiChatToolResult:
+        top_artists = self.spotify_repository.list_top_artists(db, limit=5)
+        if not top_artists:
+            return AiChatToolResult(
+                name="get_spotify_top_artists_by_period",
+                content="No Spotify artist rollups are available yet.",
+            )
+
+        lines = []
+        for artist in top_artists:
+            lines.append(
+                f"Top Spotify artist: {artist.artist_name}; plays={artist.play_count}; "
+                f"meaningful={artist.meaningful_play_count}; skipped={artist.skipped_count}; "
+                f"total_minutes={self._format_minutes(artist.total_ms_played)}; "
+                f"first_played={self._format_datetime(artist.first_played_at)}; "
+                f"last_played={self._format_datetime(artist.last_played_at)}"
+            )
+
+        top_artist = top_artists[0]
+        monthly_stats = self.spotify_repository.list_monthly_artist_stats(
+            db,
+            normalized_artist_name=top_artist.normalized_artist_name,
+        )
+        for stat in monthly_stats[-5:]:
+            lines.append(
+                f"Monthly Spotify signal: {stat.played_year_month}; artist={stat.artist_name}; "
+                f"plays={stat.play_count}; meaningful={stat.meaningful_play_count}; "
+                f"total_minutes={self._format_minutes(stat.total_ms_played)}"
+            )
+        return AiChatToolResult(name="get_spotify_top_artists_by_period", content="\n".join(lines))
+
+    def _spotify_collection_recommendation_signals(self, db: Session) -> AiChatToolResult:
+        release_matches = self.spotify_repository.list_release_matches(db, limit=5)
+        if not release_matches:
+            return AiChatToolResult(
+                name="get_spotify_collection_recommendation_signals",
+                content=(
+                    "No Spotify collection recommendation signals are available yet. "
+                    "Recommendations remain limited to known releases."
+                ),
+            )
+
+        lines = []
+        for match in release_matches:
+            lines.append(
+                f"Collection recommendation signal: {match.release_artist} - {match.release_title}; "
+                f"release_id={match.release_id}; spotify_match={match.spotify_artist_name} - "
+                f"{match.spotify_album_name}; confidence={match.confidence_score}; "
+                f"match_type={match.match_type}; reason={match.explanation}"
+            )
+        return AiChatToolResult(name="get_spotify_collection_recommendation_signals", content="\n".join(lines))
+
     def _render_distribution(self, distribution: dict[str, int], *, empty_message: str) -> str:
         positive_items = [(name, count) for name, count in distribution.items() if count > 0]
         if not positive_items:
@@ -145,11 +260,30 @@ class AiInsightToolRunner:
             ),
         )
 
+    def _should_include_spotify_tools(self, message: str) -> bool:
+        return self._mentions_any(
+            message,
+            (
+                "spotify",
+                "streaming",
+                "streamed",
+                "listen history",
+                "listening history",
+                "overlap",
+                "correlation",
+            ),
+        )
+
     def _clean_note_text(self, value: str | None) -> str:
         cleaned_value = " ".join((value or "").split())
         if len(cleaned_value) <= 280:
             return cleaned_value
         return f"{cleaned_value[:277]}..."
+
+    def _format_minutes(self, value: int | None) -> str:
+        if value is None:
+            return "0.0"
+        return f"{value / 60000:.1f}"
 
     def _format_datetime(self, value: datetime | None) -> str:
         if value is None:

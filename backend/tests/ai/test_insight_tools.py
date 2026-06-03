@@ -61,6 +61,46 @@ def test_tool_runner_prioritizes_session_notes_for_recommendations() -> None:
     assert 'note="Warm and loose, best for late-night focus."' in rendered_context
 
 
+def test_tool_runner_uses_spotify_overlap_and_time_patterns() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+    _create_collection_tables(engine)
+    _create_spotify_rollup_tables(engine)
+
+    with session_factory() as db:
+        results = AiInsightToolRunner().run(
+            db,
+            message="How does my Spotify streaming overlap with my vinyl collection at night?",
+        )
+
+    result_names = [result.name for result in results]
+    assert "get_spotify_vinyl_overlap_summary" in result_names
+    assert "get_spotify_top_artists_by_period" in result_names
+    assert "get_spotify_listening_time_patterns" in result_names
+    assert "get_spotify_collection_recommendation_signals" in result_names
+    rendered_context = "\n".join(result.content for result in results)
+    assert "Artist overlap: Rhythm & Sound" in rendered_context
+    assert "Release overlap: Rhythm & Sound - Carrier" in rendered_context
+    assert "04:00: plays=2" in rendered_context
+    assert "Monthly Spotify signal: 2020-01" in rendered_context
+
+
+def test_tool_runner_uses_spotify_collection_recommendation_signals() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+    _create_collection_tables(engine)
+    _create_spotify_rollup_tables(engine)
+
+    with session_factory() as db:
+        results = AiInsightToolRunner().run(db, message="Recommend from my collection using Spotify history")
+
+    result_names = [result.name for result in results]
+    assert "get_spotify_collection_recommendation_signals" in result_names
+    rendered_context = "\n".join(result.content for result in results)
+    assert "Collection recommendation signal: Rhythm & Sound - Carrier" in rendered_context
+    assert "release_id=release-1" in rendered_context
+
+
 def _create_collection_tables(engine) -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql("""
@@ -112,4 +152,172 @@ def _create_collection_tables(engine) -> None:
                 ('session-3', 'release-2', 5, 'Late Night',
                  'Warm and loose, best for late-night focus.',
                  '2026-01-01T10:00:00+00:00', 'A', '2026-01-01T10:00:00+00:00')
+            """)
+
+
+def _create_spotify_rollup_tables(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql("""
+            CREATE TABLE spotify_artist_stats (
+                normalized_artist_name TEXT PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                play_count INTEGER NOT NULL,
+                meaningful_play_count INTEGER NOT NULL,
+                skipped_count INTEGER NOT NULL,
+                total_ms_played INTEGER NOT NULL,
+                first_played_at TIMESTAMP NOT NULL,
+                last_played_at TIMESTAMP NOT NULL
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE spotify_hourly_stats (
+                played_hour INTEGER PRIMARY KEY,
+                play_count INTEGER NOT NULL,
+                meaningful_play_count INTEGER NOT NULL,
+                skipped_count INTEGER NOT NULL,
+                total_ms_played INTEGER NOT NULL
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE spotify_monthly_artist_stats (
+                stat_key TEXT PRIMARY KEY,
+                played_year_month TEXT NOT NULL,
+                normalized_artist_name TEXT NOT NULL,
+                artist_name TEXT NOT NULL,
+                play_count INTEGER NOT NULL,
+                meaningful_play_count INTEGER NOT NULL,
+                skipped_count INTEGER NOT NULL,
+                total_ms_played INTEGER NOT NULL
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE spotify_vinyl_artist_matches (
+                normalized_artist_name TEXT PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                release_ids TEXT NOT NULL,
+                release_count INTEGER NOT NULL,
+                confidence_score INTEGER NOT NULL,
+                match_type TEXT NOT NULL,
+                explanation TEXT NOT NULL
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE spotify_vinyl_release_matches (
+                match_key TEXT PRIMARY KEY,
+                release_id TEXT NOT NULL,
+                normalized_artist_name TEXT NOT NULL,
+                normalized_album_name TEXT NOT NULL,
+                spotify_artist_name TEXT NOT NULL,
+                spotify_album_name TEXT NOT NULL,
+                release_artist TEXT NOT NULL,
+                release_title TEXT NOT NULL,
+                confidence_score INTEGER NOT NULL,
+                match_type TEXT NOT NULL,
+                explanation TEXT NOT NULL
+            )
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO spotify_artist_stats (
+                normalized_artist_name,
+                artist_name,
+                play_count,
+                meaningful_play_count,
+                skipped_count,
+                total_ms_played,
+                first_played_at,
+                last_played_at
+            )
+            VALUES (
+                'rhythm sound',
+                'Rhythm & Sound',
+                4,
+                3,
+                1,
+                720000,
+                '2020-01-01T04:00:00+00:00',
+                '2020-01-31T05:00:00+00:00'
+            )
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO spotify_hourly_stats (
+                played_hour,
+                play_count,
+                meaningful_play_count,
+                skipped_count,
+                total_ms_played
+            )
+            VALUES
+                (4, 2, 2, 0, 360000),
+                (5, 1, 1, 0, 180000),
+                (18, 1, 0, 1, 45000)
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO spotify_monthly_artist_stats (
+                stat_key,
+                played_year_month,
+                normalized_artist_name,
+                artist_name,
+                play_count,
+                meaningful_play_count,
+                skipped_count,
+                total_ms_played
+            )
+            VALUES (
+                '2020-01:rhythm-sound',
+                '2020-01',
+                'rhythm sound',
+                'Rhythm & Sound',
+                4,
+                3,
+                1,
+                720000
+            )
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO spotify_vinyl_artist_matches (
+                normalized_artist_name,
+                artist_name,
+                release_ids,
+                release_count,
+                confidence_score,
+                match_type,
+                explanation
+            )
+            VALUES (
+                'rhythm sound',
+                'Rhythm & Sound',
+                '["release-1"]',
+                1,
+                100,
+                'artist_exact',
+                'Normalized Spotify artist matches a known release artist.'
+            )
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO spotify_vinyl_release_matches (
+                match_key,
+                release_id,
+                normalized_artist_name,
+                normalized_album_name,
+                spotify_artist_name,
+                spotify_album_name,
+                release_artist,
+                release_title,
+                confidence_score,
+                match_type,
+                explanation
+            )
+            VALUES (
+                'release-1:rhythm-sound:carrier',
+                'release-1',
+                'rhythm sound',
+                'carrier',
+                'Rhythm & Sound',
+                'Carrier',
+                'Rhythm & Sound',
+                'Carrier',
+                100,
+                'artist_album_exact',
+                'Normalized Spotify artist and album match a known release.'
+            )
             """)

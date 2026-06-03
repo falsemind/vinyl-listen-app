@@ -50,9 +50,19 @@ discogs_release_cache
 identify_jobs
 ai_chat_sessions
 ai_chat_messages
+spotify_listening_import_batches
+spotify_listening_events
+spotify_artist_stats
+spotify_album_stats
+spotify_track_stats
+spotify_hourly_stats
+spotify_monthly_artist_stats
+spotify_skip_stats
+spotify_vinyl_artist_matches
+spotify_vinyl_release_matches
 ```
 
-Analytics uses the existing `sessions` and `releases` tables. No separate analytics table is required for the MVP. Style analytics reads `releases.styles` and counts those release styles through logged sessions.
+Collection analytics uses the existing `sessions` and `releases` tables. Style analytics reads `releases.styles` and counts those release styles through logged sessions. Spotify analytics uses precomputed summary tables so AI Insights does not scan raw Spotify event history during chat requests.
 
 Relationships:
 
@@ -70,6 +80,10 @@ identify_jobs
 
 ai_chat_sessions
    └── ai_chat_messages
+
+spotify_listening_import_batches
+   └── spotify_listening_events
+             └── summary rollups and exact collection-match tables
 ```
 
 ---
@@ -370,6 +384,97 @@ INDEX (conversation_id, role)
 ```
 
 `DELETE /api/v1/ai/chat/history` deletes both the session and its messages. `GET /api/v1/ai/chat/export` returns the persisted messages for user-controlled export.
+
+---
+
+# Spotify Listening History Tables
+
+Spotify tables support optional AI Insights enrichment from local Spotify `end_song` JSON exports. Import keeps only fields needed for analytics and drops identifiers such as username, IP address, user agent, platform, incognito mode, track URI, and podcast/episode fields.
+
+## Table: spotify_listening_import_batches
+
+Tracks backend-local import attempts.
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID string|Primary key|
+|source_paths|JSONB|Validated relative source file names|
+|status|TEXT|`running`, `completed`, or failed status|
+|total_items|INTEGER|Parsed export rows|
+|imported_count|INTEGER|New events inserted|
+|duplicate_count|INTEGER|Rows skipped by dedupe key|
+|skipped_count|INTEGER|Rows skipped as non-song or invalid starter data|
+|error_count|INTEGER|Rows/files with import errors|
+|error_summary|JSONB|Bounded error details|
+|started_at|TIMESTAMP|Import start time|
+|completed_at|TIMESTAMP|Import completion time|
+
+## Table: spotify_listening_events
+
+Stores filtered song events plus derived fields used for rollups.
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID string|Primary key|
+|batch_id|UUID string|FK -> `spotify_listening_import_batches.id`|
+|event_key|TEXT|Unique dedupe key|
+|played_at|TIMESTAMP|Spotify `ts` value|
+|played_date|DATE|Derived local date bucket|
+|played_hour|INTEGER|Derived local hour bucket|
+|played_weekday|INTEGER|Derived weekday bucket|
+|played_year_month|TEXT|Derived `YYYY-MM` bucket|
+|ms_played|INTEGER|Playback duration|
+|conn_country|TEXT|Connection country from export|
+|track_name|TEXT|Track name|
+|artist_name|TEXT|Album artist name|
+|album_name|TEXT|Album name|
+|normalized_track_name|TEXT|Normalized track key|
+|normalized_artist_name|TEXT|Normalized artist key|
+|normalized_album_name|TEXT|Normalized album key|
+|reason_start|TEXT|Spotify start reason|
+|reason_end|TEXT|Spotify end reason|
+|shuffle|BOOLEAN|Shuffle flag|
+|skipped|BOOLEAN|Skip flag|
+|offline|BOOLEAN|Offline flag|
+|offline_timestamp|BIGINT|Spotify offline timestamp|
+|is_meaningful_listen|BOOLEAN|Derived signal for non-trivial listens|
+|created_at|TIMESTAMP|Row creation time|
+
+### Indexes
+
+```
+UNIQUE (event_key)
+INDEX (played_at)
+INDEX (played_date)
+INDEX (played_year_month)
+INDEX (normalized_artist_name)
+INDEX (normalized_album_name)
+INDEX (normalized_track_name)
+```
+
+## Spotify Summary Tables
+
+Summary tables are rebuilt from imported events and queried by AI tools.
+
+|Table|Purpose|
+|---|---|
+|spotify_artist_stats|Top artists by plays, meaningful plays, skips, total listening time, and first/last play time.|
+|spotify_album_stats|Top albums by normalized artist+album keys.|
+|spotify_track_stats|Top tracks by normalized artist+album+track keys.|
+|spotify_hourly_stats|Listening distribution by hour of day.|
+|spotify_monthly_artist_stats|Monthly artist signals for period-based questions.|
+|spotify_skip_stats|Skip/end-reason counts for lightweight behavior analysis.|
+
+## Spotify Collection Match Tables
+
+Match tables connect Spotify summaries to known local releases. They support collection-only recommendations and explain why a Spotify signal maps to vinyl data.
+
+|Table|Purpose|
+|---|---|
+|spotify_vinyl_artist_matches|Exact normalized artist overlap, release ids, release count, confidence, match type, and explanation.|
+|spotify_vinyl_release_matches|Exact normalized artist+album overlap with release id, Spotify display names, release display names, confidence, match type, and explanation.|
+
+Track-level matching is deferred until local release track metadata is reliable enough to support it.
 
 ---
 

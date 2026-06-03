@@ -15,7 +15,15 @@ description: This document explains the backend service layer in `backend/app/se
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
-| `ai_insights_service.py` | Own the AI Insights chat service boundary and provider fallback behavior. | `app/ai` runtime adapter, future read-only analytics/session/release tools. |
+| `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
+| `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
+| `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, and read-only tool context. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository. |
+
+## AI Insights and Spotify Tools
+
+`AiInsightsService` persists the single local chat thread, runs deterministic insight tools, and passes bounded context to the configured AI adapter. Collection tools cover listening summaries, recent sessions, top records, style/mood/rating distribution, and high-priority session notes.
+
+Spotify tools are included only for Spotify-specific prompts. They read precomputed rollups and exact collection-match tables, then return compact summaries such as overlap, listening-hour patterns, top artists by period, and known-release recommendation signals. They never expose raw Spotify event rows to the model and do not recommend outside the local collection.
 
 ## IdentifyService
 
