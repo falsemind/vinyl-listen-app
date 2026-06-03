@@ -775,6 +775,8 @@ The backend owns the AI boundary. When AI chat settings are disabled or incomple
 
 Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn. Saved session notes are included as high-priority context for recommendation and subjective insight prompts when notes are present.
 
+When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases already known to the local app collection.
+
 ## POST /ai/chat
 
 ### Request
@@ -806,6 +808,17 @@ Before calling the model, the backend runs deterministic read-only insight tools
   },
   "used_tools": []
 }
+```
+
+Spotify-specific prompts may return tool names such as:
+
+```json
+[
+  "get_spotify_vinyl_overlap_summary",
+  "get_spotify_top_artists_by_period",
+  "get_spotify_listening_time_patterns",
+  "get_spotify_collection_recommendation_signals"
+]
 ```
 
 ### Validation Errors
@@ -901,7 +914,7 @@ Imports local Spotify `end_song` JSON export files from the configured backend i
 }
 ```
 
-The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events, then refreshes Spotify rollups and collection matches when `refresh_rollups` is `true`.
+The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events, then refreshes Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
 
 ---
 

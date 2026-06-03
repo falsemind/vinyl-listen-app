@@ -13,7 +13,8 @@ description: This document explains the current monorepo detailed layout with mo
 ├── backend/
 ├── docker-compose.yml
 ├── docs/
-└── scripts/
+├── scripts/
+└── spotify_import/
 ```
 
 | Path | Purpose |
@@ -22,6 +23,7 @@ description: This document explains the current monorepo detailed layout with mo
 | `backend/` | FastAPI backend, database models, repositories, service layer, identification pipeline, migrations, tests, and backend scripts. |
 | `docs/` | Product, architecture, implementation, research, and feature documentation. |
 | `scripts/` | Repository-level helper scripts. |
+| `spotify_import/` | Local-only directory for backend Spotify export imports. JSON exports are ignored; `.gitkeep` preserves the mount point. |
 | `docker-compose.yml` | Local container orchestration entry point. |
 | `.agents/` | Agent workflows and repository guidance. |
 
@@ -42,6 +44,7 @@ docs/
 │   ├── identify-progress-jobs.md
 │   └── identification-pipeline.md
 ├── implementation-plans/
+│   ├── ai-insights-chat-plan.md
 │   ├── android-app-implementation-plan.md
 │   ├── android-client-rate-limit-backoff-plan.md
 │   ├── backend-mvp-stabilization-plan.md
@@ -118,7 +121,8 @@ backend/app/
 │   ├── identify_job.py
 │   ├── releases.py
 │   ├── sessions.py
-│   └── sessions_moods.py
+│   ├── sessions_moods.py
+│   └── spotify_listening.py
 ├── pipelines/
 │   └── identification/
 ├── repositories/
@@ -128,7 +132,8 @@ backend/app/
 │   ├── identify_job_repository.py
 │   ├── releases_repository.py
 │   ├── sessions_moods_repository.py
-│   └── sessions_repository.py
+│   ├── sessions_repository.py
+│   └── spotify_listening_repository.py
 ├── schemas/
 │   ├── ai.py
 │   ├── analytics.py
@@ -143,7 +148,9 @@ backend/app/
 │   ├── identify_service.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
-│   └── sessions_service.py
+│   ├── sessions_service.py
+│   ├── spotify_listening_import_service.py
+│   └── spotify_listening_rollup_service.py
 └── utils/
 ```
 
@@ -155,10 +162,10 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, AI chat history, listening sessions, and moods. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, AI chat history, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, and listening sessions. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, release import, release mapping, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -185,7 +192,8 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/rating-distribution` | `api/routes/analytics.py` | `AnalyticsService` rating frequency aggregation. |
 | `GET /analytics/mood-distribution` | `api/routes/analytics.py` | `AnalyticsService` mood frequency aggregation. |
 | `GET /analytics/style-distribution` | `api/routes/analytics.py` | `AnalyticsService` release style frequency aggregation. |
-| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` deterministic chat skeleton. |
+| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` grounded chat service. |
+| `POST /ai/spotify/import` | `api/routes/ai.py` | `SpotifyListeningImportService`. |
 
 ### Identification Pipeline Package
 
@@ -253,6 +261,8 @@ backend/alembic/
     ├── d2b8c7e9f041_add_identify_job_stale_recovery_index.py
     ├── f3a4b5c6d7e8_add_identify_job_cancel_requested_at.py
     ├── c8f2d4a9b6e1_add_ai_chat_history.py
+    ├── 4e2a1c9d8b70_add_spotify_listening_import.py
+    ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
     └── eed6974773b8_init.py
 
 backend/scripts/
