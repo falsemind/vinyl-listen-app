@@ -37,6 +37,7 @@ M7 — Android App Foundation
 M8 — Android Feature Implementation
 M9 — Analytics
 M10 — MVP Stabilization
+M11 — AI Insights
 ```
 
 ---
@@ -437,6 +438,56 @@ Stable MVP ready for testing
 
 ---
 
+# Milestone 11 — AI Insights
+
+Goal: add an AI chat assistant for collection-grounded listening insights.
+
+Status: started.
+
+Scope:
+
+```
+Android Insights screen
+Backend AI chat API
+Local model runtime adapter
+Persistent chat history
+Read-only insight tools
+Privacy clear/export paths
+```
+
+Tasks:
+
+```
+Add Insights bottom-navigation screen
+Implement chat UI with suggested prompts
+Connect Android chat to backend API
+Support LM Studio/OpenAI-compatible chat runtime
+Persist and reload a single local chat thread
+Ground answers with listening history, ratings, moods, styles, and notes
+Prioritize saved session notes for recommendations and subjective insights
+Expose clear and export actions for chat history
+Keep recommendations limited to known local releases
+```
+
+Example issues:
+
+```
+Add AI Insights Android shell
+Add backend /ai/chat endpoints
+Add configurable AI chat adapter
+Add persistent AI chat history
+Add read-only analytics and session-note tools
+Improve Insights chat navigation and lifecycle behavior
+```
+
+Deliverable:
+
+```
+AI Insights screen can answer collection-grounded questions from local listening history and notes
+```
+
+---
+
 # Development Order Summary
 
 Recommended sequence:
@@ -451,6 +502,7 @@ Image identification
 Android app
 Analytics
 Stabilization
+AI Insights
 ```
 
 This order minimizes development blockers.
@@ -478,11 +530,10 @@ see basic analytics
 Possible next milestones:
 
 ```
-AI listening insights
+advanced recommendation workflows
 collection management
 price tracking
 marketplace integration
-recommendation engine
 ```
 
 These will build on the stable MVP foundation.

@@ -40,3 +40,9 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE TABLE ai_chat_messages" in sql
     assert "fk_ai_chat_messages_conversation_id_ai_chat_sessions" in sql
     assert "CREATE INDEX idx_ai_chat_messages_conversation_created" in sql
+    assert "CREATE TABLE spotify_listening_import_batches" in sql
+    assert "CREATE TABLE spotify_listening_events" in sql
+    assert "uq_spotify_listening_events_event_key" in sql
+    assert "fk_spotify_events_import_batch_id_spotify_import_batches" in sql
+    assert "CREATE INDEX idx_spotify_events_artist" in sql
+    assert "CREATE INDEX idx_spotify_events_year_month_artist" in sql
