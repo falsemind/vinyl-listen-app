@@ -45,3 +45,22 @@ class AiChatExportResponse(BaseModel):
     conversation_id: str
     exported_at: datetime
     messages: list[AiChatMessage] = Field(default_factory=list)
+
+
+class SpotifyListeningImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_paths: list[str] = Field(min_length=1, max_length=8)
+    batch_size: int = Field(default=1000, ge=1, le=10000)
+    refresh_rollups: bool = True
+
+
+class SpotifyListeningImportResponse(BaseModel):
+    batch_id: str
+    source_paths: list[str]
+    total_items: int
+    imported_count: int
+    duplicate_count: int
+    skipped_count: int
+    error_count: int
+    error_summary: list[str] = Field(default_factory=list)

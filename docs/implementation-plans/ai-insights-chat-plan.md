@@ -348,7 +348,15 @@ Implemented Phase 6 schema/import shape:
 - `spotify_listening_import_batches` tracks backend-local import status, source paths, counts, and error summaries.
 - `spotify_listening_events` stores filtered song events, normalized artist/album/track names, date buckets, meaningful-listen flag, indexes, and a unique dedupe key.
 - `SpotifyListeningImportService.import_files(...)` reads local JSON exports, drops out-of-scope/private fields, batches inserts, dedupes repeated imports, and reports imported/duplicate/skipped/error counts.
-- No Android upload flow, rollup tables, collection matching, or AI tools are included in this slice.
+- No Android upload flow or AI tools are included in this slice.
+
+Implemented Phase 6 rollup/matching shape:
+
+- Summary tables cover artist, album, track, hourly, monthly artist, and skip/end-reason rollups.
+- `SpotifyListeningRollupService.refresh(...)` rebuilds summary tables from imported events and runs synchronously at the end of import.
+- Collection matching uses exact normalized artist matches and exact normalized artist+album matches against known local releases.
+- Match tables store release ids, confidence score, match type, and explanation so later AI tools can cite why a Spotify signal maps to a known release.
+- Track-level matching is not implemented in this slice because the known-release data used here does not expose reliable track metadata.
 
 Performance approach:
 
@@ -367,6 +375,7 @@ Risks and mitigations:
 Deferred:
 
 - Embeddings/RAG for Spotify history.
+- Track-level matching.
 
 ## Open Questions
 

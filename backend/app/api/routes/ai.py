@@ -13,15 +13,22 @@ from app.schemas.ai import (
     AiChatMessage,
     AiChatRequest,
     AiChatResponse,
+    SpotifyListeningImportRequest,
+    SpotifyListeningImportResponse,
 )
 from app.schemas.sessions import ErrorResponse
 from app.services.ai_insights_service import AiInsightsService, AiInsightsValidationError
+from app.services.spotify_listening_import_service import SpotifyListeningImportService
 
 router = APIRouter()
 
 
 def get_ai_insights_service() -> AiInsightsService:
     return AiInsightsService()
+
+
+def get_spotify_listening_import_service() -> SpotifyListeningImportService:
+    return SpotifyListeningImportService()
 
 
 @router.post(
@@ -137,4 +144,39 @@ def export_chat_history(
             )
             for message in history.messages
         ],
+    )
+
+
+@router.post(
+    "/spotify/import",
+    response_model=SpotifyListeningImportResponse,
+    responses={422: {"model": ErrorResponse}},
+)
+def import_spotify_listening_history(
+    request: SpotifyListeningImportRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SpotifyListeningImportService, Depends(get_spotify_listening_import_service)],
+) -> SpotifyListeningImportResponse | JSONResponse:
+    try:
+        result = service.import_files(
+            db,
+            request.file_paths,
+            batch_size=request.batch_size,
+            refresh_rollups=request.refresh_rollups,
+        )
+    except (OSError, ValueError) as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": "spotify_import_failed", "message": str(error)}},
+        )
+
+    return SpotifyListeningImportResponse(
+        batch_id=result.batch_id,
+        source_paths=result.source_paths,
+        total_items=result.total_items,
+        imported_count=result.imported_count,
+        duplicate_count=result.duplicate_count,
+        skipped_count=result.skipped_count,
+        error_count=result.error_count,
+        error_summary=result.error_summary,
     )

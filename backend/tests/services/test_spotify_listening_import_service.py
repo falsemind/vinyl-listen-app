@@ -1,16 +1,39 @@
 import json
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.spotify_listening import SpotifyListeningEvent, SpotifyListeningImportBatch
+from app.models.spotify_listening import (
+    SpotifyAlbumStats,
+    SpotifyArtistStats,
+    SpotifyHourlyStats,
+    SpotifyListeningEvent,
+    SpotifyListeningImportBatch,
+    SpotifyMonthlyArtistStats,
+    SpotifySkipStats,
+    SpotifyTrackStats,
+    SpotifyVinylArtistMatch,
+    SpotifyVinylReleaseMatch,
+)
 from app.services.spotify_listening_import_service import SpotifyListeningImportService, normalize_spotify_text
 
 
 def _db_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE releases (id VARCHAR PRIMARY KEY, artist VARCHAR NOT NULL, title VARCHAR NOT NULL)")
+        )
     SpotifyListeningImportBatch.__table__.create(engine)
     SpotifyListeningEvent.__table__.create(engine)
+    SpotifyArtistStats.__table__.create(engine)
+    SpotifyAlbumStats.__table__.create(engine)
+    SpotifyTrackStats.__table__.create(engine)
+    SpotifyHourlyStats.__table__.create(engine)
+    SpotifyMonthlyArtistStats.__table__.create(engine)
+    SpotifySkipStats.__table__.create(engine)
+    SpotifyVinylArtistMatch.__table__.create(engine)
+    SpotifyVinylReleaseMatch.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return session_factory()
 
@@ -74,6 +97,10 @@ def test_import_files_filters_spotify_export_fields_and_dedupes_events(tmp_path)
         assert batch is not None
         assert batch.status == "completed"
         assert batch.source_paths == [str(spotify_file)]
+        assert db.query(SpotifyArtistStats).count() == 1
+        assert db.query(SpotifyAlbumStats).count() == 1
+        assert db.query(SpotifyTrackStats).count() == 1
+        assert db.query(SpotifyHourlyStats).count() == 1
 
 
 def test_import_files_records_item_errors_without_stopping_import(tmp_path) -> None:
