@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     api_rate_limit_per_minute: int = 60
     inbound_rate_limit_enabled: bool = True
-    inbound_rate_limit_backend: Literal["memory", "redis"] = "memory"
+    inbound_rate_limit_backend: Literal["memory", "redis"] = "redis"
     inbound_default_rate_limit_per_minute: int = 300
     inbound_identify_rate_limit_per_minute: int = 30
     inbound_rate_limit_window_seconds: float = 60.0

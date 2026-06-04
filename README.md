@@ -142,7 +142,13 @@ IDENTIFY_MLX_VLM_MODEL_NAME=PaddlePaddle/PaddleOCR-VL-1.5
 LOG_LEVEL=DEBUG
 ```
 
-`DATABASE_URL` is provided automatically inside Docker Compose and points the backend container at the bundled PostgreSQL service.
+Docker Compose creates two local PostgreSQL databases:
+
+* `vinyl_dev` for development and test work
+* `vinyl_collection` for real listening-session data collection
+
+Set `DATABASE_PROFILE=dev` or `DATABASE_PROFILE=collection` before launching the backend. `DATABASE_URL` can still be set as an explicit one-off override.
+The `postgres-init` service idempotently creates both databases, including when an older local Docker volume already exists.
 `IDENTIFY_MLX_VLM_SERVICE_URL` points the backend container to a VLM server running on the host machine.
 
 ### 2. Start the local VLM OCR server
@@ -167,6 +173,12 @@ From the repository root:
 
 ```bash
 docker compose up --build
+```
+
+To collect real listening-session data, point the backend at the collection database:
+
+```bash
+DATABASE_PROFILE=collection docker compose up --build backend
 ```
 
 This starts:
@@ -197,10 +209,10 @@ For quieter logs later, set `LOG_LEVEL=INFO` in the root `.env`.
 From the repository root:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres postgres-init
 ```
 
-This launches only PostgreSQL for local backend development.
+This launches PostgreSQL with both `vinyl_dev` and `vinyl_collection` available.
 
 ### 2. Create Python Virtual Environment
 
@@ -222,7 +234,9 @@ POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-root
 Create `backend/.env`:
 
 ```env
-DATABASE_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl
+DATABASE_PROFILE=dev
+DATABASE_DEV_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_dev
+DATABASE_COLLECTION_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_collection
 DISCOGS_TOKEN=your_discogs_token
 DISCOGS_BASE_URL=https://api.discogs.com
 API_RATE_LIMIT_PER_MINUTE=60
@@ -258,6 +272,8 @@ source venv/bin/activate
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+Use `DATABASE_PROFILE=collection alembic upgrade head` and `DATABASE_PROFILE=collection uvicorn app.main:app --reload` when you intentionally want the collection database.
 
 Server will start at `http://localhost:8000`
 
