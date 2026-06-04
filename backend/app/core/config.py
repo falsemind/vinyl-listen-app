@@ -10,7 +10,10 @@ REPO_ROOT = BACKEND_ROOT.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(REPO_ROOT / ".env", BACKEND_ROOT / ".env"), extra="ignore")
 
-    database_url: str
+    database_profile: Literal["dev", "collection"] = "dev"
+    database_url: str | None = None
+    database_dev_url: str = "postgresql://vinyl:vinyl@localhost:5432/vinyl_dev"
+    database_collection_url: str = "postgresql://vinyl:vinyl@localhost:5432/vinyl_collection"
 
     database_echo: bool = False
 
@@ -37,7 +40,7 @@ class Settings(BaseSettings):
     ai_chat_endpoint_path: str = "/api/v1/chat"
     ai_chat_model: str | None = None
     ai_chat_api_key: str | None = None
-    ai_chat_timeout_seconds: float = 30.0
+    ai_chat_timeout_seconds: float = 60.0
     ai_chat_temperature: float = 0.2
     spotify_import_dir: str = "spotify_import"
 
@@ -81,6 +84,17 @@ class Settings(BaseSettings):
     identify_debug_preprocess_images_dir: str = "identify_ocr_images"
 
     log_level: str = "INFO"
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.database_url and self.database_url.strip():
+            return self.database_url
+
+        profile_urls = {
+            "dev": self.database_dev_url,
+            "collection": self.database_collection_url,
+        }
+        return profile_urls[self.database_profile]
 
 
 settings = Settings()

@@ -3,19 +3,43 @@ services:
     image: postgres:18
     container_name: vinyl_postgres
     environment:
-      POSTGRES_DB: vinyl
+      POSTGRES_DB: vinyl_dev
       POSTGRES_USER: vinyl
       POSTGRES_PASSWORD: vinyl
     ports:
       - "5432:5432"
     volumes:
       - postgres_18_data:/var/lib/postgresql
+      - ./scripts/postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vinyl -d vinyl"]
+      test: ["CMD-SHELL", "pg_isready -U vinyl -d vinyl_dev"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  postgres-init:
+    image: postgres:18
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: vinyl
+    volumes:
+      - ./scripts/postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql:ro
+    command:
+      [
+        "psql",
+        "-h",
+        "postgres",
+        "-U",
+        "vinyl",
+        "-d",
+        "postgres",
+        "-f",
+        "/docker-entrypoint-initdb.d/10-init-databases.sql",
+      ]
+    restart: "no"
 
   redis:
     image: ${REDIS_IMAGE:-redis:7.4-alpine}
@@ -39,10 +63,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl
+      DATABASE_PROFILE: ${DATABASE_PROFILE:-dev}
+      DATABASE_DEV_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl_dev
+      DATABASE_COLLECTION_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl_collection
       DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
       DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
       AI_CHAT_ENABLED: ${AI_CHAT_ENABLED:-false}
@@ -50,7 +78,7 @@ services:
       AI_CHAT_ENDPOINT_PATH: ${AI_CHAT_ENDPOINT_PATH:-/api/v1/chat}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
       AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-}
-      AI_CHAT_TIMEOUT_SECONDS: ${AI_CHAT_TIMEOUT_SECONDS:-30}
+      AI_CHAT_TIMEOUT_SECONDS: ${AI_CHAT_TIMEOUT_SECONDS:-60}
       AI_CHAT_TEMPERATURE: ${AI_CHAT_TEMPERATURE:-0.2}
       API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-60}
       IDENTIFY_OCR_BACKEND: ${IDENTIFY_OCR_BACKEND:-auto}
