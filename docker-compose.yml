@@ -73,6 +73,7 @@ services:
       DATABASE_COLLECTION_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl_collection
       DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
       DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      DISCOGS_USERNAME: ${DISCOGS_USERNAME:-}
       AI_CHAT_ENABLED: ${AI_CHAT_ENABLED:-false}
       AI_CHAT_BASE_URL: ${AI_CHAT_BASE_URL:-http://host.docker.internal:1234}
       AI_CHAT_ENDPOINT_PATH: ${AI_CHAT_ENDPOINT_PATH:-/api/v1/chat}
