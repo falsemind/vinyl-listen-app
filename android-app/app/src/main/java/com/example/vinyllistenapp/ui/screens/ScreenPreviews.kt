@@ -59,6 +59,10 @@ private fun AnalyticsScreenPreview() {
             onViewAllTopRecords = {},
             onViewAllMoods = {},
             onViewAllStyles = {},
+            onOpenMonthSessions = {},
+            onOpenRatingRecords = {},
+            onOpenMoodRecords = {},
+            onOpenStyleRecords = {},
         )
     }
 }

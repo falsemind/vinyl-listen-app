@@ -479,6 +479,7 @@ Backend source:
 
 ```
 GET /analytics/plays/monthly
+GET /analytics/sessions?month=YYYY-MM
 ```
 
 ### Top Records
@@ -489,7 +490,7 @@ List:
 Most played records
 ```
 
-The Analytics screen shows up to 5 records inline. `View All` opens the Top Records screen with up to 25 records.
+The Analytics screen shows up to 5 records inline. `View All` opens the Top Records screen with 10 records by default and a `Show More` action for additional pages.
 
 Backend source:
 
@@ -511,6 +512,7 @@ Backend source:
 
 ```
 GET /analytics/rating-distribution
+GET /analytics/records/by-rating?rating=5
 ```
 
 ### Mood Distribution
@@ -525,12 +527,34 @@ Backend source:
 
 ```
 GET /analytics/mood-distribution
+GET /analytics/records/by-mood?mood=Focused
+```
+
+### Style Distribution
+
+Progress rows:
+
+```
+Specific Discogs style counts
+```
+
+Style analytics shows specific styles such as `Dub Techno`, `House`, and `Deep House`, not broad genres. Tapping a style opens a View All-style drilldown with record cards and 10-item pagination.
+
+Backend source:
+
+```
+GET /analytics/style-distribution
+GET /analytics/records/by-style?style=Dub%20Techno
 ```
 
 ## Actions
 
 ```
-Tap record in chart → Record Detail Screen
+Tap month with sessions → Month Sessions Screen
+Tap rating row → Rating Records Screen
+Tap mood row → Mood Records Screen
+Tap style row → Style Records Screen
+Tap record in chart or drilldown → Record Detail Screen
 Tap Top Records View All → Top Records Screen
 ```
 

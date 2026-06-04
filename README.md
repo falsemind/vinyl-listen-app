@@ -384,10 +384,18 @@ Log a new listening session.
 ### Analytics
 
 ```
-GET /api/v1/analytics/
+GET /api/v1/analytics/plays/monthly
+GET /api/v1/analytics/top-records
+GET /api/v1/analytics/rating-distribution
+GET /api/v1/analytics/mood-distribution
+GET /api/v1/analytics/style-distribution
+GET /api/v1/analytics/sessions
+GET /api/v1/analytics/records/by-rating
+GET /api/v1/analytics/records/by-mood
+GET /api/v1/analytics/records/by-style
 ```
 
-Retrieve the current analytics summary placeholder response.
+Retrieve dashboard chart data and paginated drilldowns for month, rating, mood, and style selections.
 
 ---
 
