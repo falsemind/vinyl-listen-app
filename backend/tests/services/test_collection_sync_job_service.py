@@ -14,7 +14,12 @@ class SuccessfulCollectionSyncService:
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
             progress_reporter(step="importing", message="Importing data", total_items=3, processed_items=1)
-            progress_reporter(step="loading", message="Loading...", total_items=3, processed_items=2)
+            progress_reporter(
+                step="finalizing",
+                message="Finalizing collection sync",
+                total_items=3,
+                processed_items=2,
+            )
 
         return CollectionSyncResult(
             total_items=3,
@@ -52,7 +57,7 @@ def test_collection_sync_job_service_completes_job() -> None:
 
     assert completed.status == "succeeded"
     assert completed.step == "loading"
-    assert completed.message == "Loading..."
+    assert completed.message == "Collection sync complete"
     assert completed.total_items == 3
     assert completed.processed_items == 2
     assert completed.added_count == 1

@@ -82,15 +82,17 @@ class CollectionSyncJobService:
                 logger.warning("Collection sync job disappeared before processing job_id=%s", job_id)
                 return
 
-            try:
+        try:
+            with self._session_factory() as db:
                 result = self._sync_service.sync_collection(
                     db,
-                    progress_reporter=lambda **progress: self._update_progress(db, job_id, **progress),
+                    progress_reporter=lambda **progress: self._update_progress(job_id, **progress),
                 )
-            except Exception as error:  # noqa: BLE001
-                self._fail_job(db, job_id, self._map_failure(error))
-                return
+        except Exception as error:  # noqa: BLE001
+            self._fail_job(job_id, self._map_failure(error))
+            return
 
+        with self._session_factory() as db:
             job = self._repository.get(db, job_id)
             if job is None:
                 logger.warning("Collection sync job disappeared before completion job_id=%s", job_id)
@@ -99,7 +101,7 @@ class CollectionSyncJobService:
             self._repository.complete(
                 db,
                 job,
-                message="Loading...",
+                message="Collection sync complete",
                 updated_at=self._now_provider(),
                 total_items=result.total_items,
                 processed_items=result.unique_releases,
@@ -110,7 +112,6 @@ class CollectionSyncJobService:
 
     def _update_progress(
         self,
-        db: Session,
         job_id: str,
         *,
         step: str,
@@ -121,41 +122,43 @@ class CollectionSyncJobService:
         updated_count: int | None = None,
         removed_count: int | None = None,
     ) -> None:
-        job = self._repository.get(db, job_id)
-        if job is None:
-            logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
-            return
+        with self._session_factory() as db:
+            job = self._repository.get(db, job_id)
+            if job is None:
+                logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
+                return
 
-        self._repository.update_progress(
-            db,
-            job,
-            step=step,
-            message=message,
-            updated_at=self._now_provider(),
-            total_items=total_items,
-            processed_items=processed_items,
-            added_count=added_count,
-            updated_count=updated_count,
-            removed_count=removed_count,
-        )
+            self._repository.update_progress(
+                db,
+                job,
+                step=step,
+                message=message,
+                updated_at=self._now_provider(),
+                total_items=total_items,
+                processed_items=processed_items,
+                added_count=added_count,
+                updated_count=updated_count,
+                removed_count=removed_count,
+            )
 
-    def _fail_job(self, db: Session, job_id: str, failure: CollectionSyncJobFailure) -> None:
-        job = self._repository.get(db, job_id)
-        if job is None:
-            logger.warning("Collection sync job disappeared before failure update job_id=%s", job_id)
-            return
+    def _fail_job(self, job_id: str, failure: CollectionSyncJobFailure) -> None:
+        with self._session_factory() as db:
+            job = self._repository.get(db, job_id)
+            if job is None:
+                logger.warning("Collection sync job disappeared before failure update job_id=%s", job_id)
+                return
 
-        self._repository.fail(
-            db,
-            job,
-            error={
-                "code": failure.code,
-                "message": failure.message,
-                "failed_step": failure.failed_step,
-            },
-            message=failure.message,
-            updated_at=self._now_provider(),
-        )
+            self._repository.fail(
+                db,
+                job,
+                error={
+                    "code": failure.code,
+                    "message": failure.message,
+                    "failed_step": failure.failed_step,
+                },
+                message=failure.message,
+                updated_at=self._now_provider(),
+            )
 
     def _map_failure(self, error: Exception) -> CollectionSyncJobFailure:
         if isinstance(error, DiscogsConfigurationError):

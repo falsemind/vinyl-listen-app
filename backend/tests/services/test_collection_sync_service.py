@@ -37,11 +37,31 @@ class FakeDiscogsService:
         return self.items
 
 
+class FakeDb:
+    def __init__(self) -> None:
+        self.commit_count = 0
+        self.rollback_count = 0
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
+
+
 class FakeReleasesRepository:
     def __init__(self, releases: list[FakeRelease] | None = None) -> None:
         self.releases = {release.discogs_release_id: release for release in releases or []}
+        self.commit_flags: list[bool] = []
 
-    def save_or_update(self, _db: object, data: InternalReleaseData) -> tuple[FakeRelease, bool]:
+    def save_or_update(
+        self,
+        _db: object,
+        data: InternalReleaseData,
+        *,
+        commit: bool = True,
+    ) -> tuple[FakeRelease, bool]:
+        self.commit_flags.append(commit)
         release = self.releases.get(data.discogs_release_id)
         created = release is None
         if release is None:
@@ -83,7 +103,9 @@ class FakeReleasesRepository:
         discogs_instance_id: int | None,
         collection_added_at: datetime | None,
         synced_at: datetime,
+        commit: bool = True,
     ) -> FakeRelease:
+        self.commit_flags.append(commit)
         release.in_collection = True
         release.discogs_instance_id = discogs_instance_id
         release.collection_added_at = collection_added_at
@@ -97,7 +119,9 @@ class FakeReleasesRepository:
         active_discogs_release_ids: set[int],
         *,
         removed_at: datetime,
+        commit: bool = True,
     ) -> int:
+        self.commit_flags.append(commit)
         removed_count = 0
         for release_id, release in self.releases.items():
             if release.in_collection and release_id not in active_discogs_release_ids:
@@ -106,6 +130,19 @@ class FakeReleasesRepository:
                 release.last_discogs_sync_at = removed_at
                 removed_count += 1
         return removed_count
+
+
+class FailingReleasesRepository(FakeReleasesRepository):
+    def save_or_update(
+        self,
+        _db: object,
+        data: InternalReleaseData,
+        *,
+        commit: bool = True,
+    ) -> tuple[FakeRelease, bool]:
+        if data.discogs_release_id == 202:
+            raise CollectionSyncError("Second item failed.")
+        return super().save_or_update(_db, data, commit=commit)
 
 
 def test_collapse_collection_items_picks_newest_duplicate_copy() -> None:
@@ -148,7 +185,9 @@ def test_sync_collection_adds_unique_releases_and_marks_them_active() -> None:
         now_provider=lambda: now,
     )
 
-    result = service.sync_collection(db=None)
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
 
     assert result.total_items == 3
     assert result.unique_releases == 2
@@ -159,6 +198,9 @@ def test_sync_collection_adds_unique_releases_and_marks_them_active() -> None:
     assert repository.releases[116].in_collection is True
     assert repository.releases[116].discogs_instance_id == 10
     assert repository.releases[116].collection_removed_at is None
+    assert repository.commit_flags == [False, False, False, False, False]
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
 
 
 def test_sync_collection_marks_missing_active_releases_removed_without_deleting() -> None:
@@ -185,13 +227,40 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
         now_provider=lambda: now,
     )
 
-    result = service.sync_collection(db=None)
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
 
     assert result.added_count == 1
     assert result.removed_count == 1
     assert 999 in repository.releases
     assert repository.releases[999].in_collection is False
     assert repository.releases[999].collection_removed_at == now
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
+def test_sync_collection_rolls_back_when_later_item_fails() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    repository = FailingReleasesRepository()
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService(
+            [
+                _collection_item(116, 10, "2022-01-01T10:00:00-07:00"),
+                _collection_item(202, 20, "2021-01-01T10:00:00-07:00"),
+            ]
+        ),
+        repository=repository,
+        now_provider=lambda: now,
+    )
+    db = FakeDb()
+
+    with pytest.raises(CollectionSyncError, match="Second item failed"):
+        service.sync_collection(db=db)
+
+    assert db.commit_count == 0
+    assert db.rollback_count == 1
+    assert repository.commit_flags == [False, False]
 
 
 def test_collapse_collection_items_rejects_missing_basic_information() -> None:

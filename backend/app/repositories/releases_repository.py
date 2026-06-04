@@ -66,7 +66,7 @@ class ReleasesRepository:
         )
 
     @staticmethod
-    def save_or_update(db: Session, data: InternalReleaseData) -> tuple[Releases, bool]:
+    def save_or_update(db: Session, data: InternalReleaseData, *, commit: bool = True) -> tuple[Releases, bool]:
         release = ReleasesRepository.get_by_discogs_release_id(db, data.discogs_release_id)
         created = release is None
 
@@ -99,8 +99,11 @@ class ReleasesRepository:
             release.cover_image_url = data.cover_image_url
 
         db.add(release)
-        db.commit()
-        db.refresh(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
         return release, created
 
     @staticmethod
@@ -111,6 +114,7 @@ class ReleasesRepository:
         discogs_instance_id: int | None,
         collection_added_at: datetime | None,
         synced_at: datetime,
+        commit: bool = True,
     ) -> Releases:
         release.in_collection = True
         release.discogs_instance_id = discogs_instance_id
@@ -119,8 +123,11 @@ class ReleasesRepository:
         release.last_discogs_sync_at = synced_at
 
         db.add(release)
-        db.commit()
-        db.refresh(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
         return release
 
     @staticmethod
@@ -129,6 +136,7 @@ class ReleasesRepository:
         active_discogs_release_ids: set[int],
         *,
         removed_at: datetime,
+        commit: bool = True,
     ) -> int:
         query = db.query(Releases).filter(Releases.in_collection.is_(True))
         if active_discogs_release_ids:
@@ -142,8 +150,10 @@ class ReleasesRepository:
             db.add(release)
             removed_count += 1
 
-        if removed_count:
+        if removed_count and commit:
             db.commit()
+        elif removed_count:
+            db.flush()
 
         return removed_count
 

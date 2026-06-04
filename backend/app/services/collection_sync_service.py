@@ -58,60 +58,67 @@ class CollectionSyncService:
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
-        raw_items = self._discogs_service.fetch_collection_releases()
-        collection_items = collapse_collection_items(raw_items)
-        _report_progress(
-            progress_reporter,
-            step="importing",
-            message="Importing data",
-            total_items=len(raw_items),
-            processed_items=0,
-        )
-
-        added_count = 0
-        updated_count = 0
-        active_discogs_release_ids: set[int] = set()
-
-        for processed_count, item in enumerate(collection_items, start=1):
-            release_data = _map_collection_item_to_release(item)
-            release, created = self._repository.save_or_update(db, release_data)
-            self._repository.mark_in_collection(
-                db,
-                release,
-                discogs_instance_id=item.instance_id,
-                collection_added_at=item.date_added,
-                synced_at=sync_started_at,
-            )
-            active_discogs_release_ids.add(item.discogs_release_id)
-            if created:
-                added_count += 1
-            else:
-                updated_count += 1
+        try:
+            raw_items = self._discogs_service.fetch_collection_releases()
+            collection_items = collapse_collection_items(raw_items)
             _report_progress(
                 progress_reporter,
                 step="importing",
                 message="Importing data",
                 total_items=len(raw_items),
-                processed_items=processed_count,
-                added_count=added_count,
-                updated_count=updated_count,
+                processed_items=0,
             )
 
-        removed_count = self._repository.mark_missing_collection_releases_removed(
-            db,
-            active_discogs_release_ids,
-            removed_at=sync_started_at,
-        )
-        _report_progress(
-            progress_reporter,
-            step="loading",
-            message="Loading...",
-            total_items=len(raw_items),
-            processed_items=len(collection_items),
-            added_count=added_count,
-            updated_count=updated_count,
-            removed_count=removed_count,
-        )
+            added_count = 0
+            updated_count = 0
+            active_discogs_release_ids: set[int] = set()
+
+            for processed_count, item in enumerate(collection_items, start=1):
+                release_data = _map_collection_item_to_release(item)
+                release, created = self._repository.save_or_update(db, release_data, commit=False)
+                self._repository.mark_in_collection(
+                    db,
+                    release,
+                    discogs_instance_id=item.instance_id,
+                    collection_added_at=item.date_added,
+                    synced_at=sync_started_at,
+                    commit=False,
+                )
+                active_discogs_release_ids.add(item.discogs_release_id)
+                if created:
+                    added_count += 1
+                else:
+                    updated_count += 1
+                _report_progress(
+                    progress_reporter,
+                    step="importing",
+                    message="Importing data",
+                    total_items=len(raw_items),
+                    processed_items=processed_count,
+                    added_count=added_count,
+                    updated_count=updated_count,
+                )
+
+            removed_count = self._repository.mark_missing_collection_releases_removed(
+                db,
+                active_discogs_release_ids,
+                removed_at=sync_started_at,
+                commit=False,
+            )
+            db.commit()
+            _report_progress(
+                progress_reporter,
+                step="finalizing",
+                message="Finalizing collection sync",
+                total_items=len(raw_items),
+                processed_items=len(collection_items),
+                added_count=added_count,
+                updated_count=updated_count,
+                removed_count=removed_count,
+            )
+        except Exception:
+            db.rollback()
+            raise
 
         logger.info(
             "Discogs collection sync complete total_items=%s unique_releases=%s added=%s updated=%s removed=%s",
