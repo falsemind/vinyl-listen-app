@@ -50,6 +50,7 @@ internal fun ScreenContent(
     innerPadding: PaddingValues = PaddingValues(),
     topPadding: androidx.compose.ui.unit.Dp = VinylSpacing.Space2Xl,
     scrollState: ScrollState? = null,
+    titleEndContent: (@Composable () -> Unit)? = null,
     topStartContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -66,13 +67,31 @@ internal fun ScreenContent(
                 .padding(top = topPadding, bottom = VinylSpacing.Space2Xl),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
     ) {
-        Text(
-            text = title,
-            color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.headlineLarge,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (titleEndContent == null) {
+            Text(
+                text = title,
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.headlineLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = title,
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.headlineLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                titleEndContent()
+            }
+        }
         Text(
             text = subtitle,
             color = VinylColors.TextSecondary,

@@ -25,6 +25,7 @@ import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
+import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
@@ -75,6 +76,7 @@ fun VinylNavHost(
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
                 onOpenInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                onOpenCollection = { navController.navigate(VinylRoutes.COLLECTION) },
                 onOpenSettings = { navController.navigate(VinylRoutes.SETTINGS) },
                 onViewAllSessions = { navController.navigate(VinylRoutes.RECENT_SESSIONS) },
                 onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
@@ -227,7 +229,7 @@ fun VinylNavHost(
                 },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
-                onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+                onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
                 onViewAllTopRecords = { navController.navigate(VinylRoutes.TOP_RECORDS) },
                 onViewAllMoods = { navController.navigate(VinylRoutes.MOOD_DISTRIBUTION) },
                 onViewAllStyles = { navController.navigate(VinylRoutes.STYLE_DISTRIBUTION) },
@@ -248,7 +250,20 @@ fun VinylNavHost(
                     }
                 },
                 onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
-                onSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+                onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+            )
+        }
+        composable(VinylRoutes.COLLECTION) {
+            CollectionScreen(
+                apiClient = apiClient,
+                onHome = {
+                    navController.navigate(VinylRoutes.HOME) {
+                        popUpTo(VinylRoutes.HOME) { inclusive = true }
+                    }
+                },
+                onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
+                onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
         composable(VinylRoutes.TOP_RECORDS) {
@@ -326,6 +341,7 @@ fun VinylNavHost(
                 },
                 onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                 onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
             )
         }
     }

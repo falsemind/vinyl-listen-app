@@ -15,6 +15,7 @@ class CollectionSyncJobStep(StrEnum):
     FETCHING = "fetching"
     IMPORTING = "importing"
     LOADING = "loading"
+    FINALIZING = "finalizing"
 
 
 class CollectionSyncJobError(BaseModel):

@@ -63,6 +63,8 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import java.util.Locale
 
+internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
+
 @Composable
 fun RecordDetailScreen(
     releaseId: String?,
@@ -122,18 +124,30 @@ fun RecordDetailScreen(
                     )
                 }
                 RecordDetailHeroCard(record = record)
+                if (shouldShowCollectionRemovedMessage(record)) {
+                    CollectionRemovedMessageCard(message = recordCollectionRemovedMessage(record))
+                }
                 SectionTitle("Listening Stats")
                 RecordDetailStatsRow(record = record, sessions = sessions)
                 SectionTitle("Mood Summary")
-                RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId, sessions))
+                if (hasRecordDetailSessionData(record.releaseId, sessions)) {
+                    RecordMoodSummaryCard(moodData = recordDetailMoodData(record.releaseId, sessions))
+                } else {
+                    NoRecordDetailDataText()
+                }
                 SectionTitle("Recent Sessions")
-                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                    recordDetailHistory(record.releaseId, sessions).take(10).forEach { history ->
-                        RecordHistoryCard(
-                            history = history,
-                            onNotesClick = { selectedNote = it },
-                            onEditSession = { sessionId -> onEditSession(sessionId) },
-                        )
+                val historyItems = recordDetailHistory(record.releaseId, sessions).take(10)
+                if (historyItems.isEmpty()) {
+                    NoRecordDetailDataText()
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                        historyItems.forEach { history ->
+                            RecordHistoryCard(
+                                history = history,
+                                onNotesClick = { selectedNote = it },
+                                onEditSession = { sessionId -> onEditSession(sessionId) },
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(128.dp))
@@ -161,6 +175,35 @@ fun RecordDetailScreen(
             )
         }
     }
+}
+
+@Composable
+private fun CollectionRemovedMessageCard(message: String) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentOrange.copy(alpha = 0.35f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceLg),
+    ) {
+        Text(
+            text = message,
+            color = VinylColors.AccentOrange,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun NoRecordDetailDataText() {
+    Text(
+        modifier = Modifier.fillMaxWidth(),
+        text = NO_RECORD_DETAIL_DATA_MESSAGE,
+        color = VinylColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable
@@ -639,13 +682,13 @@ private fun RecordDetailGoBackButton(
     }
 }
 
-private data class RecordMoodSummary(
+internal data class RecordMoodSummary(
     val mood: String,
     val count: Int,
     val color: androidx.compose.ui.graphics.Color,
 )
 
-private data class RecordHistoryEntry(
+internal data class RecordHistoryEntry(
     val date: String,
     val side: String,
     val rating: Int,
@@ -656,11 +699,12 @@ private data class RecordHistoryEntry(
     val canEdit: Boolean = false,
 )
 
-private fun recordDetailTotalPlays(
+internal fun recordDetailTotalPlays(
     releaseId: String,
     sessions: List<ListeningSession>,
 ): Int =
     sessions.takeIf { it.isNotEmpty() }?.size
+        ?: 0.takeUnless { shouldUsePrototypeRecordDetailFallback(releaseId) }
         ?: when (releaseId) {
             "release-001" -> 12
             "release-002" -> 8
@@ -668,24 +712,26 @@ private fun recordDetailTotalPlays(
             else -> 6
         }
 
-private fun recordDetailAverageRating(
+internal fun recordDetailAverageRating(
     releaseId: String,
     sessions: List<ListeningSession>,
 ): String =
     sessions.filter { it.rating > 0 }.takeIf { it.isNotEmpty() }?.let { ratedSessions ->
         String.format(Locale.US, "%.1f", ratedSessions.map { it.rating }.average())
-    } ?: when (releaseId) {
-        "release-001" -> "4.8"
-        "release-002" -> "4.2"
-        "release-003" -> "4.7"
-        else -> "4.0"
-    }
+    } ?: "0".takeUnless { shouldUsePrototypeRecordDetailFallback(releaseId) }
+        ?: when (releaseId) {
+            "release-001" -> "4.8"
+            "release-002" -> "4.2"
+            "release-003" -> "4.7"
+            else -> "4.0"
+        }
 
-private fun recordDetailLastPlayed(
+internal fun recordDetailLastPlayed(
     releaseId: String,
     sessions: List<ListeningSession>,
 ): String =
     sessions.firstOrNull()?.playedAt?.let(::relativeLastPlayedLabel)
+        ?: "0".takeUnless { shouldUsePrototypeRecordDetailFallback(releaseId) }
         ?: when (releaseId) {
             "release-001" -> "5d ago"
             "release-002" -> "1w ago"
@@ -693,7 +739,7 @@ private fun recordDetailLastPlayed(
             else -> "Recent"
         }
 
-private fun recordDetailMoodData(
+internal fun recordDetailMoodData(
     releaseId: String,
     sessions: List<ListeningSession>,
 ): List<RecordMoodSummary> {
@@ -707,6 +753,7 @@ private fun recordDetailMoodData(
             .sortedByDescending { it.value }
             .mapIndexed { index, entry -> RecordMoodSummary(entry.key, entry.value, colors[index % colors.size]) }
     if (sessionMoodData.isNotEmpty()) return sessionMoodData
+    if (!shouldUsePrototypeRecordDetailFallback(releaseId)) return emptyList()
 
     return when (releaseId) {
         "release-002" ->
@@ -738,7 +785,7 @@ private fun recordDetailMoodData(
     }
 }
 
-private fun recordDetailHistory(
+internal fun recordDetailHistory(
     releaseId: String,
     sessions: List<ListeningSession>,
 ): List<RecordHistoryEntry> {
@@ -757,6 +804,7 @@ private fun recordDetailHistory(
             )
         }
     if (sessionHistory.isNotEmpty()) return sessionHistory
+    if (!shouldUsePrototypeRecordDetailFallback(releaseId)) return emptyList()
 
     return when (releaseId) {
         "release-002" ->
@@ -823,3 +871,16 @@ private fun recordDetailHistory(
             )
     }
 }
+
+internal fun hasRecordDetailSessionData(
+    releaseId: String,
+    sessions: List<ListeningSession>,
+): Boolean = sessions.isNotEmpty() || shouldUsePrototypeRecordDetailFallback(releaseId)
+
+internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean =
+    !record.inCollection && !record.collectionRemovedAt.isNullOrBlank()
+
+internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
+
+private fun shouldUsePrototypeRecordDetailFallback(releaseId: String): Boolean =
+    releaseId in setOf("release-001", "release-002", "release-003")

@@ -19,8 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -80,7 +80,7 @@ fun AnalyticsScreen(
     onHome: () -> Unit,
     onOpenRecord: (String) -> Unit,
     onInsights: () -> Unit,
-    onSettings: () -> Unit,
+    onCollection: () -> Unit,
     onViewAllTopRecords: () -> Unit,
     onViewAllMoods: () -> Unit,
     onViewAllStyles: () -> Unit,
@@ -120,7 +120,12 @@ fun AnalyticsScreen(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = true, onClick = {}),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
-                        BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onSettings),
+                        BottomNavItem(
+                            "Collection",
+                            Icons.Filled.LibraryMusic,
+                            selected = false,
+                            onClick = onCollection,
+                        ),
                     ),
             )
         },
