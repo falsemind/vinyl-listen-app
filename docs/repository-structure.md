@@ -192,6 +192,10 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/rating-distribution` | `api/routes/analytics.py` | `AnalyticsService` rating frequency aggregation. |
 | `GET /analytics/mood-distribution` | `api/routes/analytics.py` | `AnalyticsService` mood frequency aggregation. |
 | `GET /analytics/style-distribution` | `api/routes/analytics.py` | `AnalyticsService` release style frequency aggregation. |
+| `GET /analytics/sessions` | `api/routes/analytics.py` | `AnalyticsService` month session drilldown with pagination. |
+| `GET /analytics/records/by-rating` | `api/routes/analytics.py` | `AnalyticsService` rating drilldown with record counts. |
+| `GET /analytics/records/by-mood` | `api/routes/analytics.py` | `AnalyticsService` mood drilldown with record counts. |
+| `GET /analytics/records/by-style` | `api/routes/analytics.py` | `AnalyticsService` style drilldown with record counts. |
 | `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` grounded chat service. |
 | `POST /ai/spotify/import` | `api/routes/ai.py` | `SpotifyListeningImportService`. |
 
