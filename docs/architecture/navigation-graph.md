@@ -43,10 +43,10 @@ Home
  │      │      └── RecordDetail
  │      └── RecordDetail
  │
- └── Settings
+ └── Collection
 ```
 
-Home, Analytics, Insights, and Settings are active bottom-navigation routes. Settings currently shows lightweight app information, Analytics loads the implemented dashboard endpoints, and Insights shows the initial single-thread AI chat shell.
+Home, Analytics, Insights, and Collection are active bottom-navigation routes. Settings is reachable from the Home header icon and currently shows lightweight app information. Analytics loads the implemented dashboard endpoints, Insights shows the single-thread AI chat shell, and Collection loads the Discogs-backed records collection.
 
 ---
 
@@ -64,6 +64,7 @@ Home, Analytics, Insights, and Settings are active bottom-navigation routes. Set
 |Record Detail|`record_detail/{releaseId}`|
 |Analytics|`analytics`|
 |AI Insights|`ai_insights`|
+|Collection|`collection`|
 |Top Records|`top_records`|
 |Settings|`settings`|
 ---
@@ -87,6 +88,9 @@ Current backend endpoints used by these routes:
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
+|Start Discogs collection sync|`POST /api/v1/collection/sync`|
+|Poll Discogs collection sync|`GET /api/v1/collection/sync/{job_id}`|
+|Load Records Collection list|`GET /api/v1/collection/releases?limit=25&offset={offset}`|
 |Create listening session|`POST /api/v1/sessions`|
 |Load custom moods|`GET /api/v1/sessions/moods`|
 |Create custom mood|`POST /api/v1/sessions/moods`|
@@ -400,7 +404,39 @@ The screen displays up to 25 records.
 
 ---
 
-# 11. Settings Screen
+# 11. Records Collection Screen
+
+### Route
+
+```
+collection
+```
+
+### Purpose
+
+Discogs-backed browser for current collection membership.
+
+### Displays
+
+- Empty state with centered `Load Discogs Collection` action
+- Import/sync progress with centered status feedback
+- Error state with orange error text and centered `Retry Load`
+- Latest 25 active collection records by Discogs added date
+- `Show More` pagination in 25-record pages
+- `Sync Items` action after collection records are loaded
+
+### Navigation
+
+|Action|Destination|
+|---|---|
+|Tap record|`record_detail/{releaseId}`|
+|Tap Home tab|`home`|
+|Tap Stats tab|`analytics`|
+|Tap Insights tab|`ai_insights`|
+
+---
+
+# 12. Settings Screen
 
 ### Route
 
@@ -427,7 +463,6 @@ This screen exists to support future configuration features such as:
 - preferences  
 - account management  
 - integrations  
-- collection sync settings
 
 ### Navigation
 
@@ -437,7 +472,7 @@ This screen exists to support future configuration features such as:
 
 ---
 
-# 12. AI Insights Screen
+# 13. AI Insights Screen
 
 ### Route
 
@@ -463,7 +498,7 @@ Single-thread chat shell for future AI-assisted listening insights.
 |---|---|
 |Tap Home tab|`home`|
 |Tap Stats tab|`analytics`|
-|Tap Settings tab|`settings`|
+|Tap Collection tab|`collection`|
 
 # Navigation Argument Definitions
 
@@ -625,8 +660,6 @@ multi-activity architecture
 Potential additional screens:
 
 ```
-AI assistant
-Collection browser
 Price tracking
 Sell recommendations
 ```

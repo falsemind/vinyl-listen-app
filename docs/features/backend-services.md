@@ -180,11 +180,12 @@ Expired jobs raise `IdentifyJobExpiredError`; missing jobs raise `IdentifyJobNot
 `DiscogsApiConfig.from_settings` reads:
 
 - `discogs_base_url`
+- `discogs_username`
 - `discogs_token`
 - `discogs_user_agent`
 - `discogs_request_timeout_seconds`
 
-Missing required Discogs settings raise `DiscogsConfigurationError`.
+Manual release search and import require `discogs_token`. Collection sync also requires `discogs_username` so the backend can read folder `0` from `GET /users/{username}/collection/folders/0/releases`. Missing required Discogs settings raise `DiscogsConfigurationError`.
 
 ### Client and rate limiting
 
