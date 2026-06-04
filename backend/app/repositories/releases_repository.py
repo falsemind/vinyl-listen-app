@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -65,7 +66,7 @@ class ReleasesRepository:
         )
 
     @staticmethod
-    def save_or_update(db: Session, data: InternalReleaseData) -> tuple[Releases, bool]:
+    def save_or_update(db: Session, data: InternalReleaseData, *, commit: bool = True) -> tuple[Releases, bool]:
         release = ReleasesRepository.get_by_discogs_release_id(db, data.discogs_release_id)
         created = release is None
 
@@ -75,25 +76,106 @@ class ReleasesRepository:
                 artist=data.artist,
                 title=data.title,
                 year=data.year,
+                format=data.format,
                 label=data.label,
                 catalog_number=data.catalog_number,
                 barcode=data.barcode,
                 genres=data.genres,
                 styles=data.styles,
+                thumbnail_url=data.thumbnail_url,
                 cover_image_url=data.cover_image_url,
             )
         else:
             release.artist = data.artist
             release.title = data.title
             release.year = data.year
+            release.format = data.format
             release.label = data.label
             release.catalog_number = data.catalog_number
             release.barcode = data.barcode
             release.genres = data.genres
             release.styles = data.styles
+            release.thumbnail_url = data.thumbnail_url
             release.cover_image_url = data.cover_image_url
 
         db.add(release)
-        db.commit()
-        db.refresh(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
         return release, created
+
+    @staticmethod
+    def mark_in_collection(
+        db: Session,
+        release: Releases,
+        *,
+        discogs_instance_id: int | None,
+        collection_added_at: datetime | None,
+        synced_at: datetime,
+        commit: bool = True,
+    ) -> Releases:
+        release.in_collection = True
+        release.discogs_instance_id = discogs_instance_id
+        release.collection_added_at = collection_added_at
+        release.collection_removed_at = None
+        release.last_discogs_sync_at = synced_at
+
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    @staticmethod
+    def mark_missing_collection_releases_removed(
+        db: Session,
+        active_discogs_release_ids: set[int],
+        *,
+        removed_at: datetime,
+        commit: bool = True,
+    ) -> int:
+        query = db.query(Releases).filter(Releases.in_collection.is_(True))
+        if active_discogs_release_ids:
+            query = query.filter(~Releases.discogs_release_id.in_(active_discogs_release_ids))
+
+        removed_count = 0
+        for release in query.all():
+            release.in_collection = False
+            release.collection_removed_at = removed_at
+            release.last_discogs_sync_at = removed_at
+            db.add(release)
+            removed_count += 1
+
+        if removed_count and commit:
+            db.commit()
+        elif removed_count:
+            db.flush()
+
+        return removed_count
+
+    @staticmethod
+    def list_collection_releases(
+        db: Session,
+        *,
+        limit: int,
+        offset: int,
+        include_removed: bool = False,
+    ) -> Sequence[Releases]:
+        query = db.query(Releases)
+        if not include_removed:
+            query = query.filter(Releases.in_collection.is_(True))
+
+        return (
+            query.order_by(
+                Releases.collection_added_at.desc().nullslast(),
+                Releases.artist.asc(),
+                Releases.title.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )

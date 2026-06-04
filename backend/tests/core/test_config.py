@@ -27,3 +27,15 @@ def test_database_url_override_wins_over_profile() -> None:
     )
 
     assert settings.resolved_database_url == "sqlite:///./test.db"
+
+
+def test_discogs_collection_credentials_can_be_configured() -> None:
+    settings = Settings(
+        _env_file=None,
+        discogs_base_url="https://api.discogs.com",
+        discogs_username="username",
+        discogs_token="token",
+    )
+
+    assert settings.discogs_username == "username"
+    assert settings.discogs_token == "token"

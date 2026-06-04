@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     database_echo: bool = False
 
+    discogs_username: str | None = None
     discogs_token: str | None = None
     discogs_base_url: str
     discogs_user_agent: str = "vinyl-listen-app/0.1.0"
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     ai_chat_endpoint_path: str = "/api/v1/chat"
     ai_chat_model: str | None = None
     ai_chat_api_key: str | None = None
-    ai_chat_timeout_seconds: float = 30.0
+    ai_chat_timeout_seconds: float = 60.0
     ai_chat_temperature: float = 0.2
     spotify_import_dir: str = "spotify_import"
 

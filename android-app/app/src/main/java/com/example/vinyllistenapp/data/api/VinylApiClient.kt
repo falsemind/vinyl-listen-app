@@ -9,6 +9,8 @@ import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountsPage
 import com.example.vinyllistenapp.domain.AnalyticsSessionsPage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
+import com.example.vinyllistenapp.domain.CollectionRecord
+import com.example.vinyllistenapp.domain.CollectionRecordsPage
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -87,6 +89,42 @@ class VinylApiClient(
     suspend fun cancelIdentifyJob(jobId: String): IdentifyJobState =
         apiCall {
             postRetryableJson("identify/jobs/${Uri.encode(jobId)}/cancel", JSONObject()).toIdentifyJobState()
+        }
+
+    suspend fun syncCollection(onStatus: (CollectionSyncJobState) -> Unit = {}): CollectionSyncJobState =
+        apiCall {
+            var job = startCollectionSyncJob()
+            onStatus(job)
+            while (!job.status.isTerminal) {
+                delay(750)
+                job = getCollectionSyncJobStatus(job.jobId)
+                onStatus(job)
+            }
+            if (job.status == CollectionSyncJobStatus.Failed) {
+                throw ApiException(
+                    message = job.error?.message ?: "Collection sync failed.",
+                    failedStep = job.error?.failedStep,
+                )
+            }
+            job
+        }
+
+    suspend fun startCollectionSyncJob(): CollectionSyncJobState =
+        apiCall {
+            postRetryableJson("collection/sync", JSONObject()).toCollectionSyncJobState()
+        }
+
+    suspend fun getCollectionSyncJobStatus(jobId: String): CollectionSyncJobState =
+        apiCall {
+            getJson("collection/sync/${Uri.encode(jobId)}").toCollectionSyncJobState()
+        }
+
+    suspend fun getCollectionReleases(
+        limit: Int = 25,
+        offset: Int = 0,
+    ): CollectionRecordsPage =
+        apiCall {
+            getJson("collection/releases?limit=$limit&offset=$offset").toCollectionRecordsPage()
         }
 
     suspend fun importRelease(discogsReleaseId: Long): String =
@@ -675,6 +713,36 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         coverImageUrl = optNullableString("cover_image_url"),
         availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
         availableSideOptions = optJSONArray("available_side_options").orEmpty().toReleaseSideOptions(),
+        inCollection = optBoolean("in_collection", true),
+        collectionAddedAt = optNullableString("collection_added_at"),
+        collectionRemovedAt = optNullableString("collection_removed_at"),
+    )
+
+internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
+    CollectionRecordsPage(
+        records =
+            optJSONArray("items")
+                .orEmpty()
+                .mapObjects { item -> item.toCollectionRecord() },
+        limit = optInt("limit", 25),
+        offset = optInt("offset", 0),
+        hasMore = optBoolean("has_more", false),
+    )
+
+private fun JSONObject.toCollectionRecord(): CollectionRecord =
+    CollectionRecord(
+        releaseId = getString("id"),
+        discogsReleaseId = optLong("discogs_release_id"),
+        artist = optString("artist", "Unknown artist"),
+        title = optString("title", "Unknown title"),
+        year = optNullableInt("year"),
+        format = optNullableString("format") ?: "Vinyl",
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        styles = optJSONArray("styles").orEmpty().mapStrings(),
+        thumbnailUrl = optNullableString("thumb_url"),
+        collectionAddedAt = optNullableString("collection_added_at"),
+        inCollection = optBoolean("in_collection", false),
     )
 
 internal fun JSONObject.toAnalyticsSessionsPage(): AnalyticsSessionsPage =
@@ -803,6 +871,61 @@ data class IdentifyJobError(
     val failedStep: String,
 )
 
+data class CollectionSyncJobState(
+    val jobId: String,
+    val status: CollectionSyncJobStatus,
+    val step: CollectionSyncJobStep?,
+    val message: String,
+    val totalItems: Int = 0,
+    val processedItems: Int = 0,
+    val addedCount: Int = 0,
+    val updatedCount: Int = 0,
+    val removedCount: Int = 0,
+    val error: CollectionSyncJobError? = null,
+)
+
+enum class CollectionSyncJobStatus(
+    val wireValue: String,
+) {
+    Queued("queued"),
+    Running("running"),
+    Succeeded("succeeded"),
+    Failed("failed"),
+    Unknown("unknown"),
+    ;
+
+    val isTerminal: Boolean
+        get() = this == Succeeded || this == Failed
+
+    companion object {
+        fun fromWireValue(value: String): CollectionSyncJobStatus = entries.firstOrNull { it.wireValue == value } ?: Unknown
+    }
+}
+
+enum class CollectionSyncJobStep(
+    val wireValue: String,
+) {
+    Fetching("fetching"),
+    Importing("importing"),
+    Loading("loading"),
+    Finalizing("finalizing"),
+    Unknown("unknown"),
+    ;
+
+    companion object {
+        fun fromWireValue(value: String?): CollectionSyncJobStep? =
+            value?.takeIf { it.isNotBlank() }?.let { wireValue ->
+                entries.firstOrNull { it.wireValue == wireValue } ?: Unknown
+            }
+    }
+}
+
+data class CollectionSyncJobError(
+    val code: String,
+    val message: String,
+    val failedStep: String,
+)
+
 internal fun JSONObject.toIdentifyJobState(): IdentifyJobState {
     val result = optJSONObject("result")
     val error = optJSONObject("error")
@@ -820,6 +943,29 @@ internal fun JSONObject.toIdentifyJobState(): IdentifyJobState {
                 )
             },
         cancelRequested = optBoolean("cancel_requested", false),
+    )
+}
+
+internal fun JSONObject.toCollectionSyncJobState(): CollectionSyncJobState {
+    val error = optJSONObject("error")
+    return CollectionSyncJobState(
+        jobId = getString("job_id"),
+        status = CollectionSyncJobStatus.fromWireValue(optString("status", "unknown")),
+        step = CollectionSyncJobStep.fromWireValue(optNullableString("step")),
+        message = optString("message", ""),
+        totalItems = optInt("total_items", 0),
+        processedItems = optInt("processed_items", 0),
+        addedCount = optInt("added_count", 0),
+        updatedCount = optInt("updated_count", 0),
+        removedCount = optInt("removed_count", 0),
+        error =
+            error?.let {
+                CollectionSyncJobError(
+                    code = it.optString("code", "collection_sync_failed"),
+                    message = it.optString("message", "Collection sync failed."),
+                    failedStep = it.optString("failed_step", "unknown"),
+                )
+            },
     )
 }
 

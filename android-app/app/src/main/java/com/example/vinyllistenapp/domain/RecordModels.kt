@@ -17,6 +17,9 @@ data class RecordSummary(
     val coverImageUrl: String? = null,
     val availableSides: List<String> = emptyList(),
     val availableSideOptions: List<ReleaseSideOption> = emptyList(),
+    val inCollection: Boolean = true,
+    val collectionAddedAt: String? = null,
+    val collectionRemovedAt: String? = null,
 )
 
 data class ReleaseSideOption(
@@ -119,6 +122,28 @@ data class AnalyticsRecordCountItem(
 data class AnalyticsRecordCountsPage(
     val records: List<AnalyticsRecordCountItem>,
     val pagination: AnalyticsPagination,
+)
+
+data class CollectionRecord(
+    val releaseId: String,
+    val discogsReleaseId: Long,
+    val artist: String,
+    val title: String,
+    val year: Int?,
+    val format: String,
+    val label: String?,
+    val catalogNumber: String?,
+    val styles: List<String>,
+    val thumbnailUrl: String?,
+    val collectionAddedAt: String?,
+    val inCollection: Boolean,
+)
+
+data class CollectionRecordsPage(
+    val records: List<CollectionRecord>,
+    val limit: Int,
+    val offset: Int,
+    val hasMore: Boolean,
 )
 
 data class MatchCandidate(

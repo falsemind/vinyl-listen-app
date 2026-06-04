@@ -26,8 +26,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -100,7 +100,7 @@ internal fun AiInsightsScreen(
     requestScope: CoroutineScope,
     onHome: () -> Unit,
     onStats: () -> Unit,
-    onSettings: () -> Unit,
+    onCollection: () -> Unit,
 ) {
     val context = LocalContext.current
     val chatListState = rememberLazyListState()
@@ -259,7 +259,12 @@ internal fun AiInsightsScreen(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onStats),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = true, onClick = {}),
-                        BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onSettings),
+                        BottomNavItem(
+                            "Collection",
+                            Icons.Filled.LibraryMusic,
+                            selected = false,
+                            onClick = onCollection,
+                        ),
                     ),
             )
         },

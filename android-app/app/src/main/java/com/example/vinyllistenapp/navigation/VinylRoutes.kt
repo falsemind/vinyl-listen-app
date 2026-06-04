@@ -34,6 +34,7 @@ object VinylRoutes {
     const val ANALYTICS_STYLE_RECORDS_PATTERN = "$ANALYTICS_STYLE_RECORDS/{$STYLE}"
     const val ANALYTICS = "analytics"
     const val AI_INSIGHTS = "ai_insights"
+    const val COLLECTION = "collection"
     const val SETTINGS = "settings"
 
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"

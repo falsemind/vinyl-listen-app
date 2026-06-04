@@ -42,6 +42,21 @@ private fun SettingsScreenPreview() {
             onHome = {},
             onStats = {},
             onInsights = {},
+            onCollection = {},
+        )
+    }
+}
+
+@Preview(name = "Collection", showBackground = true, backgroundColor = 0xFF101010, widthDp = 390, heightDp = 844)
+@Composable
+private fun CollectionScreenPreview() {
+    VinylListenAppTheme {
+        CollectionScreen(
+            apiClient = VinylApiClient(),
+            onHome = {},
+            onStats = {},
+            onInsights = {},
+            onOpenRecord = {},
         )
     }
 }
@@ -55,7 +70,7 @@ private fun AnalyticsScreenPreview() {
             onHome = {},
             onOpenRecord = {},
             onInsights = {},
-            onSettings = {},
+            onCollection = {},
             onViewAllTopRecords = {},
             onViewAllMoods = {},
             onViewAllStyles = {},
@@ -77,7 +92,7 @@ private fun AiInsightsScreenPreview() {
             requestScope = rememberCoroutineScope(),
             onHome = {},
             onStats = {},
-            onSettings = {},
+            onCollection = {},
         )
     }
 }

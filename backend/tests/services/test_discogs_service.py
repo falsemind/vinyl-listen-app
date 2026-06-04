@@ -48,6 +48,41 @@ def test_search_releases_maps_catalog_artist_and_title_params(
     assert "barcode" not in query
 
 
+def test_fetch_collection_releases_fetches_all_folder_pages(
+    queue_transport_factory,
+    build_discogs_client,
+    in_memory_discogs_repository_factory,
+) -> None:
+    transport = queue_transport_factory(
+        [
+            {
+                "pagination": {"page": 1, "pages": 2, "per_page": 50, "items": 2},
+                "releases": [{"id": 101}],
+            },
+            {
+                "pagination": {"page": 2, "pages": 2, "per_page": 50, "items": 2},
+                "releases": [{"id": 202}],
+            },
+        ]
+    )
+    service = DiscogsService(client=build_discogs_client(transport), repository=in_memory_discogs_repository_factory())
+
+    releases = service.fetch_collection_releases(username="alex", per_page=50)
+
+    assert releases == [{"id": 101}, {"id": 202}]
+    assert len(transport.calls) == 2
+    first_url = urlparse(transport.calls[0]["url"])
+    second_url = urlparse(transport.calls[1]["url"])
+    first_query = parse_qs(first_url.query)
+    second_query = parse_qs(second_url.query)
+    assert first_url.path == "/users/alex/collection/folders/0/releases"
+    assert first_query["page"] == ["1"]
+    assert first_query["per_page"] == ["50"]
+    assert first_query["sort"] == ["added"]
+    assert first_query["sort_order"] == ["desc"]
+    assert second_query["page"] == ["2"]
+
+
 def test_search_releases_caches_identical_queries(
     recording_transport_factory,
     build_discogs_client,

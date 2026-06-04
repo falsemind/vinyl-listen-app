@@ -57,6 +57,11 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun collectionRouteUsesExpectedPath() {
+        assertEquals("collection", VinylRoutes.COLLECTION)
+    }
+
+    @Test
     fun editSessionRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.SESSION_EDIT_PATTERN.isPortraitLockedOverflowRoute())
     }
