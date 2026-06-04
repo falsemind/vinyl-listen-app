@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
@@ -43,9 +45,13 @@ import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.theme.VinylColors
+import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
+
+private const val VIEW_ALL_PAGE_SIZE = 10
 
 @Composable
 fun RecentSessionsScreen(
@@ -73,8 +79,11 @@ fun RecentSessionsScreen(
         onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
-        sessions.forEach { session ->
-            SessionListItem(session = session, onClick = { onOpenRecord(session.releaseId) })
+        PaginatedViewAllItems(items = sessions) { session ->
+            SessionListItem(
+                session = session,
+                onClick = { onOpenRecord(session.releaseId) },
+            )
         }
     }
 }
@@ -105,8 +114,11 @@ fun TopRecordsScreen(
         onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
-        records.forEach { record ->
-            TopRecordListItem(record = record, onClick = { onOpenRecord(record.record.releaseId) })
+        PaginatedViewAllItems(items = records) { record ->
+            TopRecordListItem(
+                record = record,
+                onClick = { onOpenRecord(record.record.releaseId) },
+            )
         }
     }
 }
@@ -236,6 +248,52 @@ private fun ViewAllScreenContent(
 }
 
 @Composable
+private fun <T> PaginatedViewAllItems(
+    items: List<T>,
+    itemContent: @Composable (T) -> Unit,
+) {
+    var visibleItemCount by rememberSaveable { mutableIntStateOf(VIEW_ALL_PAGE_SIZE) }
+    LaunchedEffect(items) {
+        visibleItemCount = VIEW_ALL_PAGE_SIZE
+    }
+
+    items.take(visibleItemCount).forEach { item ->
+        itemContent(item)
+    }
+
+    if (visibleItemCount < items.size) {
+        ViewAllShowMoreButton(
+            onClick = {
+                visibleItemCount = (visibleItemCount + VIEW_ALL_PAGE_SIZE).coerceAtMost(items.size)
+            },
+        )
+    }
+}
+
+@Composable
+private fun ViewAllShowMoreButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .width(232.dp)
+                    .clickable(onClickLabel = "Show more", role = Role.Button, onClick = onClick)
+                    .padding(vertical = VinylSpacing.SpaceSm),
+            text = "Show More",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Center,
+            style =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
+                ),
+        )
+    }
+}
+
+@Composable
 private fun SessionListItem(
     session: ListeningSession,
     onClick: () -> Unit,
@@ -261,12 +319,60 @@ private fun SessionListItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
             ) {
-                Text(session.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(session.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(relativeLastPlayedLabel(session.playedAt), color = VinylColors.TextSecondary)
+                Text(
+                    text = session.title,
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = session.artist,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SidePlayedChip(side = session.side)
+                    RatingStars(
+                        rating = session.rating,
+                        compact = true,
+                        starSize = 14.dp,
+                        strokeWidth = 1.5.dp,
+                    )
+                }
             }
+            Text(
+                modifier =
+                    Modifier
+                        .padding(start = VinylSpacing.SpaceSm)
+                        .widthIn(min = 72.dp),
+                text = relativeLastPlayedLabel(session.playedAt),
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
+}
+
+@Composable
+private fun SidePlayedChip(side: String?) {
+    Text(
+        modifier =
+            Modifier
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceSm, vertical = 2.dp),
+        text = side?.let { "Side $it" } ?: "Side -",
+        color = VinylColors.TextOnSolidAccent,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
+    )
 }
 
 @Composable
