@@ -236,6 +236,9 @@ def get_release_sessions(
                 mood=session.mood,
                 notes=session.notes.strip() if session.notes and session.notes.strip() else None,
                 has_notes=bool(session.notes and session.notes.strip()),
+                created_at=session.created_at,
+                can_edit=service.can_edit_session(session),
+                editable_until=service.editable_until(session),
             )
             for session in sessions
         ]

@@ -47,6 +47,9 @@ data class ListeningSession(
     val hasNotes: Boolean = false,
     val notes: String? = null,
     val sessionId: String? = null,
+    val createdAt: String? = null,
+    val canEdit: Boolean = false,
+    val editableUntil: String? = null,
 )
 
 data class TopRecordSummary(

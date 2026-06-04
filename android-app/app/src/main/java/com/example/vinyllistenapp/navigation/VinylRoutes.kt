@@ -19,11 +19,14 @@ object VinylRoutes {
     const val ANALYTICS_MOOD_RECORDS = "analytics_mood_records"
     const val ANALYTICS_STYLE_RECORDS = "analytics_style_records"
     const val RELEASE_ID = "releaseId"
+    const val SESSION_ID = "sessionId"
     const val MONTH = "month"
     const val RATING = "rating"
     const val MOOD = "mood"
     const val STYLE = "style"
     const val SESSION_LOGGING_PATTERN = "session_logging/{$RELEASE_ID}"
+    const val SESSION_EDIT = "session_edit"
+    const val SESSION_EDIT_PATTERN = "$SESSION_EDIT/{$SESSION_ID}"
     const val RECORD_DETAIL_PATTERN = "record_detail/{$RELEASE_ID}"
     const val ANALYTICS_MONTH_SESSIONS_PATTERN = "$ANALYTICS_MONTH_SESSIONS/{$MONTH}"
     const val ANALYTICS_RATING_RECORDS_PATTERN = "$ANALYTICS_RATING_RECORDS/{$RATING}"
@@ -34,6 +37,8 @@ object VinylRoutes {
     const val SETTINGS = "settings"
 
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"
+
+    fun sessionEdit(sessionId: String): String = "$SESSION_EDIT/${Uri.encode(sessionId)}"
 
     fun recordDetail(releaseId: String): String = "record_detail/${Uri.encode(releaseId)}"
 

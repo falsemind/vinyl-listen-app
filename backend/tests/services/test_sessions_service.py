@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.models.sessions import Sessions
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionEditWindowExpiredError,
     SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionValidationError,
@@ -210,6 +211,145 @@ def test_get_session_raises_for_missing_session(build_sessions_service) -> None:
 
     with pytest.raises(SessionNotFoundError):
         service.get_session(db=object(), session_id="missing-session")
+
+
+def test_update_session_persists_changes_within_edit_window(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    created_at = datetime(2026, 4, 19, 8, 30, tzinfo=UTC)
+    repository.sessions.append(
+        Sessions(
+            id="session-123",
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes="Great pressing.",
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=created_at,
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        now_provider=lambda: created_at + timedelta(minutes=10),
+    )
+
+    session = service.update_session(
+        db=object(),
+        session_id="session-123",
+        fields={"rating": 4, "mood": " focused ", "notes": "  Replayed side B.  ", "side": "b"},
+    )
+
+    assert session.rating == 4
+    assert session.mood == "Focused"
+    assert session.notes == "Replayed side B."
+    assert session.vinyl_side == "B"
+    assert repository.updated_payload == {
+        "rating": 4,
+        "mood": "Focused",
+        "notes": "Replayed side B.",
+        "vinyl_side": "B",
+    }
+
+
+def test_update_session_can_clear_optional_fields(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    created_at = datetime(2026, 4, 19, 8, 30, tzinfo=UTC)
+    repository.sessions.append(
+        Sessions(
+            id="session-123",
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes="Great pressing.",
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=created_at,
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        now_provider=lambda: created_at + timedelta(minutes=3),
+    )
+
+    session = service.update_session(
+        db=object(),
+        session_id="session-123",
+        fields={"rating": None, "mood": None, "notes": None, "side": None},
+    )
+
+    assert session.rating is None
+    assert session.mood is None
+    assert session.notes is None
+    assert session.vinyl_side is None
+
+
+def test_update_session_rejects_expired_edit_window(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    created_at = datetime(2026, 4, 19, 8, 30, tzinfo=UTC)
+    repository.sessions.append(
+        Sessions(
+            id="session-123",
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes="Great pressing.",
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=created_at,
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        now_provider=lambda: created_at + timedelta(minutes=16),
+    )
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.update_session(db=object(), session_id="session-123", fields={})
+
+    assert exc_info.value.code == "invalid_request"
+
+    with pytest.raises(SessionEditWindowExpiredError) as expired_exc:
+        service.update_session(db=object(), session_id="session-123", fields={"rating": 4})
+
+    assert expired_exc.value.code == "session_edit_window_expired"
+
+
+def test_update_session_rejects_invalid_rating(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    created_at = datetime(2026, 4, 19, 8, 30, tzinfo=UTC)
+    repository.sessions.append(
+        Sessions(
+            id="session-123",
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes="Great pressing.",
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=created_at,
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        now_provider=lambda: created_at + timedelta(minutes=10),
+    )
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.update_session(db=object(), session_id="session-123", fields={"rating": 6})
+
+    assert exc_info.value.code == "invalid_rating"
 
 
 def test_get_sessions_by_release_enforces_pagination_rules(build_sessions_service) -> None:

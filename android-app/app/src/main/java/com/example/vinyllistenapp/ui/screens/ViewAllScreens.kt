@@ -44,6 +44,7 @@ import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
+import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.RatingStars
@@ -62,6 +63,7 @@ fun RecentSessionsScreen(
     apiClient: VinylApiClient,
     onBack: () -> Unit,
     onOpenRecord: (String) -> Unit,
+    onEditSession: (String) -> Unit,
 ) {
     var sessions by remember { mutableStateOf(emptyList<ListeningSession>()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -87,6 +89,7 @@ fun RecentSessionsScreen(
             SessionListItem(
                 session = session,
                 onClick = { onOpenRecord(session.releaseId) },
+                onEditSession = { sessionId -> onEditSession(sessionId) },
             )
         }
     }
@@ -501,67 +504,78 @@ private fun EmptyViewAllText(text: String) {
 private fun SessionListItem(
     session: ListeningSession,
     onClick: () -> Unit,
+    onEditSession: ((String) -> Unit)? = null,
 ) {
+    val editableSessionId = session.sessionId?.takeIf { session.canEdit && it.isNotBlank() && onEditSession != null }
+
     AccentCard(
         modifier = Modifier.clickable(onClickLabel = "Open ${session.title}", role = Role.Button, onClick = onClick),
     ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = VinylSpacing.SpaceXs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AlbumArtBlock(
-                accentColor = VinylColors.AccentGreen,
-                compact = true,
-                imageUrl = session.thumbnailUrl,
-                contentDescription = "${session.title} cover art",
-            )
-            Spacer(Modifier.width(VinylSpacing.SpaceMd))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-            ) {
-                Text(
-                    text = session.title,
-                    color = VinylColors.TextPrimary,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = session.artist,
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SidePlayedChip(side = session.side)
-                    RatingStars(
-                        rating = session.rating,
-                        compact = true,
-                        starSize = 14.dp,
-                        strokeWidth = 1.5.dp,
-                    )
-                }
-            }
-            Text(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier =
                     Modifier
-                        .padding(start = VinylSpacing.SpaceSm)
-                        .widthIn(min = 72.dp),
-                text = relativeLastPlayedLabel(session.playedAt),
-                color = VinylColors.TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                        .fillMaxWidth()
+                        .padding(vertical = VinylSpacing.SpaceXs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AlbumArtBlock(
+                    accentColor = VinylColors.AccentGreen,
+                    compact = true,
+                    imageUrl = session.thumbnailUrl,
+                    contentDescription = "${session.title} cover art",
+                )
+                Spacer(Modifier.width(VinylSpacing.SpaceMd))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+                ) {
+                    Text(
+                        modifier = Modifier.padding(end = if (editableSessionId != null) 40.dp else 0.dp),
+                        text = session.title,
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        modifier = Modifier.padding(end = if (editableSessionId != null) 40.dp else 0.dp),
+                        text = session.artist,
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SidePlayedChip(side = session.side)
+                        RatingStars(
+                            rating = session.rating,
+                            compact = true,
+                            starSize = 14.dp,
+                            strokeWidth = 1.5.dp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            modifier = Modifier.widthIn(min = 72.dp),
+                            text = relativeLastPlayedLabel(session.playedAt),
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            editableSessionId?.let { id ->
+                EditableSessionButton(
+                    onClick = { onEditSession?.invoke(id) },
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
         }
     }
 }

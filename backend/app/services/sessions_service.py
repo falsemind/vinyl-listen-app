@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 CUSTOM_MOOD_MIN_LENGTH = 3
 CUSTOM_MOOD_MAX_LENGTH = 20
+SESSION_EDIT_WINDOW = timedelta(minutes=15)
 BUILT_IN_SESSION_MOODS = {
     "energetic": "Energetic",
     "calm": "Calm",
@@ -58,6 +59,16 @@ class SessionNotFoundError(SessionsServiceError):
         self.session_id = session_id
 
 
+class SessionEditWindowExpiredError(SessionsServiceError):
+    """Raised when a session is too old to edit."""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Session '{session_id}' can no longer be edited.")
+        self.code = "session_edit_window_expired"
+        self.message = "Session can only be edited for 15 minutes after it is created."
+        self.session_id = session_id
+
+
 class ReleaseNotFoundError(SessionsServiceError):
     """Raised when a release cannot be found."""
 
@@ -73,6 +84,14 @@ class CreateSessionData:
     mood: str | None
     notes: str | None
     played_at: datetime
+    side: str | None
+
+
+@dataclass(frozen=True)
+class UpdateSessionData:
+    rating: int | None
+    mood: str | None
+    notes: str | None
     side: str | None
 
 
@@ -111,11 +130,13 @@ class SessionsService:
         releases_repository: ReleasesRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
         moods_repository: SessionsMoodsRepository | None = None,
+        now_provider: Any | None = None,
     ) -> None:
         self._sessions_repository = sessions_repository or SessionsRepository()
         self._releases_repository = releases_repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
         self._moods_repository = moods_repository or SessionsMoodsRepository()
+        self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
     def create_session(
         self,
@@ -157,6 +178,46 @@ class SessionsService:
             logger.info("Session not found session_id=%s", session_id)
             raise SessionNotFoundError(session_id)
         return session
+
+    def update_session(
+        self,
+        db: Session,
+        *,
+        session_id: str,
+        fields: dict[str, Any],
+    ) -> Sessions:
+        logger.info("Updating session session_id=%s fields=%s", session_id, sorted(fields))
+        if not fields:
+            raise SessionValidationError("invalid_request", "At least one editable field is required.")
+
+        allowed_fields = {"rating", "mood", "notes", "side"}
+        unknown_fields = set(fields) - allowed_fields
+        if unknown_fields:
+            raise SessionValidationError("invalid_request", "Only side, rating, mood, and notes can be edited.")
+
+        session = self._sessions_repository.get_by_id(db, session_id)
+        if session is None:
+            logger.info("Session not found during update session_id=%s", session_id)
+            raise SessionNotFoundError(session_id)
+        if not self.can_edit_session(session):
+            logger.info("Rejecting session update expired_edit_window session_id=%s", session_id)
+            raise SessionEditWindowExpiredError(session_id)
+
+        validated = self._validate_update_input(db, session=session, fields=fields)
+        return self._sessions_repository.update(
+            db,
+            session,
+            rating=validated.rating,
+            mood=validated.mood,
+            notes=validated.notes,
+            vinyl_side=validated.side,
+        )
+
+    def can_edit_session(self, session: Sessions) -> bool:
+        return self._current_time() <= self.editable_until(session)
+
+    def editable_until(self, session: Sessions) -> datetime:
+        return self._as_aware_utc(session.created_at) + SESSION_EDIT_WINDOW
 
     def get_sessions_by_release(
         self,
@@ -287,6 +348,49 @@ class SessionsService:
             side=normalized_side,
         )
 
+    def _validate_update_input(
+        self,
+        db: Session,
+        *,
+        session: Sessions,
+        fields: dict[str, Any],
+    ) -> UpdateSessionData:
+        rating = fields.get("rating", session.rating)
+        if rating is not None and not 1 <= rating <= 5:
+            logger.info("Rejecting session update session_id=%s invalid_rating=%s", session.id, rating)
+            raise SessionValidationError("invalid_rating", "Rating must be between 1 and 5.")
+
+        normalized_side = self._normalize_side(fields["side"]) if "side" in fields else session.vinyl_side
+        normalized_mood = self._canonicalize_session_mood(db, fields["mood"]) if "mood" in fields else session.mood
+        normalized_notes = self._normalize_optional_text(fields["notes"]) if "notes" in fields else session.notes
+
+        if normalized_side is not None:
+            release = self._releases_repository.get_by_id(db, session.release_id)
+            if release is None:
+                raise ReleaseNotFoundError(session.release_id)
+            cache_entry = self._discogs_repository.get_by_discogs_release_id(db, release.discogs_release_id)
+            available_sides = self._extract_release_sides(
+                cache_entry.raw_discogs_json if cache_entry is not None else None
+            )
+            if available_sides and normalized_side not in available_sides:
+                logger.info(
+                    "Rejecting session update session_id=%s invalid_side=%s available_sides=%s",
+                    session.id,
+                    normalized_side,
+                    sorted(available_sides),
+                )
+                raise SessionValidationError(
+                    "invalid_side",
+                    f"Side '{normalized_side}' does not exist for release '{session.release_id}'.",
+                )
+
+        return UpdateSessionData(
+            rating=rating,
+            mood=normalized_mood,
+            notes=normalized_notes,
+            side=normalized_side,
+        )
+
     def _parse_played_at(self, value: str) -> datetime:
         if not isinstance(value, str) or not value.strip():
             logger.info("Rejecting session create invalid_played_at=%s", value)
@@ -360,3 +464,12 @@ class SessionsService:
             available_values.add(option.side)
             available_values.add(option.value)
         return available_values
+
+    def _current_time(self) -> datetime:
+        return self._as_aware_utc(self._now_provider())
+
+    @staticmethod
+    def _as_aware_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
