@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +84,10 @@ fun AnalyticsScreen(
     onViewAllTopRecords: () -> Unit,
     onViewAllMoods: () -> Unit,
     onViewAllStyles: () -> Unit,
+    onOpenMonthSessions: (String) -> Unit,
+    onOpenRatingRecords: (Int) -> Unit,
+    onOpenMoodRecords: (String) -> Unit,
+    onOpenStyleRecords: (String) -> Unit,
 ) {
     var dashboard by remember { mutableStateOf(emptyAnalyticsDashboard()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -149,7 +154,10 @@ fun AnalyticsScreen(
                 ErrorRetryCard(message = message, onRetry = { retryKey += 1 })
             }
             SectionTitle("Plays Over Time")
-            MonthlyPlaysCard(monthlyPlays = dashboard.monthlyPlays)
+            MonthlyPlaysCard(
+                monthlyPlays = dashboard.monthlyPlays,
+                onMonthClick = onOpenMonthSessions,
+            )
             if (dashboard.topRecords.isEmpty()) {
                 SectionTitle("Top Records")
                 AnalyticsEmptySectionText()
@@ -168,7 +176,10 @@ fun AnalyticsScreen(
             if (dashboard.ratingDistribution.isEmpty()) {
                 AnalyticsEmptySectionText()
             } else {
-                RatingDistributionCard(ratings = dashboard.ratingDistribution)
+                RatingDistributionCard(
+                    ratings = dashboard.ratingDistribution,
+                    onRatingClick = onOpenRatingRecords,
+                )
             }
             if (dashboard.moodDistribution.size > MOOD_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Mood Distribution", action = "View All", onActionClick = onViewAllMoods)
@@ -178,7 +189,10 @@ fun AnalyticsScreen(
             if (dashboard.moodDistribution.isEmpty()) {
                 AnalyticsEmptySectionText()
             } else {
-                MoodDistributionCard(moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT))
+                MoodDistributionCard(
+                    moods = dashboard.moodDistribution.take(MOOD_DISTRIBUTION_PREVIEW_LIMIT),
+                    onMoodClick = onOpenMoodRecords,
+                )
             }
             if (dashboard.styleDistribution.size > STYLE_DISTRIBUTION_PREVIEW_LIMIT) {
                 SectionActionHeader("Style Distribution", action = "View All", onActionClick = onViewAllStyles)
@@ -188,7 +202,10 @@ fun AnalyticsScreen(
             if (dashboard.styleDistribution.isEmpty()) {
                 AnalyticsEmptySectionText()
             } else {
-                StyleDistributionCard(styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT))
+                StyleDistributionCard(
+                    styles = dashboard.styleDistribution.take(STYLE_DISTRIBUTION_PREVIEW_LIMIT),
+                    onStyleClick = onOpenStyleRecords,
+                )
             }
         }
     }
@@ -210,7 +227,10 @@ private fun AnalyticsEmptySectionText() {
 }
 
 @Composable
-private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
+private fun MonthlyPlaysCard(
+    monthlyPlays: List<MonthlyPlayCount>,
+    onMonthClick: (String) -> Unit,
+) {
     val displayMonths = lastTwelveMonths(monthlyPlays)
     val monthScrollState = rememberScrollState(initial = Int.MAX_VALUE)
     val totalSessions = displayMonths.sumOf { it.plays }
@@ -260,6 +280,7 @@ private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
                     MonthlyPlayBar(
                         item = item,
                         maxPlays = maxPlays,
+                        onClick = { onMonthClick(item.month) },
                         modifier =
                             if (shouldFillWidth) {
                                 Modifier.weight(1f)
@@ -296,13 +317,24 @@ private fun MonthlyPlaysCard(monthlyPlays: List<MonthlyPlayCount>) {
 private fun MonthlyPlayBar(
     item: MonthlyPlayCount,
     maxPlays: Int,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ratio = (item.plays.toFloat() / maxPlays.toFloat()).coerceIn(0f, 1f)
     val height = (18 + ratio * 86).dp
+    val clickModifier =
+        if (item.plays > 0) {
+            Modifier.clickable(
+                onClickLabel = "Open ${shortMonthLabel(item.month)} sessions",
+                role = Role.Button,
+                onClick = onClick,
+            )
+        } else {
+            Modifier
+        }
 
     Column(
-        modifier = modifier,
+        modifier = modifier.then(clickModifier),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
     ) {
@@ -391,13 +423,28 @@ private fun TopRecordAnalyticsCard(
 }
 
 @Composable
-private fun RatingDistributionCard(ratings: List<RatingDistributionItem>) {
+private fun RatingDistributionCard(
+    ratings: List<RatingDistributionItem>,
+    onRatingClick: (Int) -> Unit,
+) {
     val maxCount = ratings.maxOfOrNull { it.count }?.takeIf { it > 0 } ?: 1
 
     AccentCard {
         ratings.sortedByDescending { it.rating }.forEach { item ->
+            val rowModifier =
+                if (item.count > 0) {
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = "Open ${item.rating} star records",
+                            role = Role.Button,
+                            onClick = { onRatingClick(item.rating) },
+                        )
+                } else {
+                    Modifier.fillMaxWidth()
+                }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = rowModifier,
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
             ) {
@@ -440,20 +487,28 @@ private fun RatingDistributionCard(ratings: List<RatingDistributionItem>) {
 }
 
 @Composable
-internal fun MoodDistributionCard(moods: List<MoodDistributionItem>) {
+internal fun MoodDistributionCard(
+    moods: List<MoodDistributionItem>,
+    onMoodClick: ((String) -> Unit)? = null,
+) {
     DistributionBarCard(
         items = moods,
         label = { it.mood },
         count = { it.count },
+        onItemClick = onMoodClick?.let { callback -> { item -> callback(item.mood) } },
     )
 }
 
 @Composable
-internal fun StyleDistributionCard(styles: List<StyleDistributionItem>) {
+internal fun StyleDistributionCard(
+    styles: List<StyleDistributionItem>,
+    onStyleClick: ((String) -> Unit)? = null,
+) {
     DistributionBarCard(
         items = styles,
         label = { it.style },
         count = { it.count },
+        onItemClick = onStyleClick?.let { callback -> { item -> callback(item.style) } },
     )
 }
 
@@ -462,6 +517,7 @@ private fun <T> DistributionBarCard(
     items: List<T>,
     label: (T) -> String,
     count: (T) -> Int,
+    onItemClick: ((T) -> Unit)? = null,
 ) {
     val total = items.sumOf(count).coerceAtLeast(1)
     val maxCount = items.maxOfOrNull(count)?.takeIf { it > 0 } ?: 1
@@ -471,7 +527,22 @@ private fun <T> DistributionBarCard(
             val accentColor = analyticsAccent(index)
             val itemCount = count(item)
             val percent = ((itemCount.toFloat() / total.toFloat()) * 100).toInt()
-            Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs)) {
+            val rowModifier =
+                if (onItemClick != null && itemCount > 0) {
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = "Open ${label(item)} records",
+                            role = Role.Button,
+                            onClick = { onItemClick(item) },
+                        )
+                } else {
+                    Modifier.fillMaxWidth()
+                }
+            Column(
+                modifier = rowModifier,
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

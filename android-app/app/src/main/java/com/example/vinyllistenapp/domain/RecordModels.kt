@@ -46,6 +46,7 @@ data class ListeningSession(
     val side: String? = null,
     val hasNotes: Boolean = false,
     val notes: String? = null,
+    val sessionId: String? = null,
 )
 
 data class TopRecordSummary(
@@ -93,6 +94,28 @@ data class AnalyticsDashboard(
     val ratingDistribution: List<RatingDistributionItem>,
     val moodDistribution: List<MoodDistributionItem>,
     val styleDistribution: List<StyleDistributionItem>,
+)
+
+data class AnalyticsPagination(
+    val limit: Int,
+    val offset: Int,
+    val total: Int,
+    val hasMore: Boolean,
+)
+
+data class AnalyticsSessionsPage(
+    val sessions: List<ListeningSession>,
+    val pagination: AnalyticsPagination,
+)
+
+data class AnalyticsRecordCountItem(
+    val record: RecordSummary,
+    val count: Int,
+)
+
+data class AnalyticsRecordCountsPage(
+    val records: List<AnalyticsRecordCountItem>,
+    val pagination: AnalyticsPagination,
 )
 
 data class MatchCandidate(

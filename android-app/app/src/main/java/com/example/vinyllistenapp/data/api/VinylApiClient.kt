@@ -4,6 +4,10 @@ import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
+import com.example.vinyllistenapp.domain.AnalyticsPagination
+import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
+import com.example.vinyllistenapp.domain.AnalyticsRecordCountsPage
+import com.example.vinyllistenapp.domain.AnalyticsSessionsPage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
@@ -264,6 +268,70 @@ class VinylApiClient(
                         .map { (style, count) -> StyleDistributionItem(style = style, count = count) }
                         .sortedByDescending { it.count },
             )
+        }
+
+    suspend fun getAnalyticsSessionsForMonth(
+        month: String,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): AnalyticsSessionsPage =
+        apiCall {
+            val query =
+                mutableListOf<String>()
+                    .apply {
+                        addQueryParam("month", month)
+                        addQueryParam("limit", limit.toString())
+                        addQueryParam("offset", offset.toString())
+                    }.toQueryString()
+            getJson("analytics/sessions$query").toAnalyticsSessionsPage()
+        }
+
+    suspend fun getAnalyticsRecordsByRating(
+        rating: Int,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): AnalyticsRecordCountsPage =
+        apiCall {
+            val query =
+                mutableListOf<String>()
+                    .apply {
+                        addQueryParam("rating", rating.toString())
+                        addQueryParam("limit", limit.toString())
+                        addQueryParam("offset", offset.toString())
+                    }.toQueryString()
+            getJson("analytics/records/by-rating$query").toAnalyticsRecordCountsPage()
+        }
+
+    suspend fun getAnalyticsRecordsByMood(
+        mood: String,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): AnalyticsRecordCountsPage =
+        apiCall {
+            val query =
+                mutableListOf<String>()
+                    .apply {
+                        addQueryParam("mood", mood)
+                        addQueryParam("limit", limit.toString())
+                        addQueryParam("offset", offset.toString())
+                    }.toQueryString()
+            getJson("analytics/records/by-mood$query").toAnalyticsRecordCountsPage()
+        }
+
+    suspend fun getAnalyticsRecordsByStyle(
+        style: String,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): AnalyticsRecordCountsPage =
+        apiCall {
+            val query =
+                mutableListOf<String>()
+                    .apply {
+                        addQueryParam("style", style)
+                        addQueryParam("limit", limit.toString())
+                        addQueryParam("offset", offset.toString())
+                    }.toQueryString()
+            getJson("analytics/records/by-style$query").toAnalyticsRecordCountsPage()
         }
 
     suspend fun createSession(
@@ -590,6 +658,66 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         coverImageUrl = optNullableString("cover_image_url"),
         availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
         availableSideOptions = optJSONArray("available_side_options").orEmpty().toReleaseSideOptions(),
+    )
+
+internal fun JSONObject.toAnalyticsSessionsPage(): AnalyticsSessionsPage =
+    AnalyticsSessionsPage(
+        sessions =
+            optJSONArray("sessions")
+                .orEmpty()
+                .mapObjects { item ->
+                    ListeningSession(
+                        releaseId = item.getString("release_id"),
+                        artist = item.optString("artist", "Unknown artist"),
+                        title = item.optString("title", "Unknown title"),
+                        playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
+                        mood = item.optNullableString("mood") ?: "Unspecified",
+                        rating = item.optNullableInt("rating") ?: 0,
+                        thumbnailUrl = item.optNullableString("thumbnail_url"),
+                        side = item.optNullableString("side"),
+                        hasNotes = item.optBoolean("has_notes", false),
+                        sessionId = item.optNullableString("session_id"),
+                    )
+                },
+        pagination = optJSONObject("pagination").toAnalyticsPagination(),
+    )
+
+internal fun JSONObject.toAnalyticsRecordCountsPage(): AnalyticsRecordCountsPage =
+    AnalyticsRecordCountsPage(
+        records =
+            optJSONArray("records")
+                .orEmpty()
+                .mapObjects { item ->
+                    AnalyticsRecordCountItem(
+                        record = item.toAnalyticsRecordSummary(),
+                        count = item.optInt("count", 0),
+                    )
+                },
+        pagination = optJSONObject("pagination").toAnalyticsPagination(),
+    )
+
+private fun JSONObject?.toAnalyticsPagination(): AnalyticsPagination {
+    val pagination = orEmpty()
+    return AnalyticsPagination(
+        limit = pagination.optInt("limit", 10),
+        offset = pagination.optInt("offset", 0),
+        total = pagination.optInt("total", 0),
+        hasMore = pagination.optBoolean("has_more", false),
+    )
+}
+
+private fun JSONObject.toAnalyticsRecordSummary(): RecordSummary =
+    RecordSummary(
+        releaseId = getString("release_id"),
+        discogsReleaseId = optLong("discogs_release_id"),
+        artist = optString("artist", "Unknown artist"),
+        title = optString("title", "Unknown title"),
+        label = "",
+        year = null,
+        format = "Vinyl",
+        rating = 0,
+        lastPlayed = "",
+        coverImageUrl = optNullableString("thumbnail_url"),
     )
 
 private fun JSONObject.putNullable(
