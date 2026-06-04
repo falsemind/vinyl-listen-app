@@ -222,6 +222,29 @@ def test_get_records_for_style_matches_serialized_styles_case_insensitively() ->
     assert [(release.title, count) for release, count in rows] == [("Carrier", 2), ("Phylyps Trak", 1)]
 
 
+def test_get_records_for_style_page_returns_slice_and_total_from_one_result_set() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_drilldown_tables(connection)
+        _insert_drilldown_releases(connection)
+        connection.exec_driver_sql("""
+            INSERT INTO sessions (id, release_id, played_at, created_at)
+            VALUES
+                ('session-1', 'release-1', '2026-05-02T10:00:00+00:00', '2026-05-02T10:00:00+00:00'),
+                ('session-2', 'release-1', '2026-05-03T10:00:00+00:00', '2026-05-03T10:00:00+00:00'),
+                ('session-3', 'release-2', '2026-05-04T10:00:00+00:00', '2026-05-04T10:00:00+00:00'),
+                ('session-4', 'release-3', '2026-05-05T10:00:00+00:00', '2026-05-05T10:00:00+00:00')
+            """)
+
+    with session_factory() as db:
+        rows, total = AnalyticsRepository.get_records_for_style_page(db, style="dub techno", limit=1, offset=1)
+
+    assert total == 2
+    assert [(release.title, count) for release, count in rows] == [("Phylyps Trak", 1)]
+
+
 def test_drilldown_queries_return_empty_results_for_missing_filters() -> None:
     engine = create_engine("sqlite:///:memory:")
     session_factory = sessionmaker(bind=engine)

@@ -12,6 +12,8 @@ class StubAnalyticsRepository:
         self.rating_calls: list[tuple[int, int, int]] = []
         self.mood_calls: list[tuple[str, int, int]] = []
         self.style_calls: list[tuple[str, int, int]] = []
+        self.style_page_calls: list[tuple[str, int, int]] = []
+        self.style_count_calls: list[str] = []
         self.release = SimpleNamespace(
             id="release-123",
             discogs_release_id=555123,
@@ -61,7 +63,12 @@ class StubAnalyticsRepository:
         self.style_calls.append((style, limit, offset))
         return [(self.release, 4)]
 
+    def get_records_for_style_page(self, _db, *, style: str, limit: int, offset: int):
+        self.style_page_calls.append((style, limit, offset))
+        return ([(self.release, 4)], 9 if style == "Dub Techno" else 0)
+
     def count_records_for_style(self, _db, *, style: str):
+        self.style_count_calls.append(style)
         return 9 if style == "Dub Techno" else 0
 
     def get_rating_distribution(self, _db):
@@ -218,7 +225,8 @@ def test_get_records_for_style_normalizes_label() -> None:
 
     result = service.get_records_for_style(db=object(), style=" Dub Techno ", limit=5, offset=0)
 
-    assert repository.style_calls == [("Dub Techno", 5, 0)]
+    assert repository.style_page_calls == [("Dub Techno", 5, 0)]
+    assert repository.style_count_calls == []
     assert result.records[0].count == 4
     assert result.pagination.total == 9
 

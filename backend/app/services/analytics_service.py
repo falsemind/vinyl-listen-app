@@ -174,13 +174,12 @@ class AnalyticsService:
         self._validate_pagination(limit=limit, offset=offset)
 
         logger.info("Loading analytics style records style=%s limit=%s offset=%s", normalized_style, limit, offset)
-        rows = self._analytics_repository.get_records_for_style(
+        rows, total = self._analytics_repository.get_records_for_style_page(
             db,
             style=normalized_style,
             limit=limit,
             offset=offset,
         )
-        total = self._analytics_repository.count_records_for_style(db, style=normalized_style)
         records = [AnalyticsRecordCount(release=release, count=int(count)) for release, count in rows]
         return AnalyticsRecordCountPage(
             records=records,

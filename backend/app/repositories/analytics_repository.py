@@ -154,7 +154,24 @@ class AnalyticsRepository:
         limit: int,
         offset: int,
     ) -> list[tuple[Releases, int]]:
-        return AnalyticsRepository._get_style_record_counts(db, style=style)[offset : offset + limit]
+        records, _total = AnalyticsRepository.get_records_for_style_page(
+            db,
+            style=style,
+            limit=limit,
+            offset=offset,
+        )
+        return records
+
+    @staticmethod
+    def get_records_for_style_page(
+        db: Session,
+        *,
+        style: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[Releases, int]], int]:
+        records = AnalyticsRepository._get_style_record_counts(db, style=style)
+        return records[offset : offset + limit], len(records)
 
     @staticmethod
     def count_records_for_style(db: Session, *, style: str) -> int:
