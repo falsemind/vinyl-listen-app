@@ -12,6 +12,8 @@ from app.services.release_mapper import InternalReleaseData, map_discogs_to_inte
 
 logger = logging.getLogger(__name__)
 
+CollectionProgressReporter = Callable[..., None]
+
 
 class CollectionSyncError(Exception):
     """Raised when Discogs collection data cannot be reconciled."""
@@ -48,16 +50,29 @@ class CollectionSyncService:
         self._repository = repository or ReleasesRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
-    def sync_collection(self, db: Session) -> CollectionSyncResult:
+    def sync_collection(
+        self,
+        db: Session,
+        *,
+        progress_reporter: CollectionProgressReporter | None = None,
+    ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
+        _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         raw_items = self._discogs_service.fetch_collection_releases()
         collection_items = collapse_collection_items(raw_items)
+        _report_progress(
+            progress_reporter,
+            step="importing",
+            message="Importing data",
+            total_items=len(raw_items),
+            processed_items=0,
+        )
 
         added_count = 0
         updated_count = 0
         active_discogs_release_ids: set[int] = set()
 
-        for item in collection_items:
+        for processed_count, item in enumerate(collection_items, start=1):
             release_data = _map_collection_item_to_release(item)
             release, created = self._repository.save_or_update(db, release_data)
             self._repository.mark_in_collection(
@@ -72,11 +87,30 @@ class CollectionSyncService:
                 added_count += 1
             else:
                 updated_count += 1
+            _report_progress(
+                progress_reporter,
+                step="importing",
+                message="Importing data",
+                total_items=len(raw_items),
+                processed_items=processed_count,
+                added_count=added_count,
+                updated_count=updated_count,
+            )
 
         removed_count = self._repository.mark_missing_collection_releases_removed(
             db,
             active_discogs_release_ids,
             removed_at=sync_started_at,
+        )
+        _report_progress(
+            progress_reporter,
+            step="loading",
+            message="Loading...",
+            total_items=len(raw_items),
+            processed_items=len(collection_items),
+            added_count=added_count,
+            updated_count=updated_count,
+            removed_count=removed_count,
         )
 
         logger.info(
@@ -176,3 +210,8 @@ def _coerce_int(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _report_progress(progress_reporter: CollectionProgressReporter | None, **progress: int | str) -> None:
+    if progress_reporter is not None:
+        progress_reporter(**progress)

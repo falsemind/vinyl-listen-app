@@ -28,6 +28,8 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE INDEX idx_releases_title" in sql
     assert "CREATE INDEX idx_releases_genres" in sql
     assert "CREATE INDEX idx_releases_styles" in sql
+    assert "ADD COLUMN format VARCHAR" in sql
+    assert "ADD COLUMN thumbnail_url VARCHAR" in sql
     assert "ADD COLUMN in_collection BOOLEAN DEFAULT false NOT NULL" in sql
     assert "ADD COLUMN collection_added_at TIMESTAMP WITH TIME ZONE" in sql
     assert "ADD COLUMN collection_removed_at TIMESTAMP WITH TIME ZONE" in sql
@@ -63,3 +65,6 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE TABLE spotify_vinyl_release_matches" in sql
     assert "fk_spotify_release_matches_release_id_releases" in sql
     assert "CREATE INDEX idx_spotify_vinyl_release_matches_artist" in sql
+    assert "CREATE TABLE collection_sync_jobs" in sql
+    assert "CREATE INDEX idx_collection_sync_jobs_status" in sql
+    assert "CREATE INDEX idx_collection_sync_jobs_status_updated_at" in sql

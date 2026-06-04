@@ -14,11 +14,13 @@ class FakeRelease:
     artist: str
     title: str
     year: int | None
+    format: str | None
     label: str | None
     catalog_number: str | None
     barcode: str | None
     genres: list[str] | None
     styles: list[str] | None
+    thumbnail_url: str | None
     cover_image_url: str | None
     in_collection: bool = False
     collection_added_at: datetime | None = None
@@ -48,11 +50,13 @@ class FakeReleasesRepository:
                 artist=data.artist,
                 title=data.title,
                 year=data.year,
+                format=data.format,
                 label=data.label,
                 catalog_number=data.catalog_number,
                 barcode=data.barcode,
                 genres=data.genres,
                 styles=data.styles,
+                thumbnail_url=data.thumbnail_url,
                 cover_image_url=data.cover_image_url,
             )
             self.releases[data.discogs_release_id] = release
@@ -60,11 +64,13 @@ class FakeReleasesRepository:
             release.artist = data.artist
             release.title = data.title
             release.year = data.year
+            release.format = data.format
             release.label = data.label
             release.catalog_number = data.catalog_number
             release.barcode = data.barcode
             release.genres = data.genres
             release.styles = data.styles
+            release.thumbnail_url = data.thumbnail_url
             release.cover_image_url = data.cover_image_url
 
         return release, created
@@ -162,11 +168,13 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
         artist="Sold Artist",
         title="Sold Record",
         year=1999,
+        format=None,
         label=None,
         catalog_number=None,
         barcode=None,
         genres=None,
         styles=None,
+        thumbnail_url=None,
         cover_image_url=None,
         in_collection=True,
     )

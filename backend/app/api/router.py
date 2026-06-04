@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import ai, analytics, health, identify, releases, sessions
+from app.api.routes import ai, analytics, collection, health, identify, releases, sessions
 
 api_router = APIRouter()
 
@@ -40,4 +40,10 @@ api_router.include_router(
     analytics.router,
     prefix="/analytics",
     tags=["analytics"],
+)
+
+api_router.include_router(
+    collection.router,
+    prefix="/collection",
+    tags=["collection"],
 )

@@ -13,6 +13,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
 | `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
 | `collection_sync_service.py` | Reconcile Discogs folder `0` collection membership with local releases while preserving historical session data. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
+| `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
 | `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |

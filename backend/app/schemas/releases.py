@@ -23,11 +23,13 @@ class ReleaseResponse(BaseModel):
     artist: str
     title: str
     year: int | None
+    format: str | None = None
     label: str | None
     catalog_number: str | None
     barcode: str | None
     genres: list[str] | None
     styles: list[str] | None
+    thumbnail_url: str | None = None
     cover_image_url: str | None
     in_collection: bool = False
     collection_added_at: datetime | None = None

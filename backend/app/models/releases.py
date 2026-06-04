@@ -40,6 +40,7 @@ class Releases(Base):
     artist: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    format: Mapped[str | None] = mapped_column(String, nullable=True)
     label: Mapped[str | None] = mapped_column(String, nullable=True)
     catalog_number: Mapped[str | None] = mapped_column(String, nullable=True)
     barcode: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -48,6 +49,7 @@ class Releases(Base):
     genres: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     styles: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
 
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Discogs collection membership. Historical session data remains linked when

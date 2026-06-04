@@ -76,22 +76,26 @@ class ReleasesRepository:
                 artist=data.artist,
                 title=data.title,
                 year=data.year,
+                format=data.format,
                 label=data.label,
                 catalog_number=data.catalog_number,
                 barcode=data.barcode,
                 genres=data.genres,
                 styles=data.styles,
+                thumbnail_url=data.thumbnail_url,
                 cover_image_url=data.cover_image_url,
             )
         else:
             release.artist = data.artist
             release.title = data.title
             release.year = data.year
+            release.format = data.format
             release.label = data.label
             release.catalog_number = data.catalog_number
             release.barcode = data.barcode
             release.genres = data.genres
             release.styles = data.styles
+            release.thumbnail_url = data.thumbnail_url
             release.cover_image_url = data.cover_image_url
 
         db.add(release)
@@ -142,3 +146,26 @@ class ReleasesRepository:
             db.commit()
 
         return removed_count
+
+    @staticmethod
+    def list_collection_releases(
+        db: Session,
+        *,
+        limit: int,
+        offset: int,
+        include_removed: bool = False,
+    ) -> Sequence[Releases]:
+        query = db.query(Releases)
+        if not include_removed:
+            query = query.filter(Releases.in_collection.is_(True))
+
+        return (
+            query.order_by(
+                Releases.collection_added_at.desc().nullslast(),
+                Releases.artist.asc(),
+                Releases.title.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
