@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
 import com.example.vinyllistenapp.ui.components.RatingStars
@@ -67,6 +69,7 @@ fun HomeScreen(
     onOpenInsights: () -> Unit,
     onOpenSettings: () -> Unit,
     onViewAllSessions: () -> Unit,
+    onEditSession: (String) -> Unit,
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -121,7 +124,11 @@ fun HomeScreen(
                 EmptyHomeState("No sessions logged yet.")
             } else {
                 homeSummary.recentSessions.take(3).forEach { session ->
-                    SessionRow(session, onClick = { onOpenRecord(session.releaseId) })
+                    SessionRow(
+                        session = session,
+                        onClick = { onOpenRecord(session.releaseId) },
+                        onEditSession = { sessionId -> onEditSession(sessionId) },
+                    )
                 }
             }
 
@@ -340,70 +347,80 @@ private fun TopRecordBadge(
 private fun SessionRow(
     session: ListeningSession,
     onClick: () -> Unit,
+    onEditSession: (String) -> Unit,
 ) {
     val compact = LocalConfiguration.current.screenWidthDp < COMPACT_HOME_BREAKPOINT_DP
+    val editableSessionId = session.sessionId?.takeIf { session.canEdit && it.isNotBlank() }
 
     AccentCard(
         modifier = Modifier.clickable(onClick = onClick),
         borderColor = VinylColors.BorderDefault,
     ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AlbumArtBlock(
-                accentColor = VinylColors.AccentGreen,
-                compact = compact,
-                imageUrl = session.thumbnailUrl,
-                contentDescription = "${session.title} cover art",
-            )
-            Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-            ) {
-                Text(
-                    text = session.title,
-                    color = VinylColors.TextPrimary,
-                    style = if (compact) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = session.artist,
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SidePlayedChip(side = session.side, compact = compact)
-                    RatingStars(
-                        rating = session.rating,
-                        compact = compact,
-                        starSize = if (compact) 14.dp else 18.dp,
-                        strokeWidth = if (compact) 1.5.dp else 2.dp,
-                    )
-                }
-            }
-            Text(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier =
                     Modifier
-                        .padding(start = VinylSpacing.SpaceSm)
-                        .widthIn(min = 72.dp),
-                text = relativeLastPlayedLabel(session.playedAt),
-                color = VinylColors.TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                        .fillMaxWidth()
+                        .padding(vertical = if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AlbumArtBlock(
+                    accentColor = VinylColors.AccentGreen,
+                    compact = compact,
+                    imageUrl = session.thumbnailUrl,
+                    contentDescription = "${session.title} cover art",
+                )
+                Spacer(Modifier.width(if (compact) VinylSpacing.SpaceMd else VinylSpacing.SpaceLg))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+                ) {
+                    Text(
+                        modifier = Modifier.padding(end = if (editableSessionId != null) 40.dp else 0.dp),
+                        text = session.title,
+                        color = VinylColors.TextPrimary,
+                        style = if (compact) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        modifier = Modifier.padding(end = if (editableSessionId != null) 40.dp else 0.dp),
+                        text = session.artist,
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(if (compact) VinylSpacing.SpaceXs else VinylSpacing.SpaceSm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SidePlayedChip(side = session.side, compact = compact)
+                        RatingStars(
+                            rating = session.rating,
+                            compact = compact,
+                            starSize = if (compact) 14.dp else 18.dp,
+                            strokeWidth = if (compact) 1.5.dp else 2.dp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            modifier = Modifier.widthIn(min = 72.dp),
+                            text = relativeLastPlayedLabel(session.playedAt),
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            editableSessionId?.let { id ->
+                EditableSessionButton(
+                    onClick = { onEditSession(id) },
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
         }
     }
 }

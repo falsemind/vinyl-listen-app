@@ -64,6 +64,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
@@ -273,7 +274,222 @@ fun SessionLoggingScreen(
 }
 
 @Composable
-private fun SessionLoggingHeader(onCancel: () -> Unit) {
+fun EditSessionScreen(
+    sessionId: String?,
+    apiClient: VinylApiClient,
+    onSave: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var loadedSession by remember(sessionId) { mutableStateOf<ListeningSession?>(null) }
+    var loadedRecord by remember(sessionId) { mutableStateOf<RecordSummary?>(null) }
+    val record = loadedRecord ?: MockVinylData.record(loadedSession?.releaseId)
+    val sideOptions = sessionSideOptions(record, usePrototypeFallback = loadedRecord != null)
+    val moods = BUILT_IN_SESSION_MOODS
+    var customMoods by remember { mutableStateOf(emptyList<String>()) }
+    var selectedSide by rememberSaveable(sessionId) { mutableStateOf("") }
+    val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
+    var selectedMood by rememberSaveable(sessionId) { mutableStateOf("Calm") }
+    var rating by rememberSaveable(sessionId) { mutableStateOf(0) }
+    var notes by rememberSaveable(sessionId) { mutableStateOf("") }
+    var isLoading by rememberSaveable(sessionId) { mutableStateOf(true) }
+    var isSaving by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var saveError by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
+    var customMoodValidationError by rememberSaveable { mutableStateOf<String?>(null) }
+    var customMoodServerError by rememberSaveable { mutableStateOf<String?>(null) }
+    var loadRetryKey by remember { mutableIntStateOf(0) }
+    var customMoodRetryKey by remember { mutableIntStateOf(0) }
+    var loadError by remember(sessionId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(sessionId, loadRetryKey) {
+        val targetSessionId = sessionId?.takeIf { it.isNotBlank() }
+        if (targetSessionId == null) {
+            isLoading = false
+            loadError = "Session could not be opened."
+            return@LaunchedEffect
+        }
+        isLoading = true
+        runCatching {
+            val session = apiClient.getSession(targetSessionId)
+            session to apiClient.getRelease(session.releaseId)
+        }.onSuccess { (session, release) ->
+            loadedSession = session
+            loadedRecord = release
+            selectedSide = session.side.orEmpty()
+            selectedMood = session.mood.takeIf { it.isNotBlank() && it != "Unspecified" } ?: "Calm"
+            rating = session.rating
+            notes = session.notes.orEmpty()
+            loadError = null
+        }.onFailure { error ->
+            loadError = error.toUserMessage("Could not load session.")
+        }
+        isLoading = false
+    }
+
+    LaunchedEffect(sideOptions) {
+        if (sideOptions.isNotEmpty() && sideOptions.none { it.value == selectedSide }) {
+            selectedSide = sideOptions.first().value
+        }
+    }
+
+    LaunchedEffect(customMoodRetryKey) {
+        runCatching { apiClient.getCustomMoods() }
+            .onSuccess { moodsFromApi ->
+                customMoods =
+                    moodsFromApi
+                        .filter { isValidCustomMood(it) && !isBuiltInMood(it, moods) }
+                        .distinctBy { it.lowercase() }
+                customMoodServerError = null
+            }.onFailure { error ->
+                customMoodServerError = error.toUserMessage("Custom moods could not be loaded.")
+            }
+    }
+
+    fun saveSession() {
+        val session = loadedSession ?: return
+        isSaving = true
+        saveError = null
+        scope.launch {
+            runCatching {
+                apiClient.updateSession(
+                    sessionId = session.sessionId ?: sessionId.orEmpty(),
+                    side = selectedSideOption?.value?.takeIf { it.isNotBlank() },
+                    rating = rating.takeIf { it > 0 },
+                    mood = selectedMood,
+                    notes = notes,
+                )
+            }.onSuccess { updatedSession ->
+                onSave(updatedSession.releaseId.ifBlank { session.releaseId })
+            }.onFailure { error ->
+                saveError = error.toUserMessage("Session could not be updated. Check the form and retry.")
+                isSaving = false
+            }
+        }
+    }
+
+    fun retryServerError() {
+        when {
+            saveError != null -> saveSession()
+            loadError != null -> loadRetryKey += 1
+            customMoodServerError != null -> customMoodRetryKey += 1
+        }
+    }
+
+    val serverError = saveError ?: loadError ?: customMoodServerError
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(VinylColors.AppBackground)
+                .padding(horizontal = VinylSpacing.SpaceMd),
+    ) {
+        SessionLoggingHeader(title = "Edit Session", onCancel = onCancel)
+        serverError?.let { message ->
+            ErrorRetryCard(message = message, onRetry = ::retryServerError)
+            Spacer(Modifier.height(VinylSpacing.SpaceXl))
+        }
+        Column(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
+        ) {
+            SessionRecordCard(record = record)
+            SessionFieldLabel("Side Played")
+            SessionSideSelector(
+                selectedSide = selectedSideOption,
+                sideOptions = sideOptions,
+                onSideSelected = { selectedSide = it },
+            )
+            SessionFieldLabel("Rating")
+            SessionRatingPicker(rating = rating, onRatingChange = { rating = it })
+            SessionFieldLabel("Mood")
+            SessionMoodGrid(
+                moods = moods,
+                customMoods = customMoods,
+                selectedMood = selectedMood,
+                onMoodSelected = {
+                    selectedMood = it
+                    customMoodValidationError = null
+                },
+                onSaveCustomMood = { mood ->
+                    val normalizedMood = sanitizeCustomMood(mood).trim()
+                    if (isExistingMood(normalizedMood, moods, customMoods)) {
+                        customMoodValidationError = "That mood already exists."
+                    } else {
+                        scope.launch {
+                            runCatching { apiClient.createCustomMood(normalizedMood) }
+                                .onSuccess { savedMood ->
+                                    val cleanedMood = sanitizeCustomMood(savedMood).trim()
+                                    if (isExistingMood(cleanedMood, moods, customMoods)) {
+                                        customMoodValidationError = "That mood already exists."
+                                    } else {
+                                        customMoods = saveCustomMood(customMoods, cleanedMood, moods)
+                                        selectedMood = cleanedMood
+                                        customMoodValidationError = null
+                                        customMoodServerError = null
+                                    }
+                                }.onFailure { error ->
+                                    customMoodValidationError = null
+                                    customMoodServerError = error.toUserMessage("Custom mood could not be saved.")
+                                }
+                        }
+                    }
+                },
+                onDeleteCustomMood = { mood ->
+                    scope.launch {
+                        runCatching { apiClient.deleteCustomMood(mood) }
+                            .onSuccess {
+                                customMoods = deleteCustomMood(customMoods, mood)
+                                if (selectedMood == mood) selectedMood = "Calm"
+                                customMoodValidationError = null
+                                customMoodServerError = null
+                            }.onFailure { error ->
+                                customMoodServerError = error.toUserMessage("Custom mood could not be deleted.")
+                            }
+                    }
+                },
+            )
+            customMoodValidationError?.let { message ->
+                Text(
+                    text = message,
+                    color = VinylColors.AccentOrange,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            SessionFieldLabel("Notes (Optional)")
+            SessionNotesField(notes = notes, onNotesChange = { notes = it })
+            Spacer(Modifier.height(VinylSpacing.SpaceLg))
+        }
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = VinylSpacing.SpaceLg, bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+        ) {
+            SessionCancelButton(onClick = onCancel, modifier = Modifier.weight(1f))
+            SessionSaveButton(
+                label =
+                    when {
+                        isLoading -> "Loading..."
+                        isSaving -> "Saving..."
+                        else -> "Save Changes"
+                    },
+                onClick = { if (!isSaving && !isLoading) saveSession() },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionLoggingHeader(
+    title: String = "Log Session",
+    onCancel: () -> Unit,
+) {
     Row(
         modifier =
             Modifier
@@ -284,7 +500,7 @@ private fun SessionLoggingHeader(onCancel: () -> Unit) {
     ) {
         CloseCircleButton(onClick = onCancel)
         Text(
-            text = "Log Session",
+            text = title,
             color = VinylColors.TextPrimary,
             style = MaterialTheme.typography.titleLarge,
         )
