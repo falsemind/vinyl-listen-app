@@ -10,11 +10,13 @@ class InternalReleaseData:
     artist: str
     title: str
     year: int | None
+    format: str | None
     label: str | None
     catalog_number: str | None
     barcode: str | None
     genres: list[str] | None
     styles: list[str] | None
+    thumbnail_url: str | None
     cover_image_url: str | None
 
 
@@ -47,11 +49,13 @@ def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
         artist=artist,
         title=title,
         year=_coerce_int(raw_json.get("year")),
+        format=_extract_format(raw_json.get("formats")),
         label=_extract_label_name(labels),
         catalog_number=_extract_catalog_number(labels),
         barcode=_extract_barcode(identifiers),
         genres=_normalize_string_list(raw_json.get("genres")),
         styles=_normalize_string_list(raw_json.get("styles")),
+        thumbnail_url=_clean_string(raw_json.get("thumb")),
         cover_image_url=_extract_cover_image_url(raw_json),
     )
 
@@ -203,6 +207,23 @@ def _extract_cover_image_url(raw_json: dict[str, Any]) -> str | None:
             return uri
 
     return None
+
+
+def _extract_format(formats: Any) -> str | None:
+    if not isinstance(formats, list):
+        return None
+
+    values: list[str] = []
+    for item in formats:
+        if not isinstance(item, dict):
+            continue
+
+        name = _clean_string(item.get("name"))
+        descriptions = _normalize_string_list(item.get("descriptions")) or []
+        if name:
+            values.append(", ".join([name, *descriptions]))
+
+    return "; ".join(values) or None
 
 
 def _normalize_string_list(values: Any) -> list[str] | None:

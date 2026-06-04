@@ -78,6 +78,9 @@ releases
 identify_jobs
    └── stores short-lived identify progress, result, and error payloads
 
+collection_sync_jobs
+   └── stores short-lived Discogs collection sync progress and count summaries
+
 ai_chat_sessions
    └── ai_chat_messages
 
@@ -101,12 +104,19 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
 | artist             | TEXT      | Cached artist name                       |
 | title              | TEXT      | Album title                              |
 | year               | INTEGER   | Release year                             |
+| format             | TEXT      | Display format such as Vinyl, LP         |
 | label              | TEXT      | Label name                               |
 | catalog_number     | TEXT      | Catalog number                           |
 | barcode            | TEXT      | Barcode if available                     |
 | genres             | TEXT[]    | Discogs genres (e.g. Electronic, Rock)   |
 | styles             | TEXT[]    | Discogs styles (e.g. Techno, Dub Techno) |
+| thumbnail_url      | TEXT      | Cached Discogs thumbnail image           |
 | cover_image_url    | TEXT      | Cached Discogs image                     |
+| in_collection      | BOOLEAN   | Current Discogs collection membership    |
+| collection_added_at | TIMESTAMP | Representative Discogs collection add time |
+| collection_removed_at | TIMESTAMP | Time sync detected removal from collection |
+| last_discogs_sync_at | TIMESTAMP | Last sync that observed or removed release |
+| discogs_instance_id | BIGINT   | Representative Discogs instance id       |
 | created_at         | TIMESTAMP | Record creation time                     |
 | updated_at         | TIMESTAMP | Last metadata update                     |
 
@@ -119,11 +129,18 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
   "artist": "Basic Channel",
   "title": "Phylyps Trak",
   "year": 1993,
+  "format": "Vinyl, 12\"",
   "label": "Basic Channel",
   "catalog_number": "BC 01",
   "genres": ["Electronic"],
   "styles": ["Techno", "Dub Techno"],
-  "cover_image_url": "https://discogs.com/image.jpg"
+  "thumbnail_url": "https://discogs.com/thumb.jpg",
+  "cover_image_url": "https://discogs.com/image.jpg",
+  "in_collection": true,
+  "collection_added_at": "2021-10-05T12:32:40-07:00",
+  "collection_removed_at": null,
+  "last_discogs_sync_at": "2026-06-04T12:00:00Z",
+  "discogs_instance_id": 824195512
 }
 ```
 
@@ -144,6 +161,9 @@ USING GIN (genres);
 CREATE INDEX idx_releases_styles
 ON releases
 USING GIN (styles);
+
+INDEX (in_collection)
+INDEX (collection_added_at)
 ```
 
 ## Why Arrays Work Well Here
@@ -174,6 +194,39 @@ SELECT *
 FROM releases
 WHERE 'Techno' = ANY(styles);
 ```
+
+---
+
+# Table: collection_sync_jobs
+
+Stores short-lived progress state for manual Discogs collection sync jobs.
+
+## Columns
+
+| Column          | Type      | Notes                                       |
+| --------------- | --------- | ------------------------------------------- |
+| id              | UUID      | Primary key                                 |
+| status          | TEXT      | queued, running, succeeded, or failed       |
+| step            | TEXT      | fetching, importing, or loading             |
+| message         | TEXT      | User-facing progress message                |
+| total_items     | INTEGER   | Discogs items returned by the sync          |
+| processed_items | INTEGER   | Unique releases processed                   |
+| added_count     | INTEGER   | Newly added releases                        |
+| updated_count   | INTEGER   | Existing releases refreshed                 |
+| removed_count   | INTEGER   | Releases marked removed from collection     |
+| error           | JSONB     | Stable error code, message, and failed step |
+| created_at      | TIMESTAMP | Job creation time                           |
+| updated_at      | TIMESTAMP | Last status update time                     |
+| expires_at      | TIMESTAMP | Job retention boundary                      |
+
+## Indexes
+
+```sql
+INDEX (status)
+INDEX (status, updated_at)
+INDEX (expires_at)
+```
+
 ---
 
 # Table: sessions

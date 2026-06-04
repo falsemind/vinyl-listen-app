@@ -87,6 +87,7 @@ Main API domains:
 /identify
 /identify/jobs
 /releases
+/collection
 /sessions
 /analytics
 /ai
@@ -419,7 +420,96 @@ Sides are derived from the Discogs tracklist.
 
 ---
 
-# 4. Create Listening Session
+# 4. Collection Management
+
+Endpoints used by the Records Collection screen to import and sync the current Discogs collection. Discogs folder `0` is treated as the source of truth for active collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
+
+## POST /collection/sync
+
+Starts a manual background collection sync job and returns immediately.
+
+### Response
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "queued",
+  "message": "Collection sync queued",
+  "step": "queued",
+  "added_count": 0,
+  "updated_count": 0,
+  "removed_count": 0,
+  "started_at": "2026-06-04T20:15:00Z",
+  "completed_at": null,
+  "error": null
+}
+```
+
+Returns `202 Accepted`.
+
+## GET /collection/sync/{job_id}
+
+Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
+
+### Response
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "running",
+  "message": "Importing collection data",
+  "step": "importing",
+  "added_count": 12,
+  "updated_count": 4,
+  "removed_count": 1,
+  "started_at": "2026-06-04T20:15:00Z",
+  "completed_at": null,
+  "error": null
+}
+```
+
+Terminal statuses are `succeeded` and `failed`. Missing jobs return `404` with `collection_sync_job_not_found`.
+
+## GET /collection/releases
+
+Returns active collection records ordered by Discogs collection add date, newest first.
+
+### Query Parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `limit` | integer | Page size. Android uses `25`. |
+| `offset` | integer | Number of active collection records to skip. |
+
+### Response
+
+```json
+{
+  "items": [
+    {
+      "id": "internal_id",
+      "discogs_release_id": 11646493,
+      "title": "Ruff Out Deh",
+      "artist": "Babe Roots, Kojo Neatness",
+      "year": 2018,
+      "format": "Vinyl, 7\", 45 RPM",
+      "label": "4Weed Records",
+      "catalog_number": "4WDV009",
+      "styles": ["Dub", "Dub Techno"],
+      "thumb_url": "https://...",
+      "collection_added_at": "2021-10-05T19:32:40Z",
+      "in_collection": true
+    }
+  ],
+  "limit": 25,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+---
+
+# 5. Create Listening Session
 
 Logs a listening session.
 
@@ -503,7 +593,7 @@ Expired edit windows return `403` with `session_edit_window_expired`.
 
 ---
 
-# 5. Session Moods
+# 6. Session Moods
 
 Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
@@ -574,7 +664,7 @@ Response:
 
 ---
 
-# 6. Home Summary
+# 7. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -628,7 +718,7 @@ The Android app prefers `played_at` for device-timezone-aware labels such as `To
 
 ---
 
-# 7. Get Record Details
+# 8. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -667,7 +757,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 8. Session History
+# 9. Session History
 
 Used for listening history.
 
@@ -704,7 +794,7 @@ Used for listening history.
 
 ---
 
-# 9. Analytics
+# 10. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -929,7 +1019,7 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 ---
 
-# 10. AI Insights
+# 11. AI Insights
 
 Used by the **Insights screen** chat shell.
 
@@ -1080,7 +1170,7 @@ The import stores only the filtered song-event fields defined in the AI Insights
 
 ---
 
-# 11. System Endpoint
+# 12. System Endpoint
 
 Used by the **Settings screen**.
 

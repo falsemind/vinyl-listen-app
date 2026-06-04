@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -67,6 +70,7 @@ fun HomeScreen(
     onOpenRecord: (String) -> Unit,
     onOpenAnalytics: () -> Unit,
     onOpenInsights: () -> Unit,
+    onOpenCollection: () -> Unit,
     onOpenSettings: () -> Unit,
     onViewAllSessions: () -> Unit,
     onEditSession: (String) -> Unit,
@@ -94,7 +98,12 @@ fun HomeScreen(
                         BottomNavItem("Home", Icons.Filled.Home, selected = true, onClick = {}),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onOpenInsights),
-                        BottomNavItem("Settings", Icons.Filled.Settings, selected = false, onClick = onOpenSettings),
+                        BottomNavItem(
+                            "Collection",
+                            Icons.Filled.LibraryMusic,
+                            selected = false,
+                            onClick = onOpenCollection,
+                        ),
                     ),
             )
         },
@@ -115,6 +124,15 @@ fun HomeScreen(
             title = "Vinyl Listen",
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
+            titleEndContent = {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Open settings",
+                        tint = VinylColors.TextSecondary,
+                    )
+                }
+            },
         ) {
             loadError?.let { message ->
                 ErrorRetryCard(message = message, onRetry = { retryKey += 1 })

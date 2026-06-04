@@ -38,6 +38,7 @@ M8 — Android Feature Implementation
 M9 — Analytics
 M10 — MVP Stabilization
 M11 — AI Insights
+M12 — Collection Management
 ```
 
 ---
@@ -488,6 +489,64 @@ AI Insights screen can answer collection-grounded questions from local listening
 
 ---
 
+# Milestone 12 — Collection Management
+
+Goal: add Discogs-backed collection management while preserving historical listening data.
+
+Status: planned.
+
+Source plan:
+
+```
+docs/implementation-plans/collection-management-plan.md
+```
+
+Scope:
+
+```
+Records Collection Android screen
+Manual Discogs collection sync
+Backend collection sync job API
+Collection membership reconciliation
+Removed-record historical access
+Collection pagination and record detail states
+```
+
+Tasks:
+
+```
+Add Collection bottom-navigation screen
+Move Settings access to the Home screen top-right icon
+Load Discogs username and token from backend environment variables
+Fetch all Discogs folder 0 collection pages
+Collapse duplicate Discogs instances into one app record per release
+Mark records removed from collection without deleting listening history
+Expose background sync progress for Android polling
+Show latest 25 active collection records with Show More pagination
+Preserve removed records in historical session and detail screens
+Show removed-from-collection messaging on record detail
+```
+
+Example issues:
+
+```
+Add collection sync schema and reconciliation logic
+Add backend /collection/sync job endpoints
+Add active collection list API
+Add Records Collection Android screen
+Move Settings from bottom nav to Home action
+Add removed-record detail state
+Document Discogs collection sync configuration
+```
+
+Deliverable:
+
+```
+Records Collection screen can load and sync the current Discogs collection while historical listening data remains intact
+```
+
+---
+
 # Development Order Summary
 
 Recommended sequence:
@@ -503,6 +562,7 @@ Android app
 Analytics
 Stabilization
 AI Insights
+Collection management
 ```
 
 This order minimizes development blockers.
@@ -531,7 +591,6 @@ Possible next milestones:
 
 ```
 advanced recommendation workflows
-collection management
 price tracking
 marketplace integration
 ```
