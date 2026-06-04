@@ -375,9 +375,10 @@ Retrieve stored release metadata.
 
 ```
 POST /api/v1/sessions/
+PATCH /api/v1/sessions/{session_id}
 ```
 
-Log a new listening session.
+Log a new listening session, or edit side/rating/mood/notes during the 15-minute server-enforced edit window.
 
 ---
 

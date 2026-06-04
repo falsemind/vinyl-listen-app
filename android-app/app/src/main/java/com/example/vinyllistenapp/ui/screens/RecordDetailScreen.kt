@@ -52,6 +52,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
+import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
 import com.example.vinyllistenapp.ui.components.RatingStars
@@ -67,6 +68,7 @@ fun RecordDetailScreen(
     releaseId: String?,
     apiClient: VinylApiClient,
     onAddSession: (String) -> Unit,
+    onEditSession: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
@@ -130,6 +132,7 @@ fun RecordDetailScreen(
                         RecordHistoryCard(
                             history = history,
                             onNotesClick = { selectedNote = it },
+                            onEditSession = { sessionId -> onEditSession(sessionId) },
                         )
                     }
                 }
@@ -401,7 +404,12 @@ private fun RecordMoodRow(
 private fun RecordHistoryCard(
     history: RecordHistoryEntry,
     onNotesClick: (RecordHistoryEntry) -> Unit,
+    onEditSession: (String) -> Unit,
 ) {
+    val editableSessionId = history.sessionId?.takeIf { history.canEdit && it.isNotBlank() }
+    val metadataLeadWidth = 156.dp
+    val hasNotes = history.hasNotes && !history.notes.isNullOrBlank()
+
     Box(
         modifier =
             Modifier
@@ -416,20 +424,26 @@ private fun RecordHistoryCard(
             alpha = 0.30f,
             modifier = Modifier.align(Alignment.TopCenter),
         )
-        Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(end = if (editableSessionId != null) 40.dp else 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
+                    modifier = Modifier.width(metadataLeadWidth),
                     text = history.date,
                     color = VinylColors.TextPrimary,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (history.hasNotes && !history.notes.isNullOrBlank()) {
+                if (hasNotes) {
                     Text(
                         modifier =
                             Modifier
@@ -449,23 +463,31 @@ private fun RecordHistoryCard(
                 horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
+                Row(
                     modifier =
                         Modifier
-                            .clip(VinylShapes.Chip)
-                            .background(VinylColors.AccentGreen)
-                            .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceXs),
-                    text = "Side ${history.side}",
-                    color = VinylColors.AppBackground,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                )
-                RatingStars(
-                    rating = history.rating,
-                    compact = true,
-                    starSize = 15.dp,
-                    strokeWidth = 1.75.dp,
-                )
+                            .width(metadataLeadWidth),
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        modifier =
+                            Modifier
+                                .clip(VinylShapes.Chip)
+                                .background(VinylColors.AccentGreen)
+                                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceXs),
+                        text = "Side ${history.side}",
+                        color = VinylColors.AppBackground,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                    )
+                    RatingStars(
+                        rating = history.rating,
+                        compact = true,
+                        starSize = 15.dp,
+                        strokeWidth = 1.75.dp,
+                    )
+                }
                 Text(
                     modifier = Modifier.weight(1f),
                     text = history.mood,
@@ -475,6 +497,12 @@ private fun RecordHistoryCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        editableSessionId?.let { id ->
+            EditableSessionButton(
+                onClick = { onEditSession(id) },
+                modifier = Modifier.align(Alignment.TopEnd),
+            )
         }
     }
 }
@@ -624,6 +652,8 @@ private data class RecordHistoryEntry(
     val mood: String,
     val hasNotes: Boolean,
     val notes: String?,
+    val sessionId: String? = null,
+    val canEdit: Boolean = false,
 )
 
 private fun recordDetailTotalPlays(
@@ -722,6 +752,8 @@ private fun recordDetailHistory(
                 mood = session.mood,
                 hasNotes = session.hasNotes || notes != null,
                 notes = notes,
+                sessionId = session.sessionId,
+                canEdit = session.canEdit,
             )
         }
     if (sessionHistory.isNotEmpty()) return sessionHistory

@@ -18,9 +18,11 @@ from app.schemas.sessions import (
     SessionMoodResponse,
     SessionMoodsResponse,
     SessionResponse,
+    UpdateSessionRequest,
 )
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionEditWindowExpiredError,
     SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionsService,
@@ -111,6 +113,9 @@ def get_home_summary(
                 rating=item.session.rating,
                 mood=item.session.mood,
                 has_notes=bool(item.session.notes and item.session.notes.strip()),
+                created_at=item.session.created_at,
+                can_edit=service.can_edit_session(item.session),
+                editable_until=service.editable_until(item.session),
             )
             for item in summary.recent_sessions
         ],
@@ -210,4 +215,63 @@ def get_session(
             content={"error": {"code": "session_not_found", "message": str(error)}},
         )
 
-    return SessionResponse.model_validate(session)
+    return _map_session_response(session, service)
+
+
+@router.patch(
+    "/{session_id}",
+    response_model=SessionResponse,
+    responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def update_session(
+    session_id: str,
+    payload: UpdateSessionRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+):
+    try:
+        session = service.update_session(
+            db,
+            session_id=session_id,
+            fields=payload.model_dump(exclude_unset=True),
+        )
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionEditWindowExpiredError as error:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "session_not_found", "message": str(error)}},
+        )
+    except ReleaseNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "release_not_found", "message": str(error)}},
+        )
+
+    return _map_session_response(session, service)
+
+
+def _map_session_response(
+    session,
+    service: SessionsService,
+) -> SessionResponse:
+    return SessionResponse(
+        id=session.id,
+        release_id=session.release_id,
+        rating=session.rating,
+        mood=session.mood,
+        notes=session.notes,
+        played_at=session.played_at,
+        vinyl_side=session.vinyl_side,
+        created_at=session.created_at,
+        can_edit=service.can_edit_session(session),
+        editable_until=service.editable_until(session),
+    )

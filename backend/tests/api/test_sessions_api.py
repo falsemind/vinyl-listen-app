@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.sessions_service import (
     ReleaseNotFoundError,
+    SessionEditWindowExpiredError,
     SessionMoodAlreadyExistsError,
     SessionNotFoundError,
     SessionValidationError,
@@ -94,6 +95,92 @@ def test_get_session_endpoint_returns_session_details(
         "played_at": "2026-03-14T19:21:00Z",
         "vinyl_side": "A",
         "created_at": "2026-04-19T08:30:00Z",
+        "can_edit": True,
+        "editable_until": "2026-04-19T08:45:00Z",
+    }
+
+
+def test_update_session_endpoint_returns_updated_session(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/v1/sessions/session-123",
+            json={
+                "side": "B",
+                "rating": 4,
+                "mood": "Focused",
+                "notes": "Changed after replay.",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "session-123",
+        "release_id": "release-123",
+        "rating": 4,
+        "mood": "Focused",
+        "notes": "Changed after replay.",
+        "played_at": "2026-03-14T19:21:00Z",
+        "vinyl_side": "B",
+        "created_at": "2026-04-19T08:30:00Z",
+        "can_edit": True,
+        "editable_until": "2026-04-19T08:45:00Z",
+    }
+    assert service.update_calls == [
+        (
+            "session-123",
+            {
+                "side": "B",
+                "rating": 4,
+                "mood": "Focused",
+                "notes": "Changed after replay.",
+            },
+        )
+    ]
+
+
+def test_update_session_endpoint_returns_expired_window_error(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    service.update_error = SessionEditWindowExpiredError("session-123")
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/v1/sessions/session-123", json={"rating": 4})
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "error": {
+            "code": "session_edit_window_expired",
+            "message": "Session can only be edited for 15 minutes after it is created.",
+        }
+    }
+
+
+def test_update_session_endpoint_returns_validation_error(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    service.update_error = SessionValidationError("invalid_rating", "Rating must be between 1 and 5.")
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/v1/sessions/session-123", json={"rating": 6})
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "invalid_rating",
+            "message": "Rating must be between 1 and 5.",
+        }
     }
 
 
@@ -142,6 +229,9 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "rating": 5,
                 "mood": "Calm",
                 "has_notes": True,
+                "created_at": "2026-04-19T08:30:00Z",
+                "can_edit": True,
+                "editable_until": "2026-04-19T08:45:00Z",
             }
         ],
         "total_sessions": 2,
@@ -270,6 +360,9 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
                 "mood": "Calm",
                 "notes": "Great pressing.",
                 "has_notes": True,
+                "created_at": "2026-04-19T08:30:00Z",
+                "can_edit": True,
+                "editable_until": "2026-04-19T08:45:00Z",
             }
         ]
     }

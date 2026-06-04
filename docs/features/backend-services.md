@@ -282,7 +282,7 @@ The mapper handles common Discogs shapes:
 
 ## SessionsService
 
-`SessionsService` owns listening session creation and retrieval.
+`SessionsService` owns listening session creation, editing, and retrieval.
 
 ### Create flow
 
@@ -293,6 +293,16 @@ The mapper handles common Discogs shapes:
 3. Optionally checks the raw Discogs release payload for valid side labels.
 4. Creates a session through `SessionsRepository`.
 5. Returns `CreateSessionResult` with session ID, timestamp, and `created` status.
+
+### Edit flow
+
+`update_session(db, session_id, fields)`:
+
+1. Loads the existing session.
+2. Requires the session to be within 15 minutes of `created_at`.
+3. Validates only editable fields: `side`, `rating`, `mood`, and `notes`.
+4. Reuses side validation and mood canonicalization from session creation.
+5. Persists the updated session through `SessionsRepository`.
 
 ### Validation behavior
 
@@ -305,10 +315,12 @@ The service validates:
 - If Discogs track positions are available, requested side must exist on the release.
 - Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods`; session analytics still reads the selected text from `sessions.mood`.
 - Mood names are canonicalized case-insensitively from built-in moods, active custom mood options, or historical session rows before a session is stored.
+- Session edits are allowed only during the backend-controlled 15-minute window after `created_at`.
 
 Errors are typed:
 
 - `SessionValidationError` for malformed input.
+- `SessionEditWindowExpiredError` when the edit window has passed.
 - `ReleaseNotFoundError` when a release does not exist.
 - `SessionNotFoundError` when a session lookup misses.
 
@@ -316,6 +328,7 @@ Errors are typed:
 
 - `get_session` returns one session by ID or raises `SessionNotFoundError`.
 - `get_sessions_by_release` validates the release ID, confirms the release exists, and returns all sessions for that release.
+- Home and release session responses include `can_edit` and `editable_until` so clients can show edit affordances without owning the rule.
 
 ## AnalyticsService
 

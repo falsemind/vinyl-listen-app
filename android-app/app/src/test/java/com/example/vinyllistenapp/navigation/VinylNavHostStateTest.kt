@@ -52,6 +52,16 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun editSessionRoutePatternUsesExpectedArgument() {
+        assertEquals("session_edit/{sessionId}", VinylRoutes.SESSION_EDIT_PATTERN)
+    }
+
+    @Test
+    fun editSessionRouteIsPortraitLocked() {
+        assertTrue(VinylRoutes.SESSION_EDIT_PATTERN.isPortraitLockedOverflowRoute())
+    }
+
+    @Test
     fun analyticsDrilldownRoutesDoNotLockPortrait() {
         assertFalse(VinylRoutes.ANALYTICS_MONTH_SESSIONS_PATTERN.isPortraitLockedOverflowRoute())
         assertFalse(VinylRoutes.ANALYTICS_RATING_RECORDS_PATTERN.isPortraitLockedOverflowRoute())

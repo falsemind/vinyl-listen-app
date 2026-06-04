@@ -14,6 +14,7 @@ class InMemorySessionsRepository:
     def __init__(self) -> None:
         self.created_session: Sessions | None = None
         self.created_payload: dict | None = None
+        self.updated_payload: dict | None = None
         self.sessions: list[Sessions] = []
 
     def create(self, _db, **kwargs) -> Sessions:
@@ -37,6 +38,14 @@ class InMemorySessionsRepository:
             if session.id == session_id:
                 return session
         return None
+
+    def update(self, _db, session: Sessions, **kwargs) -> Sessions:
+        self.updated_payload = kwargs
+        session.rating = kwargs["rating"]
+        session.mood = kwargs["mood"]
+        session.notes = kwargs["notes"]
+        session.vinyl_side = kwargs["vinyl_side"]
+        return session
 
     def get_by_release_id(self, _db, release_id: str, *, limit: int, offset: int) -> list[Sessions]:
         matching = [session for session in self.sessions if session.release_id == release_id]
@@ -141,6 +150,7 @@ def build_sessions_service(
         list[Releases] | None,
         dict[int, dict] | None,
         InMemorySessionsMoodsRepository | None,
+        Callable[[], datetime] | None,
     ],
     SessionsService,
 ]:
@@ -149,12 +159,14 @@ def build_sessions_service(
         releases: list[Releases] | None = None,
         payload_by_discogs_id: dict[int, dict] | None = None,
         moods_repository: InMemorySessionsMoodsRepository | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> SessionsService:
         return SessionsService(
             sessions_repository=sessions_repository or InMemorySessionsRepository(),
             releases_repository=InMemoryReleasesRepository(releases or [build_release()]),
             discogs_repository=StubDiscogsRepository(payload_by_discogs_id or {}),
             moods_repository=moods_repository or InMemorySessionsMoodsRepository(),
+            now_provider=now_provider,
         )
 
     return _build_service

@@ -144,16 +144,10 @@ class VinylApiClient(
         apiCall {
             val response = getJson("releases/${Uri.encode(releaseId)}/sessions")
             response.optJSONArray("sessions").orEmpty().mapObjects { item ->
-                ListeningSession(
-                    releaseId = releaseId,
-                    artist = "",
-                    title = "",
-                    playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
-                    mood = item.optNullableString("mood") ?: "Unspecified",
-                    rating = item.optNullableInt("rating") ?: 0,
-                    side = item.optNullableString("side"),
-                    hasNotes = item.optBoolean("has_notes", false),
-                    notes = item.optNullableString("notes"),
+                item.toListeningSession(
+                    fallbackReleaseId = releaseId,
+                    fallbackArtist = "",
+                    fallbackTitle = "",
                 )
             }
         }
@@ -167,18 +161,7 @@ class VinylApiClient(
             HomeSummary(
                 recentSessions =
                     response.optJSONArray("recent_sessions").orEmpty().mapObjects { item ->
-                        ListeningSession(
-                            releaseId = item.getString("release_id"),
-                            artist = item.optString("artist", "Unknown artist"),
-                            title = item.optString("title", "Unknown title"),
-                            playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
-                            mood = item.optNullableString("mood") ?: "Unspecified",
-                            rating = item.optNullableInt("rating") ?: 0,
-                            thumbnailUrl = item.optNullableString("thumbnail_url"),
-                            side = item.optNullableString("side"),
-                            hasNotes = item.optBoolean("has_notes", false),
-                            notes = item.optNullableString("notes"),
-                        )
+                        item.toListeningSession()
                     },
                 totalSessions = response.optInt("total_sessions", 0),
                 recordsThisMonth = response.optInt("records_this_month", 0),
@@ -353,6 +336,28 @@ class VinylApiClient(
             postJson("sessions/", body).getString("session_id")
         }
 
+    suspend fun getSession(sessionId: String): ListeningSession =
+        apiCall {
+            getJson("sessions/${Uri.encode(sessionId)}").toListeningSession()
+        }
+
+    suspend fun updateSession(
+        sessionId: String,
+        side: String?,
+        rating: Int?,
+        mood: String?,
+        notes: String?,
+    ): ListeningSession =
+        apiCall {
+            val body =
+                JSONObject()
+                    .putNullable("side", side)
+                    .putNullable("rating", rating)
+                    .putNullable("mood", mood)
+                    .putNullable("notes", notes?.takeIf { it.isNotBlank() })
+            patchJson("sessions/${Uri.encode(sessionId)}", body).toListeningSession()
+        }
+
     suspend fun getCustomMoods(): List<String> =
         apiCall {
             getJson("sessions/moods")
@@ -498,6 +503,18 @@ class VinylApiClient(
     ): JSONObject {
         val connection = openConnection(path)
         connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
+    private fun patchJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "PATCH"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
         connection.outputStream.use { it.writeUtf8(body.toString()) }
@@ -666,21 +683,34 @@ internal fun JSONObject.toAnalyticsSessionsPage(): AnalyticsSessionsPage =
             optJSONArray("sessions")
                 .orEmpty()
                 .mapObjects { item ->
-                    ListeningSession(
-                        releaseId = item.getString("release_id"),
-                        artist = item.optString("artist", "Unknown artist"),
-                        title = item.optString("title", "Unknown title"),
-                        playedAt = item.optNullableString("played_at") ?: item.optNullableString("date") ?: "Unknown date",
-                        mood = item.optNullableString("mood") ?: "Unspecified",
-                        rating = item.optNullableInt("rating") ?: 0,
-                        thumbnailUrl = item.optNullableString("thumbnail_url"),
-                        side = item.optNullableString("side"),
-                        hasNotes = item.optBoolean("has_notes", false),
-                        sessionId = item.optNullableString("session_id"),
-                    )
+                    item.toListeningSession()
                 },
         pagination = optJSONObject("pagination").toAnalyticsPagination(),
     )
+
+internal fun JSONObject.toListeningSession(
+    fallbackReleaseId: String = "",
+    fallbackArtist: String = "Unknown artist",
+    fallbackTitle: String = "Unknown title",
+): ListeningSession {
+    val notes = optNullableString("notes")
+    return ListeningSession(
+        releaseId = optNullableString("release_id") ?: fallbackReleaseId,
+        artist = optNullableString("artist") ?: fallbackArtist,
+        title = optNullableString("title") ?: fallbackTitle,
+        playedAt = optNullableString("played_at") ?: optNullableString("date") ?: "Unknown date",
+        mood = optNullableString("mood") ?: "Unspecified",
+        rating = optNullableInt("rating") ?: 0,
+        thumbnailUrl = optNullableString("thumbnail_url"),
+        side = optNullableString("side") ?: optNullableString("vinyl_side"),
+        hasNotes = optBoolean("has_notes", false) || !notes.isNullOrBlank(),
+        notes = notes,
+        sessionId = optNullableString("session_id") ?: optNullableString("id"),
+        createdAt = optNullableString("created_at"),
+        canEdit = optBoolean("can_edit", false),
+        editableUntil = optNullableString("editable_until"),
+    )
+}
 
 internal fun JSONObject.toAnalyticsRecordCountsPage(): AnalyticsRecordCountsPage =
     AnalyticsRecordCountsPage(
@@ -837,6 +867,7 @@ private fun apiErrorMessage(
         code == "invalid_side" -> "That side is not available for this release."
         code == "invalid_rating" -> "Rating must be between 1 and 5."
         code == "invalid_played_at" -> "Session time was invalid. Try saving again."
+        code == "session_edit_window_expired" -> "This session can only be edited for 15 minutes after logging."
         code == "release_not_found" -> "This release is not available locally yet."
         status == 404 -> "Could not find that record."
         status in 500..599 -> "Backend error. Retry in a moment."

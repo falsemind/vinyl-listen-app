@@ -25,6 +25,7 @@ import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
+import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
@@ -76,6 +77,7 @@ fun VinylNavHost(
                 onOpenInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                 onOpenSettings = { navController.navigate(VinylRoutes.SETTINGS) },
                 onViewAllSessions = { navController.navigate(VinylRoutes.RECENT_SESSIONS) },
+                onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
             )
         }
         composable(VinylRoutes.RECENT_SESSIONS) {
@@ -83,6 +85,7 @@ fun VinylNavHost(
                 apiClient = apiClient,
                 onBack = { navController.popBackStack() },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
             )
         }
         composable(VinylRoutes.CAPTURE_RECORD) {
@@ -179,6 +182,26 @@ fun VinylNavHost(
             )
         }
         composable(
+            route = VinylRoutes.SESSION_EDIT_PATTERN,
+            arguments = listOf(navArgument(VinylRoutes.SESSION_ID) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            EditSessionScreen(
+                sessionId = backStackEntry.arguments?.getString(VinylRoutes.SESSION_ID),
+                apiClient = apiClient,
+                onSave = { releaseId ->
+                    val previousRoute = navController.previousBackStackEntry?.destination?.route
+                    navController.navigate(VinylRoutes.recordDetail(releaseId)) {
+                        if (previousRoute == VinylRoutes.RECORD_DETAIL_PATTERN) {
+                            popUpTo(VinylRoutes.RECORD_DETAIL_PATTERN) { inclusive = true }
+                        } else {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    }
+                },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+        composable(
             route = VinylRoutes.RECORD_DETAIL_PATTERN,
             arguments = listOf(navArgument(VinylRoutes.RELEASE_ID) { type = NavType.StringType }),
         ) { backStackEntry ->
@@ -186,6 +209,7 @@ fun VinylNavHost(
                 releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
                 apiClient = apiClient,
                 onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
+                onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(VinylRoutes.HOME)
@@ -315,6 +339,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
+            VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,
             VinylRoutes.AI_INSIGHTS,
         )

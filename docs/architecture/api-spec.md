@@ -465,6 +465,44 @@ played_at required
 
 ---
 
+## PATCH /sessions/{session_id}
+
+Edits a logged session during the server-enforced 15-minute edit window after `created_at`.
+
+Editable fields:
+
+```json
+{
+  "side": "B",
+  "rating": 4,
+  "mood": "Focused",
+  "notes": "Updated after replaying the second side."
+}
+```
+
+All fields are optional, but at least one field must be present. Send `null` to clear an optional field.
+
+### Response
+
+```json
+{
+  "id": "session-123",
+  "release_id": "release-123",
+  "rating": 4,
+  "mood": "Focused",
+  "notes": "Updated after replaying the second side.",
+  "played_at": "2026-03-14T19:21:00Z",
+  "vinyl_side": "B",
+  "created_at": "2026-04-19T08:30:00Z",
+  "can_edit": true,
+  "editable_until": "2026-04-19T08:45:00Z"
+}
+```
+
+Expired edit windows return `403` with `session_edit_window_expired`.
+
+---
+
 # 5. Session Moods
 
 Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
@@ -565,7 +603,10 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "side": "A",
       "rating": 5,
       "mood": "Focused",
-      "has_notes": true
+      "has_notes": true,
+      "created_at": "2026-05-10T23:31:00Z",
+      "can_edit": true,
+      "editable_until": "2026-05-10T23:46:00Z"
     }
   ],
   "total_sessions": 1,
@@ -652,7 +693,10 @@ Used for listening history.
       "rating": 4,
       "mood": "Calm",
       "notes": "The low end opened up after a clean.",
-      "has_notes": true
+      "has_notes": true,
+      "created_at": "2026-03-10T23:31:00Z",
+      "can_edit": false,
+      "editable_until": "2026-03-10T23:46:00Z"
     }
   ]
 }
