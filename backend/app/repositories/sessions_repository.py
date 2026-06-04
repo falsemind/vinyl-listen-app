@@ -125,3 +125,22 @@ class SessionsRepository:
         db.commit()
         db.refresh(session)
         return session
+
+    @staticmethod
+    def update(
+        db: Session,
+        session: Sessions,
+        *,
+        rating: int | None,
+        mood: str | None,
+        notes: str | None,
+        vinyl_side: str | None,
+    ) -> Sessions:
+        session.rating = rating
+        session.mood = mood
+        session.notes = notes
+        session.vinyl_side = vinyl_side
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return session

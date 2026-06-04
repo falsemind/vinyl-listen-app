@@ -23,6 +23,15 @@ class CreateSessionRequest(BaseModel):
     played_at: str
 
 
+class UpdateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    side: str | None = None
+    rating: int | None = None
+    mood: str | None = None
+    notes: str | None = None
+
+
 class SessionCreateResponse(BaseModel):
     session_id: str
     timestamp: datetime
@@ -49,8 +58,6 @@ class SessionMoodResponse(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: str
     release_id: str
     rating: int | None
@@ -59,6 +66,8 @@ class SessionResponse(BaseModel):
     played_at: datetime | None
     vinyl_side: str | None
     created_at: datetime
+    can_edit: bool
+    editable_until: datetime
 
 
 class ReleaseSessionHistoryItem(BaseModel):
@@ -70,6 +79,9 @@ class ReleaseSessionHistoryItem(BaseModel):
     mood: str | None
     notes: str | None = None
     has_notes: bool
+    created_at: datetime
+    can_edit: bool
+    editable_until: datetime
 
 
 class ReleaseSessionsResponse(BaseModel):
@@ -88,6 +100,9 @@ class HomeRecentSessionItem(BaseModel):
     rating: int | None
     mood: str | None
     has_notes: bool
+    created_at: datetime
+    can_edit: bool
+    editable_until: datetime
 
 
 class HomeTopRecordItem(BaseModel):

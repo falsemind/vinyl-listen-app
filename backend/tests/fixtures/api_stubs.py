@@ -234,11 +234,13 @@ class StubSessionsService:
     def __init__(self) -> None:
         self.create_error: Exception | None = None
         self.get_error: Exception | None = None
+        self.update_error: Exception | None = None
         self.list_error: Exception | None = None
         self.summary_error: Exception | None = None
         self.mood_error: Exception | None = None
         self.create_calls: list[dict] = []
         self.get_calls: list[str] = []
+        self.update_calls: list[tuple[str, dict]] = []
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
         self.create_mood_calls: list[str] = []
@@ -310,6 +312,26 @@ class StubSessionsService:
         if self.get_error is not None:
             raise self.get_error
         return self.session
+
+    def update_session(self, _db, *, session_id: str, fields: dict) -> SessionStub:
+        self.update_calls.append((session_id, fields))
+        if self.update_error is not None:
+            raise self.update_error
+        if "rating" in fields:
+            self.session.rating = fields["rating"]
+        if "mood" in fields:
+            self.session.mood = fields["mood"]
+        if "notes" in fields:
+            self.session.notes = fields["notes"]
+        if "side" in fields:
+            self.session.vinyl_side = fields["side"]
+        return self.session
+
+    def can_edit_session(self, _session: SessionStub) -> bool:
+        return True
+
+    def editable_until(self, session: SessionStub) -> datetime:
+        return session.created_at.replace(minute=session.created_at.minute + 15)
 
     def get_sessions_by_release(self, _db, release_id: str, *, limit: int, offset: int) -> list[SessionStub]:
         self.list_calls.append((release_id, limit, offset))
