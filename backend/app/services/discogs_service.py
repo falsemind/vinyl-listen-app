@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 import certifi
@@ -258,6 +258,20 @@ def _parse_header_int(headers: Mapping[str, str], name: str) -> int | None:
     return None
 
 
+def _coerce_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
 class DiscogsService:
     """Service facade for search and release-metadata access."""
 
@@ -340,6 +354,69 @@ class DiscogsService:
         )
         logger.info("Stored Discogs release in cache discogs_release_id=%s", discogs_release_id)
         return payload
+
+    def fetch_collection_releases(
+        self,
+        *,
+        username: str | None = None,
+        folder_id: int = 0,
+        per_page: int = 50,
+        sort: str = "added",
+        sort_order: str = "desc",
+    ) -> list[dict[str, Any]]:
+        resolved_username = (username or settings.discogs_username or "").strip()
+        if not resolved_username:
+            raise DiscogsConfigurationError("Discogs username is not configured.")
+
+        releases: list[dict[str, Any]] = []
+        page = 1
+        total_pages = 1
+
+        while page <= total_pages:
+            payload = self.fetch_collection_page(
+                username=resolved_username,
+                folder_id=folder_id,
+                page=page,
+                per_page=per_page,
+                sort=sort,
+                sort_order=sort_order,
+            )
+            page_releases = payload.get("releases")
+            if not isinstance(page_releases, list):
+                raise DiscogsClientError("Discogs collection response is missing releases.")
+
+            releases.extend(item for item in page_releases if isinstance(item, dict))
+            pagination = payload.get("pagination")
+            total_pages = (
+                _coerce_positive_int(pagination.get("pages") if isinstance(pagination, dict) else None) or page
+            )
+            page += 1
+
+        return releases
+
+    def fetch_collection_page(
+        self,
+        *,
+        username: str,
+        folder_id: int = 0,
+        page: int = 1,
+        per_page: int = 50,
+        sort: str = "added",
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        if not username.strip():
+            raise DiscogsConfigurationError("Discogs username is not configured.")
+
+        safe_username = quote(username.strip(), safe="")
+        return self._client.get(
+            f"/users/{safe_username}/collection/folders/{folder_id}/releases",
+            params={
+                "page": page,
+                "per_page": per_page,
+                "sort": sort,
+                "sort_order": sort_order,
+            },
+        )
 
     def _is_fresh(self, cache_entry: DiscogsReleaseCache | None) -> bool:
         if cache_entry is None:

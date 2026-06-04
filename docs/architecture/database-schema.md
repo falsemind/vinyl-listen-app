@@ -107,6 +107,11 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
 | genres             | TEXT[]    | Discogs genres (e.g. Electronic, Rock)   |
 | styles             | TEXT[]    | Discogs styles (e.g. Techno, Dub Techno) |
 | cover_image_url    | TEXT      | Cached Discogs image                     |
+| in_collection      | BOOLEAN   | Current Discogs collection membership    |
+| collection_added_at | TIMESTAMP | Representative Discogs collection add time |
+| collection_removed_at | TIMESTAMP | Time sync detected removal from collection |
+| last_discogs_sync_at | TIMESTAMP | Last sync that observed or removed release |
+| discogs_instance_id | BIGINT   | Representative Discogs instance id       |
 | created_at         | TIMESTAMP | Record creation time                     |
 | updated_at         | TIMESTAMP | Last metadata update                     |
 
@@ -123,7 +128,12 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
   "catalog_number": "BC 01",
   "genres": ["Electronic"],
   "styles": ["Techno", "Dub Techno"],
-  "cover_image_url": "https://discogs.com/image.jpg"
+  "cover_image_url": "https://discogs.com/image.jpg",
+  "in_collection": true,
+  "collection_added_at": "2021-10-05T12:32:40-07:00",
+  "collection_removed_at": null,
+  "last_discogs_sync_at": "2026-06-04T12:00:00Z",
+  "discogs_instance_id": 824195512
 }
 ```
 
@@ -144,6 +154,9 @@ USING GIN (genres);
 CREATE INDEX idx_releases_styles
 ON releases
 USING GIN (styles);
+
+INDEX (in_collection)
+INDEX (collection_added_at)
 ```
 
 ## Why Arrays Work Well Here

@@ -28,6 +28,13 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE INDEX idx_releases_title" in sql
     assert "CREATE INDEX idx_releases_genres" in sql
     assert "CREATE INDEX idx_releases_styles" in sql
+    assert "ADD COLUMN in_collection BOOLEAN DEFAULT false NOT NULL" in sql
+    assert "ADD COLUMN collection_added_at TIMESTAMP WITH TIME ZONE" in sql
+    assert "ADD COLUMN collection_removed_at TIMESTAMP WITH TIME ZONE" in sql
+    assert "ADD COLUMN last_discogs_sync_at TIMESTAMP WITH TIME ZONE" in sql
+    assert "ADD COLUMN discogs_instance_id BIGINT" in sql
+    assert "CREATE INDEX idx_releases_in_collection" in sql
+    assert "CREATE INDEX idx_releases_collection_added_at" in sql
     assert "CREATE INDEX idx_sessions_release_id" in sql
     assert "CREATE INDEX idx_sessions_played_at" in sql
     assert "CREATE INDEX idx_discogs_release_cache_last_accessed_at" in sql

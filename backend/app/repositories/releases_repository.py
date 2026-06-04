@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -97,3 +98,47 @@ class ReleasesRepository:
         db.commit()
         db.refresh(release)
         return release, created
+
+    @staticmethod
+    def mark_in_collection(
+        db: Session,
+        release: Releases,
+        *,
+        discogs_instance_id: int | None,
+        collection_added_at: datetime | None,
+        synced_at: datetime,
+    ) -> Releases:
+        release.in_collection = True
+        release.discogs_instance_id = discogs_instance_id
+        release.collection_added_at = collection_added_at
+        release.collection_removed_at = None
+        release.last_discogs_sync_at = synced_at
+
+        db.add(release)
+        db.commit()
+        db.refresh(release)
+        return release
+
+    @staticmethod
+    def mark_missing_collection_releases_removed(
+        db: Session,
+        active_discogs_release_ids: set[int],
+        *,
+        removed_at: datetime,
+    ) -> int:
+        query = db.query(Releases).filter(Releases.in_collection.is_(True))
+        if active_discogs_release_ids:
+            query = query.filter(~Releases.discogs_release_id.in_(active_discogs_release_ids))
+
+        removed_count = 0
+        for release in query.all():
+            release.in_collection = False
+            release.collection_removed_at = removed_at
+            release.last_discogs_sync_at = removed_at
+            db.add(release)
+            removed_count += 1
+
+        if removed_count:
+            db.commit()
+
+        return removed_count

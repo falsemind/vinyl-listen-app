@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     database_echo: bool = False
 
+    discogs_username: str | None = None
     discogs_token: str | None = None
     discogs_base_url: str
     discogs_user_agent: str = "vinyl-listen-app/0.1.0"

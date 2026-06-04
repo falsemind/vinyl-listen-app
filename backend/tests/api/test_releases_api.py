@@ -205,6 +205,11 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "genres": ["Electronic"],
         "styles": ["IDM"],
         "cover_image_url": "https://img.discogs.com/cover.jpg",
+        "in_collection": False,
+        "collection_added_at": None,
+        "collection_removed_at": None,
+        "last_discogs_sync_at": None,
+        "discogs_instance_id": None,
         "available_sides": ["A", "AA"],
         "available_side_options": [
             {"value": "A", "label": "Side A", "side": "A", "disc_number": None},

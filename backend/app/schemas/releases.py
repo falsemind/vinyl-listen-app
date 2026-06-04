@@ -29,6 +29,11 @@ class ReleaseResponse(BaseModel):
     genres: list[str] | None
     styles: list[str] | None
     cover_image_url: str | None
+    in_collection: bool = False
+    collection_added_at: datetime | None = None
+    collection_removed_at: datetime | None = None
+    last_discogs_sync_at: datetime | None = None
+    discogs_instance_id: int | None = None
     available_sides: list[str] = Field(default_factory=list)
     available_side_options: list[ReleaseSideOptionResponse] = Field(default_factory=list)
     created_at: datetime
