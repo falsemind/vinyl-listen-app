@@ -328,8 +328,13 @@ Analytics endpoints read from persisted releases and sessions:
 - `GET /api/v1/analytics/rating-distribution` counts 1-5 star ratings.
 - `GET /api/v1/analytics/mood-distribution` counts saved session mood text and groups case variants together.
 - `GET /api/v1/analytics/style-distribution` counts Discogs release styles through logged sessions, preserving specific style labels such as `Dub Techno`, `House`, and `Deep House`.
+- `GET /api/v1/analytics/sessions` returns paginated listening sessions for a selected `YYYY-MM` month.
+- `GET /api/v1/analytics/records/by-rating` returns paginated record counts for a selected 1-5 star rating.
+- `GET /api/v1/analytics/records/by-mood` returns paginated record counts for a selected mood label.
+- `GET /api/v1/analytics/records/by-style` returns paginated records for a selected Discogs style.
 
 Style distribution intentionally uses `releases.styles`, not broad `genres`, because the Analytics screen is meant to expose specific listening patterns.
+Drilldown pagination is validated at the service boundary: `limit` must be 1-50, `offset` must be nonnegative, rating must be 1-5, month must be strict `YYYY-MM`, and mood/style labels must be nonblank.
 
 ## AiInsightsService
 

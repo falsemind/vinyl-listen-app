@@ -665,6 +665,7 @@ Used for listening history.
 Endpoints used by the **Analytics screen charts**.
 
 Backend calculates metrics using configurable time windows (e.g. last 90 days).
+Drilldown endpoints use the same pagination envelope as View All screens.
 
 ---
 
@@ -764,6 +765,123 @@ Style names are grouped case-insensitively so imported values such as `Dub Techn
   }
 }
 ```
+
+---
+
+## GET /analytics/sessions
+
+Returns listening sessions for a selected month from Plays Over Time.
+
+### Query Parameters
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| month | Required month in strict `YYYY-MM` format. | - |
+| limit | Page size. Must be 1-50. | 10 |
+| offset | Page offset. Must be 0 or greater. | 0 |
+
+### Response
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session-123",
+      "release_id": "release-123",
+      "artist": "DJ Harmony & Kid Lib",
+      "title": "Future / Fire Feeler / Dressback",
+      "thumbnail_url": "https://...",
+      "date": "2026-05-10",
+      "played_at": "2026-05-10T23:30:00Z",
+      "side": "A",
+      "rating": 5,
+      "mood": "Focused",
+      "has_notes": true
+    }
+  ],
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "total": 1,
+    "has_more": false
+  }
+}
+```
+
+Invalid month or pagination values return the standard structured validation error.
+
+---
+
+## GET /analytics/records/by-rating
+
+Returns records that have sessions with the selected star rating. `count` is the number of matching session ratings for that release.
+
+### Query Parameters
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| rating | Required rating. Must be 1-5. | - |
+| limit | Page size. Must be 1-50. | 10 |
+| offset | Page offset. Must be 0 or greater. | 0 |
+
+### Response
+
+```json
+{
+  "records": [
+    {
+      "release_id": "release-123",
+      "discogs_release_id": 555123,
+      "artist": "Boards of Canada",
+      "title": "Music Has The Right To Children",
+      "thumbnail_url": "https://...",
+      "count": 7
+    }
+  ],
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "total": 1,
+    "has_more": false
+  }
+}
+```
+
+---
+
+## GET /analytics/records/by-mood
+
+Returns records that have sessions with the selected mood. Mood matching is case-insensitive.
+
+### Query Parameters
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| mood | Required nonblank mood label. | - |
+| limit | Page size. Must be 1-50. | 10 |
+| offset | Page offset. Must be 0 or greater. | 0 |
+
+### Response
+
+Same response shape as `GET /analytics/records/by-rating`, with `count` representing matching mood sessions.
+
+---
+
+## GET /analytics/records/by-style
+
+Returns records whose imported Discogs `styles` include the selected style. Style matching is case-insensitive and uses the specific style label, not broad genres.
+
+### Query Parameters
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| style | Required nonblank style label. | - |
+| limit | Page size. Must be 1-50. | 10 |
+| offset | Page offset. Must be 0 or greater. | 0 |
+
+### Response
+
+Same response shape as `GET /analytics/records/by-rating`, with `count` representing matching logged sessions for records carrying that style.
 
 ---
 

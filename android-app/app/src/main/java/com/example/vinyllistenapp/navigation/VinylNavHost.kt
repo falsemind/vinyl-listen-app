@@ -28,13 +28,17 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
+import com.example.vinyllistenapp.ui.screens.MonthSessionsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.MoodDistributionScreen
+import com.example.vinyllistenapp.ui.screens.MoodRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
+import com.example.vinyllistenapp.ui.screens.RatingRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
 import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
 import com.example.vinyllistenapp.ui.screens.SettingsScreen
 import com.example.vinyllistenapp.ui.screens.StyleDistributionScreen
+import com.example.vinyllistenapp.ui.screens.StyleRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 import com.example.vinyllistenapp.ui.screens.rememberAiInsightsScreenState
 
@@ -203,6 +207,10 @@ fun VinylNavHost(
                 onViewAllTopRecords = { navController.navigate(VinylRoutes.TOP_RECORDS) },
                 onViewAllMoods = { navController.navigate(VinylRoutes.MOOD_DISTRIBUTION) },
                 onViewAllStyles = { navController.navigate(VinylRoutes.STYLE_DISTRIBUTION) },
+                onOpenMonthSessions = { month -> navController.navigate(VinylRoutes.analyticsMonthSessions(month)) },
+                onOpenRatingRecords = { rating -> navController.navigate(VinylRoutes.analyticsRatingRecords(rating)) },
+                onOpenMoodRecords = { mood -> navController.navigate(VinylRoutes.analyticsMoodRecords(mood)) },
+                onOpenStyleRecords = { style -> navController.navigate(VinylRoutes.analyticsStyleRecords(style)) },
             )
         }
         composable(VinylRoutes.AI_INSIGHTS) {
@@ -230,12 +238,58 @@ fun VinylNavHost(
             MoodDistributionScreen(
                 apiClient = apiClient,
                 onBack = { navController.popBackStack() },
+                onOpenMoodRecords = { mood -> navController.navigate(VinylRoutes.analyticsMoodRecords(mood)) },
             )
         }
         composable(VinylRoutes.STYLE_DISTRIBUTION) {
             StyleDistributionScreen(
                 apiClient = apiClient,
                 onBack = { navController.popBackStack() },
+                onOpenStyleRecords = { style -> navController.navigate(VinylRoutes.analyticsStyleRecords(style)) },
+            )
+        }
+        composable(
+            route = VinylRoutes.ANALYTICS_MONTH_SESSIONS_PATTERN,
+            arguments = listOf(navArgument(VinylRoutes.MONTH) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            MonthSessionsDrilldownScreen(
+                apiClient = apiClient,
+                month = backStackEntry.arguments?.getString(VinylRoutes.MONTH).orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+            )
+        }
+        composable(
+            route = VinylRoutes.ANALYTICS_RATING_RECORDS_PATTERN,
+            arguments = listOf(navArgument(VinylRoutes.RATING) { type = NavType.IntType }),
+        ) { backStackEntry ->
+            RatingRecordsDrilldownScreen(
+                apiClient = apiClient,
+                rating = backStackEntry.arguments?.getInt(VinylRoutes.RATING) ?: 0,
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+            )
+        }
+        composable(
+            route = VinylRoutes.ANALYTICS_MOOD_RECORDS_PATTERN,
+            arguments = listOf(navArgument(VinylRoutes.MOOD) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            MoodRecordsDrilldownScreen(
+                apiClient = apiClient,
+                mood = backStackEntry.arguments?.getString(VinylRoutes.MOOD).orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+            )
+        }
+        composable(
+            route = VinylRoutes.ANALYTICS_STYLE_RECORDS_PATTERN,
+            arguments = listOf(navArgument(VinylRoutes.STYLE) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            StyleRecordsDrilldownScreen(
+                apiClient = apiClient,
+                style = backStackEntry.arguments?.getString(VinylRoutes.STYLE).orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
         composable(VinylRoutes.SETTINGS) {

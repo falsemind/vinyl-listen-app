@@ -2,6 +2,7 @@ package com.example.vinyllistenapp.navigation
 
 import com.example.vinyllistenapp.domain.MatchCandidate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,5 +41,21 @@ class VinylNavHostStateTest {
     @Test
     fun recordDetailRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.RECORD_DETAIL_PATTERN.isPortraitLockedOverflowRoute())
+    }
+
+    @Test
+    fun analyticsDrilldownRoutePatternsUseExpectedArguments() {
+        assertEquals("analytics_month_sessions/{month}", VinylRoutes.ANALYTICS_MONTH_SESSIONS_PATTERN)
+        assertEquals("analytics_rating_records/{rating}", VinylRoutes.ANALYTICS_RATING_RECORDS_PATTERN)
+        assertEquals("analytics_mood_records/{mood}", VinylRoutes.ANALYTICS_MOOD_RECORDS_PATTERN)
+        assertEquals("analytics_style_records/{style}", VinylRoutes.ANALYTICS_STYLE_RECORDS_PATTERN)
+    }
+
+    @Test
+    fun analyticsDrilldownRoutesDoNotLockPortrait() {
+        assertFalse(VinylRoutes.ANALYTICS_MONTH_SESSIONS_PATTERN.isPortraitLockedOverflowRoute())
+        assertFalse(VinylRoutes.ANALYTICS_RATING_RECORDS_PATTERN.isPortraitLockedOverflowRoute())
+        assertFalse(VinylRoutes.ANALYTICS_MOOD_RECORDS_PATTERN.isPortraitLockedOverflowRoute())
+        assertFalse(VinylRoutes.ANALYTICS_STYLE_RECORDS_PATTERN.isPortraitLockedOverflowRoute())
     }
 }
