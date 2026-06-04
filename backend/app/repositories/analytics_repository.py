@@ -15,6 +15,37 @@ class AnalyticsRepository:
         return db.query(month, plays).filter(Sessions.played_at.isnot(None)).group_by(month).order_by(month.asc()).all()
 
     @staticmethod
+    def get_sessions_for_month(
+        db: Session,
+        *,
+        month: str,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[Sessions, Releases]]:
+        month_expression = AnalyticsRepository._month_expression(db)
+        return (
+            db.query(Sessions, Releases)
+            .join(Releases, Sessions.release_id == Releases.id)
+            .filter(Sessions.played_at.isnot(None))
+            .filter(month_expression == month)
+            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_sessions_for_month(db: Session, *, month: str) -> int:
+        month_expression = AnalyticsRepository._month_expression(db)
+        return (
+            db.query(func.count(Sessions.id))
+            .filter(Sessions.played_at.isnot(None))
+            .filter(month_expression == month)
+            .scalar()
+            or 0
+        )
+
+    @staticmethod
     def get_top_records(db: Session, *, limit: int):
         plays = func.count(Sessions.id).label("plays")
         average_rating = func.avg(Sessions.rating).label("average_rating")
@@ -25,6 +56,36 @@ class AnalyticsRepository:
             .order_by(plays.desc(), Releases.artist.asc(), Releases.title.asc())
             .limit(limit)
             .all()
+        )
+
+    @staticmethod
+    def get_records_for_rating(
+        db: Session,
+        *,
+        rating: int,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[Releases, int]]:
+        count = func.count(Sessions.id).label("count")
+        return (
+            db.query(Releases, count)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .filter(Sessions.rating == rating)
+            .group_by(Releases.id)
+            .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_records_for_rating(db: Session, *, rating: int) -> int:
+        return (
+            db.query(Releases.id)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .filter(Sessions.rating == rating)
+            .group_by(Releases.id)
+            .count()
         )
 
     @staticmethod
@@ -39,6 +100,40 @@ class AnalyticsRepository:
         )
 
     @staticmethod
+    def get_records_for_mood(
+        db: Session,
+        *,
+        mood: str,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[Releases, int]]:
+        count = func.count(Sessions.id).label("count")
+        normalized_mood = AnalyticsRepository._normalized_label(mood)
+        return (
+            db.query(Releases, count)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .filter(Sessions.mood.isnot(None))
+            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
+            .group_by(Releases.id)
+            .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_records_for_mood(db: Session, *, mood: str) -> int:
+        normalized_mood = AnalyticsRepository._normalized_label(mood)
+        return (
+            db.query(Releases.id)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .filter(Sessions.mood.isnot(None))
+            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
+            .group_by(Releases.id)
+            .count()
+        )
+
+    @staticmethod
     def get_mood_distribution(db: Session):
         mood_rows = db.query(Sessions.mood).filter(Sessions.mood.isnot(None)).filter(Sessions.mood != "").all()
         mood_counts: dict[str, tuple[str, int]] = {}
@@ -50,6 +145,20 @@ class AnalyticsRepository:
             existing_mood, count = mood_counts.get(mood_key, (canonical_mood, 0))
             mood_counts[mood_key] = (existing_mood, count + 1)
         return sorted(mood_counts.values(), key=lambda item: (-item[1], item[0].lower()))
+
+    @staticmethod
+    def get_records_for_style(
+        db: Session,
+        *,
+        style: str,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[Releases, int]]:
+        return AnalyticsRepository._get_style_record_counts(db, style=style)[offset : offset + limit]
+
+    @staticmethod
+    def count_records_for_style(db: Session, *, style: str) -> int:
+        return len(AnalyticsRepository._get_style_record_counts(db, style=style))
 
     @staticmethod
     def get_style_distribution(db: Session):
@@ -74,6 +183,41 @@ class AnalyticsRepository:
             return func.strftime("%Y-%m", Sessions.played_at).label("month")
 
         return func.to_char(Sessions.played_at, "YYYY-MM").label("month")
+
+    @staticmethod
+    def _get_style_record_counts(db: Session, *, style: str) -> list[tuple[Releases, int]]:
+        target_style = AnalyticsRepository._normalized_label(style)
+        if not target_style:
+            return []
+
+        style_rows = (
+            db.query(Releases, Sessions.id)
+            .join(Sessions, Sessions.release_id == Releases.id)
+            .filter(Releases.styles.isnot(None))
+            .all()
+        )
+        release_counts: dict[str, tuple[Releases, int]] = {}
+        for release, _session_id in style_rows:
+            if not AnalyticsRepository._styles_include(release.styles, target_style):
+                continue
+            existing_release, count = release_counts.get(release.id, (release, 0))
+            release_counts[release.id] = (existing_release, count + 1)
+
+        return sorted(
+            release_counts.values(),
+            key=lambda item: (-item[1], item[0].artist.lower(), item[0].title.lower()),
+        )
+
+    @staticmethod
+    def _styles_include(styles, target_style: str) -> bool:
+        return any(
+            AnalyticsRepository._normalized_label(style) == target_style
+            for style in AnalyticsRepository._release_styles(styles)
+        )
+
+    @staticmethod
+    def _normalized_label(value: str) -> str:
+        return value.strip().lower()
 
     @staticmethod
     def _release_styles(styles) -> list[str]:

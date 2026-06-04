@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -22,6 +24,46 @@ class AnalyticsTopRecordItem(BaseModel):
 
 class AnalyticsTopRecordsResponse(BaseModel):
     records: list[AnalyticsTopRecordItem]
+
+
+class AnalyticsPagination(BaseModel):
+    limit: int
+    offset: int
+    total: int
+    has_more: bool
+
+
+class AnalyticsSessionItem(BaseModel):
+    session_id: str
+    release_id: str
+    artist: str
+    title: str
+    thumbnail_url: str | None = None
+    date: str | None
+    played_at: datetime | None = None
+    side: str | None
+    rating: int | None
+    mood: str | None
+    has_notes: bool
+
+
+class AnalyticsSessionsResponse(BaseModel):
+    sessions: list[AnalyticsSessionItem]
+    pagination: AnalyticsPagination
+
+
+class AnalyticsRecordCountItem(BaseModel):
+    release_id: str
+    discogs_release_id: int
+    artist: str
+    title: str
+    thumbnail_url: str | None = None
+    count: int
+
+
+class AnalyticsRecordCountsResponse(BaseModel):
+    records: list[AnalyticsRecordCountItem]
+    pagination: AnalyticsPagination
 
 
 class RatingDistributionResponse(BaseModel):
