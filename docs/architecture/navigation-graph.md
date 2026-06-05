@@ -80,7 +80,7 @@ Current backend endpoints used by these routes:
 |Client flow|Backend API|
 |---|---|
 |Load Home dashboard data|`GET /api/v1/sessions/summary`|
-|Load Recent Sessions expanded list|`GET /api/v1/sessions/summary?recent_limit=25`|
+|Load Recent Sessions expanded list|`GET /api/v1/sessions/summary?recent_limit=250`|
 |Identify uploaded/captured image with progress|`POST /api/v1/identify/jobs`, then `GET /api/v1/identify/jobs/{job_id}`|
 |Cancel active identify job|`POST /api/v1/identify/jobs/{job_id}/cancel`|
 |Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
@@ -176,7 +176,7 @@ Expanded recent-listening screen opened from Home.
 ### Backend Data
 
 ```
-GET /api/v1/sessions/summary?recent_limit=25
+GET /api/v1/sessions/summary?recent_limit=250
 ```
 
 ### Actions
