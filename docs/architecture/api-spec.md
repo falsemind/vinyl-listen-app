@@ -447,6 +447,12 @@ Starts a manual background collection sync job and returns immediately.
 
 Returns `202 Accepted`.
 
+## GET /collection/sync/active
+
+Returns the most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
+
+Returns `204 No Content` when no collection sync is active.
+
 ## GET /collection/sync/{job_id}
 
 Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
@@ -506,6 +512,28 @@ Returns active collection records ordered by Discogs collection add date, newest
   "has_more": true
 }
 ```
+
+---
+
+## GET /collection/search
+
+Searches records already present in the active internal collection. This powers the Collection screen manual search and does not call Discogs or import external releases.
+
+### Query Parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `artist` | string | Optional artist text. |
+| `title` | string | Optional title text. |
+| `catalog` | string | Optional catalog number text. |
+| `barcode` | string | Optional barcode text. |
+| `year` | integer | Optional release year. |
+| `limit` | integer | Page size. Defaults to `10`; capped by the configured max page limit. |
+| `offset` | integer | Number of matching collection records to skip. |
+
+### Response
+
+Same response shape as `GET /releases/search`, with `release_id` populated for direct internal navigation.
 
 ---
 

@@ -60,6 +60,7 @@ Home, Analytics, Insights, and Collection are active bottom-navigation routes. S
 |Processing|`processing?imageUri={imageUri}`|
 |Match Confirmation|`match_confirmation`|
 |Manual Search|`manual_search`|
+|Collection Manual Search|`collection_manual_search`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
 |Analytics|`analytics`|
@@ -89,8 +90,10 @@ Current backend endpoints used by these routes:
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
 |Start Discogs collection sync|`POST /api/v1/collection/sync`|
+|Resume active Discogs collection sync|`GET /api/v1/collection/sync/active`|
 |Poll Discogs collection sync|`GET /api/v1/collection/sync/{job_id}`|
 |Load Records Collection list|`GET /api/v1/collection/releases?limit=25&offset={offset}`|
+|Manual collection search|`GET /api/v1/collection/search`|
 |Create listening session|`POST /api/v1/sessions`|
 |Load custom moods|`GET /api/v1/sessions/moods`|
 |Create custom mood|`POST /api/v1/sessions/moods`|
@@ -125,6 +128,8 @@ session_logging/{releaseId}
 ```
 
 Manual Search uses `GET /api/v1/releases/search` to list Discogs candidates. Search results do not have an internal `release_id`, so the app imports the selected `discogs_release_id` with `POST /api/v1/releases/import` before navigating to `session_logging/{releaseId}`.
+
+Collection Manual Search uses the same screen shell but calls `GET /api/v1/collection/search`. Results include internal `release_id`, so selecting one navigates directly to `record_detail/{releaseId}` without importing from Discogs.
 
 # Screen Navigation Details
 
@@ -430,6 +435,7 @@ Discogs-backed browser for current collection membership.
 |Action|Destination|
 |---|---|
 |Tap record|`record_detail/{releaseId}`|
+|Tap search CTA|`collection_manual_search`|
 |Tap Home tab|`home`|
 |Tap Stats tab|`analytics`|
 |Tap Insights tab|`ai_insights`|
