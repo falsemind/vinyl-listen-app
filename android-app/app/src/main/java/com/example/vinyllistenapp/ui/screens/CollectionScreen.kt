@@ -59,6 +59,8 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
@@ -174,12 +176,12 @@ fun CollectionScreen(
                 onOpenRecord = onOpenRecord,
                 onRetry = { scope.launch { syncCollection() } },
                 onSync = { scope.launch { syncCollection() } },
-                onShowMore = {
+                onShowMore = { count ->
                     scope.launch {
                         isLoadingMore = true
                         runCatching {
                             apiClient.getCollectionReleases(
-                                limit = COLLECTION_PAGE_SIZE,
+                                limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
                                 offset = records.size,
                             )
                         }.onSuccess { page ->
@@ -214,7 +216,7 @@ private fun CollectionListContent(
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
     onSync: () -> Unit,
-    onShowMore: () -> Unit,
+    onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -262,10 +264,11 @@ private fun CollectionListContent(
                 CollectionRecordCard(record = record, onClick = { onOpenRecord(record.releaseId) })
             }
             if (hasMore) {
-                CollectionTextActionButton(
+                ShowMoreActionButton(
                     label = if (isLoadingMore) "Loading..." else "Show More",
                     enabled = !isLoadingMore,
-                    onClick = onShowMore,
+                    onClick = { onShowMore(COLLECTION_PAGE_SIZE) },
+                    onCustomCount = onShowMore,
                 )
             }
             Spacer(Modifier.height(96.dp))
