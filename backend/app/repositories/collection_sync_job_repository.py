@@ -1,8 +1,11 @@
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.collection_sync_job import CollectionSyncJob
+
+ACTIVE_COLLECTION_SYNC_JOB_STATUSES = {"queued", "running"}
 
 
 class CollectionSyncJobRepository:
@@ -43,10 +46,46 @@ class CollectionSyncJobRepository:
     def get_active(db: Session) -> CollectionSyncJob | None:
         return (
             db.query(CollectionSyncJob)
-            .filter(CollectionSyncJob.status.in_(("queued", "running")))
+            .filter(CollectionSyncJob.status.in_(ACTIVE_COLLECTION_SYNC_JOB_STATUSES))
             .order_by(CollectionSyncJob.created_at.desc())
             .first()
         )
+
+    @staticmethod
+    def expire_stale_active(
+        db: Session,
+        *,
+        stale_before: datetime,
+        expires_at_or_before: datetime,
+        updated_at: datetime,
+    ) -> int:
+        stale_jobs = (
+            db.query(CollectionSyncJob)
+            .filter(CollectionSyncJob.status.in_(ACTIVE_COLLECTION_SYNC_JOB_STATUSES))
+            .filter(
+                or_(
+                    CollectionSyncJob.updated_at <= stale_before,
+                    CollectionSyncJob.expires_at <= expires_at_or_before,
+                )
+            )
+            .all()
+        )
+        if not stale_jobs:
+            return 0
+
+        for job in stale_jobs:
+            job.status = "expired"
+            job.message = "Collection sync expired. Start a new sync."
+            job.error = {
+                "code": "collection_sync_job_stale",
+                "message": "Collection sync expired. Start a new sync.",
+                "failed_step": job.step or "unknown",
+            }
+            job.updated_at = updated_at
+            db.add(job)
+
+        db.commit()
+        return len(stale_jobs)
 
     @staticmethod
     def update_progress(

@@ -17,6 +17,7 @@ from app.services.discogs_service import DiscogsClientError, DiscogsConfiguratio
 logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION_SYNC_JOB_TTL = timedelta(hours=1)
+DEFAULT_COLLECTION_SYNC_STALE_ACTIVE_JOB_TIMEOUT = timedelta(minutes=30)
 
 
 class CollectionSyncJobNotFoundError(Exception):
@@ -45,13 +46,16 @@ class CollectionSyncJobService:
         session_factory: Callable[[], Session] = SessionLocal,
         now_provider: Callable[[], datetime] | None = None,
         job_ttl: timedelta = DEFAULT_COLLECTION_SYNC_JOB_TTL,
+        stale_active_job_timeout: timedelta = DEFAULT_COLLECTION_SYNC_STALE_ACTIVE_JOB_TIMEOUT,
         require_discogs_config: bool = True,
     ) -> None:
         self._sync_service = sync_service or CollectionSyncService()
         self._repository = repository or CollectionSyncJobRepository()
         self._session_factory = session_factory
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._service_started_at = self._now_provider()
         self._job_ttl = job_ttl
+        self._stale_active_job_timeout = stale_active_job_timeout
         self._require_discogs_config = require_discogs_config
 
     def create_job(self, db: Session) -> CollectionSyncJobStatusResponse:
@@ -59,6 +63,7 @@ class CollectionSyncJobService:
             self._validate_discogs_config()
 
         created_at = self._now_provider()
+        self._expire_stale_active_jobs(db, now=created_at)
         job = self._repository.create(
             db,
             job_id=str(uuid4()),
@@ -70,12 +75,14 @@ class CollectionSyncJobService:
         return self._to_response(job)
 
     def get_job(self, db: Session, job_id: str) -> CollectionSyncJobStatusResponse:
+        self._expire_stale_active_jobs(db, now=self._now_provider())
         job = self._repository.get(db, job_id)
         if job is None:
             raise CollectionSyncJobNotFoundError(job_id)
         return self._to_response(job)
 
     def get_active_job(self, db: Session) -> CollectionSyncJobStatusResponse | None:
+        self._expire_stale_active_jobs(db, now=self._now_provider())
         job = self._repository.get_active(db)
         if job is None:
             return None
@@ -196,6 +203,21 @@ class CollectionSyncJobService:
     def _validate_discogs_config(self) -> None:
         if not settings.discogs_username or not settings.discogs_token:
             raise CollectionSyncConfigurationError()
+
+    def _expire_stale_active_jobs(self, db: Session, *, now: datetime) -> int:
+        if self._stale_active_job_timeout.total_seconds() <= 0:
+            return 0
+
+        stale_before = max(
+            now - self._stale_active_job_timeout,
+            self._service_started_at - timedelta(microseconds=1),
+        )
+        return self._repository.expire_stale_active(
+            db,
+            stale_before=stale_before,
+            expires_at_or_before=now,
+            updated_at=now,
+        )
 
     def _to_response(self, job: CollectionSyncJob) -> CollectionSyncJobStatusResponse:
         return CollectionSyncJobStatusResponse(

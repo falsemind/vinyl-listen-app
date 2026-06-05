@@ -451,11 +451,15 @@ Returns `202 Accepted`.
 
 Returns the most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
 
+Queued or running jobs left behind by a previous backend process are marked `expired` and are not returned as active.
+
 Returns `204 No Content` when no collection sync is active.
 
 ## GET /collection/sync/{job_id}
 
 Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
+
+Status values are `queued`, `running`, `succeeded`, `failed`, and `expired`. `expired` means a queued or running job was orphaned by a backend restart or exceeded its lifetime.
 
 ### Response
 

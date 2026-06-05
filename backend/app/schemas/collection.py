@@ -9,6 +9,7 @@ class CollectionSyncJobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    EXPIRED = "expired"
 
 
 class CollectionSyncJobStep(StrEnum):

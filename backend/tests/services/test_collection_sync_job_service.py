@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -89,6 +89,74 @@ def test_collection_sync_job_service_persists_sync_failure() -> None:
     assert failed.error.code == "collection_sync_failed"
     assert failed.error.failed_step == "importing"
     assert failed.message == "Collection item is missing metadata."
+
+
+def test_collection_sync_job_service_expires_orphaned_active_job_after_restart() -> None:
+    SessionFactory = _build_session_factory()
+    previous_process_time = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    restarted_process_time = datetime(2026, 6, 4, 12, 1, tzinfo=UTC)
+    service = CollectionSyncJobService(
+        sync_service=SuccessfulCollectionSyncService(),
+        session_factory=SessionFactory,
+        now_provider=lambda: restarted_process_time,
+        require_discogs_config=False,
+    )
+
+    with SessionFactory() as db:
+        db.add(
+            CollectionSyncJob(
+                id="orphaned-job",
+                status="running",
+                step="fetching",
+                message="Fetching collection data",
+                created_at=previous_process_time,
+                updated_at=previous_process_time,
+                expires_at=previous_process_time + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+        active_job = service.get_active_job(db)
+        stale_job = db.get(CollectionSyncJob, "orphaned-job")
+
+    assert active_job is None
+    assert stale_job is not None
+    assert stale_job.status == "expired"
+    assert stale_job.error is not None
+    assert stale_job.error["code"] == "collection_sync_job_stale"
+
+
+def test_collection_sync_job_service_returns_expired_when_polling_orphaned_job() -> None:
+    SessionFactory = _build_session_factory()
+    previous_process_time = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    restarted_process_time = datetime(2026, 6, 4, 12, 1, tzinfo=UTC)
+    service = CollectionSyncJobService(
+        sync_service=SuccessfulCollectionSyncService(),
+        session_factory=SessionFactory,
+        now_provider=lambda: restarted_process_time,
+        require_discogs_config=False,
+    )
+
+    with SessionFactory() as db:
+        db.add(
+            CollectionSyncJob(
+                id="orphaned-job",
+                status="running",
+                step="fetching",
+                message="Fetching collection data",
+                created_at=previous_process_time,
+                updated_at=previous_process_time,
+                expires_at=previous_process_time + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+        expired_job = service.get_job(db, "orphaned-job")
+
+    assert expired_job.status == "expired"
+    assert expired_job.error is not None
+    assert expired_job.error.code == "collection_sync_job_stale"
+    assert expired_job.error.failed_step == "fetching"
 
 
 def _build_session_factory():
