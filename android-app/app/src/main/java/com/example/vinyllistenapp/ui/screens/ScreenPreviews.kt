@@ -56,6 +56,7 @@ private fun CollectionScreenPreview() {
             onHome = {},
             onStats = {},
             onInsights = {},
+            onManualSearch = {},
             onOpenRecord = {},
         )
     }

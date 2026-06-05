@@ -28,6 +28,7 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
+import com.example.vinyllistenapp.ui.screens.ManualSearchMode
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
 import com.example.vinyllistenapp.ui.screens.MonthSessionsDrilldownScreen
@@ -153,6 +154,18 @@ fun VinylNavHost(
                 },
             )
         }
+        composable(VinylRoutes.COLLECTION_MANUAL_SEARCH) {
+            ManualSearchScreen(
+                apiClient = apiClient,
+                mode = ManualSearchMode.Collection,
+                onSelectRecord = { releaseId ->
+                    navController.navigate(VinylRoutes.recordDetail(releaseId)) {
+                        popUpTo(VinylRoutes.COLLECTION_MANUAL_SEARCH) { inclusive = true }
+                    }
+                },
+                onDismiss = { navController.popBackStack() },
+            )
+        }
         composable(
             route = VinylRoutes.SESSION_LOGGING_PATTERN,
             arguments = listOf(navArgument(VinylRoutes.RELEASE_ID) { type = NavType.StringType }),
@@ -263,6 +276,7 @@ fun VinylNavHost(
                 },
                 onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                 onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                onManualSearch = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_SEARCH) },
                 onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
             )
         }
@@ -354,6 +368,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.PROCESSING_PATTERN,
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
+            VinylRoutes.COLLECTION_MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,

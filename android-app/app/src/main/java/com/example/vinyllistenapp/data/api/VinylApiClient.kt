@@ -93,20 +93,15 @@ class VinylApiClient(
 
     suspend fun syncCollection(onStatus: (CollectionSyncJobState) -> Unit = {}): CollectionSyncJobState =
         apiCall {
-            var job = startCollectionSyncJob()
-            onStatus(job)
-            while (!job.status.isTerminal) {
-                delay(750)
-                job = getCollectionSyncJobStatus(job.jobId)
-                onStatus(job)
-            }
-            if (job.status == CollectionSyncJobStatus.Failed) {
-                throw ApiException(
-                    message = job.error?.message ?: "Collection sync failed.",
-                    failedStep = job.error?.failedStep,
-                )
-            }
-            job
+            waitForCollectionSyncJob(startCollectionSyncJob(), onStatus)
+        }
+
+    suspend fun waitForCollectionSyncJob(
+        jobId: String,
+        onStatus: (CollectionSyncJobState) -> Unit = {},
+    ): CollectionSyncJobState =
+        apiCall {
+            waitForCollectionSyncJob(fetchCollectionSyncJobStatus(jobId), onStatus)
         }
 
     suspend fun startCollectionSyncJob(): CollectionSyncJobState =
@@ -116,7 +111,12 @@ class VinylApiClient(
 
     suspend fun getCollectionSyncJobStatus(jobId: String): CollectionSyncJobState =
         apiCall {
-            getJson("collection/sync/${Uri.encode(jobId)}").toCollectionSyncJobState()
+            fetchCollectionSyncJobStatus(jobId)
+        }
+
+    suspend fun getActiveCollectionSyncJob(): CollectionSyncJobState? =
+        apiCall {
+            getNullableJson("collection/sync/active")?.toCollectionSyncJobState()
         }
 
     suspend fun getCollectionReleases(
@@ -159,16 +159,33 @@ class VinylApiClient(
                 }.joinToString("&")
             val response = getJson("releases/search?$query")
             response.optJSONArray("results").orEmpty().mapObjects { item ->
-                ReleaseSearchResult(
-                    discogsReleaseId = item.optLong("discogs_release_id"),
-                    artist = item.optString("artist", "Unknown artist"),
-                    title = item.optString("title", "Unknown title"),
-                    year = item.optNullableInt("year"),
-                    label = item.optNullableString("label"),
-                    catalogNumber = item.optNullableString("catalog_number"),
-                    thumbnailUrl = item.optNullableString("thumbnail_url"),
-                    format = item.optNullableString("format"),
-                )
+                item.toReleaseSearchResult()
+            }
+        }
+
+    suspend fun searchCollectionReleases(
+        artist: String?,
+        title: String?,
+        catalog: String?,
+        barcode: String?,
+        year: Int?,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): List<ReleaseSearchResult> =
+        apiCall {
+            val query =
+                buildList {
+                    addQueryParam("artist", artist)
+                    addQueryParam("title", title)
+                    addQueryParam("catalog", catalog)
+                    addQueryParam("barcode", barcode)
+                    addQueryParam("year", year?.toString())
+                    addQueryParam("limit", limit.toString())
+                    addQueryParam("offset", offset.toString())
+                }.joinToString("&")
+            val response = getJson("collection/search?$query")
+            response.optJSONArray("results").orEmpty().mapObjects { item ->
+                item.toReleaseSearchResult()
             }
         }
 
@@ -507,6 +524,36 @@ class VinylApiClient(
             readJsonResponse(connection)
         }
 
+    private suspend fun getNullableJson(path: String): JSONObject? =
+        withRetry(ApiHttpMethod.Get) {
+            val connection = openConnection(path)
+            connection.requestMethod = "GET"
+            readNullableJsonResponse(connection)
+        }
+
+    private suspend fun fetchCollectionSyncJobStatus(jobId: String): CollectionSyncJobState =
+        getJson("collection/sync/${Uri.encode(jobId)}").toCollectionSyncJobState()
+
+    private suspend fun waitForCollectionSyncJob(
+        initialJob: CollectionSyncJobState,
+        onStatus: (CollectionSyncJobState) -> Unit,
+    ): CollectionSyncJobState {
+        var job = initialJob
+        onStatus(job)
+        while (!job.status.isTerminal) {
+            delay(750)
+            job = fetchCollectionSyncJobStatus(job.jobId)
+            onStatus(job)
+        }
+        if (job.status == CollectionSyncJobStatus.Failed) {
+            throw ApiException(
+                message = job.error?.message ?: "Collection sync failed.",
+                failedStep = job.error?.failedStep,
+            )
+        }
+        return job
+    }
+
     private fun postImageMultipart(
         context: Context,
         imageUri: Uri,
@@ -582,7 +629,9 @@ class VinylApiClient(
             }
         }
 
-    private fun readJsonResponse(connection: HttpURLConnection): JSONObject {
+    private fun readJsonResponse(connection: HttpURLConnection): JSONObject = readNullableJsonResponse(connection) ?: JSONObject()
+
+    private fun readNullableJsonResponse(connection: HttpURLConnection): JSONObject? {
         val status = connection.responseCode
         val retryAfterMillis = parseRetryAfterMillis(connection.getHeaderField("Retry-After"))
         val body =
@@ -609,6 +658,9 @@ class VinylApiClient(
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
             )
+        }
+        if (status == 204) {
+            return null
         }
         return JSONObject(body.ifBlank { "{}" })
     }
@@ -727,6 +779,19 @@ internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
         limit = optInt("limit", 25),
         offset = optInt("offset", 0),
         hasMore = optBoolean("has_more", false),
+    )
+
+private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
+    ReleaseSearchResult(
+        releaseId = optNullableString("release_id"),
+        discogsReleaseId = optLong("discogs_release_id"),
+        artist = optString("artist", "Unknown artist"),
+        title = optString("title", "Unknown title"),
+        year = optNullableInt("year"),
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        thumbnailUrl = optNullableString("thumbnail_url"),
+        format = optNullableString("format"),
     )
 
 private fun JSONObject.toCollectionRecord(): CollectionRecord =
