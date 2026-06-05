@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.releases import Releases
 from app.models.sessions import Sessions
 from app.repositories.analytics_repository import AnalyticsRepository
@@ -69,8 +70,13 @@ class AnalyticsRecordCountPage:
 
 
 class AnalyticsService:
-    def __init__(self, analytics_repository: AnalyticsRepository | None = None) -> None:
+    def __init__(
+        self,
+        analytics_repository: AnalyticsRepository | None = None,
+        max_page_limit: int | None = None,
+    ) -> None:
         self._analytics_repository = analytics_repository or AnalyticsRepository()
+        self._max_page_limit = max_page_limit or settings.max_page_limit
 
     def get_monthly_plays(self, db: Session) -> list[MonthlyPlayCount]:
         logger.info("Loading monthly analytics play counts")
@@ -234,16 +240,14 @@ class AnalyticsService:
             raise AnalyticsValidationError(f"invalid_{field}", f"{field} must not be blank.")
         return normalized_value
 
-    @classmethod
-    def _validate_pagination(cls, *, limit: int, offset: int) -> None:
-        cls._validate_limit(limit)
+    def _validate_pagination(self, *, limit: int, offset: int) -> None:
+        self._validate_limit(limit)
         if offset < 0:
             raise AnalyticsValidationError("invalid_offset", "offset cannot be negative.")
 
-    @staticmethod
-    def _validate_limit(limit: int) -> None:
-        if limit < 1 or limit > 50:
-            raise AnalyticsValidationError("invalid_limit", "limit must be between 1 and 50.")
+    def _validate_limit(self, limit: int) -> None:
+        if limit < 1 or limit > self._max_page_limit:
+            raise AnalyticsValidationError("invalid_limit", f"limit must be between 1 and {self._max_page_limit}.")
 
     @staticmethod
     def _pagination(*, limit: int, offset: int, total: int, item_count: int) -> AnalyticsPagination:

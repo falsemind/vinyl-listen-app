@@ -119,7 +119,7 @@ def test_get_top_records_validates_limit_and_maps_rows() -> None:
     assert result[0].average_rating == 4.25
 
 
-@pytest.mark.parametrize("limit", [0, 51])
+@pytest.mark.parametrize("limit", [0, 251])
 def test_get_top_records_rejects_invalid_limit(limit: int) -> None:
     service = AnalyticsService(analytics_repository=StubAnalyticsRepository())
 
@@ -158,7 +158,7 @@ def test_get_sessions_for_month_rejects_invalid_month(month: str) -> None:
     ("limit", "offset", "expected_code"),
     [
         (0, 0, "invalid_limit"),
-        (51, 0, "invalid_limit"),
+        (251, 0, "invalid_limit"),
         (10, -1, "invalid_offset"),
     ],
 )

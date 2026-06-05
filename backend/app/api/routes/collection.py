@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
@@ -78,7 +79,7 @@ def get_collection_sync_job(
 def list_collection_releases(
     db: Annotated[Session, Depends(get_db)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
-    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:

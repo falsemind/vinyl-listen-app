@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.releases import Releases
 from app.models.sessions import Sessions
 from app.models.sessions_moods import SessionsMoods
@@ -131,12 +132,14 @@ class SessionsService:
         discogs_repository: DiscogsReleaseRepository | None = None,
         moods_repository: SessionsMoodsRepository | None = None,
         now_provider: Any | None = None,
+        max_page_limit: int | None = None,
     ) -> None:
         self._sessions_repository = sessions_repository or SessionsRepository()
         self._releases_repository = releases_repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
         self._moods_repository = moods_repository or SessionsMoodsRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._max_page_limit = max_page_limit or settings.max_page_limit
 
     def create_session(
         self,
@@ -254,12 +257,15 @@ class SessionsService:
         recent_limit: int = 5,
         top_limit: int = 3,
     ) -> HomeSummary:
-        if recent_limit < 1 or recent_limit > 25:
+        if recent_limit < 1 or recent_limit > self._max_page_limit:
             logger.info("Rejecting home summary invalid_recent_limit=%s", recent_limit)
-            raise SessionValidationError("invalid_limit", "recent_limit must be between 1 and 25.")
-        if top_limit < 1 or top_limit > 25:
+            raise SessionValidationError(
+                "invalid_limit",
+                f"recent_limit must be between 1 and {self._max_page_limit}.",
+            )
+        if top_limit < 1 or top_limit > self._max_page_limit:
             logger.info("Rejecting home summary invalid_top_limit=%s", top_limit)
-            raise SessionValidationError("invalid_limit", "top_limit must be between 1 and 25.")
+            raise SessionValidationError("invalid_limit", f"top_limit must be between 1 and {self._max_page_limit}.")
 
         now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

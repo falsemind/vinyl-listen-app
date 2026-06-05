@@ -167,6 +167,21 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
     assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False}]
 
 
+def test_list_collection_releases_accepts_custom_max_limit() -> None:
+    repository = StubReleasesRepository([])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"limit": 250, "offset": 0})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False}
+    assert repository.calls == [{"limit": 251, "offset": 0, "include_removed": False}]
+
+
 def _override_db() -> None:
     def _fake_db():
         yield object()
