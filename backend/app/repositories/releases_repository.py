@@ -1,9 +1,10 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
+from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.models.releases import Releases
 from app.services.release_mapper import InternalReleaseData
 
@@ -194,7 +195,13 @@ class ReleasesRepository:
     ) -> Sequence[Releases]:
         filters = []
         if artist and artist.strip():
-            filters.append(Releases.artist.ilike(f"%{artist.strip()}%"))
+            artist_pattern = f"%{artist.strip()}%"
+            filters.append(
+                or_(
+                    Releases.artist.ilike(artist_pattern),
+                    cast(DiscogsReleaseCache.raw_discogs_json, String).ilike(artist_pattern),
+                )
+            )
         if title and title.strip():
             filters.append(Releases.title.ilike(f"%{title.strip()}%"))
         if catalog and catalog.strip():
@@ -208,6 +215,10 @@ class ReleasesRepository:
 
         return (
             db.query(Releases)
+            .outerjoin(
+                DiscogsReleaseCache,
+                DiscogsReleaseCache.discogs_release_id == Releases.discogs_release_id,
+            )
             .filter(Releases.in_collection.is_(True))
             .filter(*filters)
             .order_by(

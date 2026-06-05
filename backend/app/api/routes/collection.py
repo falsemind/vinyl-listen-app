@@ -133,9 +133,10 @@ def search_collection_releases(
         catalog=catalog,
         barcode=barcode,
         year=year,
-        limit=limit,
+        limit=limit + 1,
         offset=offset,
     )
+    page_releases = releases[:limit]
     return ReleaseSearchResponse(
         results=[
             ReleaseSearchResult(
@@ -149,10 +150,11 @@ def search_collection_releases(
                 thumbnail_url=release.cover_image_url,
                 format=release.format,
             )
-            for release in releases
+            for release in page_releases
         ],
         limit=limit,
         offset=offset,
+        has_more=len(releases) > limit,
     )
 
 

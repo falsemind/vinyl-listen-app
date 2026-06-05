@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +64,7 @@ fun ManualSearchScreen(
     mode: ManualSearchMode = ManualSearchMode.Discogs,
 ) {
     val pageSize = 10
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
@@ -74,8 +76,9 @@ fun ManualSearchScreen(
     var retryError by remember { mutableStateOf<String?>(null) }
     var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
     val yearValidationError = validateReleaseYear(yearQuery)
-    val barcodeValidationError = validateBarcode(barcodeQuery)
-    val hasSearchTerm = hasManualSearchTerm(artistQuery, titleQuery, catalogQuery, barcodeQuery, yearQuery)
+    val barcodeValidationError = if (mode == ManualSearchMode.Discogs) validateBarcode(barcodeQuery) else null
+    val effectiveBarcodeQuery = if (mode == ManualSearchMode.Discogs) barcodeQuery else ""
+    val hasSearchTerm = hasManualSearchTerm(artistQuery, titleQuery, catalogQuery, effectiveBarcodeQuery, yearQuery)
     val canSearch =
         hasSearchTerm &&
             yearValidationError == null &&
@@ -87,7 +90,7 @@ fun ManualSearchScreen(
         val artist = artistQuery.trim()
         val title = titleQuery.trim()
         val catalog = catalogQuery.trim()
-        val barcode = barcodeQuery.trim()
+        val barcode = if (mode == ManualSearchMode.Discogs) barcodeQuery.trim() else ""
         val year = yearQuery.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         val hasSearchTerm =
             listOf(artist, title, catalog, barcode).any { it.isNotBlank() } || year != null
@@ -110,7 +113,7 @@ fun ManualSearchScreen(
                 } else {
                     ManualSearchUiState.Loading
                 }
-            val results =
+            val page =
                 runCatching {
                     when (mode) {
                         ManualSearchMode.Discogs ->
@@ -144,14 +147,14 @@ fun ManualSearchScreen(
                     state = ManualSearchUiState.Idle
                     return@launch
                 }
-            val combinedResults = if (loadMore) currentResults + results else results
+            val combinedResults = if (loadMore) currentResults + page.results else page.results
             state =
                 if (combinedResults.isEmpty()) {
                     ManualSearchUiState.Empty
                 } else {
                     ManualSearchUiState.Success(
                         results = combinedResults,
-                        hasMore = results.size == pageSize,
+                        hasMore = page.hasMore,
                     )
                 }
         }
@@ -247,14 +250,16 @@ fun ManualSearchScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
-            ManualSearchField(
-                label = "Barcode",
-                placeholder = "Search by barcode",
-                value = barcodeQuery,
-                onValueChange = { barcodeQuery = it.digitsOnly(maxLength = BARCODE_MAX_DIGITS) },
-                error = barcodeValidationError,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
+            if (mode == ManualSearchMode.Discogs) {
+                ManualSearchField(
+                    label = "Barcode",
+                    placeholder = "Search by barcode",
+                    value = barcodeQuery,
+                    onValueChange = { barcodeQuery = it.digitsOnly(maxLength = BARCODE_MAX_DIGITS) },
+                    error = barcodeValidationError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
         }
         Spacer(Modifier.height(VinylSpacing.SpaceLg))
         GlassPrimaryButton(
@@ -262,6 +267,7 @@ fun ManualSearchScreen(
             enabled = canSearch,
             onClick = {
                 if (canSearch) {
+                    focusManager.clearFocus()
                     runSearch()
                 }
             },
@@ -351,19 +357,18 @@ private fun ShowMoreButton(
     isLoading: Boolean,
     onClick: () -> Unit,
 ) {
+    val label = if (isLoading) "Loading..." else "Show More"
     Text(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clip(VinylShapes.Chip)
-                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Chip)
                 .clickable(
                     enabled = !isLoading,
                     onClickLabel = "Show more results",
                     role = Role.Button,
                     onClick = onClick,
                 ).padding(vertical = VinylSpacing.SpaceMd),
-        text = if (isLoading) "Loading..." else "Show more",
+        text = label,
         color = VinylColors.AccentGreen,
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.labelLarge,

@@ -273,6 +273,7 @@ def test_search_collection_releases_returns_internal_release_results() -> None:
         ],
         "limit": 10,
         "offset": 0,
+        "has_more": False,
     }
     assert repository.calls == [
         {
@@ -281,7 +282,44 @@ def test_search_collection_releases_returns_internal_release_results() -> None:
             "catalog": "CAT",
             "barcode": None,
             "year": None,
-            "limit": 10,
+            "limit": 11,
+            "offset": 0,
+        }
+    ]
+
+
+def test_search_collection_releases_reports_has_more() -> None:
+    repository = StubReleasesRepository(
+        [
+            _release("release-1", 101, "First"),
+            _release("release-2", 102, "Second"),
+            _release("release-3", 103, "Third"),
+        ]
+    )
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/collection/search",
+            params={"artist": "Artist", "limit": 2, "offset": 0},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [item["release_id"] for item in response.json()["results"]] == ["release-1", "release-2"]
+    assert response.json()["limit"] == 2
+    assert response.json()["offset"] == 0
+    assert response.json()["has_more"] is True
+    assert repository.calls == [
+        {
+            "artist": "Artist",
+            "title": None,
+            "catalog": None,
+            "barcode": None,
+            "year": None,
+            "limit": 3,
             "offset": 0,
         }
     ]

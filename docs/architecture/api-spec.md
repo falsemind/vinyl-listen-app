@@ -537,7 +537,7 @@ Searches records already present in the active internal collection. This powers 
 
 ### Response
 
-Same response shape as `GET /releases/search`, with `release_id` populated for direct internal navigation.
+Same response shape as `GET /releases/search`, with `release_id` populated for direct internal navigation. The response also includes `has_more`, a boolean pagination hint computed from one extra internal result so clients can show or hide "Show More" accurately.
 
 ---
 
