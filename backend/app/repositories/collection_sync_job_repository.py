@@ -40,6 +40,15 @@ class CollectionSyncJobRepository:
         return db.query(CollectionSyncJob).filter(CollectionSyncJob.id == job_id).one_or_none()
 
     @staticmethod
+    def get_active(db: Session) -> CollectionSyncJob | None:
+        return (
+            db.query(CollectionSyncJob)
+            .filter(CollectionSyncJob.status.in_(("queued", "running")))
+            .order_by(CollectionSyncJob.created_at.desc())
+            .first()
+        )
+
+    @staticmethod
     def update_progress(
         db: Session,
         job: CollectionSyncJob,

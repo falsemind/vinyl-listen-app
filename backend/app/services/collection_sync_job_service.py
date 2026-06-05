@@ -75,6 +75,12 @@ class CollectionSyncJobService:
             raise CollectionSyncJobNotFoundError(job_id)
         return self._to_response(job)
 
+    def get_active_job(self, db: Session) -> CollectionSyncJobStatusResponse | None:
+        job = self._repository.get_active(db)
+        if job is None:
+            return None
+        return self._to_response(job)
+
     def process_job(self, job_id: str) -> None:
         with self._session_factory() as db:
             job = self._repository.get(db, job_id)

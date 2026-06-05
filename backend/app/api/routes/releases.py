@@ -38,7 +38,7 @@ def releases():
     return {"message": "list of releases"}
 
 
-@router.get("/search", response_model=ReleaseSearchResponse)
+@router.get("/search", response_model=ReleaseSearchResponse, response_model_exclude_none=True)
 def search_releases(
     service: Annotated[DiscogsService, Depends(get_discogs_service)],
     artist: str | None = Query(default=None),
