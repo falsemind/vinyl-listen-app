@@ -545,13 +545,24 @@ class VinylApiClient(
             job = fetchCollectionSyncJobStatus(job.jobId)
             onStatus(job)
         }
-        if (job.status == CollectionSyncJobStatus.Failed) {
-            throw ApiException(
-                message = job.error?.message ?: "Collection sync failed.",
-                failedStep = job.error?.failedStep,
-            )
+        when (job.status) {
+            CollectionSyncJobStatus.Succeeded -> return job
+            CollectionSyncJobStatus.Failed ->
+                throw ApiException(
+                    message = job.error?.message ?: "Collection sync failed.",
+                    failedStep = job.error?.failedStep,
+                )
+            CollectionSyncJobStatus.Expired ->
+                throw ApiException(
+                    message = job.error?.message ?: "Collection sync expired. Start a new sync.",
+                    failedStep = job.error?.failedStep,
+                )
+            else ->
+                throw ApiException(
+                    message = "Collection sync ended unexpectedly.",
+                    failedStep = job.step?.wireValue,
+                )
         }
-        return job
     }
 
     private fun postImageMultipart(
@@ -956,11 +967,12 @@ enum class CollectionSyncJobStatus(
     Running("running"),
     Succeeded("succeeded"),
     Failed("failed"),
+    Expired("expired"),
     Unknown("unknown"),
     ;
 
     val isTerminal: Boolean
-        get() = this == Succeeded || this == Failed
+        get() = this == Succeeded || this == Failed || this == Expired
 
     companion object {
         fun fromWireValue(value: String): CollectionSyncJobStatus = entries.firstOrNull { it.wireValue == value } ?: Unknown
