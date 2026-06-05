@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -86,6 +88,7 @@ fun CollectionScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     suspend fun loadFirstPage() {
         isLoadingInitial = true
@@ -155,6 +158,25 @@ fun CollectionScreen(
                     ),
             )
         },
+        floatingActionButton = {
+            if (records.isNotEmpty()) {
+                CollectionFloatingActions(
+                    showScrollToTop = scrollState.value > 0,
+                    onScrollToTop = {
+                        scope.launch {
+                            scrollState.animateScrollTo(0)
+                        }
+                    },
+                    onManualSearch = onManualSearch,
+                    modifier =
+                        Modifier.padding(
+                            end = VinylSpacing.SpaceMd,
+                            bottom = VinylSpacing.SpaceLg,
+                        ),
+                )
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
         val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing
         val showCenteredStatus = records.isEmpty() && !showEmptyLoad
@@ -194,9 +216,8 @@ fun CollectionScreen(
                 isSyncing = isSyncing,
                 syncMessage = syncMessage,
                 error = error,
+                scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
-                onManualSearch = onManualSearch,
-                floatingActionBottomPadding = VinylSpacing.SpaceLg,
                 onRetry = { scope.launch { followCollectionSync() } },
                 onSync = { scope.launch { followCollectionSync() } },
                 onShowMore = { count ->
@@ -236,18 +257,13 @@ private fun CollectionListContent(
     isSyncing: Boolean,
     syncMessage: String?,
     error: String?,
+    scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
-    onManualSearch: () -> Unit,
-    floatingActionBottomPadding: Dp,
     onRetry: () -> Unit,
     onSync: () -> Unit,
     onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scrollState = rememberScrollState()
-    val scrollShortcutScope = rememberCoroutineScope()
-    val showScrollToTop = records.isNotEmpty() && scrollState.value > 0
-
     Box(modifier = modifier) {
         Column(
             modifier =
@@ -298,31 +314,33 @@ private fun CollectionListContent(
             }
             Spacer(Modifier.height(96.dp))
         }
+    }
+}
 
-        FloatingIconButton(
-            icon = Icons.Filled.Search,
-            contentDescription = "Search collection",
-            onClick = onManualSearch,
-            modifier =
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = VinylSpacing.SpaceMd, bottom = floatingActionBottomPadding),
-        )
+@Composable
+private fun CollectionFloatingActions(
+    showScrollToTop: Boolean,
+    onScrollToTop: () -> Unit,
+    onManualSearch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+    ) {
         if (showScrollToTop) {
             FloatingIconButton(
                 icon = Icons.Filled.KeyboardArrowUp,
                 contentDescription = "Scroll to top",
-                onClick = {
-                    scrollShortcutScope.launch {
-                        scrollState.animateScrollTo(0)
-                    }
-                },
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = VinylSpacing.SpaceMd, bottom = floatingActionBottomPadding + 72.dp),
+                onClick = onScrollToTop,
             )
         }
+        FloatingIconButton(
+            icon = Icons.Filled.Search,
+            contentDescription = "Search collection",
+            onClick = onManualSearch,
+        )
     }
 }
 
