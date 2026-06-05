@@ -447,9 +447,19 @@ Starts a manual background collection sync job and returns immediately.
 
 Returns `202 Accepted`.
 
+## GET /collection/sync/active
+
+Returns the most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
+
+Queued or running jobs left behind by a previous backend process are marked `expired` and are not returned as active.
+
+Returns `204 No Content` when no collection sync is active.
+
 ## GET /collection/sync/{job_id}
 
 Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
+
+Status values are `queued`, `running`, `succeeded`, `failed`, and `expired`. `expired` means a queued or running job was orphaned by a backend restart or exceeded its lifetime.
 
 ### Response
 
@@ -478,7 +488,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `limit` | integer | Page size. Android uses `25`. |
+| `limit` | integer | Page size. Android loads `25` by default and supports custom page sizes up to the configured max page limit, currently `250`. |
 | `offset` | integer | Number of active collection records to skip. |
 
 ### Response
@@ -506,6 +516,28 @@ Returns active collection records ordered by Discogs collection add date, newest
   "has_more": true
 }
 ```
+
+---
+
+## GET /collection/search
+
+Searches records already present in the active internal collection. This powers the Collection screen manual search and does not call Discogs or import external releases.
+
+### Query Parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `artist` | string | Optional artist text. |
+| `title` | string | Optional title text. |
+| `catalog` | string | Optional catalog number text. |
+| `barcode` | string | Optional barcode text. |
+| `year` | integer | Optional release year. |
+| `limit` | integer | Page size. Defaults to `10`; capped by the configured max page limit. |
+| `offset` | integer | Number of matching collection records to skip. |
+
+### Response
+
+Same response shape as `GET /releases/search`, with `release_id` populated for direct internal navigation.
 
 ---
 
@@ -674,8 +706,8 @@ Used by the **Home screen** to show real listening data after sessions are logge
 
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
-| recent_limit | Maximum recent sessions to return. Must be 1-25. | 5 |
-| top_limit | Maximum top records to return. Must be 1-25. | 3 |
+| recent_limit | Maximum recent sessions to return. Must be between 1 and the configured max page limit, currently `250`. | 5 |
+| top_limit | Maximum top records to return. Must be between 1 and the configured max page limit, currently `250`. | 3 |
 
 ### Response
 
@@ -824,7 +856,7 @@ Drilldown endpoints use the same pagination envelope as View All screens.
 
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
-| limit | Number of records. Must be 1-50. | 10 |
+| limit | Number of records. Must be between 1 and the configured max page limit, currently `250`. | 10 |
 
 ### Response
 
@@ -911,7 +943,7 @@ Returns listening sessions for a selected month from Plays Over Time.
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
 | month | Required month in strict `YYYY-MM` format. | - |
-| limit | Page size. Must be 1-50. | 10 |
+| limit | Page size. Must be between 1 and the configured max page limit, currently `250`. | 10 |
 | offset | Page offset. Must be 0 or greater. | 0 |
 
 ### Response
@@ -955,7 +987,7 @@ Returns records that have sessions with the selected star rating. `count` is the
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
 | rating | Required rating. Must be 1-5. | - |
-| limit | Page size. Must be 1-50. | 10 |
+| limit | Page size. Must be between 1 and the configured max page limit, currently `250`. | 10 |
 | offset | Page offset. Must be 0 or greater. | 0 |
 
 ### Response
@@ -992,7 +1024,7 @@ Returns records that have sessions with the selected mood. Mood matching is case
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
 | mood | Required nonblank mood label. | - |
-| limit | Page size. Must be 1-50. | 10 |
+| limit | Page size. Must be between 1 and the configured max page limit, currently `250`. | 10 |
 | offset | Page offset. Must be 0 or greater. | 0 |
 
 ### Response
@@ -1010,7 +1042,7 @@ Returns records whose imported Discogs `styles` include the selected style. Styl
 | Parameter | Description | Default |
 | --------- | ----------- | ------- |
 | style | Required nonblank style label. | - |
-| limit | Page size. Must be 1-50. | 10 |
+| limit | Page size. Must be between 1 and the configured max page limit, currently `250`. | 10 |
 | offset | Page offset. Must be 0 or greater. | 0 |
 
 ### Response

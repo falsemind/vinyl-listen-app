@@ -48,6 +48,8 @@ import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.RatingStars
+import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -70,9 +72,9 @@ fun RecentSessionsScreen(
     var retryKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(retryKey) {
-        runCatching { apiClient.getHomeSummary(recentLimit = 25, topLimit = 5) }
+        runCatching { apiClient.getHomeSummary(recentLimit = SHOW_MORE_MAX_COUNT, topLimit = 5) }
             .onSuccess {
-                sessions = it.recentSessions.take(25)
+                sessions = it.recentSessions.take(SHOW_MORE_MAX_COUNT)
                 error = null
             }.onFailure { failure ->
                 error = failure.toUserMessage("Could not load sessions.")
@@ -106,9 +108,9 @@ fun TopRecordsScreen(
     var retryKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(retryKey) {
-        runCatching { apiClient.getAnalyticsDashboard(topRecordsLimit = 25) }
+        runCatching { apiClient.getAnalyticsDashboard(topRecordsLimit = SHOW_MORE_MAX_COUNT) }
             .onSuccess {
-                records = it.topRecords.take(25)
+                records = it.topRecords.take(SHOW_MORE_MAX_COUNT)
                 error = null
             }.onFailure { failure ->
                 error = failure.toUserMessage("Could not load top records.")
@@ -392,6 +394,21 @@ private fun <T> BackendPagedDrilldownScreen(
         isLoadingInitial = false
     }
 
+    fun loadMore(count: Int) {
+        scope.launch {
+            isLoadingMore = true
+            runCatching { loadPage(count.coerceIn(1, SHOW_MORE_MAX_COUNT), items.size) }
+                .onSuccess { page ->
+                    items = items + page.items
+                    hasMore = page.hasMore
+                    error = null
+                }.onFailure { failure ->
+                    error = failure.toUserMessage("Could not load more analytics.")
+                }
+            isLoadingMore = false
+        }
+    }
+
     LaunchedEffect(title, subtitle, retryKey) {
         loadFirstPage()
     }
@@ -412,20 +429,8 @@ private fun <T> BackendPagedDrilldownScreen(
             ViewAllShowMoreButton(
                 label = if (isLoadingMore) "Loading..." else "Show More",
                 enabled = !isLoadingMore,
-                onClick = {
-                    scope.launch {
-                        isLoadingMore = true
-                        runCatching { loadPage(VIEW_ALL_PAGE_SIZE, items.size) }
-                            .onSuccess { page ->
-                                items = items + page.items
-                                hasMore = page.hasMore
-                                error = null
-                            }.onFailure { failure ->
-                                error = failure.toUserMessage("Could not load more analytics.")
-                            }
-                        isLoadingMore = false
-                    }
-                },
+                onClick = { loadMore(VIEW_ALL_PAGE_SIZE) },
+                onCustomCount = ::loadMore,
             )
         }
     }
@@ -450,13 +455,24 @@ private fun <T> PaginatedViewAllItems(
             onClick = {
                 visibleItemCount = (visibleItemCount + VIEW_ALL_PAGE_SIZE).coerceAtMost(items.size)
             },
+            onCustomCount = { count ->
+                visibleItemCount = (visibleItemCount + count.coerceIn(1, SHOW_MORE_MAX_COUNT)).coerceAtMost(items.size)
+            },
         )
     }
 }
 
 @Composable
-private fun ViewAllShowMoreButton(onClick: () -> Unit) {
-    ViewAllShowMoreButton(label = "Show More", enabled = true, onClick = onClick)
+private fun ViewAllShowMoreButton(
+    onClick: () -> Unit,
+    onCustomCount: (Int) -> Unit,
+) {
+    ViewAllShowMoreButton(
+        label = "Show More",
+        enabled = true,
+        onClick = onClick,
+        onCustomCount = onCustomCount,
+    )
 }
 
 @Composable
@@ -464,30 +480,14 @@ private fun ViewAllShowMoreButton(
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
+    onCustomCount: (Int) -> Unit,
 ) {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            modifier =
-                Modifier
-                    .width(232.dp)
-                    .clickable(
-                        enabled = enabled,
-                        onClickLabel = label,
-                        role = Role.Button,
-                        onClick = onClick,
-                    ).padding(vertical = VinylSpacing.SpaceSm),
-            text = label,
-            color = VinylColors.AccentGreen,
-            textAlign = TextAlign.Center,
-            style =
-                MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
-                ),
-        )
-    }
+    ShowMoreActionButton(
+        label = label,
+        enabled = enabled,
+        onClick = onClick,
+        onCustomCount = onCustomCount,
+    )
 }
 
 @Composable

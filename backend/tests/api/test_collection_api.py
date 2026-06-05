@@ -15,6 +15,7 @@ class StubCollectionSyncJobService:
         self.processed_job_ids: list[str] = []
         self.create_error: Exception | None = None
         self.get_error: Exception | None = None
+        self.active_job: CollectionSyncJobStatusResponse | None = None
 
     def create_job(self, _db) -> CollectionSyncJobStatusResponse:
         if self.create_error is not None:
@@ -25,6 +26,9 @@ class StubCollectionSyncJobService:
         if self.get_error is not None:
             raise self.get_error
         return _job_response(status="running", step="fetching", message="Fetching collection data")
+
+    def get_active_job(self, _db) -> CollectionSyncJobStatusResponse | None:
+        return self.active_job
 
     def process_job(self, job_id: str) -> None:
         self.processed_job_ids.append(job_id)
@@ -37,6 +41,31 @@ class StubReleasesRepository:
 
     def list_collection_releases(self, _db, *, limit: int, offset: int, include_removed: bool = False):
         self.calls.append({"limit": limit, "offset": offset, "include_removed": include_removed})
+        return self.releases[offset : offset + limit]
+
+    def search_collection_releases(
+        self,
+        _db,
+        *,
+        artist: str | None = None,
+        title: str | None = None,
+        catalog: str | None = None,
+        barcode: str | None = None,
+        year: int | None = None,
+        limit: int,
+        offset: int,
+    ):
+        self.calls.append(
+            {
+                "artist": artist,
+                "title": title,
+                "catalog": catalog,
+                "barcode": barcode,
+                "year": year,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
         return self.releases[offset : offset + limit]
 
 
@@ -91,6 +120,38 @@ def test_get_collection_sync_job_returns_status() -> None:
     assert response.json()["status"] == "running"
     assert response.json()["step"] == "fetching"
     assert response.json()["message"] == "Fetching collection data"
+
+
+def test_get_active_collection_sync_job_returns_current_status() -> None:
+    service = StubCollectionSyncJobService()
+    service.active_job = _job_response(status="running", step="fetching", message="Fetching collection data")
+    _override_db()
+    app.dependency_overrides[get_collection_sync_job_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/sync/active")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-123"
+    assert response.json()["status"] == "running"
+    assert response.json()["step"] == "fetching"
+    assert response.json()["message"] == "Fetching collection data"
+
+
+def test_get_active_collection_sync_job_returns_no_content_when_idle() -> None:
+    service = StubCollectionSyncJobService()
+    _override_db()
+    app.dependency_overrides[get_collection_sync_job_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/sync/active")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 204
+    assert response.content == b""
 
 
 def test_get_collection_sync_job_returns_not_found() -> None:
@@ -165,6 +226,65 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
         "has_more": True,
     }
     assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False}]
+
+
+def test_list_collection_releases_accepts_custom_max_limit() -> None:
+    repository = StubReleasesRepository([])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"limit": 250, "offset": 0})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False}
+    assert repository.calls == [{"limit": 251, "offset": 0, "include_removed": False}]
+
+
+def test_search_collection_releases_returns_internal_release_results() -> None:
+    repository = StubReleasesRepository([_release("release-1", 101, "First")])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/collection/search",
+            params={"artist": "Artist", "catalog": "CAT", "limit": 10, "offset": 0},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {
+                "release_id": "release-1",
+                "discogs_release_id": 101,
+                "artist": "Artist",
+                "title": "First",
+                "year": 2021,
+                "label": "Label",
+                "catalog_number": "CAT-1",
+                "thumbnail_url": "https://example.test/cover.jpg",
+                "format": "Vinyl, LP",
+            }
+        ],
+        "limit": 10,
+        "offset": 0,
+    }
+    assert repository.calls == [
+        {
+            "artist": "Artist",
+            "title": None,
+            "catalog": "CAT",
+            "barcode": None,
+            "year": None,
+            "limit": 10,
+            "offset": 0,
+        }
+    ]
 
 
 def _override_db() -> None:

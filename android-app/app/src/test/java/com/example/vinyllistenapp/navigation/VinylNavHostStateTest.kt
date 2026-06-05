@@ -62,8 +62,18 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun collectionManualSearchRouteUsesExpectedPath() {
+        assertEquals("collection_manual_search", VinylRoutes.COLLECTION_MANUAL_SEARCH)
+    }
+
+    @Test
     fun editSessionRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.SESSION_EDIT_PATTERN.isPortraitLockedOverflowRoute())
+    }
+
+    @Test
+    fun collectionManualSearchRouteIsPortraitLocked() {
+        assertTrue(VinylRoutes.COLLECTION_MANUAL_SEARCH.isPortraitLockedOverflowRoute())
     }
 
     @Test

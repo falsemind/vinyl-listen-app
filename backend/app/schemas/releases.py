@@ -43,6 +43,7 @@ class ReleaseResponse(BaseModel):
 
 
 class ReleaseSearchResult(BaseModel):
+    release_id: str | None = None
     discogs_release_id: int
     artist: str
     title: str

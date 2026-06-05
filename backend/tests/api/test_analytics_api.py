@@ -156,7 +156,7 @@ def test_top_records_endpoint_returns_records_and_forwards_limit() -> None:
 
 def test_top_records_endpoint_returns_validation_error() -> None:
     service = StubAnalyticsService()
-    service.top_error = AnalyticsValidationError("invalid_limit", "limit must be between 1 and 50.")
+    service.top_error = AnalyticsValidationError("invalid_limit", "limit must be between 1 and 250.")
     app.dependency_overrides[get_analytics_service] = lambda: service
 
     with TestClient(app) as client:
@@ -166,7 +166,7 @@ def test_top_records_endpoint_returns_validation_error() -> None:
     assert response.json() == {
         "error": {
             "code": "invalid_limit",
-            "message": "limit must be between 1 and 50.",
+            "message": "limit must be between 1 and 250.",
         }
     }
 

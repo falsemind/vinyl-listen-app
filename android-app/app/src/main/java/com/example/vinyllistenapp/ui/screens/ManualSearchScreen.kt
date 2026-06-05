@@ -60,6 +60,7 @@ fun ManualSearchScreen(
     apiClient: VinylApiClient,
     onSelectRecord: (String) -> Unit,
     onDismiss: () -> Unit,
+    mode: ManualSearchMode = ManualSearchMode.Discogs,
 ) {
     val pageSize = 10
     val scope = rememberCoroutineScope()
@@ -111,21 +112,35 @@ fun ManualSearchScreen(
                 }
             val results =
                 runCatching {
-                    apiClient.searchReleases(
-                        artist = artist,
-                        title = title,
-                        catalog = catalog,
-                        barcode = barcode,
-                        year = year,
-                        limit = pageSize,
-                        offset = offset,
-                    )
+                    when (mode) {
+                        ManualSearchMode.Discogs ->
+                            apiClient.searchReleases(
+                                artist = artist,
+                                title = title,
+                                catalog = catalog,
+                                barcode = barcode,
+                                year = year,
+                                limit = pageSize,
+                                offset = offset,
+                            )
+
+                        ManualSearchMode.Collection ->
+                            apiClient.searchCollectionReleases(
+                                artist = artist,
+                                title = title,
+                                catalog = catalog,
+                                barcode = barcode,
+                                year = year,
+                                limit = pageSize,
+                                offset = offset,
+                            )
+                    }
                 }.getOrElse { error ->
                     if (loadMore && currentResults.isNotEmpty()) {
                         state = ManualSearchUiState.Success(currentResults, hasMore = true)
                         return@launch
                     }
-                    retryError = error.toUserMessage("Search failed. Retry in a moment.")
+                    retryError = error.toUserMessage(mode.searchErrorMessage)
                     state = ManualSearchUiState.Idle
                     return@launch
                 }
@@ -148,6 +163,16 @@ fun ManualSearchScreen(
         }
         selectingDiscogsReleaseId = result.discogsReleaseId
         scope.launch {
+            if (mode == ManualSearchMode.Collection) {
+                val releaseId = result.releaseId
+                selectingDiscogsReleaseId = null
+                if (releaseId == null) {
+                    retryError = "Could not open that collection record. Retry."
+                    return@launch
+                }
+                onSelectRecord(releaseId)
+                return@launch
+            }
             val releaseId =
                 runCatching { apiClient.importRelease(result.discogsReleaseId) }
                     .getOrElse { error ->
@@ -171,7 +196,7 @@ fun ManualSearchScreen(
         ManualSearchHeader(onDismiss = onDismiss)
         Text(
             modifier = Modifier.fillMaxWidth(),
-            text = "Search for your record manually",
+            text = mode.title,
             color = VinylColors.TextSecondary,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
@@ -257,8 +282,8 @@ fun ManualSearchScreen(
         ) {
             when (val currentState = state) {
                 ManualSearchUiState.Idle -> Unit
-                ManualSearchUiState.Loading -> ManualSearchMessage("Searching Discogs...")
-                ManualSearchUiState.Empty -> ManualSearchMessage("No results found.")
+                ManualSearchUiState.Loading -> ManualSearchMessage(mode.loadingMessage)
+                ManualSearchUiState.Empty -> ManualSearchMessage(mode.emptyMessage)
                 is ManualSearchUiState.Error -> ManualSearchMessage(currentState.message, isError = true)
                 is ManualSearchUiState.Success -> {
                     currentState.results.forEach { result ->
@@ -281,6 +306,26 @@ fun ManualSearchScreen(
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
         }
     }
+}
+
+enum class ManualSearchMode(
+    val title: String,
+    val loadingMessage: String,
+    val emptyMessage: String,
+    val searchErrorMessage: String,
+) {
+    Discogs(
+        title = "Search for your record manually",
+        loadingMessage = "Searching Discogs...",
+        emptyMessage = "No results found.",
+        searchErrorMessage = "Search failed. Retry in a moment.",
+    ),
+    Collection(
+        title = "Search your collection",
+        loadingMessage = "Searching collection...",
+        emptyMessage = "No collection records found.",
+        searchErrorMessage = "Collection search failed. Retry in a moment.",
+    ),
 }
 
 private sealed interface ManualSearchUiState {

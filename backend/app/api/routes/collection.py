@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
@@ -11,6 +12,7 @@ from app.schemas.collection import (
     CollectionReleasesResponse,
     CollectionSyncJobStatusResponse,
 )
+from app.schemas.releases import ReleaseSearchResponse, ReleaseSearchResult
 from app.schemas.sessions import ErrorResponse
 from app.services.collection_sync_job_service import (
     CollectionSyncConfigurationError,
@@ -55,6 +57,21 @@ def create_collection_sync_job(
 
 
 @router.get(
+    "/sync/active",
+    response_model=CollectionSyncJobStatusResponse,
+    responses={204: {"description": "No active collection sync job"}},
+)
+def get_active_collection_sync_job(
+    db: Annotated[Session, Depends(get_db)],
+    job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
+) -> CollectionSyncJobStatusResponse | Response:
+    job = job_service.get_active_job(db)
+    if job is None:
+        return Response(status_code=204)
+    return job
+
+
+@router.get(
     "/sync/{job_id}",
     response_model=CollectionSyncJobStatusResponse,
     responses={404: {"model": ErrorResponse}},
@@ -78,7 +95,7 @@ def get_collection_sync_job(
 def list_collection_releases(
     db: Annotated[Session, Depends(get_db)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
-    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:
@@ -94,6 +111,48 @@ def list_collection_releases(
         limit=limit,
         offset=offset,
         has_more=len(releases) > limit,
+    )
+
+
+@router.get("/search", response_model=ReleaseSearchResponse)
+def search_collection_releases(
+    db: Annotated[Session, Depends(get_db)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    artist: Annotated[str | None, Query(min_length=1)] = None,
+    title: Annotated[str | None, Query(min_length=1)] = None,
+    catalog: Annotated[str | None, Query(min_length=1)] = None,
+    barcode: Annotated[str | None, Query(min_length=1)] = None,
+    year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
+    limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 10,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReleaseSearchResponse:
+    releases = repository.search_collection_releases(
+        db,
+        artist=artist,
+        title=title,
+        catalog=catalog,
+        barcode=barcode,
+        year=year,
+        limit=limit,
+        offset=offset,
+    )
+    return ReleaseSearchResponse(
+        results=[
+            ReleaseSearchResult(
+                release_id=release.id,
+                discogs_release_id=release.discogs_release_id,
+                artist=release.artist,
+                title=release.title,
+                year=release.year,
+                label=release.label,
+                catalog_number=release.catalog_number,
+                thumbnail_url=release.cover_image_url,
+                format=release.format,
+            )
+            for release in releases
+        ],
+        limit=limit,
+        offset=offset,
     )
 
 

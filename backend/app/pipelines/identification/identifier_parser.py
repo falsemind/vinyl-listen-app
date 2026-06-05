@@ -344,6 +344,9 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
             _append_catalog_number_candidates(slash_identity[0], detected_catalog_numbers, seen, scores)
             continue
 
+        if _looks_like_copyright_year_line(line) and not _line_starts_with_catalog_token(line):
+            continue
+
         if noisy_ocr_text:
             if _looks_like_standalone_compact_catalog_line(line):
                 _append_catalog_number_candidates(line, detected_catalog_numbers, seen, scores)
@@ -970,6 +973,12 @@ def _looks_like_company_year_catalog_noise(value: str) -> bool:
 
     tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
     return bool(tokens & {"music", "production", "productions", "records", "recordings", "copyright"})
+
+
+def _looks_like_copyright_year_line(value: str) -> bool:
+    if _extract_year_from_value(value) is None:
+        return False
+    return "©" in value or "℗" in value or re.search(r"\([cp]\)", value, re.IGNORECASE) is not None
 
 
 def _normalize_credit_line(value: str) -> str:

@@ -85,4 +85,29 @@ class CollectionParsingTest {
         assertEquals(2, state.removedCount)
         assertFalse(state.status.isTerminal)
     }
+
+    @Test
+    fun parsesExpiredCollectionSyncJobStateAsTerminal() {
+        val state =
+            JSONObject(
+                """
+                {
+                  "job_id": "job-123",
+                  "status": "expired",
+                  "step": "fetching",
+                  "message": "Collection sync expired. Start a new sync.",
+                  "error": {
+                    "code": "collection_sync_job_stale",
+                    "message": "Collection sync expired. Start a new sync.",
+                    "failed_step": "fetching"
+                  }
+                }
+                """.trimIndent(),
+            ).toCollectionSyncJobState()
+
+        assertEquals(CollectionSyncJobStatus.Expired, state.status)
+        assertTrue(state.status.isTerminal)
+        assertEquals("Collection sync expired. Start a new sync.", state.error?.message)
+        assertEquals("fetching", state.error?.failedStep)
+    }
 }

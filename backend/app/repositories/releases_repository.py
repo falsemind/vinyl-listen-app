@@ -179,3 +179,43 @@ class ReleasesRepository:
             .limit(limit)
             .all()
         )
+
+    @staticmethod
+    def search_collection_releases(
+        db: Session,
+        *,
+        artist: str | None = None,
+        title: str | None = None,
+        catalog: str | None = None,
+        barcode: str | None = None,
+        year: int | None = None,
+        limit: int,
+        offset: int,
+    ) -> Sequence[Releases]:
+        filters = []
+        if artist and artist.strip():
+            filters.append(Releases.artist.ilike(f"%{artist.strip()}%"))
+        if title and title.strip():
+            filters.append(Releases.title.ilike(f"%{title.strip()}%"))
+        if catalog and catalog.strip():
+            filters.append(Releases.catalog_number.ilike(f"%{catalog.strip()}%"))
+        if barcode and barcode.strip():
+            filters.append(Releases.barcode.ilike(f"%{barcode.strip()}%"))
+        if year is not None:
+            filters.append(Releases.year == year)
+        if not filters:
+            return []
+
+        return (
+            db.query(Releases)
+            .filter(Releases.in_collection.is_(True))
+            .filter(*filters)
+            .order_by(
+                Releases.artist.asc(),
+                Releases.title.asc(),
+                Releases.year.desc().nullslast(),
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )

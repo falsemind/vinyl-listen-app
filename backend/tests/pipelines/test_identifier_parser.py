@@ -446,6 +446,31 @@ def test_identifier_parser_rejects_copyright_year_range_as_catalog() -> None:
     assert identifiers.year == 1995
 
 
+def test_identifier_parser_rejects_copyright_imprint_year_as_catalog() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "Dwarde",
+                "A. Piper [5:29]",
+                "B. Piper (DJ Chromz Remix) [5:46]",
+                "All tracks written & produced by D. Warde",
+                "Additional remix production by M. Woldag",
+                "© Future Retro London 2023",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ()
+    assert identifiers.year == 2023
+    assert identifiers.text_fragments == (
+        "Piper [5:29]",
+        "Piper (DJ Chromz Remix) [5:46]",
+        "Dwarde",
+    )
+
+
 def test_identifier_parser_extracts_hash_separated_catalog_number() -> None:
     parser = IdentifierParser()
 

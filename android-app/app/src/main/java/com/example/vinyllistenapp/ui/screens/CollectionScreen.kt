@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -59,6 +60,8 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
@@ -71,6 +74,7 @@ fun CollectionScreen(
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
+    onManualSearch: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
@@ -98,13 +102,20 @@ fun CollectionScreen(
         isLoadingInitial = false
     }
 
-    suspend fun syncCollection() {
+    suspend fun followCollectionSync(activeJob: CollectionSyncJobState? = null) {
         isSyncing = true
+        isLoadingInitial = false
         error = null
-        syncMessage = "Loading..."
+        syncMessage = activeJob?.displayMessage() ?: "Loading..."
         runCatching {
-            apiClient.syncCollection { job ->
-                syncMessage = job.displayMessage()
+            if (activeJob == null) {
+                apiClient.syncCollection { job ->
+                    syncMessage = job.displayMessage()
+                }
+            } else {
+                apiClient.waitForCollectionSyncJob(activeJob.jobId) { job ->
+                    syncMessage = job.displayMessage()
+                }
             }
             syncMessage = "Loading..."
             loadFirstPage()
@@ -115,8 +126,20 @@ fun CollectionScreen(
         syncMessage = null
     }
 
-    LaunchedEffect(retryKey) {
+    suspend fun loadCollectionState() {
+        isLoadingInitial = true
+        error = null
+        runCatching { apiClient.getActiveCollectionSyncJob() }
+            .getOrNull()
+            ?.let { activeJob ->
+                followCollectionSync(activeJob)
+                return
+            }
         loadFirstPage()
+    }
+
+    LaunchedEffect(retryKey) {
+        loadCollectionState()
     }
 
     Scaffold(
@@ -150,7 +173,7 @@ fun CollectionScreen(
                         CollectionTextActionButton(
                             label = "Load Discogs Collection",
                             enabled = true,
-                            onClick = { scope.launch { syncCollection() } },
+                            onClick = { scope.launch { followCollectionSync() } },
                         )
 
                     else ->
@@ -158,7 +181,7 @@ fun CollectionScreen(
                             message = error ?: syncMessage ?: "Loading...",
                             isLoading = isSyncing || isLoadingInitial,
                             isError = error != null,
-                            onRetry = { scope.launch { syncCollection() } },
+                            onRetry = { scope.launch { followCollectionSync() } },
                         )
                 }
             }
@@ -172,14 +195,16 @@ fun CollectionScreen(
                 syncMessage = syncMessage,
                 error = error,
                 onOpenRecord = onOpenRecord,
-                onRetry = { scope.launch { syncCollection() } },
-                onSync = { scope.launch { syncCollection() } },
-                onShowMore = {
+                onManualSearch = onManualSearch,
+                floatingActionBottomPadding = VinylSpacing.SpaceLg,
+                onRetry = { scope.launch { followCollectionSync() } },
+                onSync = { scope.launch { followCollectionSync() } },
+                onShowMore = { count ->
                     scope.launch {
                         isLoadingMore = true
                         runCatching {
                             apiClient.getCollectionReleases(
-                                limit = COLLECTION_PAGE_SIZE,
+                                limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
                                 offset = records.size,
                             )
                         }.onSuccess { page ->
@@ -212,9 +237,11 @@ private fun CollectionListContent(
     syncMessage: String?,
     error: String?,
     onOpenRecord: (String) -> Unit,
+    onManualSearch: () -> Unit,
+    floatingActionBottomPadding: Dp,
     onRetry: () -> Unit,
     onSync: () -> Unit,
-    onShowMore: () -> Unit,
+    onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -262,15 +289,25 @@ private fun CollectionListContent(
                 CollectionRecordCard(record = record, onClick = { onOpenRecord(record.releaseId) })
             }
             if (hasMore) {
-                CollectionTextActionButton(
+                ShowMoreActionButton(
                     label = if (isLoadingMore) "Loading..." else "Show More",
                     enabled = !isLoadingMore,
-                    onClick = onShowMore,
+                    onClick = { onShowMore(COLLECTION_PAGE_SIZE) },
+                    onCustomCount = onShowMore,
                 )
             }
             Spacer(Modifier.height(96.dp))
         }
 
+        FloatingIconButton(
+            icon = Icons.Filled.Search,
+            contentDescription = "Search collection",
+            onClick = onManualSearch,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = VinylSpacing.SpaceMd, bottom = floatingActionBottomPadding),
+        )
         if (showScrollToTop) {
             FloatingIconButton(
                 icon = Icons.Filled.KeyboardArrowUp,
@@ -283,7 +320,7 @@ private fun CollectionListContent(
                 modifier =
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = VinylSpacing.SpaceXl, bottom = 104.dp),
+                        .padding(end = VinylSpacing.SpaceMd, bottom = floatingActionBottomPadding + 72.dp),
             )
         }
     }

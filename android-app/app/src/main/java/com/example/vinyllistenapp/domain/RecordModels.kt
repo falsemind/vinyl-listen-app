@@ -28,6 +28,7 @@ data class ReleaseSideOption(
 )
 
 data class ReleaseSearchResult(
+    val releaseId: String? = null,
     val discogsReleaseId: Long,
     val artist: String,
     val title: String,

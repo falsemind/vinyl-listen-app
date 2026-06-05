@@ -182,6 +182,7 @@ All routes are nested under `/api/v1`.
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`. |
+| `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
 | `GET /releases/search` | `api/routes/releases.py` | Manual Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
@@ -421,7 +422,7 @@ android-app/
 - The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - The Recent Sessions, Top Records, Mood Distribution, and Style Distribution expanded screens live in `ViewAllScreens.kt`; list-style screens show up to 25 sessions or records, while distribution screens show the full loaded distribution.
-- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, and loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`.
+- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`.
 - Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
 - The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.

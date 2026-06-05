@@ -350,7 +350,7 @@ Analytics endpoints read from persisted releases and sessions:
 - `GET /api/v1/analytics/records/by-style` returns paginated records for a selected Discogs style.
 
 Style distribution intentionally uses `releases.styles`, not broad `genres`, because the Analytics screen is meant to expose specific listening patterns.
-Drilldown pagination is validated at the service boundary: `limit` must be 1-50, `offset` must be nonnegative, rating must be 1-5, month must be strict `YYYY-MM`, and mood/style labels must be nonblank.
+Drilldown pagination is validated at the service boundary: `limit` must be between 1 and the configured max page limit (`max_page_limit`, currently 250), `offset` must be nonnegative, rating must be 1-5, month must be strict `YYYY-MM`, and mood/style labels must be nonblank.
 
 ## AiInsightsService
 

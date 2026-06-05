@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     database_collection_url: str = "postgresql://vinyl:vinyl@localhost:5432/vinyl_collection"
 
     database_echo: bool = False
+    max_page_limit: int = Field(default=250, ge=1)
 
     discogs_username: str | None = None
     discogs_token: str | None = None

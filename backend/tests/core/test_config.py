@@ -2,7 +2,7 @@ from app.core.config import Settings
 
 
 def test_resolved_database_url_defaults_to_dev_profile() -> None:
-    settings = Settings(_env_file=None, discogs_base_url="https://api.discogs.com")
+    settings = Settings(_env_file=None, database_url=None, discogs_base_url="https://api.discogs.com")
 
     assert settings.database_profile == "dev"
     assert settings.resolved_database_url == "postgresql://vinyl:vinyl@localhost:5432/vinyl_dev"
@@ -12,6 +12,7 @@ def test_resolved_database_url_uses_collection_profile() -> None:
     settings = Settings(
         _env_file=None,
         database_profile="collection",
+        database_url=None,
         discogs_base_url="https://api.discogs.com",
     )
 
@@ -39,3 +40,11 @@ def test_discogs_collection_credentials_can_be_configured() -> None:
 
     assert settings.discogs_username == "username"
     assert settings.discogs_token == "token"
+
+
+def test_max_page_limit_defaults_and_can_be_configured() -> None:
+    default_settings = Settings(_env_file=None, discogs_base_url="https://api.discogs.com")
+    custom_settings = Settings(_env_file=None, discogs_base_url="https://api.discogs.com", max_page_limit=125)
+
+    assert default_settings.max_page_limit == 250
+    assert custom_settings.max_page_limit == 125

@@ -10,6 +10,7 @@ object VinylRoutes {
     const val IMAGE_URI = "imageUri"
     const val MATCH_CONFIRMATION = "match_confirmation"
     const val MANUAL_SEARCH = "manual_search"
+    const val COLLECTION_MANUAL_SEARCH = "collection_manual_search"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
     const val MOOD_DISTRIBUTION = "mood_distribution"
