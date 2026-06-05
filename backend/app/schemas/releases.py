@@ -58,6 +58,7 @@ class ReleaseSearchResponse(BaseModel):
     results: list[ReleaseSearchResult]
     limit: int
     offset: int
+    has_more: bool | None = None
 
 
 class ReleaseImportResponse(BaseModel):
