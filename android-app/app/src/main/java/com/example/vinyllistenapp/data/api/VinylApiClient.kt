@@ -145,7 +145,7 @@ class VinylApiClient(
         year: Int?,
         limit: Int = 10,
         offset: Int = 0,
-    ): List<ReleaseSearchResult> =
+    ): ReleaseSearchResultsPage =
         apiCall {
             val query =
                 buildList {
@@ -158,9 +158,7 @@ class VinylApiClient(
                     addQueryParam("offset", offset.toString())
                 }.joinToString("&")
             val response = getJson("releases/search?$query")
-            response.optJSONArray("results").orEmpty().mapObjects { item ->
-                item.toReleaseSearchResult()
-            }
+            response.toReleaseSearchResultsPage(limit = limit)
         }
 
     suspend fun searchCollectionReleases(
@@ -171,7 +169,7 @@ class VinylApiClient(
         year: Int?,
         limit: Int = 10,
         offset: Int = 0,
-    ): List<ReleaseSearchResult> =
+    ): ReleaseSearchResultsPage =
         apiCall {
             val query =
                 buildList {
@@ -184,9 +182,7 @@ class VinylApiClient(
                     addQueryParam("offset", offset.toString())
                 }.joinToString("&")
             val response = getJson("collection/search?$query")
-            response.optJSONArray("results").orEmpty().mapObjects { item ->
-                item.toReleaseSearchResult()
-            }
+            response.toReleaseSearchResultsPage(limit = limit)
         }
 
     suspend fun getRelease(releaseId: String): RecordSummary =
@@ -742,6 +738,11 @@ data class AiChatMessage(
     val usedTools: List<String>,
 )
 
+data class ReleaseSearchResultsPage(
+    val results: List<ReleaseSearchResult>,
+    val hasMore: Boolean,
+)
+
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
 
 private fun OutputStream.writeUtf8(value: String) {
@@ -804,6 +805,23 @@ private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
         thumbnailUrl = optNullableString("thumbnail_url"),
         format = optNullableString("format"),
     )
+
+private fun JSONObject.toReleaseSearchResultsPage(limit: Int): ReleaseSearchResultsPage {
+    val results = releaseSearchResults()
+    val defaultHasMore = results.size == limit
+    val hasMore =
+        if (has("has_more") && !isNull("has_more")) {
+            optBoolean("has_more", defaultHasMore)
+        } else {
+            defaultHasMore
+        }
+    return ReleaseSearchResultsPage(results = results, hasMore = hasMore)
+}
+
+private fun JSONObject.releaseSearchResults(): List<ReleaseSearchResult> =
+    optJSONArray("results").orEmpty().mapObjects { item ->
+        item.toReleaseSearchResult()
+    }
 
 private fun JSONObject.toCollectionRecord(): CollectionRecord =
     CollectionRecord(
