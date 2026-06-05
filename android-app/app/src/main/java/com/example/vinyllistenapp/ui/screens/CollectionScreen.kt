@@ -522,11 +522,18 @@ private fun CollectionRecordCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = record.format,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (record.styles.isNotEmpty()) {
                     Text(
                         text = record.styles.joinToString(", "),
                         color = VinylColors.AccentGreen,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -539,10 +546,9 @@ private fun CollectionRecordCard(
 private fun collectionRecordMetadata(record: CollectionRecord): String =
     listOfNotNull(
         record.year?.toString(),
-        record.format,
         record.label,
-        record.catalogNumber?.let { "Cat# $it" },
-    ).joinToString(" - ")
+        record.catalogNumber,
+    ).joinToString(" • ")
 
 private fun CollectionSyncJobState.displayMessage(): String =
     message.ifBlank {
