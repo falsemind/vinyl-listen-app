@@ -187,6 +187,7 @@ All routes are nested under `/api/v1`.
 | `GET /releases/search` | `api/routes/releases.py` | Manual Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `POST /releases/{release_id}/refresh` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
@@ -409,7 +410,7 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
+| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/refresh/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
 | `domain/` | UI-facing domain models for records, release side options, sessions, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |

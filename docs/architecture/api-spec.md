@@ -395,28 +395,93 @@ The response contains Discogs results, not local records. When the user selects 
 
 # 3. Release Details
 
-Retrieves and compiles complete metadata for a release using the Discogs ID. This endpoint acts as an intelligent retrieval layer, prioritizing data freshness from local caches or performing a fetch if no cached version is available. If an internal `release_id` exists, it will be returned alongside the metadata.
+Release detail endpoints read and update releases by internal `release_id`. Manual Discogs imports and identify flow matches create or update the local release row first, then Android navigates with the internal ID.
 
-## GET /releases/{discogs_release_id}
+Collection sync imports only Discogs `basic_information` for each item. A detail screen can call the refresh endpoint for one record when the user wants full Discogs metadata, including tracklist data cached for side options and richer collection search.
+
+## POST /releases/import
+
+Imports a Discogs release into the local database. This endpoint is used after manual Discogs search or identify flow selection.
+
+### Request
+
+```json
+{
+  "discogs_release_id": 555123,
+  "force_refresh": false
+}
+```
 
 ### Response
 
 ```json
 {
-  "discogs_release_id": "555123",
-  "artist": "Boards of Canada",
-  "title": "Music Has The Right To Children",
-  "year": 1998,
-  "label": "Warp Records",
-  "catalog_number": "WARPLP55",
-  "genres": ["Electronic"],
-  "styles": ["Techno"],
-  "sides": ["A", "B", "C", "D"],
-  "thumbnail_url": "https://..."
+  "release_id": "internal_id",
+  "discogs_release_id": 555123,
+  "status": "created"
 }
 ```
 
-Sides are derived from the Discogs tracklist.
+`status` is `created` or `updated`.
+
+## GET /releases/{release_id}
+
+Returns stored release metadata for an internal release ID.
+
+### Response
+
+```json
+{
+  "id": "internal_id",
+  "discogs_release_id": 555123,
+  "artist": "Boards of Canada",
+  "title": "Music Has The Right To Children",
+  "year": 1998,
+  "format": "Vinyl, LP",
+  "label": "Warp Records",
+  "catalog_number": "WARPLP55",
+  "barcode": "5021603065515",
+  "genres": ["Electronic"],
+  "styles": ["IDM"],
+  "thumbnail_url": "https://...",
+  "cover_image_url": "https://...",
+  "in_collection": true,
+  "collection_added_at": "2021-10-05T19:32:40Z",
+  "collection_removed_at": null,
+  "last_discogs_sync_at": "2026-06-04T20:15:00Z",
+  "discogs_instance_id": 123456,
+  "has_full_discogs_info": true,
+  "available_sides": ["A", "B"],
+  "available_side_options": [
+    {
+      "value": "A",
+      "label": "Side A",
+      "side": "A",
+      "disc_number": null
+    }
+  ],
+  "created_at": "2026-04-19T00:00:00Z",
+  "updated_at": "2026-06-06T12:00:00Z"
+}
+```
+
+`has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for this release. Android uses `false` collection records to show "Get Full Release".
+
+`available_sides` and `available_side_options` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached.
+
+## POST /releases/{release_id}/refresh
+
+Fetches the full Discogs release payload for an existing local release, saves the mapped release fields, updates the Discogs release cache, and returns the same response shape as `GET /releases/{release_id}`.
+
+Android uses this endpoint from Record Details to hydrate one collection import on demand instead of fetching full Discogs data during bulk collection sync.
+
+### Errors
+
+| Status | Meaning |
+| --- | --- |
+| `404 Not Found` | No local release exists for `release_id`, or Discogs returned 404 for the mapped Discogs release ID. |
+| `422 Unprocessable Content` | The Discogs payload cannot be mapped into local release metadata. |
+| `502 Bad Gateway` | Discogs returned a non-404 client error. |
 
 ---
 
@@ -522,6 +587,8 @@ Returns active collection records ordered by Discogs collection add date, newest
 ## GET /collection/search
 
 Searches records already present in the active internal collection. This powers the Collection screen manual search and does not call Discogs or import external releases.
+
+Artist search matches the local `artist` field and, when a full release payload is cached, the raw Discogs JSON. That lets hydrated records match track-level or remix artist metadata without fetching every collection item during bulk sync.
 
 ### Query Parameters
 
@@ -754,7 +821,7 @@ The Android app prefers `played_at` for device-timezone-aware labels such as `To
 
 Used by the **Record Detail screen**.
 
-Record metadata comes from `GET /releases/{release_id}`. Listening history comes from `GET /releases/{release_id}/sessions`.
+Record metadata comes from `GET /releases/{release_id}`. Listening history comes from `GET /releases/{release_id}/sessions`. Basic collection imports can be hydrated with `POST /releases/{release_id}/refresh`.
 
 ## GET /releases/{release_id}
 
@@ -762,13 +829,15 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ```json
 {
-  "release_id": "internal_id",
-  "discogs_release_id": "555123",
+  "id": "internal_id",
+  "discogs_release_id": 555123,
   "artist": "...",
   "title": "...",
   "catalog_number": "...",
   "barcode": "...",
   "cover_image_url": "...",
+  "in_collection": true,
+  "has_full_discogs_info": true,
   "available_sides": ["X", "Y"],
   "available_side_options": [
     {
@@ -865,7 +934,7 @@ Drilldown endpoints use the same pagination envelope as View All screens.
   "records": [
     {
       "release_id": "1",
-      "discogs_release_id": "555123",
+      "discogs_release_id": 555123,
       "artist": "Boards of Canada",
       "title": "Music Has The Right To Children",
       "thumbnail_url": "https://...",
