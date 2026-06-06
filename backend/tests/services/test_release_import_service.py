@@ -86,6 +86,39 @@ def test_get_release_returns_repository_result(
     assert result is release
 
 
+def test_refresh_release_fetches_full_release_with_force_refresh(
+    discogs_release_payload,
+    release_import_discogs_service_factory,
+    release_import_repository_factory,
+    build_release_import_service,
+) -> None:
+    release = Releases(
+        id="release-123",
+        discogs_release_id=555123,
+        artist="Old Artist",
+        title="Old Title",
+        year=1998,
+        label="Warp Records",
+        catalog_number="WARPLP55",
+        barcode=None,
+        genres=None,
+        styles=None,
+        cover_image_url=None,
+        created_at=datetime(2026, 4, 18, tzinfo=UTC),
+        updated_at=datetime(2026, 4, 18, tzinfo=UTC),
+    )
+    discogs_service = release_import_discogs_service_factory(discogs_release_payload)
+    repository = release_import_repository_factory(release)
+    service = build_release_import_service(discogs_service=discogs_service, repository=repository)
+
+    result = service.refresh_release(db=object(), release_id="release-123")
+
+    assert result is not None
+    assert result.created is False
+    assert result.release.title == "Music Has The Right To Children"
+    assert discogs_service.calls == [(555123, True)]
+
+
 def test_get_available_sides_returns_discogs_track_sides(
     release_import_discogs_repository_factory,
     build_release_import_service,

@@ -163,7 +163,9 @@ class StubReleaseImportService:
         self.import_result = ReleaseImportResult(release=self.release, created=True)
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
+        self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
+        self.has_full_discogs_info_value = True
         self.available_sides = ["A", "AA"]
         self.available_side_options = [
             ReleaseSideOptionData(value="A", label="Side A", side="A"),
@@ -181,6 +183,16 @@ class StubReleaseImportService:
         if release_id == self.release.id:
             return self.release
         return None
+
+    def refresh_release(self, db, release_id: str) -> ReleaseImportResult | None:
+        self.refresh_calls.append(release_id)
+        release = self.get_release(db, release_id)
+        if release is None:
+            return None
+        return self.import_release(db, release.discogs_release_id, force_refresh=True)
+
+    def has_full_discogs_info(self, _db, _discogs_release_id: int) -> bool:
+        return self.has_full_discogs_info_value
 
     def get_available_sides(self, _db, discogs_release_id: int) -> list[str]:
         if discogs_release_id == self.release.discogs_release_id:

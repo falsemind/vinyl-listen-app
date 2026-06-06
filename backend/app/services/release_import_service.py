@@ -73,6 +73,15 @@ class ReleaseImportService:
             logger.info("Release not found release_id=%s", release_id)
         return release
 
+    def refresh_release(self, db: Session, release_id: str) -> ReleaseImportResult | None:
+        release = self.get_release(db, release_id)
+        if release is None:
+            return None
+        return self.import_release(db, release.discogs_release_id, force_refresh=True)
+
+    def has_full_discogs_info(self, db: Session, discogs_release_id: int) -> bool:
+        return self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id) is not None
+
     def get_available_sides(self, db: Session, discogs_release_id: int) -> list[str]:
         cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
         return extract_release_sides(cache_entry.raw_discogs_json if cache_entry is not None else None)
