@@ -191,6 +191,12 @@ class VinylApiClient(
             response.toRecordSummary()
         }
 
+    suspend fun refreshRelease(releaseId: String): RecordSummary =
+        apiCall {
+            val response = postJson("releases/${Uri.encode(releaseId)}/refresh", JSONObject())
+            response.toRecordSummary()
+        }
+
     suspend fun getReleaseSessions(releaseId: String): List<ListeningSession> =
         apiCall {
             val response = getJson("releases/${Uri.encode(releaseId)}/sessions")
@@ -780,6 +786,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         inCollection = optBoolean("in_collection", true),
         collectionAddedAt = optNullableString("collection_added_at"),
         collectionRemovedAt = optNullableString("collection_removed_at"),
+        hasFullDiscogsInfo = optBoolean("has_full_discogs_info", false),
     )
 
 internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =

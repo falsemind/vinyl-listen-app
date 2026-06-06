@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,6 +63,7 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
@@ -77,8 +80,10 @@ fun RecordDetailScreen(
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
     var sessions by remember(releaseId) { mutableStateOf<List<ListeningSession>>(emptyList()) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(releaseId, retryKey) {
         releaseId?.let { id ->
@@ -104,7 +109,7 @@ fun RecordDetailScreen(
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = VinylSpacing.SpaceMd)
-                        .padding(top = 48.dp, bottom = 40.dp),
+                        .padding(top = 48.dp, bottom = VinylSpacing.SpaceLg),
                 text = "Record Details",
                 color = VinylColors.TextPrimary,
                 style = MaterialTheme.typography.headlineLarge,
@@ -121,6 +126,24 @@ fun RecordDetailScreen(
                     ErrorRetryCard(
                         message = message,
                         onRetry = { retryKey += 1 },
+                    )
+                }
+                if (shouldShowGetFullReleaseAction(record)) {
+                    GetFullReleaseAction(
+                        isLoading = isFetchingFullRelease,
+                        onClick = {
+                            scope.launch {
+                                isFetchingFullRelease = true
+                                runCatching { apiClient.refreshRelease(record.releaseId) }
+                                    .onSuccess { refreshedRecord ->
+                                        record = refreshedRecord
+                                        detailError = null
+                                    }.onFailure { error ->
+                                        detailError = error.toUserMessage("Could not fetch full release info.")
+                                    }
+                                isFetchingFullRelease = false
+                            }
+                        },
                     )
                 }
                 RecordDetailHeroCard(record = record)
@@ -175,6 +198,33 @@ fun RecordDetailScreen(
             )
         }
     }
+}
+
+@Composable
+private fun GetFullReleaseAction(
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = !isLoading,
+                    onClickLabel = "Get Full Release",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceSm),
+        text = if (isLoading) "Getting Full Release..." else "Get Full Release",
+        color = VinylColors.AccentGreen,
+        textAlign = TextAlign.End,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style =
+            MaterialTheme.typography.bodyMedium.copy(
+                fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
+            ),
+    )
 }
 
 @Composable
@@ -879,6 +929,9 @@ internal fun hasRecordDetailSessionData(
 
 internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean =
     !record.inCollection && !record.collectionRemovedAt.isNullOrBlank()
+
+internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
+    record.inCollection && !record.hasFullDiscogsInfo && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
 
 internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
 

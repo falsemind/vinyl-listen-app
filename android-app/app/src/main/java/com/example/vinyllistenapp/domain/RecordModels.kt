@@ -20,6 +20,7 @@ data class RecordSummary(
     val inCollection: Boolean = true,
     val collectionAddedAt: String? = null,
     val collectionRemovedAt: String? = null,
+    val hasFullDiscogsInfo: Boolean = false,
 )
 
 data class ReleaseSideOption(
