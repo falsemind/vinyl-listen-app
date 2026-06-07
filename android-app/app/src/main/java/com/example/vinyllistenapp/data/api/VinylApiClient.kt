@@ -20,6 +20,7 @@ import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
+import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
@@ -787,6 +788,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         collectionAddedAt = optNullableString("collection_added_at"),
         collectionRemovedAt = optNullableString("collection_removed_at"),
         hasFullDiscogsInfo = optBoolean("has_full_discogs_info", false),
+        tracklist = optJSONArray("tracklist").orEmpty().toReleaseTracks(),
     )
 
 internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
@@ -1159,6 +1161,15 @@ private fun JSONArray.toReleaseSideOptions(): List<ReleaseSideOption> =
             label = item.optString("label"),
         )
     }.filter { it.value.isNotBlank() && it.label.isNotBlank() }
+
+private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
+    mapObjects { item ->
+        ReleaseTrack(
+            position = item.optString("position"),
+            title = item.optString("title"),
+            duration = item.optNullableString("duration"),
+        )
+    }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
 
 private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = List(length()) { index -> transform(getJSONObject(index)) }
 
