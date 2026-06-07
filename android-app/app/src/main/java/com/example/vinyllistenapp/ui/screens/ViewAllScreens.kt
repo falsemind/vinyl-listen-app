@@ -199,13 +199,15 @@ fun MonthSessionsDrilldownScreen(
     onBack: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
+    var subtitle by remember(month) { mutableStateOf("Logged listens") }
     BackendPagedDrilldownScreen(
         title = "${analyticsMonthTitle(month)} Sessions",
-        subtitle = "Logged listens for $month",
+        subtitle = subtitle,
         onBack = onBack,
         emptyText = "No sessions for this month.",
         loadPage = { limit, offset ->
             val page = apiClient.getAnalyticsSessionsForMonth(month = month, limit = limit, offset = offset)
+            subtitle = loggedListenCountLabel(page.pagination.total)
             DrilldownPage(items = page.sessions, hasMore = page.pagination.hasMore)
         },
     ) { session ->
@@ -409,7 +411,7 @@ private fun <T> BackendPagedDrilldownScreen(
         }
     }
 
-    LaunchedEffect(title, subtitle, retryKey) {
+    LaunchedEffect(title, retryKey) {
         loadFirstPage()
     }
 
@@ -704,6 +706,13 @@ private fun analyticsMonthTitle(month: String): String =
 private fun ratingCountLabel(count: Int): String = if (count == 1) "1 rating" else "$count ratings"
 
 private fun listenCountLabel(count: Int): String = if (count == 1) "1 listen" else "$count listens"
+
+private fun loggedListenCountLabel(count: Int): String =
+    if (count == 1) {
+        "1 logged listen"
+    } else {
+        "$count logged listens"
+    }
 
 @Composable
 private fun BackText(onBack: () -> Unit) {

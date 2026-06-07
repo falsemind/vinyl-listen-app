@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
@@ -373,7 +374,17 @@ private fun MonthlyPlayBar(
                                     ),
                                 ),
                             ),
-                )
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Text(
+                        modifier = Modifier.padding(bottom = 2.dp),
+                        text = item.plays.toString(),
+                        color = VinylColors.TextOnSolidAccent,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
             }
         }
         Text(
