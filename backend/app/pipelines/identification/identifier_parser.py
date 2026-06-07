@@ -1318,6 +1318,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
     track_prefix_end = _track_listing_prefix_end(value)
 
     for match in SPACED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _catalog_span_is_inline_year_phrase(value, match.span(1)):
+            continue
         if _catalog_span_is_track_title(value, match.span(1), track_prefix_end):
             continue
         if _catalog_span_is_duration_prefix(value, match.span(1)):
@@ -1332,6 +1334,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         tokens.append(token)
 
     for match in SPACED_CONFUSED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _catalog_span_is_inline_year_phrase(value, match.span(0)):
+            continue
         if _catalog_span_is_track_title(value, match.span(0), track_prefix_end):
             continue
         if _catalog_span_is_duration_prefix(value, match.span(0)):
@@ -1394,6 +1398,14 @@ def _has_rpm_marker_before_span(value: str, span: tuple[int, int], track_prefix_
 def _catalog_span_is_duration_prefix(value: str, span: tuple[int, int]) -> bool:
     _, end = span
     return value[end:].lstrip().startswith(":")
+
+
+def _catalog_span_is_inline_year_phrase(value: str, span: tuple[int, int]) -> bool:
+    start, end = span
+    if start == 0 or not any(character.isalpha() for character in value[:start]):
+        return False
+    candidate = value[start:end].strip()
+    return re.fullmatch(r"in\s+(?:19|20)\d{2}", candidate, re.IGNORECASE) is not None
 
 
 def _looks_like_year_range_token(value: str) -> bool:
