@@ -460,6 +460,13 @@ Returns stored release metadata for an internal release ID.
       "disc_number": null
     }
   ],
+  "tracklist": [
+    {
+      "position": "X2",
+      "title": "S.O.U.R",
+      "duration": null
+    }
+  ],
   "created_at": "2026-04-19T00:00:00Z",
   "updated_at": "2026-06-06T12:00:00Z"
 }
@@ -467,7 +474,7 @@ Returns stored release metadata for an internal release ID.
 
 `has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for this release. Android uses `false` collection records to show "Get Full Release".
 
-`available_sides` and `available_side_options` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached.
+`available_sides`, `available_side_options`, and `tracklist` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached. `tracklist` contains Discogs track rows only; headings and other non-track rows are omitted. `duration` may be `null`.
 
 ## POST /releases/{release_id}/refresh
 
@@ -851,6 +858,13 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
       "label": "Disc 2 - Side X",
       "side": "X",
       "disc_number": 2
+    }
+  ],
+  "tracklist": [
+    {
+      "position": "X2",
+      "title": "S.O.U.R",
+      "duration": null
     }
   ]
 }
