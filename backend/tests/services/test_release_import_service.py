@@ -162,3 +162,26 @@ def test_get_available_side_options_distinguishes_repeated_side_names(
         ("2:X", "Disc 2 - Side X", "X", 2),
         ("2:Y", "Disc 2 - Side Y", "Y", 2),
     ]
+
+
+def test_get_tracklist_returns_discogs_tracks(
+    release_import_discogs_repository_factory,
+    build_release_import_service,
+) -> None:
+    discogs_repository = release_import_discogs_repository_factory(
+        {
+            "tracklist": [
+                {"position": "X1", "type_": "heading", "title": "Side X"},
+                {"position": "X2", "type_": "track", "title": "S.O.U.R", "duration": ""},
+                {"position": "Y1", "type_": "track", "title": "Another Tune", "duration": "5:12"},
+            ]
+        }
+    )
+    service = build_release_import_service(discogs_repository=discogs_repository)
+
+    tracks = service.get_tracklist(db=object(), discogs_release_id=555123)
+
+    assert [(track.position, track.title, track.duration) for track in tracks] == [
+        ("X2", "S.O.U.R", None),
+        ("Y1", "Another Tune", "5:12"),
+    ]

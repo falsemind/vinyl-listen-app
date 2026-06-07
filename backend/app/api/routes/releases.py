@@ -225,6 +225,7 @@ def _release_response(db: Session, service: ReleaseImportService, release) -> Re
             "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
             "available_sides": available_sides,
             "available_side_options": available_side_options,
+            "tracklist": service.get_tracklist(db, release.discogs_release_id),
         }
     )
 
