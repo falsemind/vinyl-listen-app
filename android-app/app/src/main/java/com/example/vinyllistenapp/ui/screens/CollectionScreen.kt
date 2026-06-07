@@ -47,10 +47,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.api.CollectionSyncJobState
@@ -58,6 +60,9 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.CollectionRecord
 import com.example.vinyllistenapp.ui.components.AccentCard
+import com.example.vinyllistenapp.ui.components.ActionMenuAction
+import com.example.vinyllistenapp.ui.components.ActionMenuPopup
+import com.example.vinyllistenapp.ui.components.ActionMenuToggle
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
@@ -86,6 +91,7 @@ fun CollectionScreen(
     var isSyncing by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var isActionMenuOpen by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
@@ -219,7 +225,12 @@ fun CollectionScreen(
                 scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
                 onRetry = { scope.launch { followCollectionSync() } },
-                onSync = { scope.launch { followCollectionSync() } },
+                isActionMenuOpen = isActionMenuOpen,
+                onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
+                onActionMenuDismiss = { isActionMenuOpen = false },
+                onSync = {
+                    scope.launch { followCollectionSync() }
+                },
                 onShowMore = { count ->
                     scope.launch {
                         isLoadingMore = true
@@ -260,10 +271,23 @@ private fun CollectionListContent(
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
+    isActionMenuOpen: Boolean,
+    onActionMenuToggle: () -> Unit,
+    onActionMenuDismiss: () -> Unit,
     onSync: () -> Unit,
     onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
+    val menuOffset =
+        with(density) {
+            IntOffset(
+                x = -VinylSpacing.SpaceMd.roundToPx(),
+                y = 104.dp.roundToPx(),
+            )
+        }
+    val showActionMenu = records.isNotEmpty() && error == null && !isLoadingInitial
+
     Box(modifier = modifier) {
         Column(
             modifier =
@@ -271,25 +295,26 @@ private fun CollectionListContent(
                     .fillMaxSize()
                     .verticalScroll(scrollState)
                     .padding(horizontal = VinylSpacing.SpaceMd)
-                    .padding(top = 48.dp, bottom = VinylSpacing.Space2Xl),
+                    .padding(top = VinylSpacing.Space2Xl, bottom = VinylSpacing.Space2Xl),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
         ) {
-            Text(
-                text = "Records Collection",
-                color = VinylColors.TextPrimary,
-                style = MaterialTheme.typography.headlineLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (records.isNotEmpty() && error == null && !isLoadingInitial && !isSyncing) {
-                    CollectionTopTextAction(
-                        label = "Sync Items",
-                        onClick = onSync,
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = "Records Collection",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.headlineLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (showActionMenu) {
+                    ActionMenuToggle(
+                        isOpen = isActionMenuOpen,
+                        onClick = onActionMenuToggle,
                     )
                 }
             }
@@ -313,6 +338,18 @@ private fun CollectionListContent(
                 )
             }
             Spacer(Modifier.height(96.dp))
+        }
+        if (showActionMenu && isActionMenuOpen) {
+            ActionMenuPopup(
+                offset = menuOffset,
+                onDismiss = onActionMenuDismiss,
+            ) {
+                ActionMenuAction(
+                    label = if (isSyncing) "Syncing..." else "Sync Items",
+                    enabled = !isSyncing,
+                    onClick = onSync,
+                )
+            }
         }
     }
 }
@@ -371,33 +408,6 @@ private fun CollectionCenteredStatus(
             CollectionTextActionButton(label = "Retry Load", onClick = onRetry)
         }
     }
-}
-
-@Composable
-private fun CollectionTopTextAction(
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Text(
-        modifier =
-            Modifier
-                .clickable(
-                    enabled = enabled,
-                    onClickLabel = label,
-                    role = Role.Button,
-                    onClick = onClick,
-                ).padding(vertical = VinylSpacing.SpaceSm),
-        text = label,
-        color = VinylColors.AccentGreen,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        style =
-            MaterialTheme.typography.bodyMedium.copy(
-                fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
-            ),
-    )
 }
 
 @Composable

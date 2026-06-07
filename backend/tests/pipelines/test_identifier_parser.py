@@ -471,6 +471,34 @@ def test_identifier_parser_rejects_copyright_imprint_year_as_catalog() -> None:
     )
 
 
+def test_identifier_parser_rejects_credit_year_phrase_as_catalog() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                (
+                    "DEEP JUNGLE 2018. ALL RIGHTS RESERVED. UNAUTHORISED. COPYRIGHT, "
+                    "PUBLIC PERFORMANCE & BROADCASTING OF THIS RECORD."
+                ),
+                "DILLINJA",
+                "DAT 010",
+                "THIS SIDE",
+                "Hoes & Tricks",
+                "OTHER SIDE",
+                "Luscious Nights",
+                "All tracks written & produced by",
+                "Dillinja in 1995-1996",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("DAT 010",)
+    assert identifiers.artist == "DILLINJA"
+    assert identifiers.title == "Hoes & Tricks"
+    assert identifiers.text_fragments == ("Luscious Nights",)
+
+
 def test_identifier_parser_extracts_hash_separated_catalog_number() -> None:
     parser = IdentifierParser()
 
