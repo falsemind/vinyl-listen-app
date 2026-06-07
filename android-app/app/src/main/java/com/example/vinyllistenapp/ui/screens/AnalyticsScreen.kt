@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,7 +43,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -169,14 +167,10 @@ fun AnalyticsScreen(
                 AnalyticsEmptySectionText()
             } else {
                 SectionActionHeader("Top Records", action = "View All", onActionClick = onViewAllTopRecords)
-                dashboard.topRecords.take(5).forEachIndexed { index, record ->
-                    TopRecordAnalyticsCard(
-                        record = record,
-                        accentColor = analyticsAccent(index),
-                        maxPlays = dashboard.topRecords.maxOfOrNull { it.plays } ?: 1,
-                        onClick = { onOpenRecord(record.record.releaseId) },
-                    )
-                }
+                TopRecordsDistributionCard(
+                    records = dashboard.topRecords.take(5),
+                    onRecordClick = { record -> onOpenRecord(record.record.releaseId) },
+                )
             }
             SectionTitle("Rating Distribution")
             if (dashboard.ratingDistribution.isEmpty()) {
@@ -398,44 +392,17 @@ private fun MonthlyPlayBar(
 }
 
 @Composable
-private fun TopRecordAnalyticsCard(
-    record: AnalyticsTopRecordSummary,
-    accentColor: Color,
-    maxPlays: Int,
-    onClick: () -> Unit,
+private fun TopRecordsDistributionCard(
+    records: List<AnalyticsTopRecordSummary>,
+    onRecordClick: (AnalyticsTopRecordSummary) -> Unit,
 ) {
-    val fraction = (record.plays.toFloat() / maxPlays.toFloat()).coerceIn(0f, 1f)
-
-    AccentCard(
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = record.record.title,
-                color = VinylColors.TextPrimary,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${record.plays} plays",
-                color = accentColor,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.End,
-                modifier =
-                    Modifier
-                        .padding(start = VinylSpacing.SpaceMd)
-                        .widthIn(min = 72.dp),
-            )
-        }
-        ProgressTrack(fraction = fraction, accentColor = accentColor)
-    }
+    DistributionBarCard(
+        items = records,
+        label = { it.record.title },
+        count = { it.plays },
+        countLabel = { plays -> "$plays plays" },
+        onItemClick = onRecordClick,
+    )
 }
 
 @Composable
@@ -533,6 +500,7 @@ private fun <T> DistributionBarCard(
     items: List<T>,
     label: (T) -> String,
     count: (T) -> Int,
+    countLabel: (Int) -> String = { it.toString() },
     onItemClick: ((T) -> Unit)? = null,
 ) {
     val total = items.sumOf(count).coerceAtLeast(1)
@@ -566,7 +534,7 @@ private fun <T> DistributionBarCard(
                 ) {
                     Text(label(item), color = VinylColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
-                        Text(itemCount.toString(), color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text(countLabel(itemCount), color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                         Text("$percent%", color = accentColor, style = MaterialTheme.typography.bodySmall)
                     }
                 }

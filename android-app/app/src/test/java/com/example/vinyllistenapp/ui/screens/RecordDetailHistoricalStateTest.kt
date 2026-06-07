@@ -1,8 +1,10 @@
 package com.example.vinyllistenapp.ui.screens
 
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -74,4 +76,45 @@ class RecordDetailHistoricalStateTest {
         assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(inCollection = false)))
         assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(releaseId = "release-001")))
     }
+
+    @Test
+    fun releaseTotalPlayTimeOnlyShowsForFullReleaseWithEveryDuration() {
+        val fullRecord =
+            recordWithTracks(
+                hasFullDiscogsInfo = true,
+                tracklist =
+                    listOf(
+                        ReleaseTrack(position = "A1", title = "Intro", duration = "1:17"),
+                        ReleaseTrack(position = "A2", title = "Long Form", duration = "1:02:03"),
+                        ReleaseTrack(position = "B1", title = "Outro", duration = "5:40"),
+                    ),
+            )
+
+        assertEquals("Total time: 1h 9m 0s", releaseTotalPlayTimeText(fullRecord))
+        assertEquals(
+            "Total time: 6m 57s",
+            releaseTotalPlayTimeText(fullRecord.copy(tracklist = listOf(ReleaseTrack("A1", "Short Tune", "6:57")))),
+        )
+        assertNull(releaseTotalPlayTimeText(fullRecord.copy(hasFullDiscogsInfo = false)))
+        assertNull(releaseTotalPlayTimeText(fullRecord.copy(tracklist = fullRecord.tracklist + ReleaseTrack("B2", "Dub"))))
+        assertNull(releaseTotalPlayTimeText(fullRecord.copy(tracklist = listOf(ReleaseTrack("A1", "Bad", "3:99")))))
+    }
+
+    private fun recordWithTracks(
+        hasFullDiscogsInfo: Boolean,
+        tracklist: List<ReleaseTrack>,
+    ): RecordSummary =
+        RecordSummary(
+            releaseId = "release-with-tracks",
+            discogsReleaseId = 11646493,
+            artist = "Babe Roots",
+            title = "Ruff Out Deh",
+            label = "4Weed Records",
+            year = 2018,
+            format = "Vinyl",
+            rating = 0,
+            lastPlayed = "0",
+            hasFullDiscogsInfo = hasFullDiscogsInfo,
+            tracklist = tracklist,
+        )
 }

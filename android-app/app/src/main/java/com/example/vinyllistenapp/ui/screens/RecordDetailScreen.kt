@@ -24,10 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,7 +46,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -62,6 +58,10 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.ui.components.ActionMenuAction
+import com.example.vinyllistenapp.ui.components.ActionMenuPopup
+import com.example.vinyllistenapp.ui.components.ActionMenuStatus
+import com.example.vinyllistenapp.ui.components.ActionMenuToggle
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
@@ -167,7 +167,7 @@ fun RecordDetailScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                RecordDetailMenuToggle(
+                ActionMenuToggle(
                     isOpen = isActionMenuOpen,
                     onClick = { isActionMenuOpen = !isActionMenuOpen },
                 )
@@ -248,142 +248,32 @@ fun RecordDetailScreen(
             )
         }
         if (isActionMenuOpen) {
-            RecordDetailActionMenuPopup(
-                record = record,
-                isFetchingFullRelease = isFetchingFullRelease,
+            ActionMenuPopup(
                 offset = menuOffset,
                 onDismiss = { isActionMenuOpen = false },
-                onGetFullRelease = {
-                    scope.launch {
-                        fetchFullRelease()
-                    }
-                },
-                onViewDiscogs = {
-                    isActionMenuOpen = false
-                    uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun RecordDetailMenuToggle(
-    isOpen: Boolean,
-    onClick: () -> Unit,
-) {
-    Icon(
-        modifier =
-            Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .clickable(
-                    onClickLabel = if (isOpen) "Close menu" else "Open menu",
-                    role = Role.Button,
-                    onClick = onClick,
-                ).padding(VinylSpacing.SpaceSm),
-        imageVector = if (isOpen) Icons.Filled.Close else Icons.Filled.Menu,
-        contentDescription = if (isOpen) "Close menu" else "Open menu",
-        tint = VinylColors.AccentGreen,
-    )
-}
-
-@Composable
-private fun RecordDetailActionMenuPopup(
-    record: RecordSummary,
-    isFetchingFullRelease: Boolean,
-    offset: IntOffset,
-    onDismiss: () -> Unit,
-    onGetFullRelease: () -> Unit,
-    onViewDiscogs: () -> Unit,
-) {
-    Popup(
-        alignment = Alignment.TopEnd,
-        offset = offset,
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .width(260.dp)
-                    .shadow(8.dp, VinylShapes.Card)
-                    .clip(VinylShapes.Card)
-                    .background(VinylColors.SurfacePrimary)
-                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.35f), VinylShapes.Card)
-                    .padding(vertical = VinylSpacing.SpaceMd, horizontal = VinylSpacing.SpaceLg),
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
             ) {
                 if (shouldShowGetFullReleaseAction(record)) {
-                    RecordDetailMenuAction(
+                    ActionMenuAction(
                         label = if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release",
                         enabled = !isFetchingFullRelease,
-                        onClick = onGetFullRelease,
+                        onClick = {
+                            scope.launch {
+                                fetchFullRelease()
+                            }
+                        },
                     )
                 } else if (record.hasFullDiscogsInfo) {
-                    RecordDetailFullReleaseStatus()
+                    ActionMenuStatus(label = "Full Discogs release")
                 }
-                RecordDetailMenuAction(
+                ActionMenuAction(
                     label = "View on Discogs",
-                    onClick = onViewDiscogs,
+                    onClick = {
+                        isActionMenuOpen = false
+                        uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
+                    },
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun RecordDetailMenuAction(
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Text(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(
-                    enabled = enabled,
-                    onClickLabel = label,
-                    role = Role.Button,
-                    onClick = onClick,
-                ).padding(vertical = VinylSpacing.SpaceXs),
-        text = label,
-        color = VinylColors.AccentGreen,
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelLarge,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
-private fun RecordDetailFullReleaseStatus() {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = VinylSpacing.SpaceXs),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            modifier = Modifier.size(18.dp),
-            imageVector = Icons.Filled.Check,
-            contentDescription = null,
-            tint = VinylColors.AccentGreen,
-        )
-        Spacer(Modifier.width(VinylSpacing.SpaceSm))
-        Text(
-            text = "Full Discogs release",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -614,7 +504,7 @@ private fun RecordTracklistContent(
                     style = MaterialTheme.typography.bodyMedium,
                 )
 
-            else ->
+            else -> {
                 record.tracklist.forEach { track ->
                     Text(
                         text = displayReleaseTrack(track),
@@ -622,6 +512,21 @@ private fun RecordTracklistContent(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                releaseTotalPlayTimeText(record)?.let { totalTime ->
+                    Spacer(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(VinylColors.BorderDefault),
+                    )
+                    Text(
+                        text = totalTime,
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
     }
 }
@@ -635,6 +540,47 @@ private fun displayReleaseTrack(track: ReleaseTrack): String {
             ?.let { " $it" }
             .orEmpty()
     return "${track.position}: ${track.title}$duration"
+}
+
+internal fun releaseTotalPlayTimeText(record: RecordSummary): String? {
+    if (!record.hasFullDiscogsInfo || record.tracklist.isEmpty()) {
+        return null
+    }
+    val totalSeconds =
+        record.tracklist.sumOf { track ->
+            parseReleaseTrackDurationSeconds(track.duration) ?: return null
+        }
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    val formattedTime =
+        if (hours > 0) {
+            "${hours}h ${minutes}m ${seconds}s"
+        } else {
+            "${minutes}m ${seconds}s"
+        }
+    return "Total time: $formattedTime"
+}
+
+private fun parseReleaseTrackDurationSeconds(duration: String?): Int? {
+    val parts =
+        duration
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.split(":")
+            ?: return null
+    if (parts.size !in 2..3 || parts.any { part -> part.isBlank() || part.any { !it.isDigit() } }) {
+        return null
+    }
+    val values = parts.map { it.toIntOrNull() ?: return null }
+    if (values.drop(1).any { it !in 0..59 }) {
+        return null
+    }
+    return when (values.size) {
+        2 -> values[0] * 60 + values[1]
+        3 -> values[0] * 3600 + values[1] * 60 + values[2]
+        else -> null
+    }
 }
 
 @Composable
