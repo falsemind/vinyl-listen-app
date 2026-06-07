@@ -51,4 +51,27 @@ class RecordDetailHistoricalStateTest {
             recordCollectionRemovedMessage(removedRecord),
         )
     }
+
+    @Test
+    fun fullReleaseActionOnlyShowsForBasicCollectionRecords() {
+        val basicCollectionRecord =
+            RecordSummary(
+                releaseId = "release-basic",
+                discogsReleaseId = 11646493,
+                artist = "Babe Roots",
+                title = "Ruff Out Deh",
+                label = "4Weed Records",
+                year = 2018,
+                format = "Vinyl",
+                rating = 0,
+                lastPlayed = "0",
+                inCollection = true,
+                hasFullDiscogsInfo = false,
+            )
+
+        assertTrue(shouldShowGetFullReleaseAction(basicCollectionRecord))
+        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(hasFullDiscogsInfo = true)))
+        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(inCollection = false)))
+        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(releaseId = "release-001")))
+    }
 }

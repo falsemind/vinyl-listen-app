@@ -371,6 +371,16 @@ Retrieve stored release metadata.
 
 ---
 
+### Refresh Release
+
+```
+POST /api/v1/releases/{release_id}/refresh
+```
+
+Fetch full Discogs metadata for one stored release and update the local database/cache.
+
+---
+
 ### Create Listening Session
 
 ```

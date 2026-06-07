@@ -28,6 +28,13 @@ class ReleaseSideOptionData:
     disc_number: int | None = None
 
 
+@dataclass(frozen=True)
+class ReleaseTrackData:
+    position: str
+    title: str
+    duration: str | None = None
+
+
 def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
     discogs_release_id = raw_json.get("id")
     title = _clean_string(raw_json.get("title"))
@@ -115,6 +122,34 @@ def extract_release_side_options(raw_discogs_json: dict[str, Any] | None) -> lis
         )
 
     return options
+
+
+def extract_release_tracklist(raw_discogs_json: dict[str, Any] | None) -> list[ReleaseTrackData]:
+    tracklist = raw_discogs_json.get("tracklist") if isinstance(raw_discogs_json, dict) else None
+    if not isinstance(tracklist, list):
+        return []
+
+    tracks: list[ReleaseTrackData] = []
+    for track in tracklist:
+        if not isinstance(track, dict):
+            continue
+        if track.get("type_") not in (None, "track"):
+            continue
+
+        position = _clean_string(track.get("position"))
+        title = _clean_string(track.get("title"))
+        if not position or not title:
+            continue
+
+        tracks.append(
+            ReleaseTrackData(
+                position=position,
+                title=title,
+                duration=_clean_string(track.get("duration")),
+            )
+        )
+
+    return tracks
 
 
 def _extract_side_prefix(position: str) -> str | None:

@@ -20,11 +20,19 @@ data class RecordSummary(
     val inCollection: Boolean = true,
     val collectionAddedAt: String? = null,
     val collectionRemovedAt: String? = null,
+    val hasFullDiscogsInfo: Boolean = false,
+    val tracklist: List<ReleaseTrack> = emptyList(),
 )
 
 data class ReleaseSideOption(
     val value: String,
     val label: String,
+)
+
+data class ReleaseTrack(
+    val position: String,
+    val title: String,
+    val duration: String? = null,
 )
 
 data class ReleaseSearchResult(

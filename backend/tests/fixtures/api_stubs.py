@@ -10,7 +10,7 @@ from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.release_mapper import ReleaseSideOptionData
+from app.services.release_mapper import ReleaseSideOptionData, ReleaseTrackData
 from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
 
 
@@ -163,11 +163,17 @@ class StubReleaseImportService:
         self.import_result = ReleaseImportResult(release=self.release, created=True)
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
+        self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
+        self.has_full_discogs_info_value = True
         self.available_sides = ["A", "AA"]
         self.available_side_options = [
             ReleaseSideOptionData(value="A", label="Side A", side="A"),
             ReleaseSideOptionData(value="AA", label="Side AA", side="AA"),
+        ]
+        self.tracklist = [
+            ReleaseTrackData(position="A1", title="Wildlife Analysis", duration="1:17"),
+            ReleaseTrackData(position="A2", title="An Eagle In Your Mind"),
         ]
 
     def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
@@ -182,6 +188,16 @@ class StubReleaseImportService:
             return self.release
         return None
 
+    def refresh_release(self, db, release_id: str) -> ReleaseImportResult | None:
+        self.refresh_calls.append(release_id)
+        release = self.get_release(db, release_id)
+        if release is None:
+            return None
+        return self.import_release(db, release.discogs_release_id, force_refresh=True)
+
+    def has_full_discogs_info(self, _db, _discogs_release_id: int) -> bool:
+        return self.has_full_discogs_info_value
+
     def get_available_sides(self, _db, discogs_release_id: int) -> list[str]:
         if discogs_release_id == self.release.discogs_release_id:
             return self.available_sides
@@ -190,6 +206,11 @@ class StubReleaseImportService:
     def get_available_side_options(self, _db, discogs_release_id: int) -> list[ReleaseSideOptionData]:
         if discogs_release_id == self.release.discogs_release_id:
             return self.available_side_options
+        return []
+
+    def get_tracklist(self, _db, discogs_release_id: int) -> list[ReleaseTrackData]:
+        if discogs_release_id == self.release.discogs_release_id:
+            return self.tracklist
         return []
 
 

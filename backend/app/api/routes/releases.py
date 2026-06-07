@@ -186,6 +186,34 @@ def get_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
+    return _release_response(db, service, release)
+
+
+@router.post("/{release_id}/refresh", response_model=ReleaseResponse)
+def refresh_release(
+    release_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+):
+    try:
+        result = service.refresh_release(db, release_id)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+    except DiscogsClientError as error:
+        error_message = str(error)
+        status_code = status.HTTP_404_NOT_FOUND if "(404)" in error_message else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=status_code, detail=error_message) from error
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{release_id}' was not found.",
+        )
+
+    return _release_response(db, service, result.release)
+
+
+def _release_response(db: Session, service: ReleaseImportService, release) -> ReleaseResponse:
     available_side_options = service.get_available_side_options(db, release.discogs_release_id)
     available_sides = []
     for option in available_side_options:
@@ -194,8 +222,10 @@ def get_release(
 
     return ReleaseResponse.model_validate(release).model_copy(
         update={
+            "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
             "available_sides": available_sides,
             "available_side_options": available_side_options,
+            "tracklist": service.get_tracklist(db, release.discogs_release_id),
         }
     )
 

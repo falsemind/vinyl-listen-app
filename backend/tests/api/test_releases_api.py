@@ -212,15 +212,50 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "collection_removed_at": None,
         "last_discogs_sync_at": None,
         "discogs_instance_id": None,
+        "has_full_discogs_info": True,
         "available_sides": ["A", "AA"],
         "available_side_options": [
             {"value": "A", "label": "Side A", "side": "A", "disc_number": None},
             {"value": "AA", "label": "Side AA", "side": "AA", "disc_number": None},
         ],
+        "tracklist": [
+            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17"},
+            {"position": "A2", "title": "An Eagle In Your Mind", "duration": None},
+        ],
         "created_at": "2026-04-19T00:00:00Z",
         "updated_at": "2026-04-19T00:00:00Z",
     }
     assert service.lookup_calls == ["release-123"]
+
+
+def test_refresh_release_endpoint_fetches_full_release(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/releases/release-123/refresh")
+
+    assert response.status_code == 200
+    assert response.json()["has_full_discogs_info"] is True
+    assert service.refresh_calls == ["release-123"]
+    assert service.import_calls == [(555123, True)]
+
+
+def test_refresh_release_endpoint_returns_404_when_release_missing(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/releases/missing-release/refresh")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Release 'missing-release' was not found."}
 
 
 def test_get_release_endpoint_returns_404_when_release_missing(

@@ -14,7 +14,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
 | `collection_sync_service.py` | Reconcile Discogs folder `0` collection membership with local releases while preserving historical session data. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
-| `release_import_service.py` | Import or fetch a Discogs release into the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
+| `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
 | `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
@@ -238,7 +238,7 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 
 ## ReleaseImportService
 
-`ReleaseImportService` powers release import and local release reads.
+`ReleaseImportService` powers release import, one-record Discogs refresh, and local release reads.
 
 ### Import flow
 
@@ -249,9 +249,14 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 
 `ReleaseImportResult.status` returns `created` or `updated`, based on whether the repository created a new row.
 
+### Refresh flow
+
+`refresh_release` reads an existing local release by internal ID, then imports its Discogs release ID with `force_refresh=True`. This updates mapped release fields and the full Discogs cache for one collection record without making bulk collection sync fetch every full release.
+
 ### Read and mapping helpers
 
 - `get_release` reads a local release by database ID.
+- `has_full_discogs_info` reports whether a full Discogs payload is cached for the release.
 - `get_available_sides` reads cached Discogs track positions and returns ordered side prefixes for session logging.
 - `map_discogs_payload` exposes the Discogs-to-internal mapping for tests and route workflows.
 

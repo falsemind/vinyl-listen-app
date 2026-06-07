@@ -15,6 +15,12 @@ class ReleaseSideOptionResponse(BaseModel):
     disc_number: int | None = None
 
 
+class ReleaseTrackResponse(BaseModel):
+    position: str
+    title: str
+    duration: str | None = None
+
+
 class ReleaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,8 +42,10 @@ class ReleaseResponse(BaseModel):
     collection_removed_at: datetime | None = None
     last_discogs_sync_at: datetime | None = None
     discogs_instance_id: int | None = None
+    has_full_discogs_info: bool = False
     available_sides: list[str] = Field(default_factory=list)
     available_side_options: list[ReleaseSideOptionResponse] = Field(default_factory=list)
+    tracklist: list[ReleaseTrackResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
