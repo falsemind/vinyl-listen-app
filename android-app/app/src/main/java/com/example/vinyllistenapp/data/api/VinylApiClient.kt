@@ -285,6 +285,8 @@ class VinylApiClient(
                                         .optNullableDouble("average_rating")
                                         ?.let { String.format(Locale.US, "%.1f", it) }
                                         ?: "-",
+                                topTrack = item.optNullableString("top_track"),
+                                topMood = item.optNullableString("top_mood"),
                             )
                         },
                 ratingDistribution =

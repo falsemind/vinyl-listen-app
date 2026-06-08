@@ -36,7 +36,7 @@ class StubAnalyticsRepository:
 
     def get_top_records(self, _db, *, limit: int):
         self.top_limit = limit
-        return [(self.release, 4, 4.25)]
+        return [(self.release, 4, 4.25, "Roygbiv", "Focused")]
 
     def get_sessions_for_month(self, _db, *, month: str, limit: int, offset: int):
         self.month_calls.append((month, limit, offset))
@@ -117,6 +117,8 @@ def test_get_top_records_validates_limit_and_maps_rows() -> None:
     assert result[0].release.id == "release-123"
     assert result[0].plays == 4
     assert result[0].average_rating == 4.25
+    assert result[0].top_track == "Roygbiv"
+    assert result[0].top_mood == "Focused"
 
 
 @pytest.mark.parametrize("limit", [0, 251])

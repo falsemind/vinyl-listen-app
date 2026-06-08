@@ -58,6 +58,8 @@ class StubAnalyticsService:
                 release=self.release,
                 plays=5,
                 average_rating=4.46,
+                top_track="Roygbiv",
+                top_mood="Focused",
             )
         ]
 
@@ -148,6 +150,8 @@ def test_top_records_endpoint_returns_records_and_forwards_limit() -> None:
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "plays": 5,
                 "average_rating": 4.5,
+                "top_track": "Roygbiv",
+                "top_mood": "Focused",
             }
         ]
     }

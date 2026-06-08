@@ -94,6 +94,8 @@ data class AnalyticsTopRecordSummary(
     val record: RecordSummary,
     val plays: Int,
     val averageRating: String,
+    val topTrack: String? = null,
+    val topMood: String? = null,
 )
 
 data class RatingDistributionItem(

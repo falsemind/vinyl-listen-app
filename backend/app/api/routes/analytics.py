@@ -73,6 +73,8 @@ def get_top_records(
                 thumbnail_url=item.release.cover_image_url,
                 plays=item.plays,
                 average_rating=round(item.average_rating, 1) if item.average_rating is not None else None,
+                top_track=item.top_track,
+                top_mood=item.top_mood,
             )
             for item in records
         ]
