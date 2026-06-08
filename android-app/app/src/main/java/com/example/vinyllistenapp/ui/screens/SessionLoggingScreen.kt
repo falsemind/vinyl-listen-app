@@ -115,7 +115,7 @@ fun SessionLoggingScreen(
 
     LaunchedEffect(releaseId, loadRetryKey) {
         releaseId?.let { id ->
-            runCatching { apiClient.getRelease(id) }
+            runCatching { loadSessionRecord(id, apiClient::getRelease, apiClient::refreshRelease) }
                 .onSuccess {
                     loadedRecord = it
                     loadError = null
@@ -338,7 +338,7 @@ fun EditSessionScreen(
         isLoading = true
         runCatching {
             val session = apiClient.getSession(targetSessionId)
-            session to apiClient.getRelease(session.releaseId)
+            session to loadSessionRecord(session.releaseId, apiClient::getRelease, apiClient::refreshRelease)
         }.onSuccess { (session, release) ->
             loadedSession = session
             loadedRecord = release
@@ -991,6 +991,18 @@ internal fun sessionSideOptions(
     }
 
 private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
+
+internal suspend fun loadSessionRecord(
+    releaseId: String,
+    getRelease: suspend (String) -> RecordSummary,
+    refreshRelease: suspend (String) -> RecordSummary,
+): RecordSummary {
+    val release = getRelease(releaseId)
+    if (release.hasFullDiscogsInfo) {
+        return release
+    }
+    return runCatching { refreshRelease(releaseId) }.getOrElse { release }
+}
 
 internal fun displaySessionSide(side: String): String = side.takeIf { it.isNotBlank() }?.let { "Side $it" }.orEmpty()
 
