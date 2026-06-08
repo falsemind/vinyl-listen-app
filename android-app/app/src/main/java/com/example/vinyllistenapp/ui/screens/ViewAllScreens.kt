@@ -686,6 +686,26 @@ private fun TopRecordListItem(
                     Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            Spacer(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(VinylColors.BorderDefault),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+                ) {
+                    TopRecordMetricRow(text = "Rating: ${record.averageRating}", color = VinylColors.AccentGreen)
+                    TopRecordMetricRow(text = "Top track: ${record.topTrack ?: "n/a"}", color = VinylColors.AccentOrange)
+                    TopRecordMetricRow(text = "Top mood: ${record.topMood ?: "n/a"}", color = VinylColors.AccentPurple)
+                }
                 Text(
                     text = "${record.plays} plays",
                     color = VinylColors.AccentGreen,
@@ -698,16 +718,6 @@ private fun TopRecordListItem(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(VinylColors.BorderDefault),
-            )
-            TopRecordMetricRow(text = "Rating: ${record.averageRating}", color = VinylColors.AccentGreen)
-            TopRecordMetricRow(text = "Top track: ${record.topTrack ?: "n/a"}", color = VinylColors.AccentOrange)
-            TopRecordMetricRow(text = "Top mood: ${record.topMood ?: "n/a"}", color = VinylColors.AccentPurple)
         }
     }
 }
