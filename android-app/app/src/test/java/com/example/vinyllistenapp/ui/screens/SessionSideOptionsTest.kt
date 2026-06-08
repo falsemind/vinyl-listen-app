@@ -95,6 +95,20 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun shouldShowAllTracksOptionRequiresMultipleTracks() {
+        assertFalse(shouldShowAllTracksOption(emptyList()))
+        assertFalse(shouldShowAllTracksOption(listOf(SessionTrackOption("A1", "A1: Intro"))))
+        assertTrue(
+            shouldShowAllTracksOption(
+                listOf(
+                    SessionTrackOption("A1", "A1: Intro"),
+                    SessionTrackOption("A2", "A2: Main"),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun isBuiltInMoodMatchesIgnoringCaseAndWhitespace() {
         assertTrue(isBuiltInMood(" calm "))
         assertTrue(isBuiltInMood("FOCUSED"))

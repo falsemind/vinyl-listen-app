@@ -761,6 +761,7 @@ private fun SessionTrackSelector(
     val selectedPositionSet = selectedPositions.toSet()
     val allPositions = trackOptions.map { it.position }
     val allTracksSelected = trackOptions.isNotEmpty() && selectedPositionSet.containsAll(allPositions)
+    val showAllTracksOption = shouldShowAllTracksOption(trackOptions)
     val actionLabel = if (expanded) "Close track selector" else "Open track selector"
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else -90f,
@@ -833,13 +834,15 @@ private fun SessionTrackSelector(
                             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
                             .verticalScroll(rememberScrollState()),
                 ) {
-                    TrackSelectorRow(
-                        label = "Played all tracks",
-                        selected = allTracksSelected,
-                        onClick = {
-                            onSelectionChange(if (allTracksSelected) emptyList() else allPositions)
-                        },
-                    )
+                    if (showAllTracksOption) {
+                        TrackSelectorRow(
+                            label = "Played all tracks",
+                            selected = allTracksSelected,
+                            onClick = {
+                                onSelectionChange(if (allTracksSelected) emptyList() else allPositions)
+                            },
+                        )
+                    }
                     trackOptions.forEachIndexed { index, trackOption ->
                         TrackSelectorRow(
                             label = trackOption.label,
@@ -1037,6 +1040,8 @@ internal fun displaySessionTrack(track: ReleaseTrack): String =
             append(duration)
         }
     }
+
+internal fun shouldShowAllTracksOption(trackOptions: List<SessionTrackOption>): Boolean = trackOptions.size > 1
 
 private fun ReleaseTrack.sidePrefix(): String? {
     val letters = position.trim().uppercase().takeWhile { it.isLetter() }
