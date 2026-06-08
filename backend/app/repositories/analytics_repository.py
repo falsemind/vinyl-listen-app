@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 
 
 class AnalyticsRepository:
@@ -49,14 +49,23 @@ class AnalyticsRepository:
     def get_top_records(db: Session, *, limit: int):
         plays = func.count(Sessions.id).label("plays")
         average_rating = func.avg(Sessions.rating).label("average_rating")
-        return (
+        rows = (
             db.query(Releases, plays, average_rating)
             .join(Sessions, Sessions.release_id == Releases.id)
             .group_by(Releases.id)
-            .order_by(plays.desc(), Releases.artist.asc(), Releases.title.asc())
+            .order_by(
+                plays.desc(), func.coalesce(average_rating, 0).desc(), Releases.artist.asc(), Releases.title.asc()
+            )
             .limit(limit)
             .all()
         )
+        release_ids = [release.id for release, _plays, _average_rating in rows]
+        top_tracks = AnalyticsRepository._get_top_tracks_by_release(db, release_ids)
+        top_moods = AnalyticsRepository._get_top_moods_by_release(db, release_ids)
+        return [
+            (release, plays, average_rating, top_tracks.get(release.id), top_moods.get(release.id))
+            for release, plays, average_rating in rows
+        ]
 
     @staticmethod
     def get_records_for_rating(
@@ -224,6 +233,63 @@ class AnalyticsRepository:
             release_counts.values(),
             key=lambda item: (-item[1], item[0].artist.lower(), item[0].title.lower()),
         )
+
+    @staticmethod
+    def _get_top_tracks_by_release(db: Session, release_ids: list[str]) -> dict[str, str]:
+        if not release_ids:
+            return {}
+
+        rows = (
+            db.query(Sessions.release_id, SessionTracks.track_title)
+            .join(SessionTracks, SessionTracks.session_id == Sessions.id)
+            .filter(Sessions.release_id.in_(release_ids))
+            .filter(SessionTracks.track_title.isnot(None))
+            .filter(func.trim(SessionTracks.track_title) != "")
+            .all()
+        )
+        track_counts: dict[str, dict[str, tuple[str, int]]] = {}
+        for release_id, track_title in rows:
+            canonical_title = track_title.strip()
+            if not canonical_title:
+                continue
+            track_key = canonical_title.lower()
+            release_counts = track_counts.setdefault(release_id, {})
+            existing_title, count = release_counts.get(track_key, (canonical_title, 0))
+            release_counts[track_key] = (existing_title, count + 1)
+
+        return {
+            release_id: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
+            for release_id, counts in track_counts.items()
+            if counts
+        }
+
+    @staticmethod
+    def _get_top_moods_by_release(db: Session, release_ids: list[str]) -> dict[str, str]:
+        if not release_ids:
+            return {}
+
+        rows = (
+            db.query(Sessions.release_id, Sessions.mood)
+            .filter(Sessions.release_id.in_(release_ids))
+            .filter(Sessions.mood.isnot(None))
+            .filter(func.trim(Sessions.mood) != "")
+            .all()
+        )
+        mood_counts: dict[str, dict[str, tuple[str, int]]] = {}
+        for release_id, mood in rows:
+            canonical_mood = mood.strip()
+            if not canonical_mood:
+                continue
+            mood_key = canonical_mood.lower()
+            release_counts = mood_counts.setdefault(release_id, {})
+            existing_mood, count = release_counts.get(mood_key, (canonical_mood, 0))
+            release_counts[mood_key] = (existing_mood, count + 1)
+
+        return {
+            release_id: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
+            for release_id, counts in mood_counts.items()
+            if counts
+        }
 
     @staticmethod
     def _styles_include(styles, target_style: str) -> bool:

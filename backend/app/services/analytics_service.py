@@ -35,6 +35,8 @@ class AnalyticsTopRecord:
     release: Releases
     plays: int
     average_rating: float | None
+    top_track: str | None
+    top_mood: str | None
 
 
 @dataclass(frozen=True)
@@ -94,8 +96,13 @@ class AnalyticsService:
                 release=release,
                 plays=int(plays),
                 average_rating=float(average_rating) if average_rating is not None else None,
+                top_track=top_track,
+                top_mood=top_mood,
             )
-            for release, plays, average_rating in self._analytics_repository.get_top_records(db, limit=limit)
+            for release, plays, average_rating, top_track, top_mood in self._analytics_repository.get_top_records(
+                db,
+                limit=limit,
+            )
         ]
 
     def get_sessions_for_month(

@@ -20,6 +20,8 @@ class AnalyticsTopRecordItem(BaseModel):
     thumbnail_url: str | None = None
     plays: int
     average_rating: float | None
+    top_track: str | None = None
+    top_mood: str | None = None
 
 
 class AnalyticsTopRecordsResponse(BaseModel):

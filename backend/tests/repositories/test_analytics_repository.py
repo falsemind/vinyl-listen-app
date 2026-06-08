@@ -150,6 +150,56 @@ def test_get_sessions_for_month_returns_paged_joined_rows() -> None:
     assert [(session.id, release.title) for session, release in rows] == [("session-2", "Silentintroduction")]
 
 
+def test_get_top_records_ranks_by_plays_then_rating_and_includes_track_mood() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_drilldown_tables(connection)
+        _insert_drilldown_releases(connection)
+        connection.exec_driver_sql("""
+            INSERT INTO sessions (id, release_id, rating, mood, played_at, created_at)
+            VALUES
+                ('session-1', 'release-1', 5, 'Focused', '2026-05-02T10:00:00+00:00', '2026-05-02T10:00:00+00:00'),
+                ('session-2', 'release-1', 3, 'Calm', '2026-05-03T10:00:00+00:00', '2026-05-03T10:00:00+00:00'),
+                ('session-3', 'release-2', 5, 'LateNight', '2026-05-04T10:00:00+00:00', '2026-05-04T10:00:00+00:00'),
+                ('session-4', 'release-2', 5, 'LateNight', '2026-05-05T10:00:00+00:00', '2026-05-05T10:00:00+00:00'),
+                ('session-5', 'release-3', 3, 'Calm', '2026-05-06T10:00:00+00:00', '2026-05-06T10:00:00+00:00'),
+                ('session-6', 'release-3', 3, 'Calm', '2026-05-07T10:00:00+00:00', '2026-05-07T10:00:00+00:00'),
+                ('session-7', 'release-3', 3, 'Focused', '2026-05-08T10:00:00+00:00', '2026-05-08T10:00:00+00:00')
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO session_tracks (
+                id,
+                session_id,
+                track_position,
+                track_title,
+                track_duration,
+                track_sequence,
+                created_at
+            )
+            VALUES
+                ('track-1', 'session-1', 'A1', 'Carrier', NULL, 1, '2026-05-02T10:00:00+00:00'),
+                ('track-2', 'session-2', 'A2', 'Mango Drive', NULL, 2, '2026-05-03T10:00:00+00:00'),
+                ('track-3', 'session-3', 'A1', 'Silentintroduction', NULL, 1, '2026-05-04T10:00:00+00:00'),
+                ('track-4', 'session-4', 'A1', 'Silentintroduction', NULL, 1, '2026-05-05T10:00:00+00:00'),
+                ('track-5', 'session-5', 'A1', 'Phylyps Trak', NULL, 1, '2026-05-06T10:00:00+00:00'),
+                ('track-6', 'session-6', 'A1', 'Phylyps Trak', NULL, 1, '2026-05-07T10:00:00+00:00')
+            """)
+
+    with session_factory() as db:
+        rows = AnalyticsRepository.get_top_records(db, limit=3)
+
+    assert [
+        (release.title, plays, round(average_rating, 1), top_track, top_mood)
+        for release, plays, average_rating, top_track, top_mood in rows
+    ] == [
+        ("Phylyps Trak", 3, 3.0, "Phylyps Trak", "Calm"),
+        ("Silentintroduction", 2, 5.0, "Silentintroduction", "LateNight"),
+        ("Carrier", 2, 4.0, "Carrier", "Calm"),
+    ]
+
+
 def test_get_records_for_rating_groups_release_counts() -> None:
     engine = create_engine("sqlite:///:memory:")
     session_factory = sessionmaker(bind=engine)
@@ -283,12 +333,19 @@ def _create_drilldown_tables(connection: Connection) -> None:
             artist TEXT NOT NULL,
             title TEXT NOT NULL,
             year INTEGER,
+            format TEXT,
             label TEXT,
             catalog_number TEXT,
             barcode TEXT,
             genres TEXT,
             styles TEXT,
+            thumbnail_url TEXT,
             cover_image_url TEXT,
+            in_collection BOOLEAN,
+            collection_added_at TIMESTAMP,
+            collection_removed_at TIMESTAMP,
+            last_discogs_sync_at TIMESTAMP,
+            discogs_instance_id INTEGER,
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
@@ -305,6 +362,17 @@ def _create_drilldown_tables(connection: Connection) -> None:
             created_at TIMESTAMP
         )
         """)
+    connection.exec_driver_sql("""
+        CREATE TABLE session_tracks (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            track_position TEXT NOT NULL,
+            track_title TEXT NOT NULL,
+            track_duration TEXT,
+            track_sequence INTEGER,
+            created_at TIMESTAMP
+        )
+        """)
 
 
 def _insert_drilldown_releases(connection: Connection) -> None:
@@ -314,8 +382,11 @@ def _insert_drilldown_releases(connection: Connection) -> None:
             discogs_release_id,
             artist,
             title,
+            format,
             styles,
+            thumbnail_url,
             cover_image_url,
+            in_collection,
             created_at,
             updated_at
         )
@@ -325,8 +396,11 @@ def _insert_drilldown_releases(connection: Connection) -> None:
                 101,
                 'Rhythm & Sound',
                 'Carrier',
+                'Vinyl',
                 '["Dub Techno", "Minimal"]',
+                'https://example.com/carrier-thumb.jpg',
                 'https://example.com/carrier.jpg',
+                1,
                 '2026-05-01T10:00:00+00:00',
                 '2026-05-01T10:00:00+00:00'
             ),
@@ -335,8 +409,11 @@ def _insert_drilldown_releases(connection: Connection) -> None:
                 102,
                 'Moodymann',
                 'Silentintroduction',
+                'Vinyl',
                 '["House", "Deep House"]',
+                'https://example.com/silent-thumb.jpg',
                 'https://example.com/silent.jpg',
+                1,
                 '2026-05-01T10:00:00+00:00',
                 '2026-05-01T10:00:00+00:00'
             ),
@@ -345,8 +422,11 @@ def _insert_drilldown_releases(connection: Connection) -> None:
                 103,
                 'Basic Channel',
                 'Phylyps Trak',
+                'Vinyl',
                 '["dub techno"]',
+                'https://example.com/phylyps-thumb.jpg',
                 'https://example.com/phylyps.jpg',
+                1,
                 '2026-05-01T10:00:00+00:00',
                 '2026-05-01T10:00:00+00:00'
             )
