@@ -962,6 +962,8 @@ Drilldown endpoints use the same pagination envelope as View All screens.
 
 ### Response
 
+Records are ordered by play count descending, then average rating descending.
+
 ```json
 {
   "records": [
@@ -972,7 +974,9 @@ Drilldown endpoints use the same pagination envelope as View All screens.
       "title": "Music Has The Right To Children",
       "thumbnail_url": "https://...",
       "plays": 12,
-      "average_rating": 4.5
+      "average_rating": 4.5,
+      "top_track": "Roygbiv",
+      "top_mood": "Focused"
     }
   ]
 }
