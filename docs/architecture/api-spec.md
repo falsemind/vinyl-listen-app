@@ -627,6 +627,7 @@ Logs a listening session.
 {
   "release_id": "internal_id",
   "side": "A",
+  "track_positions": ["A1", "A2"],
   "rating": 1,
   "mood": "Calm",
   "notes": "Amazing pressing, deep bass.",
@@ -655,6 +656,7 @@ Logs a listening session.
 ```
 rating must be 1–5
 side must exist for the release when Discogs side metadata is known
+track_positions optional; when present, each track must exist on the selected side in cached full Discogs tracklist data
 notes optional
 played_at required
 ```
@@ -670,6 +672,7 @@ Editable fields:
 ```json
 {
   "side": "B",
+  "track_positions": ["B1"],
   "rating": 4,
   "mood": "Focused",
   "notes": "Updated after replaying the second side."
@@ -689,6 +692,14 @@ All fields are optional, but at least one field must be present. Send `null` to 
   "notes": "Updated after replaying the second side.",
   "played_at": "2026-03-14T19:21:00Z",
   "vinyl_side": "B",
+  "tracks": [
+    {
+      "position": "B1",
+      "title": "Flip Tune",
+      "duration": null,
+      "sequence": 3
+    }
+  ],
   "created_at": "2026-04-19T08:30:00Z",
   "can_edit": true,
   "editable_until": "2026-04-19T08:45:00Z"
@@ -895,6 +906,14 @@ Used for listening history.
       "date": "2026-03-10",
       "played_at": "2026-03-10T23:30:00Z",
       "side": "B",
+      "tracks": [
+        {
+          "position": "B1",
+          "title": "Flip Tune",
+          "duration": null,
+          "sequence": 3
+        }
+      ],
       "rating": 4,
       "mood": "Calm",
       "notes": "The low end opened up after a clean.",
