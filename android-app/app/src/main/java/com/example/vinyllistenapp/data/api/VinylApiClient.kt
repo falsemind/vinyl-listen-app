@@ -21,6 +21,7 @@ import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
@@ -378,6 +379,7 @@ class VinylApiClient(
     suspend fun createSession(
         releaseId: String,
         side: String?,
+        trackPositions: List<String> = emptyList(),
         rating: Int?,
         mood: String?,
         notes: String?,
@@ -388,6 +390,7 @@ class VinylApiClient(
                     .put("release_id", releaseId)
                     .put("played_at", Instant.now().toString())
                     .putNullable("side", side)
+                    .put("track_positions", trackPositions.toJSONArray())
                     .putNullable("rating", rating)
                     .putNullable("mood", mood)
                     .putNullable("notes", notes?.takeIf { it.isNotBlank() })
@@ -402,6 +405,7 @@ class VinylApiClient(
     suspend fun updateSession(
         sessionId: String,
         side: String?,
+        trackPositions: List<String> = emptyList(),
         rating: Int?,
         mood: String?,
         notes: String?,
@@ -410,6 +414,7 @@ class VinylApiClient(
             val body =
                 JSONObject()
                     .putNullable("side", side)
+                    .put("track_positions", trackPositions.toJSONArray())
                     .putNullable("rating", rating)
                     .putNullable("mood", mood)
                     .putNullable("notes", notes?.takeIf { it.isNotBlank() })
@@ -880,6 +885,7 @@ internal fun JSONObject.toListeningSession(
         createdAt = optNullableString("created_at"),
         canEdit = optBoolean("can_edit", false),
         editableUntil = optNullableString("editable_until"),
+        tracks = optJSONArray("tracks").orEmpty().toSessionTracks(),
     )
 }
 
@@ -1170,6 +1176,21 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
             duration = item.optNullableString("duration"),
         )
     }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun JSONArray.toSessionTracks(): List<SessionTrack> =
+    mapObjects { item ->
+        SessionTrack(
+            position = item.optString("position"),
+            title = item.optString("title"),
+            duration = item.optNullableString("duration"),
+            sequence = item.optNullableInt("sequence"),
+        )
+    }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun List<String>.toJSONArray(): JSONArray =
+    JSONArray().also { array ->
+        forEach { item -> array.put(item) }
+    }
 
 private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = List(length()) { index -> transform(getJSONObject(index)) }
 

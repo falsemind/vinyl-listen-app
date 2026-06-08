@@ -20,6 +20,14 @@ class SessionParsingTest {
                   "rating": 4,
                   "mood": "Focused",
                   "notes": "Opened up after the second track.",
+                  "tracks": [
+                    {
+                      "position": "B1",
+                      "title": "Flip Tune",
+                      "duration": "5:12",
+                      "sequence": 3
+                    }
+                  ],
                   "created_at": "2026-06-04T20:13:00Z",
                   "can_edit": true,
                   "editable_until": "2026-06-04T20:28:00Z"
@@ -34,6 +42,11 @@ class SessionParsingTest {
         assertEquals(4, session.rating)
         assertEquals("Focused", session.mood)
         assertEquals("Opened up after the second track.", session.notes)
+        assertEquals(1, session.tracks.size)
+        assertEquals("B1", session.tracks.first().position)
+        assertEquals("Flip Tune", session.tracks.first().title)
+        assertEquals("5:12", session.tracks.first().duration)
+        assertEquals(3, session.tracks.first().sequence)
         assertTrue(session.hasNotes)
         assertEquals("2026-06-04T20:13:00Z", session.createdAt)
         assertTrue(session.canEdit)

@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -67,6 +70,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
+import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.RatingStars
@@ -96,6 +100,8 @@ fun SessionLoggingScreen(
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
     val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
+    val trackOptions = sessionTrackOptions(record, selectedSideOption)
+    var selectedTrackPositions by rememberSaveable(releaseId) { mutableStateOf(emptyList<String>()) }
     var selectedMood by rememberSaveable { mutableStateOf("Calm") }
     var rating by rememberSaveable { mutableStateOf(record.rating) }
     var notes by rememberSaveable { mutableStateOf("") }
@@ -122,7 +128,13 @@ fun SessionLoggingScreen(
     LaunchedEffect(sideOptions) {
         if (sideOptions.none { it.value == selectedSide }) {
             selectedSide = sideOptions.firstOrNull()?.value.orEmpty()
+            selectedTrackPositions = emptyList()
         }
+    }
+
+    LaunchedEffect(trackOptions) {
+        val availablePositions = trackOptions.map { it.position }.toSet()
+        selectedTrackPositions = selectedTrackPositions.filter { it in availablePositions }
     }
 
     LaunchedEffect(customMoodRetryKey) {
@@ -147,6 +159,7 @@ fun SessionLoggingScreen(
                 apiClient.createSession(
                     releaseId = targetReleaseId,
                     side = selectedSideOption?.value?.takeIf { it.isNotBlank() },
+                    trackPositions = selectedTrackPositions,
                     rating = rating,
                     mood = selectedMood,
                     notes = notes,
@@ -191,11 +204,23 @@ fun SessionLoggingScreen(
         ) {
             SessionRecordCard(record = record)
             SessionFieldLabel("Side Played")
-            SessionSideSelector(
-                selectedSide = selectedSideOption,
-                sideOptions = sideOptions,
-                onSideSelected = { selectedSide = it },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                SessionSideSelector(
+                    selectedSide = selectedSideOption,
+                    sideOptions = sideOptions,
+                    onSideSelected = {
+                        selectedSide = it
+                        selectedTrackPositions = emptyList()
+                    },
+                )
+                if (trackOptions.isNotEmpty()) {
+                    SessionTrackSelector(
+                        trackOptions = trackOptions,
+                        selectedPositions = selectedTrackPositions,
+                        onSelectionChange = { selectedTrackPositions = it },
+                    )
+                }
+            }
             SessionFieldLabel("Rating")
             SessionRatingPicker(rating = rating, onRatingChange = { rating = it })
             SessionFieldLabel("Mood")
@@ -289,6 +314,8 @@ fun EditSessionScreen(
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(sessionId) { mutableStateOf("") }
     val selectedSideOption = sideOptions.firstOrNull { it.value == selectedSide } ?: sideOptions.firstOrNull()
+    val trackOptions = sessionTrackOptions(record, selectedSideOption)
+    var selectedTrackPositions by rememberSaveable(sessionId) { mutableStateOf(emptyList<String>()) }
     var selectedMood by rememberSaveable(sessionId) { mutableStateOf("Calm") }
     var rating by rememberSaveable(sessionId) { mutableStateOf(0) }
     var notes by rememberSaveable(sessionId) { mutableStateOf("") }
@@ -316,6 +343,7 @@ fun EditSessionScreen(
             loadedSession = session
             loadedRecord = release
             selectedSide = session.side.orEmpty()
+            selectedTrackPositions = session.tracks.map { it.position }
             selectedMood = session.mood.takeIf { it.isNotBlank() && it != "Unspecified" } ?: "Calm"
             rating = session.rating
             notes = session.notes.orEmpty()
@@ -329,7 +357,13 @@ fun EditSessionScreen(
     LaunchedEffect(sideOptions) {
         if (sideOptions.isNotEmpty() && sideOptions.none { it.value == selectedSide }) {
             selectedSide = sideOptions.first().value
+            selectedTrackPositions = emptyList()
         }
+    }
+
+    LaunchedEffect(trackOptions) {
+        val availablePositions = trackOptions.map { it.position }.toSet()
+        selectedTrackPositions = selectedTrackPositions.filter { it in availablePositions }
     }
 
     LaunchedEffect(customMoodRetryKey) {
@@ -354,6 +388,7 @@ fun EditSessionScreen(
                 apiClient.updateSession(
                     sessionId = session.sessionId ?: sessionId.orEmpty(),
                     side = selectedSideOption?.value?.takeIf { it.isNotBlank() },
+                    trackPositions = selectedTrackPositions,
                     rating = rating.takeIf { it > 0 },
                     mood = selectedMood,
                     notes = notes,
@@ -398,11 +433,23 @@ fun EditSessionScreen(
         ) {
             SessionRecordCard(record = record)
             SessionFieldLabel("Side Played")
-            SessionSideSelector(
-                selectedSide = selectedSideOption,
-                sideOptions = sideOptions,
-                onSideSelected = { selectedSide = it },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                SessionSideSelector(
+                    selectedSide = selectedSideOption,
+                    sideOptions = sideOptions,
+                    onSideSelected = {
+                        selectedSide = it
+                        selectedTrackPositions = emptyList()
+                    },
+                )
+                if (trackOptions.isNotEmpty()) {
+                    SessionTrackSelector(
+                        trackOptions = trackOptions,
+                        selectedPositions = selectedTrackPositions,
+                        onSelectionChange = { selectedTrackPositions = it },
+                    )
+                }
+            }
             SessionFieldLabel("Rating")
             SessionRatingPicker(rating = rating, onRatingChange = { rating = it })
             SessionFieldLabel("Mood")
@@ -702,8 +749,233 @@ private fun SessionSideSelector(
     }
 }
 
+@Composable
+private fun SessionTrackSelector(
+    trackOptions: List<SessionTrackOption>,
+    selectedPositions: List<String>,
+    onSelectionChange: (List<String>) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
+    val density = LocalDensity.current
+    val selectedPositionSet = selectedPositions.toSet()
+    val allPositions = trackOptions.map { it.position }
+    val allTracksSelected = trackOptions.isNotEmpty() && selectedPositionSet.containsAll(allPositions)
+    val actionLabel = if (expanded) "Close track selector" else "Open track selector"
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Track selector arrow rotation",
+    )
+    val anchorModifier =
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                selectorWidth = with(density) { coordinates.size.width.toDp() }
+            }
+
+    Box(modifier = anchorModifier) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = actionLabel,
+                    ) { expanded = !expanded }
+                    .padding(horizontal = VinylSpacing.SpaceMd)
+                    .height(56.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TrackSelectionSummary(
+                selectedCount = selectedPositionSet.size,
+                totalCount = trackOptions.size,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.TextSecondary,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+            )
+        }
+        if (expanded) {
+            var dropdownVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                dropdownVisible = true
+            }
+            val dropdownAlpha by animateFloatAsState(
+                targetValue = if (dropdownVisible) 1f else 0f,
+                animationSpec = tween(durationMillis = 140),
+                label = "Track dropdown fade",
+            )
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
+                onDismissRequest = { expanded = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 240.dp)
+                            .heightIn(max = 320.dp)
+                            .graphicsLayer { alpha = dropdownAlpha }
+                            .clip(VinylShapes.Card)
+                            .background(VinylColors.SurfacePrimary)
+                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                            .verticalScroll(rememberScrollState()),
+                ) {
+                    TrackSelectorRow(
+                        label = "Played all tracks",
+                        selected = allTracksSelected,
+                        onClick = {
+                            onSelectionChange(if (allTracksSelected) emptyList() else allPositions)
+                        },
+                    )
+                    trackOptions.forEachIndexed { index, trackOption ->
+                        TrackSelectorRow(
+                            label = trackOption.label,
+                            selected = trackOption.position in selectedPositionSet,
+                            alternate = index % 2 == 0,
+                            onClick = {
+                                val nextSelection =
+                                    if (trackOption.position in selectedPositionSet) {
+                                        selectedPositions.filterNot { it == trackOption.position }
+                                    } else {
+                                        (selectedPositions + trackOption.position).sortedBy { position ->
+                                            allPositions.indexOf(position).takeIf { it >= 0 } ?: Int.MAX_VALUE
+                                        }
+                                    }
+                                onSelectionChange(nextSelection)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSelectionSummary(
+    selectedCount: Int,
+    totalCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            selectedCount == 0 -> {
+                Text(
+                    text = "Track(s) played",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            selectedCount == totalCount -> {
+                Text(
+                    text = "All",
+                    color = VinylColors.AccentGreen,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = " tracks played",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            else -> {
+                Text(
+                    text = selectedCount.toString(),
+                    color = VinylColors.AccentGreen,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = if (selectedCount == 1) " track played" else " tracks played",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSelectorRow(
+    label: String,
+    selected: Boolean,
+    alternate: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(rowColor)
+                .clickable(
+                    role = Role.Checkbox,
+                    onClickLabel = label,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault,
+                        shape = CircleShape,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = VinylColors.SurfacePrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        Text(
+            text = label,
+            color = if (selected) VinylColors.AccentGreen else VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 internal data class SessionSideOption(
     val value: String,
+    val label: String,
+)
+
+internal data class SessionTrackOption(
+    val position: String,
     val label: String,
 )
 
@@ -721,6 +993,43 @@ internal fun sessionSideOptions(
 private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
 
 internal fun displaySessionSide(side: String): String = side.takeIf { it.isNotBlank() }?.let { "Side $it" }.orEmpty()
+
+internal fun sessionTrackOptions(
+    record: RecordSummary,
+    selectedSide: SessionSideOption?,
+): List<SessionTrackOption> {
+    val selectedSideKey =
+        selectedSide
+            ?.value
+            ?.substringAfterLast(":")
+            ?.takeIf { it.isNotBlank() }
+            ?.uppercase()
+            ?: return emptyList()
+    return record.tracklist
+        .filter { track -> track.sidePrefix() == selectedSideKey }
+        .map { track ->
+            SessionTrackOption(
+                position = track.position,
+                label = displaySessionTrack(track),
+            )
+        }
+}
+
+internal fun displaySessionTrack(track: ReleaseTrack): String =
+    buildString {
+        append(track.position)
+        append(": ")
+        append(track.title)
+        track.duration?.takeIf { it.isNotBlank() }?.let { duration ->
+            append(" ")
+            append(duration)
+        }
+    }
+
+private fun ReleaseTrack.sidePrefix(): String? {
+    val letters = position.trim().uppercase().takeWhile { it.isLetter() }
+    return letters.ifBlank { null }
+}
 
 private fun saveCustomMood(
     currentMoods: List<String>,
