@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.services.sessions_service import SessionsService
 
@@ -16,6 +16,7 @@ class InMemorySessionsRepository:
         self.created_payload: dict | None = None
         self.updated_payload: dict | None = None
         self.sessions: list[Sessions] = []
+        self.tracks_by_session_id: dict[str, list[SessionTracks]] = {}
 
     def create(self, _db, **kwargs) -> Sessions:
         self.created_payload = kwargs
@@ -46,6 +47,28 @@ class InMemorySessionsRepository:
         session.notes = kwargs["notes"]
         session.vinyl_side = kwargs["vinyl_side"]
         return session
+
+    def replace_tracks(self, _db, *, session_id: str, tracks: list[dict]) -> list[SessionTracks]:
+        session_tracks = [
+            SessionTracks(
+                id=f"track-{index}",
+                session_id=session_id,
+                track_position=track["position"],
+                track_title=track["title"],
+                track_duration=track.get("duration"),
+                track_sequence=track.get("sequence"),
+                created_at=datetime(2026, 4, 19, 8, 30, tzinfo=UTC),
+            )
+            for index, track in enumerate(tracks, start=1)
+        ]
+        self.tracks_by_session_id[session_id] = session_tracks
+        return session_tracks
+
+    def get_tracks_by_session_id(self, _db, session_id: str) -> list[SessionTracks]:
+        return self.tracks_by_session_id.get(session_id, [])
+
+    def get_tracks_by_session_ids(self, _db, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
 
     def get_by_release_id(self, _db, release_id: str, *, limit: int, offset: int) -> list[Sessions]:
         matching = [session for session in self.sessions if session.release_id == release_id]

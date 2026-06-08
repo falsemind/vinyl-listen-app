@@ -3,7 +3,7 @@ from app.models.collection_sync_job import CollectionSyncJob
 from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.models.identify_job import IdentifyJob
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import (
     SpotifyAlbumStats,
@@ -26,6 +26,7 @@ __all__ = [
     "IdentifyJob",
     "Releases",
     "Sessions",
+    "SessionTracks",
     "SessionsMoods",
     "SpotifyAlbumStats",
     "SpotifyArtistStats",

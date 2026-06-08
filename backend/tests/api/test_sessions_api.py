@@ -44,6 +44,7 @@ def test_create_session_endpoint_returns_201(
             "notes": "Great pressing.",
             "played_at": "2026-03-14T19:21:00Z",
             "side": "A",
+            "track_positions": None,
         }
     ]
 
@@ -94,6 +95,14 @@ def test_get_session_endpoint_returns_session_details(
         "notes": "Great pressing.",
         "played_at": "2026-03-14T19:21:00Z",
         "vinyl_side": "A",
+        "tracks": [
+            {
+                "position": "A1",
+                "title": "Wildlife Analysis",
+                "duration": "1:17",
+                "sequence": 1,
+            }
+        ],
         "created_at": "2026-04-19T08:30:00Z",
         "can_edit": True,
         "editable_until": "2026-04-19T08:45:00Z",
@@ -115,6 +124,7 @@ def test_update_session_endpoint_returns_updated_session(
                 "rating": 4,
                 "mood": "Focused",
                 "notes": "Changed after replay.",
+                "track_positions": ["B1"],
             },
         )
 
@@ -127,6 +137,14 @@ def test_update_session_endpoint_returns_updated_session(
         "notes": "Changed after replay.",
         "played_at": "2026-03-14T19:21:00Z",
         "vinyl_side": "B",
+        "tracks": [
+            {
+                "position": "B1",
+                "title": "Track B1",
+                "duration": None,
+                "sequence": 1,
+            }
+        ],
         "created_at": "2026-04-19T08:30:00Z",
         "can_edit": True,
         "editable_until": "2026-04-19T08:45:00Z",
@@ -139,6 +157,7 @@ def test_update_session_endpoint_returns_updated_session(
                 "rating": 4,
                 "mood": "Focused",
                 "notes": "Changed after replay.",
+                "track_positions": ["B1"],
             },
         )
     ]
@@ -356,6 +375,14 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
                 "date": "2026-03-14",
                 "played_at": "2026-03-14T19:21:00Z",
                 "side": "A",
+                "tracks": [
+                    {
+                        "position": "A1",
+                        "title": "Wildlife Analysis",
+                        "duration": "1:17",
+                        "sequence": 1,
+                    }
+                ],
                 "rating": 5,
                 "mood": "Calm",
                 "notes": "Great pressing.",

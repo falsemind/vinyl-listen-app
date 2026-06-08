@@ -150,6 +150,72 @@ def test_create_session_accepts_repeated_side_option_value(
     assert repository.created_payload["vinyl_side"] == "2:X"
 
 
+def test_create_session_saves_selected_tracks_for_side(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    service = build_sessions_service(
+        sessions_repository=repository,
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {"position": "A1", "type_": "track", "title": "Intro", "duration": "1:00"},
+                    {"position": "A2", "type_": "track", "title": "Main Tune", "duration": ""},
+                    {"position": "B1", "type_": "track", "title": "Flip", "duration": "2:00"},
+                ]
+            }
+        },
+    )
+
+    service.create_session(
+        db=object(),
+        release_id="release-123",
+        rating=4,
+        mood=None,
+        notes=None,
+        played_at="2026-03-14T19:21:00Z",
+        side="A",
+        track_positions=["A2", "A1"],
+    )
+
+    tracks = repository.get_tracks_by_session_id(object(), "session-123")
+    track_summaries = [
+        (track.track_position, track.track_title, track.track_duration, track.track_sequence) for track in tracks
+    ]
+    assert track_summaries == [
+        ("A1", "Intro", "1:00", 1),
+        ("A2", "Main Tune", None, 2),
+    ]
+
+
+def test_create_session_rejects_track_from_another_side(build_sessions_service) -> None:
+    service = build_sessions_service(
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {"position": "A1", "type_": "track", "title": "Intro"},
+                    {"position": "B1", "type_": "track", "title": "Flip"},
+                ]
+            }
+        }
+    )
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.create_session(
+            db=object(),
+            release_id="release-123",
+            rating=4,
+            mood=None,
+            notes=None,
+            played_at="2026-03-14T19:21:00Z",
+            side="A",
+            track_positions=["B1"],
+        )
+
+    assert exc_info.value.code == "invalid_tracks"
+
+
 def test_create_session_rejects_invalid_played_at(build_sessions_service) -> None:
     service = build_sessions_service()
 
@@ -252,6 +318,49 @@ def test_update_session_persists_changes_within_edit_window(
         "notes": "Replayed side B.",
         "vinyl_side": "B",
     }
+
+
+def test_update_session_replaces_selected_tracks(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    created_at = datetime(2026, 4, 19, 8, 30, tzinfo=UTC)
+    repository.sessions.append(
+        Sessions(
+            id="session-123",
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes="Great pressing.",
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side="A",
+            created_at=created_at,
+        )
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {"position": "A1", "type_": "track", "title": "Intro"},
+                    {"position": "A2", "type_": "track", "title": "Main Tune"},
+                ]
+            }
+        },
+        now_provider=lambda: created_at + timedelta(minutes=10),
+    )
+
+    service.update_session(
+        db=object(),
+        session_id="session-123",
+        fields={"track_positions": ["A2"]},
+    )
+
+    tracks = repository.get_tracks_by_session_id(object(), "session-123")
+    assert [(track.track_position, track.track_title, track.track_sequence) for track in tracks] == [
+        ("A2", "Main Tune", 2)
+    ]
 
 
 def test_update_session_can_clear_optional_fields(

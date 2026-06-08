@@ -47,3 +47,29 @@ class Sessions(Base):
 
     # Timestamp when the session record was created.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SessionTracks(Base):
+    """Optional Discogs track selections attached to a side-level session."""
+
+    __tablename__ = "session_tracks"
+    __table_args__ = (
+        Index("idx_session_tracks_session_id", "session_id"),
+        Index("idx_session_tracks_track_position", "track_position"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    track_position: Mapped[str] = mapped_column(String, nullable=False)
+    track_title: Mapped[str] = mapped_column(String, nullable=False)
+    track_duration: Mapped[str | None] = mapped_column(String, nullable=True)
+    track_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

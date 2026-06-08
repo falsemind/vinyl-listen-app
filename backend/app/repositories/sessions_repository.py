@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 
 
 class SessionsRepository:
@@ -144,3 +144,56 @@ class SessionsRepository:
         db.commit()
         db.refresh(session)
         return session
+
+    @staticmethod
+    def replace_tracks(
+        db: Session,
+        *,
+        session_id: str,
+        tracks: list[dict],
+    ) -> list[SessionTracks]:
+        db.query(SessionTracks).filter(SessionTracks.session_id == session_id).delete()
+        session_tracks = [
+            SessionTracks(
+                session_id=session_id,
+                track_position=track["position"],
+                track_title=track["title"],
+                track_duration=track.get("duration"),
+                track_sequence=track.get("sequence"),
+            )
+            for track in tracks
+        ]
+        db.add_all(session_tracks)
+        db.commit()
+        for track in session_tracks:
+            db.refresh(track)
+        return session_tracks
+
+    @staticmethod
+    def get_tracks_by_session_id(db: Session, session_id: str) -> list[SessionTracks]:
+        return (
+            db.query(SessionTracks)
+            .filter(SessionTracks.session_id == session_id)
+            .order_by(SessionTracks.track_sequence.asc(), SessionTracks.track_position.asc())
+            .all()
+        )
+
+    @staticmethod
+    def get_tracks_by_session_ids(db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
+        if not session_ids:
+            return {}
+
+        rows = (
+            db.query(SessionTracks)
+            .filter(SessionTracks.session_id.in_(session_ids))
+            .order_by(
+                SessionTracks.session_id.asc(),
+                SessionTracks.track_sequence.asc(),
+                SessionTracks.track_position.asc(),
+            )
+            .all()
+        )
+        tracks_by_session_id: dict[str, list[SessionTracks]] = {}
+        for track in rows:
+            tracks_by_session_id.setdefault(track.session_id, []).append(track)
+        return tracks_by_session_id

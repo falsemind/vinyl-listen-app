@@ -18,6 +18,7 @@ from app.schemas.sessions import (
     SessionMoodResponse,
     SessionMoodsResponse,
     SessionResponse,
+    SessionTrackResponse,
     UpdateSessionRequest,
 )
 from app.services.sessions_service import (
@@ -60,6 +61,7 @@ def log_session(
             notes=payload.notes,
             played_at=payload.played_at,
             side=payload.side,
+            track_positions=payload.track_positions,
         )
     except SessionValidationError as error:
         return JSONResponse(
@@ -215,7 +217,7 @@ def get_session(
             content={"error": {"code": "session_not_found", "message": str(error)}},
         )
 
-    return _map_session_response(session, service)
+    return _map_session_response(db, session, service)
 
 
 @router.patch(
@@ -256,10 +258,11 @@ def update_session(
             content={"error": {"code": "release_not_found", "message": str(error)}},
         )
 
-    return _map_session_response(session, service)
+    return _map_session_response(db, session, service)
 
 
 def _map_session_response(
+    db: Session,
     session,
     service: SessionsService,
 ) -> SessionResponse:
@@ -271,6 +274,15 @@ def _map_session_response(
         notes=session.notes,
         played_at=session.played_at,
         vinyl_side=session.vinyl_side,
+        tracks=[
+            SessionTrackResponse(
+                position=track.track_position,
+                title=track.track_title,
+                duration=track.track_duration,
+                sequence=track.track_sequence,
+            )
+            for track in service.get_session_tracks(db, session.id)
+        ],
         created_at=session.created_at,
         can_edit=service.can_edit_session(session),
         editable_until=service.editable_until(session),

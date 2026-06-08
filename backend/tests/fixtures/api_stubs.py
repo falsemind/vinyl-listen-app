@@ -306,6 +306,16 @@ class StubSessionsService:
                 created_at=datetime(2026, 4, 18, 8, 30, tzinfo=UTC),
             ),
         ]
+        self.tracks_by_session_id = {
+            "session-123": [
+                SimpleNamespace(
+                    track_position="A1",
+                    track_title="Wildlife Analysis",
+                    track_duration="1:17",
+                    track_sequence=1,
+                )
+            ]
+        }
         self.release = ReleaseStub(
             id="release-123",
             discogs_release_id=555123,
@@ -346,6 +356,16 @@ class StubSessionsService:
             self.session.notes = fields["notes"]
         if "side" in fields:
             self.session.vinyl_side = fields["side"]
+        if "track_positions" in fields:
+            self.tracks_by_session_id[self.session.id] = [
+                SimpleNamespace(
+                    track_position=position,
+                    track_title=f"Track {position}",
+                    track_duration=None,
+                    track_sequence=index,
+                )
+                for index, position in enumerate(fields["track_positions"] or [], start=1)
+            ]
         return self.session
 
     def can_edit_session(self, _session: SessionStub) -> bool:
@@ -353,6 +373,12 @@ class StubSessionsService:
 
     def editable_until(self, session: SessionStub) -> datetime:
         return session.created_at.replace(minute=session.created_at.minute + 15)
+
+    def get_session_tracks(self, _db, session_id: str):
+        return self.tracks_by_session_id.get(session_id, [])
+
+    def get_tracks_by_session_ids(self, _db, session_ids: list[str]):
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
 
     def get_sessions_by_release(self, _db, release_id: str, *, limit: int, offset: int) -> list[SessionStub]:
         self.list_calls.append((release_id, limit, offset))

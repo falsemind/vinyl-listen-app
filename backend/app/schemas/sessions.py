@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorDetail(BaseModel):
@@ -17,6 +17,7 @@ class CreateSessionRequest(BaseModel):
 
     release_id: str
     side: str | None = None
+    track_positions: list[str] | None = None
     rating: int | None = None
     mood: str | None = None
     notes: str | None = None
@@ -27,6 +28,7 @@ class UpdateSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     side: str | None = None
+    track_positions: list[str] | None = None
     rating: int | None = None
     mood: str | None = None
     notes: str | None = None
@@ -57,6 +59,13 @@ class SessionMoodResponse(BaseModel):
     mood: SessionMoodItem
 
 
+class SessionTrackResponse(BaseModel):
+    position: str
+    title: str
+    duration: str | None = None
+    sequence: int | None = None
+
+
 class SessionResponse(BaseModel):
     id: str
     release_id: str
@@ -65,6 +74,7 @@ class SessionResponse(BaseModel):
     notes: str | None
     played_at: datetime | None
     vinyl_side: str | None
+    tracks: list[SessionTrackResponse] = Field(default_factory=list)
     created_at: datetime
     can_edit: bool
     editable_until: datetime
@@ -75,6 +85,7 @@ class ReleaseSessionHistoryItem(BaseModel):
     date: str | None
     played_at: datetime | None = None
     side: str | None
+    tracks: list[SessionTrackResponse] = Field(default_factory=list)
     rating: int | None
     mood: str | None
     notes: str | None = None
