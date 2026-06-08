@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse, ReleaseSearchResponse
-from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse
+from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse, SessionTrackResponse
 from app.services.discogs_service import DiscogsClientError, DiscogsService
 from app.services.release_import_service import ReleaseImportService
 from app.services.sessions_service import ReleaseNotFoundError, SessionsService, SessionValidationError
@@ -255,6 +255,7 @@ def get_release_sessions(
             content={"error": {"code": "release_not_found", "message": str(error)}},
         )
 
+    tracks_by_session_id = service.get_tracks_by_session_ids(db, [session.id for session in sessions])
     return ReleaseSessionsResponse(
         sessions=[
             ReleaseSessionHistoryItem(
@@ -262,6 +263,15 @@ def get_release_sessions(
                 date=session.played_at.date().isoformat() if session.played_at is not None else None,
                 played_at=session.played_at,
                 side=session.vinyl_side,
+                tracks=[
+                    SessionTrackResponse(
+                        position=track.track_position,
+                        title=track.track_title,
+                        duration=track.track_duration,
+                        sequence=track.track_sequence,
+                    )
+                    for track in tracks_by_session_id.get(session.id, [])
+                ],
                 rating=session.rating,
                 mood=session.mood,
                 notes=session.notes.strip() if session.notes and session.notes.strip() else None,

@@ -2,6 +2,7 @@ package com.example.vinyllistenapp.ui.screens
 
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
+import com.example.vinyllistenapp.domain.ReleaseTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -56,6 +57,43 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun sessionTrackOptionsFiltersTracksForSelectedSide() {
+        val record =
+            recordSummary(
+                availableSides = listOf("X", "Y"),
+                tracklist =
+                    listOf(
+                        ReleaseTrack("X1", "UNTITLED"),
+                        ReleaseTrack("X2", "S.O.U.R"),
+                        ReleaseTrack("Y1", "BLESSINGS"),
+                    ),
+            )
+
+        assertEquals(
+            listOf(
+                SessionTrackOption("X1", "X1: UNTITLED"),
+                SessionTrackOption("X2", "X2: S.O.U.R"),
+            ),
+            sessionTrackOptions(record, SessionSideOption("X", "Side X")),
+        )
+    }
+
+    @Test
+    fun sessionTrackOptionsMatchesDetailedDiscSideValue() {
+        val record =
+            recordSummary(
+                availableSideOptions = listOf(ReleaseSideOption("1:X", "Disc 1 - Side X")),
+                availableSides = listOf("X"),
+                tracklist = listOf(ReleaseTrack("X2", "S.O.U.R", "5:12")),
+            )
+
+        assertEquals(
+            listOf(SessionTrackOption("X2", "X2: S.O.U.R 5:12")),
+            sessionTrackOptions(record, SessionSideOption("1:X", "Disc 1 - Side X")),
+        )
+    }
+
+    @Test
     fun isBuiltInMoodMatchesIgnoringCaseAndWhitespace() {
         assertTrue(isBuiltInMood(" calm "))
         assertTrue(isBuiltInMood("FOCUSED"))
@@ -72,6 +110,7 @@ class SessionSideOptionsTest {
     private fun recordSummary(
         availableSides: List<String>,
         availableSideOptions: List<ReleaseSideOption> = emptyList(),
+        tracklist: List<ReleaseTrack> = emptyList(),
     ) = RecordSummary(
         releaseId = "release-123",
         discogsReleaseId = 555123,
@@ -84,5 +123,6 @@ class SessionSideOptionsTest {
         lastPlayed = "Not logged yet",
         availableSides = availableSides,
         availableSideOptions = availableSideOptions,
+        tracklist = tracklist,
     )
 }

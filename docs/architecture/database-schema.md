@@ -45,6 +45,7 @@ Core entities:
 ```
 releases
 sessions
+session_tracks
 session_moods
 discogs_release_cache
 identify_jobs
@@ -71,7 +72,9 @@ releases
    │
    ├── sessions
    │        │
-   │        └── session_moods
+   │        └── session_tracks
+   │
+   ├── session_moods
    │
    └── discogs_release_cache
 
@@ -262,6 +265,40 @@ PRIMARY KEY (id)
 INDEX (release_id)
 
 INDEX (played_at)
+```
+
+---
+
+# Table: session_tracks
+
+Stores optional track selections for a side-level listening session. A session can still represent a played side with no selected tracks; selected tracks add detail for future track-level analytics.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID|Primary key|
+|session_id|UUID|FK -> sessions.id|
+|track_position|TEXT|Discogs track position snapshot, e.g. A1|
+|track_title|TEXT|Discogs track title snapshot|
+|track_duration|TEXT|Optional Discogs duration snapshot|
+|track_sequence|INTEGER|Tracklist order at time of logging|
+|created_at|TIMESTAMP|Track selection creation time|
+
+### Foreign Keys
+
+```
+session_id -> sessions.id ON DELETE CASCADE
+```
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (session_id)
+
+INDEX (track_position)
 ```
 
 ---
@@ -527,13 +564,13 @@ Match tables connect Spotify summaries to known local releases. They support col
 |spotify_vinyl_artist_matches|Exact normalized artist overlap, release ids, release count, confidence, match type, and explanation.|
 |spotify_vinyl_release_matches|Exact normalized artist+album overlap with release id, Spotify display names, release display names, confidence, match type, and explanation.|
 
-Track-level matching is deferred until local release track metadata is reliable enough to support it.
+Track-level Spotify-to-vinyl matching remains deferred. User-selected session tracks are stored in `session_tracks` and can support future explicit track-play analytics without changing side-level session counts.
 
 ---
 
 # Derived Analytics (Computed)
 
-Analytics are calculated dynamically from sessions.
+Current record, rating, mood, style, and monthly analytics are calculated dynamically from `sessions`, so one logged side session counts once even when optional selected tracks exist. Future track analytics should count `session_tracks` separately.
 
 Examples:
 

@@ -35,6 +35,13 @@ data class ReleaseTrack(
     val duration: String? = null,
 )
 
+data class SessionTrack(
+    val position: String,
+    val title: String,
+    val duration: String? = null,
+    val sequence: Int? = null,
+)
+
 data class ReleaseSearchResult(
     val releaseId: String? = null,
     val discogsReleaseId: Long,
@@ -62,6 +69,7 @@ data class ListeningSession(
     val createdAt: String? = null,
     val canEdit: Boolean = false,
     val editableUntil: String? = null,
+    val tracks: List<SessionTrack> = emptyList(),
 )
 
 data class TopRecordSummary(

@@ -7,13 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
-from app.services.release_mapper import extract_release_side_options
+from app.services.release_mapper import ReleaseTrackData, extract_release_side_options, extract_release_tracklist
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,22 @@ class ReleaseNotFoundError(SessionsServiceError):
 
 
 @dataclass(frozen=True)
+class SessionTrackSelection:
+    position: str
+    title: str
+    duration: str | None
+    sequence: int
+
+    def as_repository_payload(self) -> dict[str, object]:
+        return {
+            "position": self.position,
+            "title": self.title,
+            "duration": self.duration,
+            "sequence": self.sequence,
+        }
+
+
+@dataclass(frozen=True)
 class CreateSessionData:
     release_id: str
     rating: int | None
@@ -86,6 +102,7 @@ class CreateSessionData:
     notes: str | None
     played_at: datetime
     side: str | None
+    tracks: list[SessionTrackSelection]
 
 
 @dataclass(frozen=True)
@@ -94,6 +111,7 @@ class UpdateSessionData:
     mood: str | None
     notes: str | None
     side: str | None
+    tracks: list[SessionTrackSelection] | None
 
 
 @dataclass(frozen=True)
@@ -151,6 +169,7 @@ class SessionsService:
         notes: str | None,
         played_at: str,
         side: str | None,
+        track_positions: list[str] | None = None,
     ) -> CreateSessionResult:
         logger.info("Creating session release_id=%s played_at=%s", release_id, played_at)
         validated = self._validate_create_input(
@@ -161,6 +180,7 @@ class SessionsService:
             notes=notes,
             played_at=played_at,
             side=side,
+            track_positions=track_positions,
         )
         session = self._sessions_repository.create(
             db,
@@ -171,6 +191,12 @@ class SessionsService:
             played_at=validated.played_at,
             vinyl_side=validated.side,
         )
+        if validated.tracks:
+            self._sessions_repository.replace_tracks(
+                db,
+                session_id=session.id,
+                tracks=[track.as_repository_payload() for track in validated.tracks],
+            )
         logger.info("Created session session_id=%s release_id=%s", session.id, release_id)
         return CreateSessionResult(session_id=session.id, timestamp=session.created_at)
 
@@ -193,10 +219,13 @@ class SessionsService:
         if not fields:
             raise SessionValidationError("invalid_request", "At least one editable field is required.")
 
-        allowed_fields = {"rating", "mood", "notes", "side"}
+        allowed_fields = {"rating", "mood", "notes", "side", "track_positions"}
         unknown_fields = set(fields) - allowed_fields
         if unknown_fields:
-            raise SessionValidationError("invalid_request", "Only side, rating, mood, and notes can be edited.")
+            raise SessionValidationError(
+                "invalid_request",
+                "Only side, track_positions, rating, mood, and notes can be edited.",
+            )
 
         session = self._sessions_repository.get_by_id(db, session_id)
         if session is None:
@@ -207,7 +236,7 @@ class SessionsService:
             raise SessionEditWindowExpiredError(session_id)
 
         validated = self._validate_update_input(db, session=session, fields=fields)
-        return self._sessions_repository.update(
+        updated_session = self._sessions_repository.update(
             db,
             session,
             rating=validated.rating,
@@ -215,6 +244,13 @@ class SessionsService:
             notes=validated.notes,
             vinyl_side=validated.side,
         )
+        if validated.tracks is not None:
+            self._sessions_repository.replace_tracks(
+                db,
+                session_id=updated_session.id,
+                tracks=[track.as_repository_payload() for track in validated.tracks],
+            )
+        return updated_session
 
     def can_edit_session(self, session: Sessions) -> bool:
         return self._current_time() <= self.editable_until(session)
@@ -249,6 +285,12 @@ class SessionsService:
             limit=limit,
             offset=offset,
         )
+
+    def get_session_tracks(self, db: Session, session_id: str) -> list[SessionTracks]:
+        return self._sessions_repository.get_tracks_by_session_id(db, session_id)
+
+    def get_tracks_by_session_ids(self, db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
+        return self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
 
     def get_home_summary(
         self,
@@ -313,6 +355,7 @@ class SessionsService:
         notes: str | None,
         played_at: str,
         side: str | None,
+        track_positions: list[str] | None,
     ) -> CreateSessionData:
         if rating is not None and not 1 <= rating <= 5:
             logger.info("Rejecting session create release_id=%s invalid_rating=%s", release_id, rating)
@@ -328,22 +371,13 @@ class SessionsService:
             logger.info("Release not found during session create release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
-        if normalized_side is not None:
-            cache_entry = self._discogs_repository.get_by_discogs_release_id(db, release.discogs_release_id)
-            available_sides = self._extract_release_sides(
-                cache_entry.raw_discogs_json if cache_entry is not None else None
-            )
-            if available_sides and normalized_side not in available_sides:
-                logger.info(
-                    "Rejecting session create release_id=%s invalid_side=%s available_sides=%s",
-                    release_id,
-                    normalized_side,
-                    sorted(available_sides),
-                )
-                raise SessionValidationError(
-                    "invalid_side",
-                    f"Side '{normalized_side}' does not exist for release '{release_id}'.",
-                )
+        self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
+        tracks = self._validate_track_selection(
+            db,
+            release=release,
+            normalized_side=normalized_side,
+            track_positions=track_positions,
+        )
 
         return CreateSessionData(
             release_id=release_id,
@@ -352,6 +386,7 @@ class SessionsService:
             notes=normalized_notes,
             played_at=normalized_played_at,
             side=normalized_side,
+            tracks=tracks,
         )
 
     def _validate_update_input(
@@ -370,32 +405,142 @@ class SessionsService:
         normalized_mood = self._canonicalize_session_mood(db, fields["mood"]) if "mood" in fields else session.mood
         normalized_notes = self._normalize_optional_text(fields["notes"]) if "notes" in fields else session.notes
 
-        if normalized_side is not None:
-            release = self._releases_repository.get_by_id(db, session.release_id)
-            if release is None:
-                raise ReleaseNotFoundError(session.release_id)
-            cache_entry = self._discogs_repository.get_by_discogs_release_id(db, release.discogs_release_id)
-            available_sides = self._extract_release_sides(
-                cache_entry.raw_discogs_json if cache_entry is not None else None
+        release = self._releases_repository.get_by_id(db, session.release_id)
+        if release is None:
+            raise ReleaseNotFoundError(session.release_id)
+
+        self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=session.id)
+        tracks = (
+            self._validate_track_selection(
+                db,
+                release=release,
+                normalized_side=normalized_side,
+                track_positions=fields["track_positions"],
             )
-            if available_sides and normalized_side not in available_sides:
-                logger.info(
-                    "Rejecting session update session_id=%s invalid_side=%s available_sides=%s",
-                    session.id,
-                    normalized_side,
-                    sorted(available_sides),
-                )
-                raise SessionValidationError(
-                    "invalid_side",
-                    f"Side '{normalized_side}' does not exist for release '{session.release_id}'.",
-                )
+            if "track_positions" in fields
+            else None
+        )
 
         return UpdateSessionData(
             rating=rating,
             mood=normalized_mood,
             notes=normalized_notes,
             side=normalized_side,
+            tracks=tracks,
         )
+
+    def _validate_release_side(
+        self,
+        db: Session,
+        *,
+        release: Releases,
+        normalized_side: str | None,
+        context_id: str,
+    ) -> None:
+        if normalized_side is None:
+            return
+
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, release.discogs_release_id)
+        available_sides = self._extract_release_sides(cache_entry.raw_discogs_json if cache_entry is not None else None)
+        if available_sides and normalized_side not in available_sides:
+            logger.info(
+                "Rejecting session side context_id=%s invalid_side=%s available_sides=%s",
+                context_id,
+                normalized_side,
+                sorted(available_sides),
+            )
+            raise SessionValidationError(
+                "invalid_side",
+                f"Side '{normalized_side}' does not exist for release '{release.id}'.",
+            )
+
+    def _validate_track_selection(
+        self,
+        db: Session,
+        *,
+        release: Releases,
+        normalized_side: str | None,
+        track_positions: list[str] | None,
+    ) -> list[SessionTrackSelection]:
+        normalized_positions = self._normalize_track_positions(track_positions)
+        if not normalized_positions:
+            return []
+        if normalized_side is None:
+            raise SessionValidationError("invalid_tracks", "Track selection requires a selected side.")
+
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, release.discogs_release_id)
+        tracklist = extract_release_tracklist(cache_entry.raw_discogs_json if cache_entry is not None else None)
+        if not tracklist:
+            raise SessionValidationError("invalid_tracks", "Track selection requires cached Discogs tracklist data.")
+
+        tracks_by_position: dict[str, list[tuple[int, ReleaseTrackData]]] = {}
+        for sequence, track in enumerate(tracklist, start=1):
+            tracks_by_position.setdefault(track.position.strip().upper(), []).append((sequence, track))
+
+        selected_tracks: list[SessionTrackSelection] = []
+        for position in normalized_positions:
+            matches = tracks_by_position.get(position)
+            if not matches:
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{position}' does not exist for release '{release.id}'.",
+                )
+            if len(matches) > 1:
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{position}' is ambiguous for release '{release.id}'.",
+                )
+
+            sequence, track = matches[0]
+            if not self._track_belongs_to_side(track.position, normalized_side):
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{track.position}' is not on side '{normalized_side}'.",
+                )
+            selected_tracks.append(
+                SessionTrackSelection(
+                    position=track.position,
+                    title=track.title,
+                    duration=track.duration,
+                    sequence=sequence,
+                )
+            )
+
+        return sorted(selected_tracks, key=lambda track: track.sequence)
+
+    def _normalize_track_positions(self, value: list[str] | None) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise SessionValidationError("invalid_tracks", "Track positions must be a list.")
+
+        normalized_positions: list[str] = []
+        seen_positions: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                raise SessionValidationError("invalid_tracks", "Track positions must be text.")
+            normalized = item.strip().upper()
+            if not normalized:
+                raise SessionValidationError("invalid_tracks", "Track positions cannot be blank.")
+            if normalized in seen_positions:
+                raise SessionValidationError("invalid_tracks", f"Track '{normalized}' was selected more than once.")
+            seen_positions.add(normalized)
+            normalized_positions.append(normalized)
+        return normalized_positions
+
+    def _track_belongs_to_side(self, track_position: str, normalized_side: str) -> bool:
+        expected_side = normalized_side.split(":")[-1]
+        return self._track_side_prefix(track_position) == expected_side
+
+    def _track_side_prefix(self, track_position: str) -> str | None:
+        letters: list[str] = []
+        for character in track_position.strip().upper():
+            if character.isalpha():
+                letters.append(character)
+                continue
+            if letters:
+                break
+        return "".join(letters) or None
 
     def _parse_played_at(self, value: str) -> datetime:
         if not isinstance(value, str) or not value.strip():
