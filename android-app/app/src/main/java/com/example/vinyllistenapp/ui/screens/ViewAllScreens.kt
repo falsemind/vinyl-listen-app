@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -660,40 +661,69 @@ private fun TopRecordListItem(
     AccentCard(
         modifier = Modifier.clickable(onClickLabel = "Open ${record.record.title}", role = Role.Button, onClick = onClick),
     ) {
-        Row(
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(vertical = VinylSpacing.SpaceXs),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
         ) {
-            AlbumArtBlock(
-                accentColor = VinylColors.AccentGreen,
-                compact = true,
-                imageUrl = record.record.coverImageUrl,
-                contentDescription = "${record.record.title} cover art",
-            )
-            Spacer(Modifier.width(VinylSpacing.SpaceMd))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                AlbumArtBlock(
+                    accentColor = VinylColors.AccentGreen,
+                    compact = true,
+                    imageUrl = record.record.coverImageUrl,
+                    contentDescription = "${record.record.title} cover art",
+                )
+                Spacer(Modifier.width(VinylSpacing.SpaceMd))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+                ) {
+                    Text(record.record.title, color = VinylColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(record.record.artist, color = VinylColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(
+                    text = "${record.plays} plays",
+                    color = VinylColors.AccentGreen,
+                    modifier =
+                        Modifier
+                            .padding(start = VinylSpacing.SpaceMd)
+                            .widthIn(min = 72.dp),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                text = "${record.plays} plays",
-                color = VinylColors.AccentGreen,
+            Spacer(
                 modifier =
                     Modifier
-                        .padding(start = VinylSpacing.SpaceMd)
-                        .widthIn(min = 72.dp),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(VinylColors.BorderDefault),
             )
+            TopRecordMetricRow(text = "Rating: ${record.averageRating}", color = VinylColors.AccentGreen)
+            TopRecordMetricRow(text = "Top track: ${record.topTrack ?: "n/a"}", color = VinylColors.AccentOrange)
+            TopRecordMetricRow(text = "Top mood: ${record.topMood ?: "n/a"}", color = VinylColors.AccentPurple)
         }
     }
+}
+
+@Composable
+private fun TopRecordMetricRow(
+    text: String,
+    color: Color,
+) {
+    Text(
+        text = text,
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 private fun analyticsMonthTitle(month: String): String =
