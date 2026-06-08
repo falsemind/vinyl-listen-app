@@ -499,6 +499,32 @@ def test_identifier_parser_rejects_credit_year_phrase_as_catalog() -> None:
     assert identifiers.text_fragments == ("Luscious Nights",)
 
 
+def test_identifier_parser_keeps_limited_label_prefix_in_catalog_number() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "ADM",
+                "A1 Remnants",
+                "A2 Shadows Of Silence",
+                "B1 Suspended In Time",
+                "B2 Z-247",
+                "All tracks written and produced by A. Parker for SU Productions",
+                "2023",
+                "(P) & (C) 2023 Scientific Wax",
+                "www.scientificwax.com",
+                "SCI LIMITED 009",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("SCI LIMITED 009",)
+    assert identifiers.artist == "Suspended In Time"
+    assert identifiers.title == "Shadows Of Silence"
+    assert identifiers.text_fragments == ("Remnants", "Z-247", "ADM")
+
+
 def test_identifier_parser_extracts_hash_separated_catalog_number() -> None:
     parser = IdentifierParser()
 
