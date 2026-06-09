@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -654,7 +655,6 @@ private fun SessionSideSelector(
     val selectorModifier =
         Modifier
             .fillMaxWidth()
-            .height(60.dp)
             .clip(VinylShapes.Card)
             .background(VinylColors.SurfacePrimary)
             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
@@ -663,6 +663,7 @@ private fun SessionSideSelector(
                 role = Role.Button,
                 onClick = { expanded = !expanded },
             ).padding(horizontal = VinylSpacing.SpaceMd)
+            .height(56.dp)
 
     Box(modifier = anchorModifier) {
         Row(
@@ -704,44 +705,28 @@ private fun SessionSideSelector(
                 Column(
                     modifier =
                         Modifier
-                            .width(selectorWidth)
+                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 240.dp)
+                            .heightIn(max = 320.dp)
                             .graphicsLayer { alpha = dropdownAlpha }
+                            .shadow(4.dp, VinylShapes.Card)
                             .clip(VinylShapes.Card)
                             .background(VinylColors.SurfacePrimary)
-                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
+                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                            .verticalScroll(rememberScrollState()),
                 ) {
                     sideOptions.forEachIndexed { index, sideOption ->
-                        val rowColor = if (index % 2 == 0) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
                         val selectSide = {
                             onSideSelected(sideOption.value)
                             expanded = false
                         }
-                        val rowModifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .background(rowColor)
-                                .clickable(
-                                    onClickLabel = "Select ${sideOption.label}",
-                                    role = Role.Button,
-                                    onClick = selectSide,
-                                ).padding(horizontal = VinylSpacing.SpaceMd)
-
-                        Row(
-                            modifier = rowModifier,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = sideOption.label,
-                                color =
-                                    if (sideOption.value == selectedSide?.value) {
-                                        VinylColors.AccentGreen
-                                    } else {
-                                        VinylColors.TextPrimary
-                                    },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        SelectorOptionRow(
+                            label = sideOption.label,
+                            selected = sideOption.value == selectedSide?.value,
+                            alternate = index % 2 == 0,
+                            role = Role.RadioButton,
+                            onClickLabel = "Select ${sideOption.label}",
+                            onClick = selectSide,
+                        )
                     }
                 }
             }
@@ -829,13 +814,14 @@ private fun SessionTrackSelector(
                             .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 240.dp)
                             .heightIn(max = 320.dp)
                             .graphicsLayer { alpha = dropdownAlpha }
+                            .shadow(4.dp, VinylShapes.Card)
                             .clip(VinylShapes.Card)
                             .background(VinylColors.SurfacePrimary)
                             .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
                             .verticalScroll(rememberScrollState()),
                 ) {
                     if (showAllTracksOption) {
-                        TrackSelectorRow(
+                        SelectorOptionRow(
                             label = "Played all tracks",
                             selected = allTracksSelected,
                             onClick = {
@@ -844,7 +830,7 @@ private fun SessionTrackSelector(
                         )
                     }
                     trackOptions.forEachIndexed { index, trackOption ->
-                        TrackSelectorRow(
+                        SelectorOptionRow(
                             label = trackOption.label,
                             selected = trackOption.position in selectedPositionSet,
                             alternate = index % 2 == 0,
@@ -920,10 +906,12 @@ private fun TrackSelectionSummary(
 }
 
 @Composable
-private fun TrackSelectorRow(
+private fun SelectorOptionRow(
     label: String,
     selected: Boolean,
     alternate: Boolean = false,
+    role: Role = Role.Checkbox,
+    onClickLabel: String = label,
     onClick: () -> Unit,
 ) {
     val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
@@ -933,8 +921,8 @@ private fun TrackSelectorRow(
                 .fillMaxWidth()
                 .background(rowColor)
                 .clickable(
-                    role = Role.Checkbox,
-                    onClickLabel = label,
+                    role = role,
+                    onClickLabel = onClickLabel,
                     onClick = onClick,
                 ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         verticalAlignment = Alignment.CenterVertically,
