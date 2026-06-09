@@ -222,6 +222,9 @@ def test_get_release_endpoint_returns_local_release_metadata(
             {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17"},
             {"position": "A2", "title": "An Eagle In Your Mind", "duration": None},
         ],
+        "discogs_artists": [
+            {"name": "Boards of Canada", "discogs_artist_id": 194},
+        ],
         "created_at": "2026-04-19T00:00:00Z",
         "updated_at": "2026-04-19T00:00:00Z",
     }

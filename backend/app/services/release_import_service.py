@@ -9,8 +9,10 @@ from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_service import DiscogsService
 from app.services.release_mapper import (
     InternalReleaseData,
+    ReleaseArtistData,
     ReleaseSideOptionData,
     ReleaseTrackData,
+    extract_release_artists,
     extract_release_side_options,
     extract_release_sides,
     extract_release_tracklist,
@@ -95,6 +97,10 @@ class ReleaseImportService:
     def get_tracklist(self, db: Session, discogs_release_id: int) -> list[ReleaseTrackData]:
         cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
         return extract_release_tracklist(cache_entry.raw_discogs_json if cache_entry is not None else None)
+
+    def get_artists(self, db: Session, discogs_release_id: int) -> list[ReleaseArtistData]:
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
+        return extract_release_artists(cache_entry.raw_discogs_json if cache_entry is not None else None)
 
     def map_discogs_payload(self, raw_payload: dict) -> InternalReleaseData:
         logger.debug("Mapping Discogs payload to internal release model")

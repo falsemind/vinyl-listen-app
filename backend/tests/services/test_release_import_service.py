@@ -185,3 +185,26 @@ def test_get_tracklist_returns_discogs_tracks(
         ("X2", "S.O.U.R", None),
         ("Y1", "Another Tune", "5:12"),
     ]
+
+
+def test_get_artists_returns_discogs_release_artists(
+    release_import_discogs_repository_factory,
+    build_release_import_service,
+) -> None:
+    discogs_repository = release_import_discogs_repository_factory(
+        {
+            "artists": [
+                {"id": 194, "name": "Boards Of Canada"},
+                {"id": 355, "name": "Karma (54)"},
+                {"name": "No ID"},
+            ]
+        }
+    )
+    service = build_release_import_service(discogs_repository=discogs_repository)
+
+    artists = service.get_artists(db=object(), discogs_release_id=555123)
+
+    assert [(artist.name, artist.discogs_artist_id) for artist in artists] == [
+        ("Boards Of Canada", 194),
+        ("Karma", 355),
+    ]

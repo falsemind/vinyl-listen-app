@@ -1,4 +1,4 @@
-from app.services.release_mapper import map_discogs_to_internal
+from app.services.release_mapper import extract_release_artists, map_discogs_to_internal
 
 
 def test_map_discogs_to_internal_normalizes_release_metadata() -> None:
@@ -99,3 +99,21 @@ def test_map_discogs_to_internal_keeps_clean_self_released_label() -> None:
     result = map_discogs_to_internal(payload)
 
     assert result.label == "Not On Label (Om Unit Self-Released)"
+
+
+def test_extract_release_artists_returns_discogs_artist_ids() -> None:
+    artists = extract_release_artists(
+        {
+            "artists": [
+                {"id": 194, "name": "Boards Of Canada"},
+                {"id": "355", "name": "Karma (54)"},
+                {"id": 194, "name": "Boards Of Canada"},
+                {"name": "Missing ID"},
+            ]
+        }
+    )
+
+    assert [(artist.name, artist.discogs_artist_id) for artist in artists] == [
+        ("Boards Of Canada", 194),
+        ("Karma", 355),
+    ]
