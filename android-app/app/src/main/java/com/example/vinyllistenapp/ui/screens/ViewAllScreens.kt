@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -702,9 +704,21 @@ private fun TopRecordListItem(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
                 ) {
-                    TopRecordMetricRow(text = "Rating: ${record.averageRating}", color = VinylColors.AccentGreen)
-                    TopRecordMetricRow(text = "Top track: ${record.topTrack ?: "n/a"}", color = VinylColors.AccentOrange)
-                    TopRecordMetricRow(text = "Top mood: ${record.topMood ?: "n/a"}", color = VinylColors.AccentPurple)
+                    TopRecordMetricRow(
+                        label = "Rating: ",
+                        value = record.averageRating.toString(),
+                        valueColor = VinylColors.AccentGreen,
+                    )
+                    TopRecordMetricRow(
+                        label = "Top track: ",
+                        value = record.topTrack ?: "n/a",
+                        valueColor = VinylColors.AccentOrange,
+                    )
+                    TopRecordMetricRow(
+                        label = "Top mood: ",
+                        value = record.topMood ?: "n/a",
+                        valueColor = VinylColors.AccentPurple,
+                    )
                 }
                 Text(
                     text = "${record.plays} plays",
@@ -724,12 +738,19 @@ private fun TopRecordListItem(
 
 @Composable
 private fun TopRecordMetricRow(
-    text: String,
-    color: Color,
+    label: String,
+    value: String,
+    valueColor: Color,
 ) {
     Text(
-        text = text,
-        color = color,
+        text =
+            buildAnnotatedString {
+                append(label)
+                pushStyle(SpanStyle(color = valueColor))
+                append(value)
+                pop()
+            },
+        color = VinylColors.TextSecondary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         style = MaterialTheme.typography.bodySmall,
