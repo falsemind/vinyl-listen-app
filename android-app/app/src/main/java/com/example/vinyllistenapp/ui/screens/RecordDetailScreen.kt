@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,8 +47,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -534,6 +538,17 @@ private fun RecordDetailHeroCard(
                     onClose = { onTracklistExpandedChange(false) },
                 )
             }
+            val totalPlayTime = releaseTotalPlayTimeText(record)?.removePrefix("Total time: ")
+            if (record.styles.isNotEmpty() || totalPlayTime != null) {
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(VinylColors.BorderDefault),
+                )
+                RecordStylesLine(styles = record.styles, totalPlayTime = totalPlayTime)
+            }
         }
     }
 }
@@ -572,6 +587,62 @@ private fun RecordTracklistToggle(
                     .size(28.dp)
                     .graphicsLayer { rotationZ = arrowRotation },
         )
+    }
+}
+
+@Composable
+private fun RecordStylesLine(
+    styles: List<String>,
+    totalPlayTime: String?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (styles.isNotEmpty()) {
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(end = VinylSpacing.SpaceMd)
+                        .horizontalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text =
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(color = VinylColors.TextSecondary)) {
+                                append("Style: ")
+                            }
+                            withStyle(SpanStyle(color = VinylColors.AccentGreen)) {
+                                append(styles.joinToString(", "))
+                            }
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    softWrap = false,
+                )
+            }
+        } else {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+        totalPlayTime?.let { time ->
+            Text(
+                text =
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = VinylColors.TextSecondary)) {
+                            append("Time: ")
+                        }
+                        withStyle(SpanStyle(color = VinylColors.AccentGreen)) {
+                            append(time)
+                        }
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -630,20 +701,6 @@ private fun RecordTracklistContent(
                 record.tracklist.forEach { track ->
                     Text(
                         text = displayReleaseTrack(track),
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                releaseTotalPlayTimeText(record)?.let { totalTime ->
-                    Spacer(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(VinylColors.BorderDefault),
-                    )
-                    Text(
-                        text = totalTime,
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
