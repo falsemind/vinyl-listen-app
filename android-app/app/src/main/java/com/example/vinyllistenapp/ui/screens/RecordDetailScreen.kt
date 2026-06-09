@@ -503,7 +503,7 @@ private fun RecordDetailHeroCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${record.year?.toString() ?: "Unknown year"} - ${record.label}",
+                        text = "${record.year?.toString() ?: "Unknown year"} • ${record.label}",
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
