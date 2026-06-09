@@ -46,6 +46,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,7 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.ui.components.ActionMenuAction
 import com.example.vinyllistenapp.ui.components.ActionMenuPopup
@@ -91,6 +93,7 @@ fun RecordDetailScreen(
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
+    var isArtistDiscographyExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
@@ -250,7 +253,10 @@ fun RecordDetailScreen(
         if (isActionMenuOpen) {
             ActionMenuPopup(
                 offset = menuOffset,
-                onDismiss = { isActionMenuOpen = false },
+                onDismiss = {
+                    isActionMenuOpen = false
+                    isArtistDiscographyExpanded = false
+                },
             ) {
                 if (shouldShowGetFullReleaseAction(record)) {
                     ActionMenuAction(
@@ -264,6 +270,32 @@ fun RecordDetailScreen(
                     )
                 } else if (record.hasFullDiscogsInfo) {
                     ActionMenuStatus(label = "Full Discogs release")
+                }
+                if (shouldShowArtistDiscographyAction(record)) {
+                    if (record.discogsArtists.size == 1) {
+                        ActionMenuAction(
+                            label = "View artist discography",
+                            onClick = {
+                                isActionMenuOpen = false
+                                uriHandler.openUri(discogsArtistUrl(record.discogsArtists.first().discogsArtistId))
+                            },
+                        )
+                    } else {
+                        ArtistDiscographyMenuAction(
+                            expanded = isArtistDiscographyExpanded,
+                            onClick = { isArtistDiscographyExpanded = !isArtistDiscographyExpanded },
+                        )
+                        if (isArtistDiscographyExpanded) {
+                            ArtistDiscographyMenuLinks(
+                                artists = record.discogsArtists,
+                                onArtistClick = { artist ->
+                                    isActionMenuOpen = false
+                                    isArtistDiscographyExpanded = false
+                                    uriHandler.openUri(discogsArtistUrl(artist.discogsArtistId))
+                                },
+                            )
+                        }
+                    }
                 }
                 ActionMenuAction(
                     label = "View on Discogs",
@@ -294,6 +326,96 @@ private fun CollectionRemovedMessageCard(message: String) {
             style = MaterialTheme.typography.bodyMedium,
         )
     }
+}
+
+@Composable
+private fun ArtistDiscographyMenuAction(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Artist discography arrow rotation",
+    )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (expanded) "Close artist discography" else "Open artist discography",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = "View artists discography",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            modifier =
+                Modifier
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+        )
+    }
+}
+
+@Composable
+private fun ArtistDiscographyMenuLinks(
+    artists: List<ReleaseArtist>,
+    onArtistClick: (ReleaseArtist) -> Unit,
+) {
+    ActionMenuDelimiter()
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+    ) {
+        artists.forEach { artist ->
+            Text(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = "Open ${artist.name} on Discogs",
+                            role = Role.Button,
+                            onClick = { onArtistClick(artist) },
+                        ).padding(vertical = VinylSpacing.SpaceXs),
+                text = "• ${artist.name}",
+                color = VinylColors.AccentGreen,
+                textAlign = TextAlign.Start,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+    ActionMenuDelimiter()
+}
+
+@Composable
+private fun ActionMenuDelimiter() {
+    Spacer(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(VinylColors.BorderDefault),
+    )
 }
 
 @Composable
@@ -532,6 +654,8 @@ private fun RecordTracklistContent(
 }
 
 private fun discogsReleaseUrl(discogsReleaseId: Long): String = "https://www.discogs.com/release/$discogsReleaseId"
+
+internal fun discogsArtistUrl(discogsArtistId: Long): String = "https://www.discogs.com/artist/$discogsArtistId"
 
 private fun displayReleaseTrack(track: ReleaseTrack): String {
     val duration =
@@ -1165,6 +1289,9 @@ internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean 
 
 internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
     record.inCollection && !record.hasFullDiscogsInfo && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
+
+internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
+    record.hasFullDiscogsInfo && record.discogsArtists.isNotEmpty()
 
 internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
 
