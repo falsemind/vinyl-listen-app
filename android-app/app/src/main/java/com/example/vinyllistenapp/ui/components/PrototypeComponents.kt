@@ -255,7 +255,7 @@ internal fun AlbumArtBlock(
                 .size(outerSize)
                 .clip(VinylShapes.Card)
                 .background(VinylColors.SurfaceSecondary)
-                .border(1.dp, VinylColors.BorderDefault),
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
         contentAlignment = Alignment.Center,
     ) {
         if (imageUrl.isNullOrBlank()) {
