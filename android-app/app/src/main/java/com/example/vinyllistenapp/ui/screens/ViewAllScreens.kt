@@ -593,10 +593,10 @@ private fun TimedSessionMetadataChips(sessions: List<ListeningSession>) {
         horizontalSpacing = VinylSpacing.SpaceSm,
         verticalSpacing = VinylSpacing.SpaceSm,
     ) {
-        TimedSessionMetadataChip(text = "Session Time: ${timedSessionDurationLabel(sessions)}")
-        TimedSessionMetadataChip(text = "Total Records: ${sessions.size}")
-        TimedSessionMetadataChip(text = "Avg Rating: $averageRating")
-        TimedSessionMetadataChip(text = "Top Mood: $topMood")
+        TimedSessionMetadataChip(text = "Time: ${timedSessionDurationLabel(sessions)}")
+        TimedSessionMetadataChip(text = "${sessions.size} x Record(s)")
+        TimedSessionMetadataChip(text = "Rating: $averageRating")
+        TimedSessionMetadataChip(text = "Mood: $topMood")
     }
 }
 
