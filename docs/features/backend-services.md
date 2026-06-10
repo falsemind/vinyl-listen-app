@@ -357,6 +357,8 @@ Errors are typed:
 3. Rejects the request if a non-stale active group remains.
 4. Creates a new `session_groups` row with `status = active`.
 
+The one-active-group rule is enforced in this service layer, not by a database uniqueness constraint. That matches the current single-client app flow; add a database-level guard before supporting concurrent multi-client starts.
+
 ### Active and finish behavior
 
 - `get_active_session_group` returns the active group or `None`.

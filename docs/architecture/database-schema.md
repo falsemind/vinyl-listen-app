@@ -284,7 +284,7 @@ INDEX (session_group_id)
 
 Represents an optional timed listening session. A timed group contains multiple normal `sessions` rows through `sessions.session_group_id`.
 
-Only one group should be active at a time. The service auto-finishes stale active groups after 30 minutes without newly logged child sessions.
+Only one group should be active at a time. This invariant is currently enforced by `SessionGroupsService` rather than a database uniqueness constraint, which is enough for the current single-client app flow but should be hardened if multiple clients can start groups concurrently. The service auto-finishes stale active groups after 30 minutes without newly logged child sessions.
 
 ### Columns
 

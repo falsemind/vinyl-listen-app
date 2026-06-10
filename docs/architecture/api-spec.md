@@ -730,7 +730,7 @@ The backend auto-finishes an active timed session after 30 minutes without newly
 
 ## POST /sessions/groups
 
-Starts a timed session group. Only one group can be active at a time.
+Starts a timed session group. Only one group can be active at a time. The current backend enforces this in service logic; add a database-level uniqueness guard before supporting concurrent multi-client starts.
 
 ### Request
 
