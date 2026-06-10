@@ -7,19 +7,30 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.sessions import (
+    ActiveSessionGroupResponse,
     CreateSessionMoodRequest,
     CreateSessionRequest,
     ErrorResponse,
+    FinishSessionGroupRequest,
     HomeRecentSessionItem,
     HomeSummaryResponse,
     HomeTopRecordItem,
     SessionCreateResponse,
+    SessionGroupResponse,
     SessionMoodItem,
     SessionMoodResponse,
     SessionMoodsResponse,
     SessionResponse,
     SessionTrackResponse,
+    StartSessionGroupRequest,
     UpdateSessionRequest,
+)
+from app.services.session_groups_service import (
+    SessionGroupAlreadyActiveError,
+    SessionGroupInactiveError,
+    SessionGroupNotFoundError,
+    SessionGroupsService,
+    SessionGroupValidationError,
 )
 from app.services.sessions_service import (
     ReleaseNotFoundError,
@@ -36,6 +47,104 @@ router = APIRouter()
 
 def get_sessions_service() -> SessionsService:
     return SessionsService()
+
+
+def get_session_groups_service() -> SessionGroupsService:
+    return SessionGroupsService()
+
+
+@router.post(
+    "/groups",
+    response_model=SessionGroupResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def start_session_group(
+    payload: StartSessionGroupRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+):
+    try:
+        session_group = service.start_session_group(db, title=payload.title, started_at=payload.started_at)
+    except SessionGroupAlreadyActiveError as error:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionGroupValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+
+    return _map_session_group_response(session_group)
+
+
+@router.get(
+    "/groups/active",
+    response_model=ActiveSessionGroupResponse,
+)
+def get_active_session_group(
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+):
+    session_group = service.get_active_session_group(db)
+    return ActiveSessionGroupResponse(
+        session_group=_map_session_group_response(session_group) if session_group is not None else None,
+    )
+
+
+@router.get(
+    "/groups/{session_group_id}",
+    response_model=SessionGroupResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def get_session_group(
+    session_group_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+):
+    try:
+        session_group = service.get_session_group(db, session_group_id)
+    except SessionGroupNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "session_group_not_found", "message": str(error)}},
+        )
+
+    return _map_session_group_response(session_group)
+
+
+@router.patch(
+    "/groups/{session_group_id}/finish",
+    response_model=SessionGroupResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def finish_session_group(
+    session_group_id: str,
+    payload: FinishSessionGroupRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+):
+    try:
+        session_group = service.finish_session_group(db, session_group_id, ended_at=payload.ended_at)
+    except SessionGroupNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "session_group_not_found", "message": str(error)}},
+        )
+    except SessionGroupInactiveError as error:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionGroupValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+
+    return _map_session_group_response(session_group)
 
 
 @router.post(
@@ -62,6 +171,7 @@ def log_session(
             played_at=payload.played_at,
             side=payload.side,
             track_positions=payload.track_positions,
+            session_group_id=payload.session_group_id,
         )
     except SessionValidationError as error:
         return JSONResponse(
@@ -73,11 +183,22 @@ def log_session(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": {"code": "release_not_found", "message": str(error)}},
         )
+    except SessionGroupNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "session_group_not_found", "message": str(error)}},
+        )
+    except SessionGroupInactiveError as error:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
 
     response.status_code = status.HTTP_201_CREATED
     return SessionCreateResponse(
         session_id=result.session_id,
         timestamp=result.timestamp,
+        session_group_id=result.session_group_id,
         status=result.status,
     )
 
@@ -106,6 +227,7 @@ def get_home_summary(
             HomeRecentSessionItem(
                 session_id=item.session.id,
                 release_id=item.release.id,
+                session_group_id=item.session.session_group_id,
                 artist=item.release.artist,
                 title=item.release.title,
                 thumbnail_url=item.release.cover_image_url,
@@ -269,6 +391,7 @@ def _map_session_response(
     return SessionResponse(
         id=session.id,
         release_id=session.release_id,
+        session_group_id=session.session_group_id,
         rating=session.rating,
         mood=session.mood,
         notes=session.notes,
@@ -286,4 +409,16 @@ def _map_session_response(
         created_at=session.created_at,
         can_edit=service.can_edit_session(session),
         editable_until=service.editable_until(session),
+    )
+
+
+def _map_session_group_response(session_group) -> SessionGroupResponse:
+    return SessionGroupResponse(
+        id=session_group.id,
+        title=session_group.title,
+        status=session_group.status,
+        started_at=session_group.started_at,
+        ended_at=session_group.ended_at,
+        created_at=session_group.created_at,
+        updated_at=session_group.updated_at,
     )

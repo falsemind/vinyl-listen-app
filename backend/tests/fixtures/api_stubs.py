@@ -257,6 +257,60 @@ class SessionStub:
     played_at: datetime | None
     vinyl_side: str | None
     created_at: datetime
+    session_group_id: str | None = None
+
+
+@dataclass
+class SessionGroupStub:
+    id: str = "group-123"
+    title: str | None = "Late night stack"
+    status: str = "active"
+    started_at: datetime = datetime(2026, 4, 19, 8, 0, tzinfo=UTC)
+    ended_at: datetime | None = None
+    created_at: datetime = datetime(2026, 4, 19, 8, 0, tzinfo=UTC)
+    updated_at: datetime = datetime(2026, 4, 19, 8, 0, tzinfo=UTC)
+
+
+class StubSessionGroupsService:
+    def __init__(self) -> None:
+        self.group = SessionGroupStub()
+        self.active_group: SessionGroupStub | None = self.group
+        self.start_error: Exception | None = None
+        self.get_error: Exception | None = None
+        self.finish_error: Exception | None = None
+        self.start_calls: list[dict] = []
+        self.get_calls: list[str] = []
+        self.finish_calls: list[tuple[str, str | None]] = []
+
+    def start_session_group(self, _db, *, title: str | None, started_at: str | None = None) -> SessionGroupStub:
+        self.start_calls.append({"title": title, "started_at": started_at})
+        if self.start_error is not None:
+            raise self.start_error
+        return self.group
+
+    def get_active_session_group(self, _db) -> SessionGroupStub | None:
+        return self.active_group
+
+    def get_session_group(self, _db, session_group_id: str) -> SessionGroupStub:
+        self.get_calls.append(session_group_id)
+        if self.get_error is not None:
+            raise self.get_error
+        return self.group
+
+    def finish_session_group(
+        self,
+        _db,
+        session_group_id: str,
+        *,
+        ended_at: str | None = None,
+    ) -> SessionGroupStub:
+        self.finish_calls.append((session_group_id, ended_at))
+        if self.finish_error is not None:
+            raise self.finish_error
+        self.group.status = "completed"
+        self.group.ended_at = datetime(2026, 4, 19, 9, 0, tzinfo=UTC)
+        self.group.updated_at = self.group.ended_at
+        return self.group
 
 
 class StubSessionsService:
@@ -470,6 +524,14 @@ def build_stub_sessions_service() -> Callable[[], StubSessionsService]:
 
 
 @pytest.fixture
+def build_stub_session_groups_service() -> Callable[[], StubSessionGroupsService]:
+    def _factory() -> StubSessionGroupsService:
+        return StubSessionGroupsService()
+
+    return _factory
+
+
+@pytest.fixture
 def override_identify_service() -> Callable[[StubIdentifyService], None]:
     def _override(service: StubIdentifyService) -> None:
         from app.api.routes.identify import get_identify_service
@@ -522,6 +584,17 @@ def override_sessions_service() -> Callable[[StubSessionsService], None]:
 
         app.dependency_overrides[get_sessions_service] = lambda: service
         app.dependency_overrides[get_release_sessions_service] = lambda: service
+
+    return _override
+
+
+@pytest.fixture
+def override_session_groups_service() -> Callable[[StubSessionGroupsService], None]:
+    def _override(service: StubSessionGroupsService) -> None:
+        from app.api.routes.sessions import get_session_groups_service
+        from app.main import app
+
+        app.dependency_overrides[get_session_groups_service] = lambda: service
 
     return _override
 

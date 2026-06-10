@@ -16,6 +16,7 @@ class CreateSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     release_id: str
+    session_group_id: str | None = None
     side: str | None = None
     track_positions: list[str] | None = None
     rating: int | None = None
@@ -37,7 +38,35 @@ class UpdateSessionRequest(BaseModel):
 class SessionCreateResponse(BaseModel):
     session_id: str
     timestamp: datetime
+    session_group_id: str | None = None
     status: str
+
+
+class StartSessionGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=100)
+    started_at: str | None = None
+
+
+class FinishSessionGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ended_at: str | None = None
+
+
+class SessionGroupResponse(BaseModel):
+    id: str
+    title: str | None = None
+    status: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ActiveSessionGroupResponse(BaseModel):
+    session_group: SessionGroupResponse | None = None
 
 
 class SessionMoodItem(BaseModel):
@@ -69,6 +98,7 @@ class SessionTrackResponse(BaseModel):
 class SessionResponse(BaseModel):
     id: str
     release_id: str
+    session_group_id: str | None = None
     rating: int | None
     mood: str | None
     notes: str | None
@@ -82,6 +112,7 @@ class SessionResponse(BaseModel):
 
 class ReleaseSessionHistoryItem(BaseModel):
     session_id: str
+    session_group_id: str | None = None
     date: str | None
     played_at: datetime | None = None
     side: str | None
@@ -102,6 +133,7 @@ class ReleaseSessionsResponse(BaseModel):
 class HomeRecentSessionItem(BaseModel):
     session_id: str
     release_id: str
+    session_group_id: str | None = None
     artist: str
     title: str
     thumbnail_url: str | None = None
