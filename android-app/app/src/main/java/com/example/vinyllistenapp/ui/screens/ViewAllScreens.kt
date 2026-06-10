@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,13 +32,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.api.VinylApiClient
@@ -50,6 +55,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
@@ -57,6 +63,8 @@ import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -90,12 +98,22 @@ fun RecentSessionsScreen(
         onBack = onBack,
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
-        PaginatedViewAllItems(items = sessions) { session ->
-            SessionListItem(
-                session = session,
-                onClick = { onOpenRecord(session.releaseId) },
-                onEditSession = { sessionId -> onEditSession(sessionId) },
-            )
+        PaginatedViewAllItems(items = groupedRecentSessionItems(sessions)) { item ->
+            when (item) {
+                is RecentSessionListItem.Group ->
+                    TimedSessionGroupListItem(
+                        item = item,
+                        onOpenRecord = onOpenRecord,
+                        onEditSession = onEditSession,
+                    )
+
+                is RecentSessionListItem.Single ->
+                    SessionListItem(
+                        session = item.session,
+                        onClick = { onOpenRecord(item.session.releaseId) },
+                        onEditSession = { sessionId -> onEditSession(sessionId) },
+                    )
+            }
         }
     }
 }
@@ -339,6 +357,7 @@ private fun ViewAllScreenContent(
                 color = VinylColors.TextSecondary,
                 style = MaterialTheme.typography.bodyLarge,
             )
+            LocalTimedSessionBanner.current?.invoke()
             BackText(onBack)
             content()
             Spacer(Modifier.height(96.dp))
@@ -505,16 +524,165 @@ private fun EmptyViewAllText(text: String) {
     )
 }
 
+private sealed interface RecentSessionListItem {
+    data class Single(
+        val session: ListeningSession,
+    ) : RecentSessionListItem
+
+    data class Group(
+        val sessionGroupId: String,
+        val sessions: List<ListeningSession>,
+    ) : RecentSessionListItem
+}
+
+private fun groupedRecentSessionItems(sessions: List<ListeningSession>): List<RecentSessionListItem> {
+    val groupedSessions =
+        sessions
+            .filter { session -> !session.sessionGroupId.isNullOrBlank() }
+            .groupBy { session -> session.sessionGroupId.orEmpty() }
+    val renderedGroupIds = mutableSetOf<String>()
+
+    return sessions.mapNotNull { session ->
+        val sessionGroupId = session.sessionGroupId?.takeIf { it.isNotBlank() }
+        if (sessionGroupId == null) {
+            RecentSessionListItem.Single(session)
+        } else if (renderedGroupIds.add(sessionGroupId)) {
+            RecentSessionListItem.Group(
+                sessionGroupId = sessionGroupId,
+                sessions = groupedSessions[sessionGroupId].orEmpty(),
+            )
+        } else {
+            null
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionGroupListItem(
+    item: RecentSessionListItem.Group,
+    onOpenRecord: (String) -> Unit,
+    onEditSession: (String) -> Unit,
+) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(VinylColors.AccentGreen.copy(alpha = 0.10f), VinylShapes.Card)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.70f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+    ) {
+        TimedSessionMetadataChips(sessions = item.sessions)
+        item.sessions.forEach { session ->
+            SessionListItem(
+                session = session,
+                borderColor = VinylColors.AccentGreen.copy(alpha = 0.72f),
+                onClick = { onOpenRecord(session.releaseId) },
+                onEditSession = { sessionId -> onEditSession(sessionId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionMetadataChips(sessions: List<ListeningSession>) {
+    val averageRating = timedSessionAverageRating(sessions)
+    val topMood = timedSessionTopMood(sessions)
+
+    WrappingMetadataChipRow(
+        horizontalSpacing = VinylSpacing.SpaceSm,
+        verticalSpacing = VinylSpacing.SpaceSm,
+    ) {
+        TimedSessionMetadataChip(text = "Session Time: ${timedSessionDurationLabel(sessions)}")
+        TimedSessionMetadataChip(text = "Total Records: ${sessions.size}")
+        TimedSessionMetadataChip(text = "Avg Rating: $averageRating")
+        TimedSessionMetadataChip(text = "Top Mood: $topMood")
+    }
+}
+
+@Composable
+private fun TimedSessionMetadataChip(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        modifier =
+            modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.GreenTint20)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        text = text,
+        color = VinylColors.AccentGreen,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun WrappingMetadataChipRow(
+    modifier: Modifier = Modifier,
+    horizontalSpacing: Dp,
+    verticalSpacing: Dp,
+    content: @Composable () -> Unit,
+) {
+    val density = LocalDensity.current
+    val horizontalGap = with(density) { horizontalSpacing.roundToPx() }
+    val verticalGap = with(density) { verticalSpacing.roundToPx() }
+
+    Layout(
+        modifier = modifier,
+        content = content,
+    ) { measurables, constraints ->
+        val placeables = measurables.map { measurable -> measurable.measure(constraints.copy(minWidth = 0)) }
+        val positions = mutableListOf<IntOffset>()
+        val maxWidth = constraints.maxWidth
+        var rowWidth = 0
+        var rowHeight = 0
+        var layoutWidth = 0
+        var layoutHeight = 0
+
+        placeables.forEach { placeable ->
+            val nextWidth = if (rowWidth == 0) placeable.width else rowWidth + horizontalGap + placeable.width
+            if (rowWidth > 0 && nextWidth > maxWidth) {
+                layoutHeight += rowHeight + verticalGap
+                rowWidth = 0
+                rowHeight = 0
+            }
+
+            val x = if (rowWidth == 0) 0 else rowWidth + horizontalGap
+            positions += IntOffset(x, layoutHeight)
+            rowWidth = x + placeable.width
+            rowHeight = maxOf(rowHeight, placeable.height)
+            layoutWidth = maxOf(layoutWidth, rowWidth)
+        }
+
+        layoutHeight += rowHeight
+        layout(
+            width = layoutWidth.coerceIn(constraints.minWidth, constraints.maxWidth),
+            height = layoutHeight.coerceIn(constraints.minHeight, constraints.maxHeight),
+        ) {
+            placeables.forEachIndexed { index, placeable ->
+                val position = positions[index]
+                placeable.placeRelative(position.x, position.y)
+            }
+        }
+    }
+}
+
 @Composable
 private fun SessionListItem(
     session: ListeningSession,
     onClick: () -> Unit,
     onEditSession: ((String) -> Unit)? = null,
+    borderColor: Color = VinylColors.BorderDefault,
 ) {
     val editableSessionId = session.sessionId?.takeIf { session.canEdit && it.isNotBlank() && onEditSession != null }
 
     AccentCard(
         modifier = Modifier.clickable(onClickLabel = "Open ${session.title}", role = Role.Button, onClick = onClick),
+        borderColor = borderColor,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -597,6 +765,45 @@ private fun SidePlayedChip(side: String?) {
         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
     )
 }
+
+private fun timedSessionAverageRating(sessions: List<ListeningSession>): String {
+    val ratings = sessions.mapNotNull { session -> session.rating.takeIf { it > 0 } }
+    if (ratings.isEmpty()) return "n/a"
+    return String.format(Locale.US, "%.1f", ratings.average())
+}
+
+private fun timedSessionTopMood(sessions: List<ListeningSession>): String =
+    sessions
+        .map { session -> session.mood.trim() }
+        .filter { mood -> mood.isNotBlank() && !mood.equals("Unspecified", ignoreCase = true) }
+        .groupingBy { mood -> mood }
+        .eachCount()
+        .maxWithOrNull(compareBy<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+        ?.key
+        ?: "n/a"
+
+private fun timedSessionDurationLabel(sessions: List<ListeningSession>): String {
+    val instants =
+        sessions
+            .mapNotNull { session -> parseSessionInstant(session.createdAt) ?: parseSessionInstant(session.playedAt) }
+            .sorted()
+    if (instants.isEmpty()) return "n/a"
+
+    val duration = Duration.between(instants.first(), instants.last()).coerceAtLeast(Duration.ZERO)
+    val hours = duration.toHours()
+    val minutes = duration.toMinutes() % 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes}min"
+        else -> "${duration.toMinutes()}min"
+    }
+}
+
+private fun parseSessionInstant(value: String?): Instant? =
+    value
+        ?.takeIf { it.isNotBlank() && it != "Unknown date" }
+        ?.let { timestamp ->
+            runCatching { Instant.parse(timestamp) }.getOrNull()
+        }
 
 @Composable
 private fun RecordCountListItem(

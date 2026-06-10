@@ -74,6 +74,7 @@ import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -91,6 +92,7 @@ fun SessionLoggingScreen(
     apiClient: VinylApiClient,
     onSave: (String) -> Unit,
     onCancel: () -> Unit,
+    activeSessionGroupId: String? = null,
 ) {
     val scope = rememberCoroutineScope()
     val fallbackRecord = MockVinylData.record(releaseId)
@@ -159,6 +161,7 @@ fun SessionLoggingScreen(
             runCatching {
                 apiClient.createSession(
                     releaseId = targetReleaseId,
+                    sessionGroupId = activeSessionGroupId,
                     side = selectedSideOption?.value?.takeIf { it.isNotBlank() },
                     trackPositions = selectedTrackPositions,
                     rating = rating,
@@ -192,6 +195,7 @@ fun SessionLoggingScreen(
                 .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         SessionLoggingHeader(onCancel = onCancel)
+        SessionTimedBannerSlot()
         serverError?.let { message ->
             ErrorRetryCard(message = message, onRetry = ::retryServerError)
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
@@ -421,6 +425,7 @@ fun EditSessionScreen(
                 .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         SessionLoggingHeader(title = "Edit Session", onCancel = onCancel)
+        SessionTimedBannerSlot()
         serverError?.let { message ->
             ErrorRetryCard(message = message, onRetry = ::retryServerError)
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
@@ -542,7 +547,7 @@ private fun SessionLoggingHeader(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(top = 48.dp, bottom = VinylSpacing.SpaceXl),
+                .padding(top = 48.dp, bottom = VinylSpacing.SpaceLg),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -553,6 +558,20 @@ private fun SessionLoggingHeader(
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.width(40.dp))
+    }
+}
+
+@Composable
+private fun SessionTimedBannerSlot() {
+    LocalTimedSessionBanner.current?.let { banner ->
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = VinylSpacing.SpaceLg),
+        ) {
+            banner()
+        }
     }
 }
 

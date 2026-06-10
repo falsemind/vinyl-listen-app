@@ -60,6 +60,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -284,6 +285,7 @@ internal fun AiInsightsScreen(
                 onClearHistory = { state.showClearConfirmation = true },
                 onExportHistory = ::exportHistory,
             )
+            LocalTimedSessionBanner.current?.invoke()
             Box(
                 modifier =
                     Modifier
