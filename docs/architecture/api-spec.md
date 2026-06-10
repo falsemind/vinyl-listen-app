@@ -634,6 +634,7 @@ Logs a listening session.
 ```json
 {
   "release_id": "internal_id",
+  "session_group_id": "optional_timed_session_id",
   "side": "A",
   "track_positions": ["A1", "A2"],
   "rating": 1,
@@ -653,6 +654,7 @@ Logs a listening session.
 {
   "session_id": "8b38e7a2",
   "timestamp": "2026-03-14T19:21:00Z",
+  "session_group_id": "optional_timed_session_id",
   "status": "success"
 }
 ```
@@ -663,6 +665,7 @@ Logs a listening session.
 
 ```
 rating must be 1–5
+session_group_id optional; when present, it must reference an active timed session group
 side must exist for the release when Discogs side metadata is known
 track_positions optional; when present, each track must exist on the selected side in cached full Discogs tracklist data
 notes optional
@@ -695,6 +698,7 @@ All fields are optional, but at least one field must be present. Send `null` to 
 {
   "id": "session-123",
   "release_id": "release-123",
+  "session_group_id": "optional_timed_session_id",
   "rating": 4,
   "mood": "Focused",
   "notes": "Updated after replaying the second side.",
@@ -718,7 +722,102 @@ Expired edit windows return `403` with `session_edit_window_expired`.
 
 ---
 
-# 6. Session Moods
+# 6. Timed Session Groups
+
+Used by Android to start an optional timed listening session. Individual record plays are still stored as normal `sessions` rows. When auto-add is enabled, the app passes the active group id as `session_group_id` while logging each record.
+
+The backend auto-finishes an active timed session after 30 minutes without newly logged records. Inactivity is based on the latest grouped session `created_at`, falling back to the group `started_at` when no records were logged.
+
+## POST /sessions/groups
+
+Starts a timed session group. Only one group can be active at a time.
+
+### Request
+
+```json
+{
+  "title": "Late night stack",
+  "started_at": "2026-04-19T08:00:00Z"
+}
+```
+
+Both fields are optional. `title` is trimmed and limited to 100 characters. `started_at` defaults to server time.
+
+### Response
+
+```
+201 Created
+```
+
+```json
+{
+  "id": "group-123",
+  "title": "Late night stack",
+  "status": "active",
+  "started_at": "2026-04-19T08:00:00Z",
+  "ended_at": null,
+  "created_at": "2026-04-19T08:00:00Z",
+  "updated_at": "2026-04-19T08:00:00Z"
+}
+```
+
+An existing active group returns `409 Conflict` with `session_group_active`.
+
+## GET /sessions/groups/active
+
+Returns the active timed session group, or `null` when none is active. This endpoint may auto-finish a stale group before returning.
+
+```json
+{
+  "session_group": {
+    "id": "group-123",
+    "title": "Late night stack",
+    "status": "active",
+    "started_at": "2026-04-19T08:00:00Z",
+    "ended_at": null,
+    "created_at": "2026-04-19T08:00:00Z",
+    "updated_at": "2026-04-19T08:00:00Z"
+  }
+}
+```
+
+## GET /sessions/groups/{session_group_id}
+
+Returns one timed session group by id.
+
+Missing groups return `404` with `session_group_not_found`.
+
+## PATCH /sessions/groups/{session_group_id}/finish
+
+Stops an active timed session group. `ended_at` is optional and defaults to server time.
+
+### Request
+
+```json
+{
+  "ended_at": "2026-04-19T09:00:00Z"
+}
+```
+
+### Response
+
+```json
+{
+  "id": "group-123",
+  "title": "Late night stack",
+  "status": "completed",
+  "started_at": "2026-04-19T08:00:00Z",
+  "ended_at": "2026-04-19T09:00:00Z",
+  "created_at": "2026-04-19T08:00:00Z",
+  "updated_at": "2026-04-19T09:00:00Z"
+}
+```
+
+Inactive groups return `409` with `session_group_inactive`. `ended_at` before `started_at` returns `422` with `invalid_ended_at`.
+
+---
+
+# 7. Session Moods
 
 Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
@@ -789,7 +888,7 @@ Response:
 
 ---
 
-# 7. Home Summary
+# 8. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -810,6 +909,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
     {
       "session_id": "session-123",
       "release_id": "release-123",
+      "session_group_id": "group-123",
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
       "thumbnail_url": "https://...",
@@ -841,9 +941,11 @@ Used by the **Home screen** to show real listening data after sessions are logge
 
 The Android app prefers `played_at` for device-timezone-aware labels such as `Today`, `1d`, `1w`, or `1m`. `date` remains as a calendar-date fallback.
 
+On the expanded Recent Sessions screen, Android groups adjacent items with the same non-null `session_group_id` into a timed-session container. Existing sessions with `session_group_id = null` remain individual cards. This grouping is client-side for the currently fetched recent-session list; a future mixed-feed endpoint can preserve groups across page boundaries.
+
 ---
 
-# 8. Get Record Details
+# 9. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -897,7 +999,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 9. Session History
+# 10. Session History
 
 Used for listening history.
 
@@ -917,6 +1019,7 @@ Used for listening history.
   "sessions": [
     {
       "session_id": "abc123",
+      "session_group_id": "group-123",
       "date": "2026-03-10",
       "played_at": "2026-03-10T23:30:00Z",
       "side": "B",
@@ -942,7 +1045,7 @@ Used for listening history.
 
 ---
 
-# 10. Analytics
+# 11. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -1171,7 +1274,7 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 ---
 
-# 11. AI Insights
+# 12. AI Insights
 
 Used by the **Insights screen** chat shell.
 
@@ -1322,7 +1425,7 @@ The import stores only the filtered song-event fields defined in the AI Insights
 
 ---
 
-# 12. System Endpoint
+# 13. System Endpoint
 
 Used by the **Settings screen**.
 

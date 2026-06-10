@@ -16,7 +16,8 @@ description: This document explains the backend service layer in `backend/app/se
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
 | `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
-| `sessions_service.py` | Create and read listening sessions and validate session input. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`. |
+| `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections and timed-session membership. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
+| `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups. | `SessionGroupsRepository`, `SessionsRepository`. |
 | `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
 | `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
 | `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, and read-only tool context. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository. |
@@ -299,8 +300,10 @@ The mapper handles common Discogs shapes:
 1. Validates and normalizes input.
 2. Confirms the local release exists.
 3. Optionally checks the raw Discogs release payload for valid side labels.
-4. Creates a session through `SessionsRepository`.
-5. Returns `CreateSessionResult` with session ID, timestamp, and `created` status.
+4. Validates optional `session_group_id` through `SessionGroupsService`.
+5. Creates a session through `SessionsRepository`.
+6. Persists optional selected tracks through `session_tracks`.
+7. Returns `CreateSessionResult` with session ID, timestamp, optional session group id, and success status.
 
 ### Edit flow
 
@@ -308,7 +311,7 @@ The mapper handles common Discogs shapes:
 
 1. Loads the existing session.
 2. Requires the session to be within 15 minutes of `created_at`.
-3. Validates only editable fields: `side`, `rating`, `mood`, and `notes`.
+3. Validates only editable fields: `side`, `track_positions`, `rating`, `mood`, and `notes`.
 4. Reuses side validation and mood canonicalization from session creation.
 5. Persists the updated session through `SessionsRepository`.
 
@@ -321,6 +324,8 @@ The service validates:
 - `side` is trimmed and uppercased.
 - `mood` and `notes` are trimmed and stored as nullable optional text.
 - If Discogs track positions are available, requested side must exist on the release.
+- `track_positions` are optional; when provided, each selected track must exist on the selected side in cached full Discogs release data.
+- `session_group_id` is optional; when provided, it must point to an active timed session group.
 - Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods`; session analytics still reads the selected text from `sessions.mood`.
 - Mood names are canonicalized case-insensitively from built-in moods, active custom mood options, or historical session rows before a session is stored.
 - Session edits are allowed only during the backend-controlled 15-minute window after `created_at`.
@@ -331,12 +336,41 @@ Errors are typed:
 - `SessionEditWindowExpiredError` when the edit window has passed.
 - `ReleaseNotFoundError` when a release does not exist.
 - `SessionNotFoundError` when a session lookup misses.
+- `SessionGroupNotFoundError` or `SessionGroupInactiveError` when timed-session membership is invalid.
 
 ### Read behavior
 
 - `get_session` returns one session by ID or raises `SessionNotFoundError`.
 - `get_sessions_by_release` validates the release ID, confirms the release exists, and returns all sessions for that release.
 - Home and release session responses include `can_edit` and `editable_until` so clients can show edit affordances without owning the rule.
+
+## SessionGroupsService
+
+`SessionGroupsService` owns optional timed listening sessions.
+
+### Start flow
+
+`start_session_group(db, title, started_at)`:
+
+1. Loads the current active group.
+2. Auto-finishes it first if it has been inactive for 30 minutes.
+3. Rejects the request if a non-stale active group remains.
+4. Creates a new `session_groups` row with `status = active`.
+
+### Active and finish behavior
+
+- `get_active_session_group` returns the active group or `None`.
+- `finish_session_group` marks an active group as `completed` and sets `ended_at`.
+- `validate_active_session_group` is used during session creation before a child session is linked.
+- Inactivity is measured from the latest child session `created_at`; if there are no child sessions, it uses `session_groups.started_at`.
+- Auto-expiry sets `ended_at` to `last_activity + 30 minutes`.
+
+Typed errors:
+
+- `SessionGroupAlreadyActiveError` for a start request while an active group is still valid.
+- `SessionGroupNotFoundError` when a group id does not exist.
+- `SessionGroupInactiveError` when a stopped or auto-expired group is used.
+- `SessionGroupValidationError` for invalid title or datetime input.
 
 ## AnalyticsService
 

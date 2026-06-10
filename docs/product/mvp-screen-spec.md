@@ -71,6 +71,8 @@ Timestamp
 
 `View All` opens the Recent Sessions screen with up to 25 sessions.
 
+When a timed session is active, a green timer chip appears below the Home header. The chip shows elapsed time, an auto-add toggle, and a stop action. The chip also appears below headers on other app screens, except the identify camera, processing, and candidate confirmation flow.
+
 ### Stats Snapshot
 
 Small overview metrics:
@@ -301,6 +303,8 @@ Select Release → Import Release → Session Logging Screen
 
 Record a listening session for the selected release.
 
+If a timed session is active and auto-add is enabled, saving attaches the logged side-level session to the active timed session. Track selection remains optional.
+
 ## Record Info (Top Section)
 
 Display:
@@ -369,6 +373,10 @@ Custom mood behavior:
 - Long-press a saved custom mood to confirm deletion from saved mood options.
 - Logged sessions keep their selected mood for analytics history even if the custom option is deleted later.
 - Re-created moods reuse historical casing, so analytics does not split the same mood by case.
+
+### Optional Track Selection
+
+If cached Discogs tracklist data exists, the screen shows a track selector below side selection. Track selection is optional. The user can log only the side, selected tracks, or all tracks on the side.
 
 ### Notes
 
@@ -569,6 +577,19 @@ Show the expanded recent listening history from Home.
 ## Content
 
 List up to 25 recent sessions.
+
+Timed sessions render as a green bordered group when multiple logged records share a `session_group_id`.
+
+The group shows metadata chips:
+
+```
+Session Time
+Total Records
+Avg Rating
+Top Mood
+```
+
+Records inside the group keep the regular recent-session card content with a green border. Standalone sessions still render as normal cards.
 
 Each item shows:
 
