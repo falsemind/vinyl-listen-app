@@ -261,6 +261,7 @@ def get_release_sessions(
         sessions=[
             ReleaseSessionHistoryItem(
                 session_id=session.id,
+                session_group_id=session.session_group_id,
                 date=session.played_at.date().isoformat() if session.played_at is not None else None,
                 played_at=session.played_at,
                 side=session.vinyl_side,

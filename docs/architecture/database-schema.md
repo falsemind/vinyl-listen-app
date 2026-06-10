@@ -45,6 +45,7 @@ Core entities:
 ```
 releases
 sessions
+session_groups
 session_tracks
 session_moods
 discogs_release_cache
@@ -77,6 +78,10 @@ releases
    ├── session_moods
    │
    └── discogs_release_cache
+
+session_groups
+   │
+   └── sessions
 
 identify_jobs
    └── stores short-lived identify progress, result, and error payloads
@@ -238,12 +243,15 @@ Represents a **listening event**.
 
 Each time a user listens to a record, a session is created.
 
+Sessions can optionally belong to a timed listening session group. Existing and standalone sessions keep `session_group_id = null`.
+
 ### Columns
 
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID|Primary key|
 |release_id|UUID|FK → releases.id|
+|session_group_id|UUID|Nullable FK -> session_groups.id|
 |rating|INTEGER|1–5 rating|
 |mood|TEXT|User selected mood|
 |notes|TEXT|Optional session notes|
@@ -255,6 +263,7 @@ Each time a user listens to a record, a session is created.
 
 ```
 release_id → releases.id
+session_group_id -> session_groups.id ON DELETE SET NULL
 ```
 
 ### Indexes
@@ -265,6 +274,38 @@ PRIMARY KEY (id)
 INDEX (release_id)
 
 INDEX (played_at)
+
+INDEX (session_group_id)
+```
+
+---
+
+# Table: session_groups
+
+Represents an optional timed listening session. A timed group contains multiple normal `sessions` rows through `sessions.session_group_id`.
+
+Only one group should be active at a time. This invariant is currently enforced by `SessionGroupsService` rather than a database uniqueness constraint, which is enough for the current single-client app flow but should be hardened if multiple clients can start groups concurrently. The service auto-finishes stale active groups after 30 minutes without newly logged child sessions.
+
+### Columns
+
+|Column|Type|Notes|
+|---|---|---|
+|id|UUID|Primary key|
+|title|TEXT|Optional user title|
+|status|TEXT|`active` or `completed`|
+|started_at|TIMESTAMP|Timer start time|
+|ended_at|TIMESTAMP|Timer stop time, nullable while active|
+|created_at|TIMESTAMP|Group creation time|
+|updated_at|TIMESTAMP|Last group update time|
+
+### Indexes
+
+```
+PRIMARY KEY (id)
+
+INDEX (status)
+
+INDEX (started_at)
 ```
 
 ---

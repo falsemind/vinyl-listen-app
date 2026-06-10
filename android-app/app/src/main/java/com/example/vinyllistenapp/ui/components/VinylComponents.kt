@@ -16,11 +16,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -44,10 +53,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.domain.ConfidenceLevel
+import com.example.vinyllistenapp.domain.TimedSessionGroup
 import com.example.vinyllistenapp.domain.confidenceLevel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.delay
+import java.time.Duration
+import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -197,6 +210,128 @@ fun FloatingIconButton(
             tint = VinylColors.TextOnAccent,
             modifier = Modifier.size(28.dp),
         )
+    }
+}
+
+@Composable
+fun TimedSessionBanner(
+    sessionGroup: TimedSessionGroup,
+    autoAddEnabled: Boolean,
+    isStopping: Boolean,
+    onAutoAddToggle: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var nowEpochMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(sessionGroup.id) {
+        while (true) {
+            nowEpochMillis = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.AccentGreen.copy(alpha = 0.14f))
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card)
+                .padding(horizontal = VinylSpacing.SpaceLg),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = elapsedSessionTime(sessionGroup.startedAt, nowEpochMillis),
+                color = VinylColors.AccentGreen,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            sessionGroup.title?.takeIf { it.isNotBlank() }?.let { title ->
+                Text(
+                    text = title,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TimedSessionCircleAction(
+                icon = if (autoAddEnabled) Icons.Filled.Check else Icons.Filled.Add,
+                contentDescription = if (autoAddEnabled) "Auto-add records to timed session" else "Do not auto-add records",
+                selected = autoAddEnabled,
+                onClick = onAutoAddToggle,
+            )
+            TimedSessionCircleAction(
+                icon = Icons.Filled.PlayArrow,
+                contentDescription = "Stop timed session",
+                selected = true,
+                enabled = !isStopping,
+                onClick = onStop,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionCircleAction(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier =
+            modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
+                .alpha(if (enabled) 1f else 0.55f)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = contentDescription,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+private fun elapsedSessionTime(
+    startedAt: String,
+    nowEpochMillis: Long,
+): String {
+    val startedInstant =
+        runCatching { Instant.parse(startedAt) }.getOrNull()
+            ?: return "0:00"
+    val elapsed = Duration.between(startedInstant, Instant.ofEpochMilli(nowEpochMillis)).coerceAtLeast(Duration.ZERO)
+    val hours = elapsed.toHours()
+    val minutes = elapsed.toMinutes() % 60
+    val seconds = elapsed.seconds % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
     }
 }
 

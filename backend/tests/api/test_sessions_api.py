@@ -1,6 +1,10 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.session_groups_service import (
+    SessionGroupAlreadyActiveError,
+    SessionGroupNotFoundError,
+)
 from app.services.sessions_service import (
     ReleaseNotFoundError,
     SessionEditWindowExpiredError,
@@ -34,6 +38,7 @@ def test_create_session_endpoint_returns_201(
     assert response.json() == {
         "session_id": "session-123",
         "timestamp": "2026-04-19T08:30:00Z",
+        "session_group_id": None,
         "status": "success",
     }
     assert service.create_calls == [
@@ -45,8 +50,140 @@ def test_create_session_endpoint_returns_201(
             "played_at": "2026-03-14T19:21:00Z",
             "side": "A",
             "track_positions": None,
+            "session_group_id": None,
         }
     ]
+
+
+def test_start_session_group_endpoint_returns_created_group(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/sessions/groups",
+            json={"title": "  Late night stack  ", "started_at": "2026-04-19T08:00:00Z"},
+        )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "id": "group-123",
+        "title": "Late night stack",
+        "status": "active",
+        "started_at": "2026-04-19T08:00:00Z",
+        "ended_at": None,
+        "created_at": "2026-04-19T08:00:00Z",
+        "updated_at": "2026-04-19T08:00:00Z",
+    }
+    assert service.start_calls == [{"title": "  Late night stack  ", "started_at": "2026-04-19T08:00:00Z"}]
+
+
+def test_start_session_group_endpoint_returns_conflict_when_group_is_active(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    service.start_error = SessionGroupAlreadyActiveError("group-123")
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/sessions/groups", json={"title": None})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": {
+            "code": "session_group_active",
+            "message": "A timed listening session is already active.",
+        }
+    }
+
+
+def test_get_active_session_group_endpoint_returns_active_group(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/sessions/groups/active")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_group": {
+            "id": "group-123",
+            "title": "Late night stack",
+            "status": "active",
+            "started_at": "2026-04-19T08:00:00Z",
+            "ended_at": None,
+            "created_at": "2026-04-19T08:00:00Z",
+            "updated_at": "2026-04-19T08:00:00Z",
+        }
+    }
+
+
+def test_get_active_session_group_endpoint_returns_null_when_none_active(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    service.active_group = None
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/sessions/groups/active")
+
+    assert response.status_code == 200
+    assert response.json() == {"session_group": None}
+
+
+def test_finish_session_group_endpoint_returns_completed_group(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/v1/sessions/groups/group-123/finish",
+            json={"ended_at": "2026-04-19T09:00:00Z"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "group-123",
+        "title": "Late night stack",
+        "status": "completed",
+        "started_at": "2026-04-19T08:00:00Z",
+        "ended_at": "2026-04-19T09:00:00Z",
+        "created_at": "2026-04-19T08:00:00Z",
+        "updated_at": "2026-04-19T09:00:00Z",
+    }
+    assert service.finish_calls == [("group-123", "2026-04-19T09:00:00Z")]
+
+
+def test_get_session_group_endpoint_returns_404_when_missing(
+    build_stub_session_groups_service,
+    override_session_groups_service,
+) -> None:
+    service = build_stub_session_groups_service()
+    service.get_error = SessionGroupNotFoundError("missing-group")
+    override_session_groups_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/sessions/groups/missing-group")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "session_group_not_found",
+            "message": "Session group 'missing-group' was not found.",
+        }
+    }
 
 
 def test_create_session_endpoint_returns_standardized_validation_error(
@@ -90,6 +227,7 @@ def test_get_session_endpoint_returns_session_details(
     assert response.json() == {
         "id": "session-123",
         "release_id": "release-123",
+        "session_group_id": None,
         "rating": 5,
         "mood": "Calm",
         "notes": "Great pressing.",
@@ -132,6 +270,7 @@ def test_update_session_endpoint_returns_updated_session(
     assert response.json() == {
         "id": "session-123",
         "release_id": "release-123",
+        "session_group_id": None,
         "rating": 4,
         "mood": "Focused",
         "notes": "Changed after replay.",
@@ -239,6 +378,7 @@ def test_get_home_summary_endpoint_returns_real_session_data(
             {
                 "session_id": "session-123",
                 "release_id": "release-123",
+                "session_group_id": None,
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
@@ -372,6 +512,7 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
         "sessions": [
             {
                 "session_id": "session-123",
+                "session_group_id": None,
                 "date": "2026-03-14",
                 "played_at": "2026-03-14T19:21:00Z",
                 "side": "A",

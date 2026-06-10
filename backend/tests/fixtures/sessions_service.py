@@ -7,6 +7,7 @@ import pytest
 from app.models.releases import Releases
 from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
+from app.services.session_groups_service import SessionGroupsService
 from app.services.sessions_service import SessionsService
 
 
@@ -23,6 +24,7 @@ class InMemorySessionsRepository:
         session = Sessions(
             id="session-123",
             release_id=kwargs["release_id"],
+            session_group_id=kwargs.get("session_group_id"),
             rating=kwargs["rating"],
             mood=kwargs["mood"],
             notes=kwargs["notes"],
@@ -173,6 +175,7 @@ def build_sessions_service(
         list[Releases] | None,
         dict[int, dict] | None,
         InMemorySessionsMoodsRepository | None,
+        SessionGroupsService | None,
         Callable[[], datetime] | None,
     ],
     SessionsService,
@@ -182,6 +185,7 @@ def build_sessions_service(
         releases: list[Releases] | None = None,
         payload_by_discogs_id: dict[int, dict] | None = None,
         moods_repository: InMemorySessionsMoodsRepository | None = None,
+        session_groups_service: SessionGroupsService | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> SessionsService:
         return SessionsService(
@@ -189,6 +193,7 @@ def build_sessions_service(
             releases_repository=InMemoryReleasesRepository(releases or [build_release()]),
             discogs_repository=StubDiscogsRepository(payload_by_discogs_id or {}),
             moods_repository=moods_repository or InMemorySessionsMoodsRepository(),
+            session_groups_service=session_groups_service,
             now_provider=now_provider,
         )
 

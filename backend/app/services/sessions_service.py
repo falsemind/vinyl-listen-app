@@ -14,6 +14,7 @@ from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
 from app.services.release_mapper import ReleaseTrackData, extract_release_side_options, extract_release_tracklist
+from app.services.session_groups_service import SessionGroupsService
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ class SessionTrackSelection:
 @dataclass(frozen=True)
 class CreateSessionData:
     release_id: str
+    session_group_id: str | None
     rating: int | None
     mood: str | None
     notes: str | None
@@ -118,6 +120,7 @@ class UpdateSessionData:
 class CreateSessionResult:
     session_id: str
     timestamp: datetime
+    session_group_id: str | None = None
     status: str = "success"
 
 
@@ -149,6 +152,7 @@ class SessionsService:
         releases_repository: ReleasesRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
         moods_repository: SessionsMoodsRepository | None = None,
+        session_groups_service: SessionGroupsService | None = None,
         now_provider: Any | None = None,
         max_page_limit: int | None = None,
     ) -> None:
@@ -156,6 +160,7 @@ class SessionsService:
         self._releases_repository = releases_repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
         self._moods_repository = moods_repository or SessionsMoodsRepository()
+        self._session_groups_service = session_groups_service or SessionGroupsService()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._max_page_limit = max_page_limit or settings.max_page_limit
 
@@ -170,6 +175,7 @@ class SessionsService:
         played_at: str,
         side: str | None,
         track_positions: list[str] | None = None,
+        session_group_id: str | None = None,
     ) -> CreateSessionResult:
         logger.info("Creating session release_id=%s played_at=%s", release_id, played_at)
         validated = self._validate_create_input(
@@ -181,10 +187,12 @@ class SessionsService:
             played_at=played_at,
             side=side,
             track_positions=track_positions,
+            session_group_id=session_group_id,
         )
         session = self._sessions_repository.create(
             db,
             release_id=validated.release_id,
+            session_group_id=validated.session_group_id,
             rating=validated.rating,
             mood=validated.mood,
             notes=validated.notes,
@@ -198,7 +206,11 @@ class SessionsService:
                 tracks=[track.as_repository_payload() for track in validated.tracks],
             )
         logger.info("Created session session_id=%s release_id=%s", session.id, release_id)
-        return CreateSessionResult(session_id=session.id, timestamp=session.created_at)
+        return CreateSessionResult(
+            session_id=session.id,
+            timestamp=session.created_at,
+            session_group_id=session.session_group_id,
+        )
 
     def get_session(self, db: Session, session_id: str) -> Sessions:
         logger.info("Loading session session_id=%s", session_id)
@@ -356,6 +368,7 @@ class SessionsService:
         played_at: str,
         side: str | None,
         track_positions: list[str] | None,
+        session_group_id: str | None,
     ) -> CreateSessionData:
         if rating is not None and not 1 <= rating <= 5:
             logger.info("Rejecting session create release_id=%s invalid_rating=%s", release_id, rating)
@@ -372,6 +385,7 @@ class SessionsService:
             raise ReleaseNotFoundError(release_id)
 
         self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
+        normalized_session_group_id = self._session_groups_service.validate_active_session_group(db, session_group_id)
         tracks = self._validate_track_selection(
             db,
             release=release,
@@ -381,6 +395,7 @@ class SessionsService:
 
         return CreateSessionData(
             release_id=release_id,
+            session_group_id=normalized_session_group_id,
             rating=rating,
             mood=normalized_mood,
             notes=normalized_notes,

@@ -45,6 +45,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -205,6 +206,10 @@ fun ManualSearchScreen(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
         )
+        LocalTimedSessionBanner.current?.let { banner ->
+            Spacer(Modifier.height(VinylSpacing.SpaceLg))
+            banner()
+        }
         retryError?.let { message ->
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
             ErrorRetryCard(

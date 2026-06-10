@@ -131,6 +131,7 @@ backend/app/
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
 │   ├── releases_repository.py
+│   ├── session_groups_repository.py
 │   ├── sessions_moods_repository.py
 │   ├── sessions_repository.py
 │   └── spotify_listening_repository.py
@@ -148,6 +149,7 @@ backend/app/
 │   ├── identify_service.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
+│   ├── session_groups_service.py
 │   ├── sessions_service.py
 │   ├── spotify_listening_import_service.py
 │   └── spotify_listening_rollup_service.py
@@ -162,10 +164,10 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, collection sync, release import, release mapping, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, collection sync, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -191,6 +193,9 @@ All routes are nested under `/api/v1`.
 | `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
+| `GET /sessions/groups/active` | `api/routes/sessions.py` | `SessionGroupsService` active group lookup and stale auto-finish. |
+| `POST /sessions/groups` | `api/routes/sessions.py` | `SessionGroupsService` timed session start. |
+| `PATCH /sessions/groups/{group_id}/finish` | `api/routes/sessions.py` | `SessionGroupsService` timed session finish. |
 | `GET /sessions/{session_id}` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /analytics/plays/monthly` | `api/routes/analytics.py` | `AnalyticsService` monthly play counts. |
 | `GET /analytics/top-records` | `api/routes/analytics.py` | `AnalyticsService` top record aggregation. |
@@ -252,7 +257,7 @@ backend/tests/
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
 | `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
-| `services/` | Analytics, Discogs client/service, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, sessions service, and Home summary aggregation. |
+| `services/` | Analytics, Discogs client/service, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
 | `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 
@@ -271,6 +276,7 @@ backend/alembic/
     ├── f3a4b5c6d7e8_add_identify_job_cancel_requested_at.py
     ├── c8f2d4a9b6e1_add_ai_chat_history.py
     ├── 4e2a1c9d8b70_add_spotify_listening_import.py
+    ├── 8c1d2e3f4a5b_add_session_groups.py
     ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
     └── eed6974773b8_init.py
 
@@ -410,23 +416,26 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/refresh/history, session create, Home summary, analytics calls, and safe GET retry/backoff behavior. |
-| `domain/` | UI-facing domain models for records, release side options, sessions, candidates, Home summaries, and analytics dashboard data. |
-| `navigation/` | Compose navigation host and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
-| `ui/components/` | Shared Compose components, buttons, cards, rating controls, and navigation chrome. |
-| `ui/screens/` | Home, analytics, AI insights, collection, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, and small screen-specific formatters. |
+| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/refresh/history, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. |
+| `domain/` | UI-facing domain models for records, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
+| `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
+| `ui/components/` | Shared Compose components, buttons, cards, rating controls, active timed-session banner, and navigation chrome. |
+| `ui/screens/` | Home, analytics, AI insights, collection, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, grouped timed-session history, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
 
 - Camera capture uses `androidx.core.content.FileProvider` with `res/xml/file_paths.xml` for temporary image URIs.
 - The Home screen loads `GET /api/v1/sessions/summary` and falls back to `MockVinylData` if the backend is unavailable.
+- `VinylNavHost` loads active timed sessions with `GET /api/v1/sessions/groups/active`, starts sessions with `POST /api/v1/sessions/groups`, finishes sessions with `PATCH /api/v1/sessions/groups/{group_id}/finish`, and shows the global active-session banner outside the identify flow.
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - The Recent Sessions, Top Records, Mood Distribution, and Style Distribution expanded screens live in `ViewAllScreens.kt`; list-style screens show up to 25 sessions or records, while distribution screens show the full loaded distribution.
+- View All Recent Sessions groups fetched rows with the same `session_group_id` into a green outlined timed-session container with metadata chips. Grouping applies to the loaded page window, so a very long timed session can continue on the next page if its rows cross a pagination boundary.
 - The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`.
 - Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
 - The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
+- Session logging can optionally attach a listen to the active timed session when auto-add is enabled, sending the active `session_group_id` with the regular side/rating/mood payload.
 - `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.
 - Local Android unit tests live under `android-app/app/src/test/`; focused coverage includes API retry policy, identify job state parsing, collection API parsing, navigation saved-state encoding, analytics month padding, match confirmation selection, relative date labels, historical collection states, and side-option selection.
 - Android navigation smoke coverage lives under `android-app/app/src/androidTest/`.

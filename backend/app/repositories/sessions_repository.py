@@ -76,6 +76,10 @@ class SessionsRepository:
         return db.query(func.count(Sessions.id)).scalar() or 0
 
     @staticmethod
+    def get_latest_created_at_by_session_group_id(db: Session, session_group_id: str) -> datetime | None:
+        return db.query(func.max(Sessions.created_at)).filter(Sessions.session_group_id == session_group_id).scalar()
+
+    @staticmethod
     def count_distinct_releases_since(
         db: Session,
         *,
@@ -107,6 +111,7 @@ class SessionsRepository:
         db: Session,
         *,
         release_id: str,
+        session_group_id: str | None,
         rating: int | None,
         mood: str | None,
         notes: str | None,
@@ -115,6 +120,7 @@ class SessionsRepository:
     ) -> Sessions:
         session = Sessions(
             release_id=release_id,
+            session_group_id=session_group_id,
             rating=rating,
             mood=mood,
             notes=notes,

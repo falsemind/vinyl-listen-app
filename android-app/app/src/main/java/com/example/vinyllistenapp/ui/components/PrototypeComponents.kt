@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +43,8 @@ import coil.compose.SubcomposeAsyncImage
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+
+internal val LocalTimedSessionBanner = compositionLocalOf<(@Composable () -> Unit)?> { null }
 
 @Composable
 internal fun ScreenContent(
@@ -97,6 +100,7 @@ internal fun ScreenContent(
             color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.bodyLarge,
         )
+        LocalTimedSessionBanner.current?.invoke()
         topStartContent?.invoke()
         content()
         Spacer(Modifier.height(96.dp))

@@ -24,6 +24,7 @@ import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
+import com.example.vinyllistenapp.domain.TimedSessionGroup
 import com.example.vinyllistenapp.domain.TopRecordSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -381,6 +382,7 @@ class VinylApiClient(
 
     suspend fun createSession(
         releaseId: String,
+        sessionGroupId: String? = null,
         side: String?,
         trackPositions: List<String> = emptyList(),
         rating: Int?,
@@ -392,12 +394,31 @@ class VinylApiClient(
                 JSONObject()
                     .put("release_id", releaseId)
                     .put("played_at", Instant.now().toString())
+                    .putNullable("session_group_id", sessionGroupId)
                     .putNullable("side", side)
                     .put("track_positions", trackPositions.toJSONArray())
                     .putNullable("rating", rating)
                     .putNullable("mood", mood)
                     .putNullable("notes", notes?.takeIf { it.isNotBlank() })
             postJson("sessions/", body).getString("session_id")
+        }
+
+    suspend fun startSessionGroup(title: String? = null): TimedSessionGroup =
+        apiCall {
+            val body = JSONObject().putNullable("title", title?.takeIf { it.isNotBlank() })
+            postJson("sessions/groups", body).toTimedSessionGroup()
+        }
+
+    suspend fun getActiveSessionGroup(): TimedSessionGroup? =
+        apiCall {
+            getJson("sessions/groups/active")
+                .optJSONObject("session_group")
+                ?.toTimedSessionGroup()
+        }
+
+    suspend fun finishSessionGroup(sessionGroupId: String): TimedSessionGroup =
+        apiCall {
+            patchJson("sessions/groups/${Uri.encode(sessionGroupId)}/finish", JSONObject()).toTimedSessionGroup()
         }
 
     suspend fun getSession(sessionId: String): ListeningSession =
@@ -886,12 +907,24 @@ internal fun JSONObject.toListeningSession(
         hasNotes = optBoolean("has_notes", false) || !notes.isNullOrBlank(),
         notes = notes,
         sessionId = optNullableString("session_id") ?: optNullableString("id"),
+        sessionGroupId = optNullableString("session_group_id"),
         createdAt = optNullableString("created_at"),
         canEdit = optBoolean("can_edit", false),
         editableUntil = optNullableString("editable_until"),
         tracks = optJSONArray("tracks").orEmpty().toSessionTracks(),
     )
 }
+
+private fun JSONObject.toTimedSessionGroup(): TimedSessionGroup =
+    TimedSessionGroup(
+        id = getString("id"),
+        title = optNullableString("title"),
+        status = optString("status", "active"),
+        startedAt = getString("started_at"),
+        endedAt = optNullableString("ended_at"),
+        createdAt = getString("created_at"),
+        updatedAt = getString("updated_at"),
+    )
 
 internal fun JSONObject.toAnalyticsRecordCountsPage(): AnalyticsRecordCountsPage =
     AnalyticsRecordCountsPage(

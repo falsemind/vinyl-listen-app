@@ -67,6 +67,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -196,6 +197,17 @@ fun CollectionScreen(
                         .padding(horizontal = VinylSpacing.SpaceMd),
                 contentAlignment = Alignment.Center,
             ) {
+                LocalTimedSessionBanner.current?.let { banner ->
+                    Column(
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(top = VinylSpacing.Space2Xl),
+                    ) {
+                        banner()
+                    }
+                }
                 when {
                     showEmptyLoad ->
                         CollectionTextActionButton(
@@ -318,6 +330,7 @@ private fun CollectionListContent(
                     )
                 }
             }
+            LocalTimedSessionBanner.current?.invoke()
             syncMessage?.let { message -> CollectionStatusText(message) }
             error?.let {
                 CollectionStatusText(message = it, isError = true)

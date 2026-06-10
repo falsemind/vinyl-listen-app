@@ -72,10 +72,21 @@ data class ListeningSession(
     val hasNotes: Boolean = false,
     val notes: String? = null,
     val sessionId: String? = null,
+    val sessionGroupId: String? = null,
     val createdAt: String? = null,
     val canEdit: Boolean = false,
     val editableUntil: String? = null,
     val tracks: List<SessionTrack> = emptyList(),
+)
+
+data class TimedSessionGroup(
+    val id: String,
+    val title: String? = null,
+    val status: String,
+    val startedAt: String,
+    val endedAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
 )
 
 data class TopRecordSummary(

@@ -95,6 +95,9 @@ Current backend endpoints used by these routes:
 |Load Records Collection list|`GET /api/v1/collection/releases?limit=25&offset={offset}`|
 |Manual collection search|`GET /api/v1/collection/search`|
 |Create listening session|`POST /api/v1/sessions`|
+|Start timed listening session|`POST /api/v1/sessions/groups`|
+|Load active timed listening session|`GET /api/v1/sessions/groups/active`|
+|Stop timed listening session|`PATCH /api/v1/sessions/groups/{session_group_id}/finish`|
 |Load custom moods|`GET /api/v1/sessions/moods`|
 |Create custom mood|`POST /api/v1/sessions/moods`|
 |Delete custom mood|`DELETE /api/v1/sessions/moods/{mood_name}`|
@@ -162,7 +165,9 @@ Home loads real dashboard data from:
 GET /api/v1/sessions/summary
 ```
 
-The response provides recent sessions, total session count, records played this month, and top record summaries. The Android app keeps local prototype data as a fallback when the backend is unavailable.
+The response provides recent sessions, total session count, records played this month, and top record summaries. Recent session items include nullable `session_group_id`. The Android app keeps local prototype data as a fallback when the backend is unavailable.
+
+The app loads the active timed session with `GET /api/v1/sessions/groups/active` when the nav host starts. While active, a green timer chip appears below screen headers on app screens except the identify camera, processing, and candidate confirmation flow.
 
 ---
 
@@ -183,6 +188,8 @@ Expanded recent-listening screen opened from Home.
 ```
 GET /api/v1/sessions/summary?recent_limit=250
 ```
+
+Rows with the same non-null `session_group_id` render as one green timed-session container with metadata chips and green-bordered child session cards. Sessions with `session_group_id = null` render as normal standalone cards. Grouping currently happens on the fetched list, so a timed session that extends beyond the fetched limit can still be split until a backend mixed-feed endpoint exists.
 
 ### Actions
 
@@ -319,6 +326,8 @@ releaseId (required)
 ### Purpose
 
 Log listening session for selected record.
+
+When the active timed-session chip has auto-add enabled, saving a session sends the active `session_group_id` with `POST /api/v1/sessions`. The user can disable auto-add from the chip and still log standalone sessions while the timer runs.
 
 ### Actions
 

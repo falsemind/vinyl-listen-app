@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onViewAllSessions: () -> Unit,
     onEditSession: (String) -> Unit,
+    hasActiveTimedSession: Boolean = false,
+    isStartingTimedSession: Boolean = false,
+    onStartTimedSession: () -> Unit = {},
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -133,6 +137,14 @@ fun HomeScreen(
                     )
                 }
             },
+            topStartContent = {
+                if (!hasActiveTimedSession) {
+                    StartTimedSessionAction(
+                        isStarting = isStartingTimedSession,
+                        onClick = onStartTimedSession,
+                    )
+                }
+            },
         ) {
             loadError?.let { message ->
                 ErrorRetryCard(message = message, onRetry = { retryKey += 1 })
@@ -180,6 +192,25 @@ fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun StartTimedSessionAction(
+    isStarting: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = if (isStarting) "Starting Timed Session..." else "Start Timed Session",
+        color = VinylColors.AccentGreen,
+        style = MaterialTheme.typography.titleMedium,
+        modifier =
+            Modifier.clickable(
+                enabled = !isStarting,
+                onClickLabel = "Start timed session",
+                role = Role.Button,
+                onClick = onClick,
+            ),
+    )
 }
 
 private const val COMPACT_HOME_BREAKPOINT_DP = 430

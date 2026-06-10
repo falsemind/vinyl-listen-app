@@ -72,6 +72,7 @@ import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingGlassButton
+import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.RecordDetailAlbumArtBlock
 import com.example.vinyllistenapp.ui.components.SectionTitle
@@ -178,6 +179,17 @@ fun RecordDetailScreen(
                     isOpen = isActionMenuOpen,
                     onClick = { isActionMenuOpen = !isActionMenuOpen },
                 )
+            }
+            LocalTimedSessionBanner.current?.let { banner ->
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = VinylSpacing.SpaceMd)
+                            .padding(bottom = VinylSpacing.SpaceLg),
+                ) {
+                    banner()
+                }
             }
             Column(
                 modifier =

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.models.sessions import Sessions
+from app.services.session_groups_service import SessionGroupInactiveError
 from app.services.sessions_service import (
     ReleaseNotFoundError,
     SessionEditWindowExpiredError,
@@ -10,6 +11,19 @@ from app.services.sessions_service import (
     SessionNotFoundError,
     SessionValidationError,
 )
+
+
+class StubSessionGroupsService:
+    def __init__(self, *, active_id: str | None = None, error: Exception | None = None) -> None:
+        self.active_id = active_id
+        self.error = error
+        self.calls: list[str | None] = []
+
+    def validate_active_session_group(self, _db, session_group_id: str | None) -> str | None:
+        self.calls.append(session_group_id)
+        if self.error is not None:
+            raise self.error
+        return self.active_id if session_group_id is not None else None
 
 
 def test_create_session_persists_validated_session(
@@ -44,12 +58,61 @@ def test_create_session_persists_validated_session(
     assert result.status == "success"
     assert repository.created_payload == {
         "release_id": "release-123",
+        "session_group_id": None,
         "rating": 5,
         "mood": "Calm",
         "notes": "Great pressing.",
         "played_at": datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
         "vinyl_side": "A",
     }
+
+
+def test_create_session_attaches_active_session_group(
+    sessions_repository_factory,
+    build_sessions_service,
+) -> None:
+    repository = sessions_repository_factory()
+    session_groups_service = StubSessionGroupsService(active_id="group-123")
+    service = build_sessions_service(
+        sessions_repository=repository,
+        session_groups_service=session_groups_service,
+    )
+
+    result = service.create_session(
+        db=object(),
+        release_id="release-123",
+        rating=5,
+        mood="Calm",
+        notes=None,
+        played_at="2026-03-14T19:21:00Z",
+        side="A",
+        session_group_id="group-123",
+    )
+
+    assert result.session_group_id == "group-123"
+    assert repository.created_payload is not None
+    assert repository.created_payload["session_group_id"] == "group-123"
+    assert session_groups_service.calls == ["group-123"]
+
+
+def test_create_session_rejects_inactive_session_group(
+    build_sessions_service,
+) -> None:
+    service = build_sessions_service(
+        session_groups_service=StubSessionGroupsService(error=SessionGroupInactiveError("group-123")),
+    )
+
+    with pytest.raises(SessionGroupInactiveError):
+        service.create_session(
+            db=object(),
+            release_id="release-123",
+            rating=5,
+            mood="Calm",
+            notes=None,
+            played_at="2026-03-14T19:21:00Z",
+            side="A",
+            session_group_id="group-123",
+        )
 
 
 @pytest.mark.parametrize("rating", [0, 6])
