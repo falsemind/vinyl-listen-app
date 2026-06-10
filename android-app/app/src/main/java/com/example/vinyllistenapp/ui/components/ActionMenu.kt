@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -113,7 +112,7 @@ fun ActionMenuAction(
                 ).padding(vertical = VinylSpacing.SpaceXs),
         text = label,
         color = VinylColors.AccentGreen,
-        textAlign = TextAlign.Center,
+        textAlign = TextAlign.Start,
         style = MaterialTheme.typography.labelLarge,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -131,22 +130,25 @@ fun ActionMenuStatus(
             modifier
                 .fillMaxWidth()
                 .padding(vertical = VinylSpacing.SpaceXs),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            modifier = Modifier.size(18.dp),
-            imageVector = icon,
-            contentDescription = null,
-            tint = VinylColors.AccentGreen,
-        )
-        Spacer(Modifier.width(VinylSpacing.SpaceSm))
         Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
             text = label,
             color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            modifier = Modifier.size(18.dp),
+            imageVector = icon,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
         )
     }
 }

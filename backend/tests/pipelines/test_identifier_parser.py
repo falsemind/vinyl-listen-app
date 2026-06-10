@@ -499,6 +499,56 @@ def test_identifier_parser_rejects_credit_year_phrase_as_catalog() -> None:
     assert identifiers.text_fragments == ("Luscious Nights",)
 
 
+def test_identifier_parser_keeps_limited_label_prefix_in_catalog_number() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "ADM",
+                "A1 Remnants",
+                "A2 Shadows Of Silence",
+                "B1 Suspended In Time",
+                "B2 Z-247",
+                "All tracks written and produced by A. Parker for SU Productions",
+                "2023",
+                "(P) & (C) 2023 Scientific Wax",
+                "www.scientificwax.com",
+                "SCI LIMITED 009",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("SCI LIMITED 009",)
+    assert identifiers.artist == "Suspended In Time"
+    assert identifiers.title == "Shadows Of Silence"
+    assert identifiers.text_fragments == ("Remnants", "Z-247", "ADM")
+
+
+def test_identifier_parser_strips_catalog_side_suffix() -> None:
+    parser = IdentifierParser()
+
+    spaced_identifiers = parser.parse(
+        "\n".join(
+            [
+                "Dubquake records infinity",
+                "DBQK1211 / A-side",
+                "A1. HARD TIME PRESSURE IN A BABYLON",
+                "(Vocal mix)",
+                "A2. HARD TIME PRESSURE IN A BABYLON",
+                "(Kick down babylon mix)",
+            ]
+        )
+    )
+    compact_identifiers = parser.parse("DBQK1211/A-side")
+
+    assert spaced_identifiers.catalog_numbers == ("DBQK1211",)
+    assert spaced_identifiers.artist is None
+    assert spaced_identifiers.title == "HARD TIME PRESSURE IN A BABYLON"
+    assert spaced_identifiers.label == "Dubquake records infinity"
+    assert compact_identifiers.catalog_numbers == ("DBQK1211",)
+
+
 def test_identifier_parser_extracts_hash_separated_catalog_number() -> None:
     parser = IdentifierParser()
 

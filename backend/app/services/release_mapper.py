@@ -35,6 +35,12 @@ class ReleaseTrackData:
     duration: str | None = None
 
 
+@dataclass(frozen=True)
+class ReleaseArtistData:
+    name: str
+    discogs_artist_id: int
+
+
 def map_discogs_to_internal(raw_json: dict[str, Any]) -> InternalReleaseData:
     discogs_release_id = raw_json.get("id")
     title = _clean_string(raw_json.get("title"))
@@ -150,6 +156,28 @@ def extract_release_tracklist(raw_discogs_json: dict[str, Any] | None) -> list[R
         )
 
     return tracks
+
+
+def extract_release_artists(raw_discogs_json: dict[str, Any] | None) -> list[ReleaseArtistData]:
+    artists = raw_discogs_json.get("artists") if isinstance(raw_discogs_json, dict) else None
+    if not isinstance(artists, list):
+        return []
+
+    release_artists: list[ReleaseArtistData] = []
+    seen_ids: set[int] = set()
+    for artist in artists:
+        if not isinstance(artist, dict):
+            continue
+
+        artist_id = _coerce_int(artist.get("id"))
+        name = clean_discogs_artist_name(_clean_string(artist.get("name")))
+        if artist_id is None or not name or artist_id in seen_ids:
+            continue
+
+        release_artists.append(ReleaseArtistData(name=name, discogs_artist_id=artist_id))
+        seen_ids.add(artist_id)
+
+    return release_artists
 
 
 def _extract_side_prefix(position: str) -> str | None:

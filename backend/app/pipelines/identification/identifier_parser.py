@@ -52,11 +52,19 @@ SPACED_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{2,5}(?:LP|EP)?)(?![A-Z0-9])",
     re.IGNORECASE,
 )
+LIMITED_EDITION_CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])([A-Z]{2,}\s+LIMITED\s+\d{2,5}(?:LP|EP)?)(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 SPACED_CONFUSED_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([A-Z]{2,})\s+([OQDI0-9]{2,6}(?:LP|EP)?)\b",
     re.IGNORECASE,
 )
 SIDE_MARKER_PATTERN = r"(?:[A-H]{1,2}|[A-H](?:\d{1,2}|[IL]{1,3}|IV|V))"
+CATALOG_SIDE_SUFFIX_PATTERN = re.compile(
+    rf"\s*/\s*{SIDE_MARKER_PATTERN}\s*[-.]?\s*side\s*$",
+    re.IGNORECASE,
+)
 SIDE_PREFIX_PATTERN = re.compile(rf"^\s*{SIDE_MARKER_PATTERN}[.):]?\s+", re.IGNORECASE)
 TRACK_LISTING_PREFIX_PATTERN = re.compile(
     rf"^\s*{SIDE_MARKER_PATTERN}\s*[.),:]\s*(?=[A-Z0-9\"'“”‘’(])",
@@ -83,6 +91,7 @@ LABEL_SUFFIX_TERMS = frozenset(
         "productions",
     }
 )
+LABEL_INFIX_TERMS = frozenset({"records", "recordings", "productions"})
 NOISE_TERMS = {
     "stereo",
     "mono",
@@ -1202,10 +1211,15 @@ def _clean_catalog_candidate(value: str) -> str | None:
     cleaned_value = " ".join(value.strip(EDGE_JUNK_CHARACTERS).split())
     cleaned_value = _strip_leading_lowercase_ocr_prefix(cleaned_value)
     cleaned_value = _strip_track_listing_prefix(cleaned_value)
+    cleaned_value = _strip_catalog_side_suffix(cleaned_value)
     cleaned_value = " ".join(cleaned_value.strip(EDGE_JUNK_CHARACTERS).split())
     if " " not in cleaned_value and CATALOG_TOKEN_PATTERN.fullmatch(cleaned_value):
         cleaned_value = cleaned_value.upper()
     return cleaned_value or None
+
+
+def _strip_catalog_side_suffix(value: str) -> str:
+    return CATALOG_SIDE_SUFFIX_PATTERN.sub("", value).strip()
 
 
 def _normalize_label(value: str) -> str | None:
@@ -1300,7 +1314,11 @@ def _sort_catalog_number_candidates(candidates: list[str], *, scores: dict[str, 
                 for other_index, other in enumerate(normalized_candidates)
             )
         )
-        space_penalty = int(" " in candidate and SPACED_CATALOG_TOKEN_PATTERN.fullmatch(candidate) is None)
+        space_penalty = int(
+            " " in candidate
+            and SPACED_CATALOG_TOKEN_PATTERN.fullmatch(candidate) is None
+            and LIMITED_EDITION_CATALOG_TOKEN_PATTERN.fullmatch(candidate) is None
+        )
         frequency_score = scores.get(candidate.lower(), 0)
         return suffix_penalty, space_penalty, -frequency_score, index
 
@@ -1317,7 +1335,17 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
     spaced_catalog_spans: list[tuple[int, int]] = []
     track_prefix_end = _track_listing_prefix_end(value)
 
+    for match in LIMITED_EDITION_CATALOG_TOKEN_PATTERN.finditer(value):
+        token = _clean_catalog_candidate(match.group(1))
+        if token is None or token.lower() in seen:
+            continue
+        seen.add(token.lower())
+        spaced_catalog_spans.append(match.span(1))
+        tokens.append(token)
+
     for match in SPACED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _is_span_inside_spaced_catalog(match.span(1), spaced_catalog_spans):
+            continue
         if _catalog_span_is_inline_year_phrase(value, match.span(1)):
             continue
         if _catalog_span_is_track_title(value, match.span(1), track_prefix_end):
@@ -1334,6 +1362,8 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         tokens.append(token)
 
     for match in SPACED_CONFUSED_CATALOG_TOKEN_PATTERN.finditer(value):
+        if _is_span_inside_spaced_catalog(match.span(0), spaced_catalog_spans):
+            continue
         if _catalog_span_is_inline_year_phrase(value, match.span(0)):
             continue
         if _catalog_span_is_track_title(value, match.span(0), track_prefix_end):
@@ -1844,7 +1874,11 @@ def _looks_like_label_value(value: str) -> bool:
         or _is_labeled_metadata_line(value)
     ):
         return False
-    return any(lowered_value == suffix or lowered_value.endswith(f" {suffix}") for suffix in LABEL_SUFFIX_TERMS)
+    if any(lowered_value == suffix or lowered_value.endswith(f" {suffix}") for suffix in LABEL_SUFFIX_TERMS):
+        return True
+
+    tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
+    return bool(tokens & LABEL_INFIX_TERMS)
 
 
 def _is_short_yearish_line(value: str) -> bool:

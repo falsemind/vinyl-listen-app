@@ -22,6 +22,7 @@ data class RecordSummary(
     val collectionRemovedAt: String? = null,
     val hasFullDiscogsInfo: Boolean = false,
     val tracklist: List<ReleaseTrack> = emptyList(),
+    val discogsArtists: List<ReleaseArtist> = emptyList(),
 )
 
 data class ReleaseSideOption(
@@ -33,6 +34,11 @@ data class ReleaseTrack(
     val position: String,
     val title: String,
     val duration: String? = null,
+)
+
+data class ReleaseArtist(
+    val name: String,
+    val discogsArtistId: Long,
 )
 
 data class SessionTrack(

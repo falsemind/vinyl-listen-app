@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.ui.screens
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,6 +95,20 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun shouldShowAllTracksOptionRequiresMultipleTracks() {
+        assertFalse(shouldShowAllTracksOption(emptyList()))
+        assertFalse(shouldShowAllTracksOption(listOf(SessionTrackOption("A1", "A1: Intro"))))
+        assertTrue(
+            shouldShowAllTracksOption(
+                listOf(
+                    SessionTrackOption("A1", "A1: Intro"),
+                    SessionTrackOption("A2", "A2: Main"),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun isBuiltInMoodMatchesIgnoringCaseAndWhitespace() {
         assertTrue(isBuiltInMood(" calm "))
         assertTrue(isBuiltInMood("FOCUSED"))
@@ -107,10 +122,67 @@ class SessionSideOptionsTest {
         assertFalse(isExistingMood("Dubby", customMoods = listOf("Late Night")))
     }
 
+    @Test
+    fun loadSessionRecordSkipsRefreshForFullRelease() =
+        runBlocking {
+            var refreshCalls = 0
+            val fullRelease = recordSummary(availableSides = listOf("A"), hasFullDiscogsInfo = true)
+
+            val result =
+                loadSessionRecord(
+                    releaseId = "release-123",
+                    getRelease = { fullRelease },
+                    refreshRelease = {
+                        refreshCalls += 1
+                        recordSummary(availableSides = listOf("X"), hasFullDiscogsInfo = true)
+                    },
+                )
+
+            assertEquals(fullRelease, result)
+            assertEquals(0, refreshCalls)
+        }
+
+    @Test
+    fun loadSessionRecordRefreshesBasicRelease() =
+        runBlocking {
+            val basicRelease = recordSummary(availableSides = emptyList(), hasFullDiscogsInfo = false)
+            val fullRelease =
+                recordSummary(
+                    availableSides = listOf("X"),
+                    hasFullDiscogsInfo = true,
+                    tracklist = listOf(ReleaseTrack("X1", "Hydrated")),
+                )
+
+            val result =
+                loadSessionRecord(
+                    releaseId = "release-123",
+                    getRelease = { basicRelease },
+                    refreshRelease = { fullRelease },
+                )
+
+            assertEquals(fullRelease, result)
+        }
+
+    @Test
+    fun loadSessionRecordFallsBackToBasicReleaseWhenRefreshFails() =
+        runBlocking {
+            val basicRelease = recordSummary(availableSides = emptyList(), hasFullDiscogsInfo = false)
+
+            val result =
+                loadSessionRecord(
+                    releaseId = "release-123",
+                    getRelease = { basicRelease },
+                    refreshRelease = { error("Discogs unavailable") },
+                )
+
+            assertEquals(basicRelease, result)
+        }
+
     private fun recordSummary(
         availableSides: List<String>,
         availableSideOptions: List<ReleaseSideOption> = emptyList(),
         tracklist: List<ReleaseTrack> = emptyList(),
+        hasFullDiscogsInfo: Boolean = false,
     ) = RecordSummary(
         releaseId = "release-123",
         discogsReleaseId = 555123,
@@ -123,6 +195,7 @@ class SessionSideOptionsTest {
         lastPlayed = "Not logged yet",
         availableSides = availableSides,
         availableSideOptions = availableSideOptions,
+        hasFullDiscogsInfo = hasFullDiscogsInfo,
         tracklist = tracklist,
     )
 }

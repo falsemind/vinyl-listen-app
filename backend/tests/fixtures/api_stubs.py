@@ -10,7 +10,7 @@ from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.release_mapper import ReleaseSideOptionData, ReleaseTrackData
+from app.services.release_mapper import ReleaseArtistData, ReleaseSideOptionData, ReleaseTrackData
 from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
 
 
@@ -175,6 +175,9 @@ class StubReleaseImportService:
             ReleaseTrackData(position="A1", title="Wildlife Analysis", duration="1:17"),
             ReleaseTrackData(position="A2", title="An Eagle In Your Mind"),
         ]
+        self.artists = [
+            ReleaseArtistData(name="Boards of Canada", discogs_artist_id=194),
+        ]
 
     def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
         self.import_calls.append((discogs_release_id, force_refresh))
@@ -211,6 +214,11 @@ class StubReleaseImportService:
     def get_tracklist(self, _db, discogs_release_id: int) -> list[ReleaseTrackData]:
         if discogs_release_id == self.release.discogs_release_id:
             return self.tracklist
+        return []
+
+    def get_artists(self, _db, discogs_release_id: int) -> list[ReleaseArtistData]:
+        if discogs_release_id == self.release.discogs_release_id:
+            return self.artists
         return []
 
 

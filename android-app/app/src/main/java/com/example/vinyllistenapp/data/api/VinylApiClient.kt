@@ -18,6 +18,7 @@ import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
@@ -796,6 +797,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         collectionRemovedAt = optNullableString("collection_removed_at"),
         hasFullDiscogsInfo = optBoolean("has_full_discogs_info", false),
         tracklist = optJSONArray("tracklist").orEmpty().toReleaseTracks(),
+        discogsArtists = optJSONArray("discogs_artists").orEmpty().toReleaseArtists(),
     )
 
 internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
@@ -1178,6 +1180,14 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
             duration = item.optNullableString("duration"),
         )
     }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun JSONArray.toReleaseArtists(): List<ReleaseArtist> =
+    mapObjects { item ->
+        ReleaseArtist(
+            name = item.optString("name"),
+            discogsArtistId = item.optLong("discogs_artist_id"),
+        )
+    }.filter { it.name.isNotBlank() && it.discogsArtistId > 0 }
 
 private fun JSONArray.toSessionTracks(): List<SessionTrack> =
     mapObjects { item ->

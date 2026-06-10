@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import com.example.vinyllistenapp.domain.RecordSummary
+import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -75,6 +76,29 @@ class RecordDetailHistoricalStateTest {
         assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(hasFullDiscogsInfo = true)))
         assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(inCollection = false)))
         assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(releaseId = "release-001")))
+    }
+
+    @Test
+    fun artistDiscographyActionOnlyShowsForFullReleaseWithArtists() {
+        val record =
+            RecordSummary(
+                releaseId = "release-full",
+                discogsReleaseId = 11646493,
+                artist = "Babe Roots",
+                title = "Ruff Out Deh",
+                label = "4Weed Records",
+                year = 2018,
+                format = "Vinyl",
+                rating = 0,
+                lastPlayed = "0",
+                hasFullDiscogsInfo = true,
+                discogsArtists = listOf(ReleaseArtist("Babe Roots", 5440883)),
+            )
+
+        assertTrue(shouldShowArtistDiscographyAction(record))
+        assertFalse(shouldShowArtistDiscographyAction(record.copy(hasFullDiscogsInfo = false)))
+        assertFalse(shouldShowArtistDiscographyAction(record.copy(discogsArtists = emptyList())))
+        assertEquals("https://www.discogs.com/artist/5440883", discogsArtistUrl(5440883))
     }
 
     @Test

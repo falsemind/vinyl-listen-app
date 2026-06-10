@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
 
 private val suggestedPrompts =
     listOf(
-        "What are my top jazz records?",
+        "What are my top jungle records?",
         "Which records do I play most at night?",
         "Recommend something based on my mood history",
         "What style did I explore most this month?",

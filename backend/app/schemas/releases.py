@@ -21,6 +21,11 @@ class ReleaseTrackResponse(BaseModel):
     duration: str | None = None
 
 
+class ReleaseArtistResponse(BaseModel):
+    name: str
+    discogs_artist_id: int
+
+
 class ReleaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,6 +51,7 @@ class ReleaseResponse(BaseModel):
     available_sides: list[str] = Field(default_factory=list)
     available_side_options: list[ReleaseSideOptionResponse] = Field(default_factory=list)
     tracklist: list[ReleaseTrackResponse] = Field(default_factory=list)
+    discogs_artists: list[ReleaseArtistResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

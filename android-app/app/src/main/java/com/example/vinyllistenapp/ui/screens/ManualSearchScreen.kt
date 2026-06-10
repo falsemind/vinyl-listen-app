@@ -55,6 +55,7 @@ private const val RELEASE_YEAR_MIN = 1900
 private const val RELEASE_YEAR_DIGITS = 4
 private const val BARCODE_MIN_DIGITS = 8
 private const val BARCODE_MAX_DIGITS = 14
+private const val MANUAL_SEARCH_TEXT_MAX_CHARS = 100
 
 @Composable
 fun ManualSearchScreen(
@@ -221,13 +222,13 @@ fun ManualSearchScreen(
                 label = "Artist",
                 placeholder = "Search by artist name",
                 value = artistQuery,
-                onValueChange = { artistQuery = it },
+                onValueChange = { artistQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
             )
             ManualSearchField(
                 label = "Title",
                 placeholder = "Search by album title",
                 value = titleQuery,
-                onValueChange = { titleQuery = it },
+                onValueChange = { titleQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -542,42 +543,41 @@ private fun ManualSearchResultRow(
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
             ) {
                 Text(
-                    text = record.artist,
+                    text = record.title,
                     color = VinylColors.TextPrimary,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (isSelecting) "Importing..." else record.title,
+                    text = if (isSelecting) "Importing..." else record.artist,
                     color = VinylColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = listOfNotNull(record.format, record.year?.toString()).joinToString(" - ").ifBlank { "Unknown format" },
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = "-",
-                        color = VinylColors.BorderDefault,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = record.label ?: "Unknown label",
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = manualSearchResultMetadata(record),
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = record.format ?: "Unknown format",
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
+
+private fun manualSearchResultMetadata(record: ReleaseSearchResult): String =
+    listOfNotNull(
+        record.year?.toString(),
+        record.label,
+        record.catalogNumber,
+    ).joinToString(" • ").ifBlank { "Unknown release info" }
