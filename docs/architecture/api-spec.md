@@ -1051,6 +1051,61 @@ Used for listening history.
 }
 ```
 
+## GET /releases/{release_id}/flow-insights
+
+Returns deterministic record-flow facts for the Record Details Insights Summary.
+Timed session groups are treated as strongest sequence evidence. Standalone
+sessions are only linked when neighboring plays are within 1 hour, and
+consecutive plays of the same release are collapsed into one record block.
+
+### Query Parameters
+
+| Parameter | Description                         |
+| --------- | ----------------------------------- |
+| limit     | max before/after/mood items, 1..10  |
+
+### Response
+
+```json
+{
+  "release_id": "release-123",
+  "before": [
+    {
+      "release_id": "release-before",
+      "artist": "Aphex Twin",
+      "title": "Selected Ambient Works 85-92",
+      "year": 1992,
+      "thumbnail_url": null,
+      "cover_image_url": "https://img.discogs.com/before.jpg",
+      "styles": ["Ambient"],
+      "count": 2
+    }
+  ],
+  "after": [
+    {
+      "release_id": "release-after",
+      "artist": "Basic Channel",
+      "title": "Quadrant Dub",
+      "year": 1994,
+      "thumbnail_url": null,
+      "cover_image_url": "https://img.discogs.com/after.jpg",
+      "styles": ["Dub Techno"],
+      "count": 1
+    }
+  ],
+  "mood_transitions": [
+    {
+      "previous_mood": "Calm",
+      "current_mood": "Focused",
+      "next_mood": "Energetic",
+      "count": 1
+    }
+  ],
+  "sample_size": 2,
+  "confidence": "low"
+}
+```
+
 ---
 
 # 11. Analytics
