@@ -25,7 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,6 +63,9 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.RecordFlowInsights
+import com.example.vinyllistenapp.domain.RecordFlowMoodTransition
+import com.example.vinyllistenapp.domain.RecordFlowReleaseSummary
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
@@ -68,6 +73,7 @@ import com.example.vinyllistenapp.ui.components.ActionMenuAction
 import com.example.vinyllistenapp.ui.components.ActionMenuPopup
 import com.example.vinyllistenapp.ui.components.ActionMenuStatus
 import com.example.vinyllistenapp.ui.components.ActionMenuToggle
+import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
@@ -90,16 +96,21 @@ fun RecordDetailScreen(
     apiClient: VinylApiClient,
     onAddSession: (String) -> Unit,
     onEditSession: (String) -> Unit,
+    onOpenRecord: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
     var sessions by remember(releaseId) { mutableStateOf<List<ListeningSession>>(emptyList()) }
+    var flowInsights by remember(releaseId) { mutableStateOf<RecordFlowInsights?>(null) }
+    var flowInsightsError by remember(releaseId) { mutableStateOf<String?>(null) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
+    var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
     var isArtistDiscographyExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
+    var isInsightsExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -127,11 +138,25 @@ fun RecordDetailScreen(
         return fetched
     }
 
+    suspend fun fetchFlowInsights() {
+        isLoadingFlowInsights = true
+        runCatching { apiClient.getReleaseFlowInsights(record.releaseId) }
+            .onSuccess { insights ->
+                flowInsights = insights
+                flowInsightsError = null
+            }.onFailure { error ->
+                flowInsightsError = error.toUserMessage("Could not load insights summary.")
+            }
+        isLoadingFlowInsights = false
+    }
+
     LaunchedEffect(releaseId, retryKey) {
         releaseId?.let { id ->
             runCatching {
                 record = apiClient.getRelease(id)
                 sessions = apiClient.getReleaseSessions(id)
+                flowInsights = null
+                flowInsightsError = null
                 detailError = null
             }.onFailure { error ->
                 detailError = error.toUserMessage("Could not load record details. Showing local prototype data.")
@@ -227,6 +252,20 @@ fun RecordDetailScreen(
                 } else {
                     NoRecordDetailDataText()
                 }
+                SectionTitle("Insights Summary")
+                RecordInsightsSummaryCard(
+                    isExpanded = isInsightsExpanded,
+                    isLoading = isLoadingFlowInsights,
+                    insights = flowInsights,
+                    errorMessage = flowInsightsError,
+                    onExpandedChange = { isInsightsExpanded = it },
+                    onOpenRecord = onOpenRecord,
+                    onGetInsights = {
+                        scope.launch {
+                            fetchFlowInsights()
+                        }
+                    },
+                )
                 SectionTitle("Recent Sessions")
                 val historyItems = recordDetailHistory(record.releaseId, sessions).take(10)
                 if (historyItems.isEmpty()) {
@@ -920,6 +959,286 @@ private fun RecordMoodRow(
 }
 
 @Composable
+private fun RecordInsightsSummaryCard(
+    isExpanded: Boolean,
+    isLoading: Boolean,
+    insights: RecordFlowInsights?,
+    errorMessage: String?,
+    onExpandedChange: (Boolean) -> Unit,
+    onOpenRecord: (String) -> Unit,
+    onGetInsights: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "insightsExpandArrow",
+    )
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .padding(VinylSpacing.SpaceLg),
+    ) {
+        CardTopAccentLine(
+            accentColor = VinylColors.AccentGreen,
+            alpha = 0.30f,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = if (isExpanded) "Collapse insights" else "Expand insights",
+                            role = Role.Button,
+                            onClick = { onExpandedChange(!isExpanded) },
+                        ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        tint = VinylColors.AccentGreen,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = "Insights",
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    contentDescription = null,
+                    tint = VinylColors.TextSecondary,
+                    modifier =
+                        Modifier
+                            .size(24.dp)
+                            .graphicsLayer(rotationZ = arrowRotation),
+                )
+            }
+
+            if (isExpanded) {
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(VinylColors.BorderDefault),
+                )
+                when {
+                    isLoading -> RecordInsightsLoading()
+                    insights != null ->
+                        RecordInsightsResult(
+                            insights = insights,
+                            onOpenRecord = onOpenRecord,
+                        )
+                    else ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                        ) {
+                            errorMessage?.let { message ->
+                                Text(
+                                    text = message,
+                                    color = VinylColors.AccentOrange,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            Text(
+                                text = "Get Insights",
+                                color = VinylColors.AccentGreen,
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center,
+                                modifier =
+                                    Modifier.clickable(
+                                        enabled = !isLoading,
+                                        onClickLabel = "Get insights",
+                                        role = Role.Button,
+                                        onClick = onGetInsights,
+                                    ),
+                            )
+                        }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordInsightsLoading() {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            color = VinylColors.AccentGreen,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text = "Loading insights...",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun RecordInsightsResult(
+    insights: RecordFlowInsights,
+    onOpenRecord: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
+        RecordInsightReleaseSection(
+            title = "Usually before",
+            items = insights.before,
+            onOpenRecord = onOpenRecord,
+        )
+        RecordInsightReleaseSection(
+            title = "Usually after",
+            items = insights.after,
+            onOpenRecord = onOpenRecord,
+        )
+        RecordInsightMoodFlowSection(transitions = insights.moodTransitions)
+        Spacer(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(VinylColors.BorderDefault),
+        )
+        Text(
+            text = "Based on ${loggedPlaysLabel(insights.sampleSize)}",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun RecordInsightReleaseSection(
+    title: String,
+    items: List<RecordFlowReleaseSummary>,
+    onOpenRecord: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
+        Text(
+            text = title,
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (items.isEmpty()) {
+            Text(
+                text = "No pairings yet.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            items.forEach { item ->
+                RecordInsightReleaseCard(
+                    item = item,
+                    onOpenRecord = onOpenRecord,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordInsightReleaseCard(
+    item: RecordFlowReleaseSummary,
+    onOpenRecord: (String) -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfaceSecondary)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .clickable(
+                    onClickLabel = "Open ${item.title}",
+                    role = Role.Button,
+                    onClick = { onOpenRecord(item.releaseId) },
+                ).padding(VinylSpacing.SpaceMd),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AlbumArtBlock(
+            accentColor = VinylColors.AccentGreen,
+            compact = true,
+            imageUrl = item.coverImageUrl ?: item.thumbnailUrl,
+            contentDescription = "${item.title} cover art",
+        )
+        Spacer(Modifier.width(VinylSpacing.SpaceMd))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = item.title,
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.artist,
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = "${item.count}x",
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = VinylSpacing.SpaceMd),
+        )
+    }
+}
+
+@Composable
+private fun RecordInsightMoodFlowSection(transitions: List<RecordFlowMoodTransition>) {
+    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
+        Text(
+            text = "Mood flow",
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (transitions.isEmpty()) {
+            Text(
+                text = "No mood flow yet.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            transitions.forEach { transition ->
+                Text(
+                    text = moodFlowLabel(transition),
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun RecordHistoryCard(
     history: RecordHistoryEntry,
     onNotesClick: (RecordHistoryEntry) -> Unit,
@@ -1346,6 +1665,23 @@ internal fun recordDetailHistory(
                 ),
             )
     }
+}
+
+private fun loggedPlaysLabel(count: Int): String {
+    val safeCount = count.coerceAtLeast(0)
+    return if (safeCount == 1) "1 logged play" else "$safeCount logged plays"
+}
+
+private fun moodFlowLabel(transition: RecordFlowMoodTransition): String {
+    val flow =
+        listOf(
+            transition.previousMood,
+            transition.currentMood,
+            transition.nextMood,
+        ).mapNotNull { mood -> mood?.takeIf { it.isNotBlank() } }
+            .joinToString(" -> ")
+            .ifBlank { "No mood data" }
+    return "$flow (${transition.count}x)"
 }
 
 internal fun hasRecordDetailSessionData(

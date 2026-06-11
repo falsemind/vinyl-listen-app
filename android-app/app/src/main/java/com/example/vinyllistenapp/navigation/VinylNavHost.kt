@@ -303,6 +303,7 @@ fun VinylNavHost(
                     apiClient = apiClient,
                     onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
+                    onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onBack = {
                         if (!navController.popBackStack()) {
                             navController.navigate(VinylRoutes.HOME)

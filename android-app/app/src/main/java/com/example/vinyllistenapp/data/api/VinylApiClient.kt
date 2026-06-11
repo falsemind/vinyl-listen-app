@@ -17,6 +17,9 @@ import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
 import com.example.vinyllistenapp.domain.RatingDistributionItem
+import com.example.vinyllistenapp.domain.RecordFlowInsights
+import com.example.vinyllistenapp.domain.RecordFlowMoodTransition
+import com.example.vinyllistenapp.domain.RecordFlowReleaseSummary
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
@@ -211,6 +214,15 @@ class VinylApiClient(
                     fallbackTitle = "",
                 )
             }
+        }
+
+    suspend fun getReleaseFlowInsights(
+        releaseId: String,
+        limit: Int = 5,
+    ): RecordFlowInsights =
+        apiCall {
+            val response = getJson("releases/${Uri.encode(releaseId)}/flow-insights?limit=$limit")
+            response.toRecordFlowInsights()
         }
 
     suspend fun getHomeSummary(
@@ -821,6 +833,16 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         discogsArtists = optJSONArray("discogs_artists").orEmpty().toReleaseArtists(),
     )
 
+private fun JSONObject.toRecordFlowInsights(): RecordFlowInsights =
+    RecordFlowInsights(
+        releaseId = optString("release_id"),
+        before = optJSONArray("before").orEmpty().toRecordFlowReleaseSummaries(),
+        after = optJSONArray("after").orEmpty().toRecordFlowReleaseSummaries(),
+        moodTransitions = optJSONArray("mood_transitions").orEmpty().toRecordFlowMoodTransitions(),
+        sampleSize = optInt("sample_size", 0),
+        confidence = optString("confidence", "low"),
+    )
+
 internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
     CollectionRecordsPage(
         records =
@@ -1221,6 +1243,30 @@ private fun JSONArray.toReleaseArtists(): List<ReleaseArtist> =
             discogsArtistId = item.optLong("discogs_artist_id"),
         )
     }.filter { it.name.isNotBlank() && it.discogsArtistId > 0 }
+
+private fun JSONArray.toRecordFlowReleaseSummaries(): List<RecordFlowReleaseSummary> =
+    mapObjects { item ->
+        RecordFlowReleaseSummary(
+            releaseId = item.optString("release_id"),
+            artist = item.optString("artist", "Unknown artist"),
+            title = item.optString("title", "Unknown title"),
+            year = item.optNullableInt("year"),
+            thumbnailUrl = item.optNullableString("thumbnail_url"),
+            coverImageUrl = item.optNullableString("cover_image_url"),
+            styles = item.optJSONArray("styles").orEmpty().mapStrings(),
+            count = item.optInt("count", 0),
+        )
+    }.filter { it.releaseId.isNotBlank() && it.count > 0 }
+
+private fun JSONArray.toRecordFlowMoodTransitions(): List<RecordFlowMoodTransition> =
+    mapObjects { item ->
+        RecordFlowMoodTransition(
+            previousMood = item.optNullableString("previous_mood"),
+            currentMood = item.optNullableString("current_mood"),
+            nextMood = item.optNullableString("next_mood"),
+            count = item.optInt("count", 0),
+        )
+    }.filter { it.count > 0 }
 
 private fun JSONArray.toSessionTracks(): List<SessionTrack> =
     mapObjects { item ->
