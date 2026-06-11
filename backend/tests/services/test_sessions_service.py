@@ -26,6 +26,27 @@ class StubSessionGroupsService:
         return self.active_id if session_group_id is not None else None
 
 
+def _session(
+    session_id: str,
+    release_id: str,
+    played_at: datetime,
+    *,
+    session_group_id: str | None = None,
+    mood: str | None = None,
+) -> Sessions:
+    return Sessions(
+        id=session_id,
+        release_id=release_id,
+        session_group_id=session_group_id,
+        rating=None,
+        mood=mood,
+        notes=None,
+        played_at=played_at,
+        vinyl_side=None,
+        created_at=played_at,
+    )
+
+
 def test_create_session_persists_validated_session(
     sessions_repository_factory,
     build_sessions_service,
@@ -683,3 +704,159 @@ def test_delete_custom_mood_removes_saved_option(
     service.delete_custom_mood(db=object(), name="dubby")
 
     assert service.list_custom_moods(db=object()) == []
+
+
+def test_record_flow_insights_prefers_timed_sessions_and_one_hour_standalone_sequences(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+) -> None:
+    before_release = build_release("release-before", 555124)
+    before_release.artist = "Aphex Twin"
+    before_release.title = "Selected Ambient Works 85-92"
+    after_release = build_release("release-after", 555125)
+    after_release.artist = "Basic Channel"
+    after_release.title = "Quadrant Dub"
+    target_release = build_release("release-123", 555123)
+    repository = sessions_repository_factory()
+    repository.sessions = [
+        _session(
+            "timed-before",
+            before_release.id,
+            datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+            session_group_id="set-1",
+            mood="Calm",
+        ),
+        _session(
+            "timed-target-a",
+            target_release.id,
+            datetime(2026, 5, 1, 20, 10, tzinfo=UTC),
+            session_group_id="set-1",
+            mood="Focused",
+        ),
+        _session(
+            "timed-target-b",
+            target_release.id,
+            datetime(2026, 5, 1, 20, 20, tzinfo=UTC),
+            session_group_id="set-1",
+            mood="Focused",
+        ),
+        _session(
+            "timed-after",
+            after_release.id,
+            datetime(2026, 5, 1, 20, 30, tzinfo=UTC),
+            session_group_id="set-1",
+            mood="Energetic",
+        ),
+        _session("standalone-before", before_release.id, datetime(2026, 5, 2, 22, 0, tzinfo=UTC), mood="Calm"),
+        _session("standalone-target", target_release.id, datetime(2026, 5, 2, 22, 30, tzinfo=UTC), mood="Focused"),
+        _session("standalone-after", after_release.id, datetime(2026, 5, 2, 23, 20, tzinfo=UTC), mood="Energetic"),
+        _session("far-before", before_release.id, datetime(2026, 5, 3, 1, 0, tzinfo=UTC), mood="Calm"),
+        _session("far-target", target_release.id, datetime(2026, 5, 3, 3, 1, tzinfo=UTC), mood="Focused"),
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[before_release, target_release, after_release],
+        now_provider=lambda: datetime(2026, 5, 4, tzinfo=UTC),
+    )
+
+    insights = service.get_record_flow_insights(db=object(), release_id=target_release.id)
+
+    assert insights.sample_size == 2
+    assert insights.confidence == "low"
+    assert [(item.release.id, item.count) for item in insights.before] == [(before_release.id, 2)]
+    assert [(item.release.id, item.count) for item in insights.after] == [(after_release.id, 2)]
+    assert [
+        (
+            transition.previous_mood,
+            transition.current_mood,
+            transition.next_mood,
+            transition.count,
+        )
+        for transition in insights.mood_transitions
+    ] == [("Calm", "Focused", "Energetic", 2)]
+
+
+def test_record_flow_insights_defaults_to_three_month_window(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+) -> None:
+    before_release = build_release("release-before", 555124)
+    after_release = build_release("release-after", 555125)
+    target_release = build_release("release-123", 555123)
+    repository = sessions_repository_factory()
+    repository.sessions = [
+        _session("old-before", before_release.id, datetime(2026, 1, 15, 20, 0, tzinfo=UTC), session_group_id="old"),
+        _session("old-target", target_release.id, datetime(2026, 1, 15, 20, 10, tzinfo=UTC), session_group_id="old"),
+        _session("old-after", after_release.id, datetime(2026, 1, 15, 20, 20, tzinfo=UTC), session_group_id="old"),
+        _session(
+            "recent-before", before_release.id, datetime(2026, 4, 15, 20, 0, tzinfo=UTC), session_group_id="recent"
+        ),
+        _session(
+            "recent-target", target_release.id, datetime(2026, 4, 15, 20, 10, tzinfo=UTC), session_group_id="recent"
+        ),
+        _session(
+            "recent-after", after_release.id, datetime(2026, 4, 15, 20, 20, tzinfo=UTC), session_group_id="recent"
+        ),
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[before_release, target_release, after_release],
+        now_provider=lambda: datetime(2026, 5, 1, tzinfo=UTC),
+    )
+
+    insights = service.get_record_flow_insights(db=object(), release_id=target_release.id)
+
+    assert repository.flow_insight_since_calls == [datetime(2026, 1, 31, tzinfo=UTC)]
+    assert insights.sample_size == 1
+    assert [(item.release.id, item.count) for item in insights.before] == [(before_release.id, 1)]
+    assert [(item.release.id, item.count) for item in insights.after] == [(after_release.id, 1)]
+
+
+def test_record_flow_insights_can_use_full_history(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+) -> None:
+    before_release = build_release("release-before", 555124)
+    after_release = build_release("release-after", 555125)
+    target_release = build_release("release-123", 555123)
+    repository = sessions_repository_factory()
+    repository.sessions = [
+        _session("old-before", before_release.id, datetime(2026, 1, 15, 20, 0, tzinfo=UTC), session_group_id="old"),
+        _session("old-target", target_release.id, datetime(2026, 1, 15, 20, 10, tzinfo=UTC), session_group_id="old"),
+        _session("old-after", after_release.id, datetime(2026, 1, 15, 20, 20, tzinfo=UTC), session_group_id="old"),
+        _session(
+            "recent-before", before_release.id, datetime(2026, 4, 15, 20, 0, tzinfo=UTC), session_group_id="recent"
+        ),
+        _session(
+            "recent-target", target_release.id, datetime(2026, 4, 15, 20, 10, tzinfo=UTC), session_group_id="recent"
+        ),
+        _session(
+            "recent-after", after_release.id, datetime(2026, 4, 15, 20, 20, tzinfo=UTC), session_group_id="recent"
+        ),
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[before_release, target_release, after_release],
+        now_provider=lambda: datetime(2026, 5, 1, tzinfo=UTC),
+    )
+
+    insights = service.get_record_flow_insights(db=object(), release_id=target_release.id, period="all")
+
+    assert repository.flow_insight_since_calls == [None]
+    assert insights.sample_size == 2
+    assert [(item.release.id, item.count) for item in insights.before] == [(before_release.id, 2)]
+    assert [(item.release.id, item.count) for item in insights.after] == [(after_release.id, 2)]
+
+
+def test_record_flow_insights_rejects_unknown_period(
+    build_sessions_service,
+) -> None:
+    service = build_sessions_service()
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.get_record_flow_insights(db=object(), release_id="release-123", period="forever")
+
+    assert exc_info.value.code == "invalid_period"

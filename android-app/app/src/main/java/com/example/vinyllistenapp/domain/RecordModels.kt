@@ -60,6 +60,33 @@ data class ReleaseSearchResult(
     val format: String?,
 )
 
+data class RecordFlowReleaseSummary(
+    val releaseId: String,
+    val artist: String,
+    val title: String,
+    val year: Int?,
+    val thumbnailUrl: String? = null,
+    val coverImageUrl: String? = null,
+    val styles: List<String> = emptyList(),
+    val count: Int,
+)
+
+data class RecordFlowMoodTransition(
+    val previousMood: String?,
+    val currentMood: String?,
+    val nextMood: String?,
+    val count: Int,
+)
+
+data class RecordFlowInsights(
+    val releaseId: String,
+    val before: List<RecordFlowReleaseSummary>,
+    val after: List<RecordFlowReleaseSummary>,
+    val moodTransitions: List<RecordFlowMoodTransition>,
+    val sampleSize: Int,
+    val confidence: String,
+)
+
 data class ListeningSession(
     val releaseId: String,
     val artist: String,

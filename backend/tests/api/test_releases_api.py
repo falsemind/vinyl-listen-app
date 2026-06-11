@@ -273,3 +273,54 @@ def test_get_release_endpoint_returns_404_when_release_missing(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Release 'missing-release' was not found."}
+
+
+def test_get_release_flow_insights_endpoint_returns_record_flow_summary(
+    build_stub_sessions_service,
+    override_sessions_service,
+) -> None:
+    service = build_stub_sessions_service()
+    override_sessions_service(service)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/release-123/flow-insights", params={"limit": 3, "period": "6m"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "release_id": "release-123",
+        "before": [
+            {
+                "release_id": "release-before",
+                "artist": "Aphex Twin",
+                "title": "Selected Ambient Works 85-92",
+                "year": 1992,
+                "thumbnail_url": None,
+                "cover_image_url": "https://img.discogs.com/before.jpg",
+                "styles": ["Ambient"],
+                "count": 2,
+            }
+        ],
+        "after": [
+            {
+                "release_id": "release-after",
+                "artist": "Basic Channel",
+                "title": "Quadrant Dub",
+                "year": 1994,
+                "thumbnail_url": None,
+                "cover_image_url": "https://img.discogs.com/after.jpg",
+                "styles": ["Dub Techno"],
+                "count": 1,
+            }
+        ],
+        "mood_transitions": [
+            {
+                "previous_mood": "Calm",
+                "current_mood": "Focused",
+                "next_mood": "Energetic",
+                "count": 1,
+            }
+        ],
+        "sample_size": 2,
+        "confidence": "low",
+    }
+    assert service.flow_calls == [("release-123", 3, "6m")]

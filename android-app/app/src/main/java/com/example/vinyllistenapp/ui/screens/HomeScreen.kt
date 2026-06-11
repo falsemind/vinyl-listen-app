@@ -11,14 +11,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -199,18 +205,69 @@ private fun StartTimedSessionAction(
     isStarting: Boolean,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = if (isStarting) "Starting Timed Session..." else "Start Timed Session",
-        color = VinylColors.AccentGreen,
-        style = MaterialTheme.typography.titleMedium,
+    Row(
         modifier =
-            Modifier.clickable(
-                enabled = !isStarting,
-                onClickLabel = "Start timed session",
-                role = Role.Button,
-                onClick = onClick,
-            ),
-    )
+            Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.AccentGreen.copy(alpha = 0.14f))
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card)
+                .clickable(
+                    enabled = !isStarting,
+                    onClickLabel = "Start timed session",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceLg),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (isStarting) "Starting Timed Session..." else "Start Timed Session",
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TimedSessionActionIcon(
+                icon = Icons.Filled.Add,
+                contentDescription = "Add records to timed session",
+                selected = false,
+            )
+            TimedSessionActionIcon(
+                icon = if (isStarting) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                contentDescription = if (isStarting) "Starting timed session" else "Start timed session",
+                selected = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionActionIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(if (selected) VinylColors.AccentGreen else androidx.compose.ui.graphics.Color.Transparent)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+            modifier = Modifier.size(22.dp),
+        )
+    }
 }
 
 private const val COMPACT_HOME_BREAKPOINT_DP = 430

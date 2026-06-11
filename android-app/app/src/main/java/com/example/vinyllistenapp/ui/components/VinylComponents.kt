@@ -19,7 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -273,7 +273,7 @@ fun TimedSessionBanner(
                 onClick = onAutoAddToggle,
             )
             TimedSessionCircleAction(
-                icon = Icons.Filled.PlayArrow,
+                icon = Icons.Filled.Stop,
                 contentDescription = "Stop timed session",
                 selected = true,
                 enabled = !isStopping,

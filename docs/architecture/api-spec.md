@@ -1051,6 +1051,76 @@ Used for listening history.
 }
 ```
 
+## GET /releases/{release_id}/flow-insights
+
+Returns deterministic record-flow facts for the Record Details Insights Summary.
+Timed session groups are treated as strongest sequence evidence. Standalone
+sessions are only linked when neighboring plays are within 1 hour, and
+consecutive plays of the same release are collapsed into one record block. By
+default, insights use logged plays from the last 3 months.
+
+### Query Parameters
+
+| Parameter | Description                                                  |
+| --------- | ------------------------------------------------------------ |
+| limit     | max before/after/mood items, 1..10; defaults to 5            |
+| period    | history window; one of `3m`, `6m`, `1y`, `all`; defaults `3m` |
+
+The `period` filter is applied before sequence building and release hydration.
+`sample_size`, `before`, `after`, and `mood_transitions` describe only the
+selected window. Use `all` only when the caller explicitly requests full
+history.
+
+### Response
+
+```json
+{
+  "release_id": "release-123",
+  "before": [
+    {
+      "release_id": "release-before",
+      "artist": "Aphex Twin",
+      "title": "Selected Ambient Works 85-92",
+      "year": 1992,
+      "thumbnail_url": null,
+      "cover_image_url": "https://img.discogs.com/before.jpg",
+      "styles": ["Ambient"],
+      "count": 2
+    }
+  ],
+  "after": [
+    {
+      "release_id": "release-after",
+      "artist": "Basic Channel",
+      "title": "Quadrant Dub",
+      "year": 1994,
+      "thumbnail_url": null,
+      "cover_image_url": "https://img.discogs.com/after.jpg",
+      "styles": ["Dub Techno"],
+      "count": 1
+    }
+  ],
+  "mood_transitions": [
+    {
+      "previous_mood": "Calm",
+      "current_mood": "Focused",
+      "next_mood": "Energetic",
+      "count": 1
+    }
+  ],
+  "sample_size": 2,
+  "confidence": "low"
+}
+```
+
+### Errors
+
+| Status | Code             | Description                                  |
+| ------ | ---------------- | -------------------------------------------- |
+| 404    | release_not_found | Release does not exist                       |
+| 422    | invalid_limit     | `limit` is outside the supported range       |
+| 422    | invalid_period    | `period` is not one of `3m`, `6m`, `1y`, `all` |
+
 ---
 
 # 11. Analytics

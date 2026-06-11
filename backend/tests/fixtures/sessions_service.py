@@ -18,6 +18,7 @@ class InMemorySessionsRepository:
         self.updated_payload: dict | None = None
         self.sessions: list[Sessions] = []
         self.tracks_by_session_id: dict[str, list[SessionTracks]] = {}
+        self.flow_insight_since_calls: list[datetime | None] = []
 
     def create(self, _db, **kwargs) -> Sessions:
         self.created_payload = kwargs
@@ -76,6 +77,13 @@ class InMemorySessionsRepository:
         matching = [session for session in self.sessions if session.release_id == release_id]
         return matching[offset : offset + limit]
 
+    def get_flow_insight_sessions(self, _db, *, since: datetime | None = None) -> list[Sessions]:
+        self.flow_insight_since_calls.append(since)
+        sessions = self.sessions
+        if since is not None:
+            sessions = [session for session in sessions if (session.played_at or session.created_at) >= since]
+        return sorted(sessions, key=lambda session: session.played_at or session.created_at)
+
     def get_mood_by_name(self, _db, name: str) -> str | None:
         for session in sorted(self.sessions, key=lambda item: item.created_at):
             if session.mood is not None and session.mood.lower() == name.lower():
@@ -89,6 +97,9 @@ class InMemoryReleasesRepository:
 
     def get_by_id(self, _db, release_id: str) -> Releases | None:
         return self.releases.get(release_id)
+
+    def get_by_ids(self, _db, release_ids: list[str]) -> list[Releases]:
+        return [release for release_id, release in self.releases.items() if release_id in release_ids]
 
 
 class StubDiscogsRepository:
