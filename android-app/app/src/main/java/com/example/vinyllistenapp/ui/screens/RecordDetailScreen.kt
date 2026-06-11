@@ -25,7 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -52,6 +55,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -1064,20 +1068,18 @@ private fun RecordInsightsSummaryCard(
                             selectedPeriod = selectedPeriod,
                             onOpenRecord = onOpenRecord,
                         )
-                    else ->
+                    errorMessage != null ->
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
                         ) {
-                            errorMessage?.let { message ->
-                                Text(
-                                    text = message,
-                                    color = VinylColors.AccentOrange,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
+                            Text(
+                                text = errorMessage,
+                                color = VinylColors.AccentOrange,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                            )
                         }
                 }
             }
@@ -1148,11 +1150,13 @@ private fun FlowInsightsPeriodSelector(
         animationSpec = tween(durationMillis = 140),
         label = "flowInsightsPeriodDropdownFade",
     )
+    val selectorControlWidth = 148.dp
+    val selectorControlHeight = 46.dp
 
     Box(
         modifier =
             Modifier
-                .width(168.dp)
+                .width(selectorControlWidth)
                 .onGloballyPositioned { coordinates ->
                     selectorWidth = with(density) { coordinates.size.width.toDp() }
                 },
@@ -1169,8 +1173,8 @@ private fun FlowInsightsPeriodSelector(
                         onClickLabel = actionLabel,
                         role = Role.Button,
                         onClick = { isMenuOpen = !isMenuOpen },
-                    ).padding(horizontal = VinylSpacing.SpaceMd)
-                    .height(56.dp),
+                    ).padding(horizontal = VinylSpacing.SpaceSm)
+                    .height(selectorControlHeight),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1187,49 +1191,99 @@ private fun FlowInsightsPeriodSelector(
                 tint = VinylColors.TextSecondary,
                 modifier =
                     Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .graphicsLayer { rotationZ = arrowRotation },
             )
         }
         if (isMenuOpen) {
             Popup(
                 alignment = Alignment.TopStart,
-                offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
+                offset = IntOffset(x = 0, y = with(density) { 52.dp.roundToPx() }),
                 onDismissRequest = { isMenuOpen = false },
                 properties = PopupProperties(focusable = true),
             ) {
                 Column(
                     modifier =
                         Modifier
-                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 168.dp)
+                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: selectorControlWidth)
+                            .heightIn(max = 320.dp)
                             .graphicsLayer { alpha = dropdownAlpha }
                             .shadow(4.dp, VinylShapes.Card)
                             .clip(VinylShapes.Card)
                             .background(VinylColors.SurfacePrimary)
-                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
+                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                            .verticalScroll(rememberScrollState()),
                 ) {
-                    FlowInsightsPeriod.entries.forEach { period ->
-                        Text(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable(
-                                        enabled = enabled,
-                                        onClickLabel = "Select ${period.label}",
-                                        role = Role.Button,
-                                        onClick = {
-                                            isMenuOpen = false
-                                            onPeriodChange(period)
-                                        },
-                                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceMd),
-                            text = period.label,
-                            color = if (period == selectedPeriod) VinylColors.AccentGreen else VinylColors.TextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
+                    FlowInsightsPeriod.entries.forEachIndexed { index, period ->
+                        FlowInsightsPeriodOptionRow(
+                            period = period,
+                            selected = period == selectedPeriod,
+                            alternate = index % 2 == 0,
+                            enabled = enabled,
+                            onClick = {
+                                isMenuOpen = false
+                                onPeriodChange(period)
+                            },
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FlowInsightsPeriodOptionRow(
+    period: FlowInsightsPeriod,
+    selected: Boolean,
+    alternate: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(rowColor)
+                .clickable(
+                    enabled = enabled,
+                    role = Role.RadioButton,
+                    onClickLabel = "Select ${period.label}",
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault,
+                        shape = CircleShape,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = VinylColors.SurfacePrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        Text(
+            text = period.label,
+            color = if (selected) VinylColors.AccentGreen else VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1385,14 +1439,67 @@ private fun RecordInsightMoodFlowSection(transitions: List<RecordFlowMoodTransit
             )
         } else {
             transitions.forEach { transition ->
-                Text(
-                    text = moodFlowLabel(transition),
-                    color = VinylColors.TextPrimary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                RecordInsightMoodFlowRow(transition = transition)
             }
         }
     }
+}
+
+@Composable
+private fun RecordInsightMoodFlowRow(transition: RecordFlowMoodTransition) {
+    val moods = moodFlowMoods(transition)
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "${transition.count}x",
+            color = VinylColors.AccentGreen,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        if (moods.isEmpty()) {
+            Text(
+                text = "No mood data",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            moods.forEachIndexed { index, mood ->
+                if (index > 0) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = VinylColors.TextSecondary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+                RecordInsightMoodChip(label = mood)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordInsightMoodChip(label: String) {
+    Text(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.GreenTint20)
+                .border(1.dp, VinylColors.AccentGreen, VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+        text = label,
+        color = VinylColors.AccentGreen,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -1829,17 +1936,12 @@ private fun loggedPlaysLabel(count: Int): String {
     return if (safeCount == 1) "1 logged play" else "$safeCount logged plays"
 }
 
-private fun moodFlowLabel(transition: RecordFlowMoodTransition): String {
-    val flow =
-        listOf(
-            transition.previousMood,
-            transition.currentMood,
-            transition.nextMood,
-        ).mapNotNull { mood -> mood?.takeIf { it.isNotBlank() } }
-            .joinToString(" -> ")
-            .ifBlank { "No mood data" }
-    return "$flow (${transition.count}x)"
-}
+private fun moodFlowMoods(transition: RecordFlowMoodTransition): List<String> =
+    listOf(
+        transition.previousMood,
+        transition.currentMood,
+        transition.nextMood,
+    ).mapNotNull { mood -> mood?.takeIf { it.isNotBlank() } }
 
 internal fun hasRecordDetailSessionData(
     releaseId: String,
