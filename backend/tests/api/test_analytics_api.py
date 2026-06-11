@@ -36,12 +36,21 @@ class StubAnalyticsService:
         )
         self.session = SimpleNamespace(
             id="session-123",
+            session_group_id="group-123",
             played_at=datetime(2026, 5, 12, 10, 0, tzinfo=UTC),
             vinyl_side="A",
             rating=5,
             mood="Focused",
             notes="Great listen",
         )
+        self.tracks = [
+            SimpleNamespace(
+                track_position="A1",
+                track_title="Wildlife Analysis",
+                track_duration="1:17",
+                track_sequence=1,
+            )
+        ]
 
     def get_monthly_plays(self, _db):
         return [
@@ -73,7 +82,7 @@ class StubAnalyticsService:
                 pagination=AnalyticsPagination(limit=limit, offset=offset, total=0, has_more=False),
             )
         return AnalyticsSessionPage(
-            sessions=[AnalyticsSession(session=self.session, release=self.release)],
+            sessions=[AnalyticsSession(session=self.session, release=self.release, tracks=self.tracks)],
             pagination=AnalyticsPagination(limit=limit, offset=offset, total=12, has_more=True),
         )
 
@@ -205,12 +214,21 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
             {
                 "session_id": "session-123",
                 "release_id": "release-123",
+                "session_group_id": "group-123",
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "date": "2026-05-12",
                 "played_at": "2026-05-12T10:00:00Z",
                 "side": "A",
+                "tracks": [
+                    {
+                        "position": "A1",
+                        "title": "Wildlife Analysis",
+                        "duration": "1:17",
+                        "sequence": 1,
+                    }
+                ],
                 "rating": 5,
                 "mood": "Focused",
                 "has_notes": True,

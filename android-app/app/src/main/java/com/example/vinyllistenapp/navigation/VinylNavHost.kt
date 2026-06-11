@@ -24,6 +24,7 @@ import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.TimedSessionGroup
+import com.example.vinyllistenapp.ui.components.LocalActiveTimedSessionId
 import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.components.TimedSessionBanner
@@ -129,7 +130,10 @@ fun VinylNavHost(
                 }
             }
 
-    CompositionLocalProvider(LocalTimedSessionBanner provides timedSessionBanner) {
+    CompositionLocalProvider(
+        LocalTimedSessionBanner provides timedSessionBanner,
+        LocalActiveTimedSessionId provides activeTimedSession?.id,
+    ) {
         NavHost(
             navController = navController,
             startDestination = VinylRoutes.HOME,

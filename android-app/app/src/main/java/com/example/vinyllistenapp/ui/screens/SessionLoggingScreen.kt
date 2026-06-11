@@ -137,7 +137,13 @@ fun SessionLoggingScreen(
 
     LaunchedEffect(trackOptions) {
         val availablePositions = trackOptions.map { it.position }.toSet()
-        selectedTrackPositions = selectedTrackPositions.filter { it in availablePositions }
+        val singleTrackPosition = trackOptions.singleOrNull()?.position
+        selectedTrackPositions =
+            if (singleTrackPosition != null) {
+                listOf(singleTrackPosition)
+            } else {
+                selectedTrackPositions.filter { it in availablePositions }
+            }
     }
 
     LaunchedEffect(customMoodRetryKey) {
@@ -215,7 +221,12 @@ fun SessionLoggingScreen(
                     sideOptions = sideOptions,
                     onSideSelected = {
                         selectedSide = it
-                        selectedTrackPositions = emptyList()
+                        val selectedOption = sideOptions.firstOrNull { option -> option.value == it }
+                        selectedTrackPositions =
+                            sessionTrackOptions(record, selectedOption)
+                                .singleOrNull()
+                                ?.let { trackOption -> listOf(trackOption.position) }
+                                ?: emptyList()
                     },
                 )
                 if (trackOptions.isNotEmpty()) {

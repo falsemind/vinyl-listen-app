@@ -35,6 +35,26 @@ class AnalyticsRepository:
         )
 
     @staticmethod
+    def get_tracks_by_session_ids(db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
+        if not session_ids:
+            return {}
+
+        rows = (
+            db.query(SessionTracks)
+            .filter(SessionTracks.session_id.in_(session_ids))
+            .order_by(
+                SessionTracks.session_id.asc(),
+                SessionTracks.track_sequence.asc(),
+                SessionTracks.track_position.asc(),
+            )
+            .all()
+        )
+        tracks_by_session_id: dict[str, list[SessionTracks]] = {}
+        for track in rows:
+            tracks_by_session_id.setdefault(track.session_id, []).append(track)
+        return tracks_by_session_id
+
+    @staticmethod
     def count_sessions_for_month(db: Session, *, month: str) -> int:
         month_expression = AnalyticsRepository._month_expression(db)
         return (

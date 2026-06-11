@@ -30,6 +30,14 @@ class StubAnalyticsRepository:
             mood="Focused",
             notes="",
         )
+        self.tracks = [
+            SimpleNamespace(
+                track_position="A1",
+                track_title="Wildlife Analysis",
+                track_duration="1:17",
+                track_sequence=1,
+            )
+        ]
 
     def get_monthly_play_counts(self, _db):
         return [("2026-01", 2), ("2026-02", 3)]
@@ -44,6 +52,9 @@ class StubAnalyticsRepository:
 
     def count_sessions_for_month(self, _db, *, month: str):
         return 12 if month == "2026-05" else 0
+
+    def get_tracks_by_session_ids(self, _db, session_ids: list[str]):
+        return {session_id: self.tracks for session_id in session_ids}
 
     def get_records_for_rating(self, _db, *, rating: int, limit: int, offset: int):
         self.rating_calls.append((rating, limit, offset))
@@ -140,6 +151,7 @@ def test_get_sessions_for_month_validates_and_maps_page() -> None:
     assert repository.month_calls == [("2026-05", 5, 5)]
     assert result.sessions[0].session.id == "session-123"
     assert result.sessions[0].release.id == "release-123"
+    assert result.sessions[0].tracks[0].track_position == "A1"
     assert result.pagination.limit == 5
     assert result.pagination.offset == 5
     assert result.pagination.total == 12

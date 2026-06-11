@@ -916,6 +916,14 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "date": "2026-05-10",
       "played_at": "2026-05-10T23:30:00Z",
       "side": "A",
+      "tracks": [
+        {
+          "position": "A1",
+          "title": "Future",
+          "duration": "6:34",
+          "sequence": 1
+        }
+      ],
       "rating": 5,
       "mood": "Focused",
       "has_notes": true,
