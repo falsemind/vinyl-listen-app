@@ -140,6 +140,7 @@ class HomeRecentSessionItem(BaseModel):
     date: str | None
     played_at: datetime | None = None
     side: str | None
+    tracks: list[SessionTrackResponse] = Field(default_factory=list)
     rating: int | None
     mood: str | None
     has_notes: bool

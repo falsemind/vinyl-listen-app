@@ -222,6 +222,11 @@ def get_home_summary(
             content={"error": {"code": error.code, "message": error.message}},
         )
 
+    tracks_by_session_id = service.get_tracks_by_session_ids(
+        db,
+        [item.session.id for item in summary.recent_sessions],
+    )
+
     return HomeSummaryResponse(
         recent_sessions=[
             HomeRecentSessionItem(
@@ -234,6 +239,7 @@ def get_home_summary(
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
                 played_at=item.session.played_at,
                 side=item.session.vinyl_side,
+                tracks=_map_session_tracks(tracks_by_session_id.get(item.session.id, [])),
                 rating=item.session.rating,
                 mood=item.session.mood,
                 has_notes=bool(item.session.notes and item.session.notes.strip()),
@@ -397,19 +403,23 @@ def _map_session_response(
         notes=session.notes,
         played_at=session.played_at,
         vinyl_side=session.vinyl_side,
-        tracks=[
-            SessionTrackResponse(
-                position=track.track_position,
-                title=track.track_title,
-                duration=track.track_duration,
-                sequence=track.track_sequence,
-            )
-            for track in service.get_session_tracks(db, session.id)
-        ],
+        tracks=_map_session_tracks(service.get_session_tracks(db, session.id)),
         created_at=session.created_at,
         can_edit=service.can_edit_session(session),
         editable_until=service.editable_until(session),
     )
+
+
+def _map_session_tracks(tracks) -> list[SessionTrackResponse]:
+    return [
+        SessionTrackResponse(
+            position=track.track_position,
+            title=track.track_title,
+            duration=track.track_duration,
+            sequence=track.track_sequence,
+        )
+        for track in tracks
+    ]
 
 
 def _map_session_group_response(session_group) -> SessionGroupResponse:

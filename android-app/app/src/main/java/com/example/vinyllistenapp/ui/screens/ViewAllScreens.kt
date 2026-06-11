@@ -588,13 +588,16 @@ private fun TimedSessionGroupListItem(
 private fun TimedSessionMetadataChips(sessions: List<ListeningSession>) {
     val averageRating = timedSessionAverageRating(sessions)
     val topMood = timedSessionTopMood(sessions)
+    val recordCount = sessions.distinctBy { it.releaseId }.size
+    val trackCount = sessions.sumOf { it.tracks.size }
 
     WrappingMetadataChipRow(
         horizontalSpacing = VinylSpacing.SpaceSm,
         verticalSpacing = VinylSpacing.SpaceSm,
     ) {
         TimedSessionMetadataChip(text = "Time: ${timedSessionDurationLabel(sessions)}")
-        TimedSessionMetadataChip(text = "${sessions.size} x Record(s)")
+        TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
+        TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")
         TimedSessionMetadataChip(text = "Rating: $averageRating")
         TimedSessionMetadataChip(text = "Mood: $topMood")
     }

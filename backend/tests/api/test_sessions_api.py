@@ -385,6 +385,14 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "date": "2026-03-14",
                 "played_at": "2026-03-14T19:21:00Z",
                 "side": "A",
+                "tracks": [
+                    {
+                        "position": "A1",
+                        "title": "Wildlife Analysis",
+                        "duration": "1:17",
+                        "sequence": 1,
+                    }
+                ],
                 "rating": 5,
                 "mood": "Calm",
                 "has_notes": True,
