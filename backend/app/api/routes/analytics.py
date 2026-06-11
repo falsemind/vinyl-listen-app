@@ -20,7 +20,7 @@ from app.schemas.analytics import (
     RatingDistributionResponse,
     StyleDistributionResponse,
 )
-from app.schemas.sessions import ErrorResponse
+from app.schemas.sessions import ErrorResponse, SessionTrackResponse
 from app.services.analytics_service import AnalyticsService, AnalyticsValidationError
 
 logger = logging.getLogger(__name__)
@@ -219,12 +219,22 @@ def _map_analytics_session(item: Any) -> AnalyticsSessionItem:
     return AnalyticsSessionItem(
         session_id=session.id,
         release_id=release.id,
+        session_group_id=session.session_group_id,
         artist=release.artist,
         title=release.title,
         thumbnail_url=release.cover_image_url,
         date=session.played_at.date().isoformat() if session.played_at is not None else None,
         played_at=session.played_at,
         side=session.vinyl_side,
+        tracks=[
+            SessionTrackResponse(
+                position=track.track_position,
+                title=track.track_title,
+                duration=track.track_duration,
+                sequence=track.track_sequence,
+            )
+            for track in item.tracks
+        ],
         rating=session.rating,
         mood=session.mood,
         has_notes=bool(session.notes and session.notes.strip()),

@@ -55,6 +55,7 @@ import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
+import com.example.vinyllistenapp.ui.components.LocalActiveTimedSessionId
 import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
@@ -99,21 +100,11 @@ fun RecentSessionsScreen(
     ) {
         error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
         PaginatedViewAllItems(items = groupedRecentSessionItems(sessions)) { item ->
-            when (item) {
-                is RecentSessionListItem.Group ->
-                    TimedSessionGroupListItem(
-                        item = item,
-                        onOpenRecord = onOpenRecord,
-                        onEditSession = onEditSession,
-                    )
-
-                is RecentSessionListItem.Single ->
-                    SessionListItem(
-                        session = item.session,
-                        onClick = { onOpenRecord(item.session.releaseId) },
-                        onEditSession = { sessionId -> onEditSession(sessionId) },
-                    )
-            }
+            RecentSessionListItemContent(
+                item = item,
+                onOpenRecord = onOpenRecord,
+                onEditSession = onEditSession,
+            )
         }
     }
 }
@@ -220,22 +211,79 @@ fun MonthSessionsDrilldownScreen(
     onBack: () -> Unit,
     onOpenRecord: (String) -> Unit,
 ) {
+    var sessions by remember { mutableStateOf(emptyList<ListeningSession>()) }
     var subtitle by remember(month) { mutableStateOf("Logged listens") }
-    BackendPagedDrilldownScreen(
+    var hasMore by remember { mutableStateOf(false) }
+    var isLoadingInitial by remember { mutableStateOf(true) }
+    var isLoadingMore by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun loadFirstPage() {
+        isLoadingInitial = true
+        runCatching { apiClient.getAnalyticsSessionsForMonth(month = month, limit = VIEW_ALL_PAGE_SIZE, offset = 0) }
+            .onSuccess { page ->
+                sessions = page.sessions
+                subtitle = loggedListenCountLabel(page.pagination.total)
+                hasMore = page.pagination.hasMore
+                error = null
+            }.onFailure { failure ->
+                sessions = emptyList()
+                hasMore = false
+                error = failure.toUserMessage("Could not load analytics.")
+            }
+        isLoadingInitial = false
+    }
+
+    fun loadMore(count: Int) {
+        scope.launch {
+            isLoadingMore = true
+            runCatching {
+                apiClient.getAnalyticsSessionsForMonth(
+                    month = month,
+                    limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
+                    offset = sessions.size,
+                )
+            }.onSuccess { page ->
+                sessions = sessions + page.sessions
+                subtitle = loggedListenCountLabel(page.pagination.total)
+                hasMore = page.pagination.hasMore
+                error = null
+            }.onFailure { failure ->
+                error = failure.toUserMessage("Could not load more analytics.")
+            }
+            isLoadingMore = false
+        }
+    }
+
+    LaunchedEffect(month, retryKey) {
+        loadFirstPage()
+    }
+
+    ViewAllScreenContent(
         title = "${analyticsMonthTitle(month)} Sessions",
         subtitle = subtitle,
         onBack = onBack,
-        emptyText = "No sessions for this month.",
-        loadPage = { limit, offset ->
-            val page = apiClient.getAnalyticsSessionsForMonth(month = month, limit = limit, offset = offset)
-            subtitle = loggedListenCountLabel(page.pagination.total)
-            DrilldownPage(items = page.sessions, hasMore = page.pagination.hasMore)
-        },
-    ) { session ->
-        SessionListItem(
-            session = session,
-            onClick = { onOpenRecord(session.releaseId) },
-        )
+    ) {
+        error?.let { ErrorRetryCard(message = it, onRetry = { retryKey += 1 }) }
+        if (sessions.isEmpty() && error == null && !isLoadingInitial) {
+            EmptyViewAllText("No sessions for this month.")
+        }
+        groupedRecentSessionItems(sessions).forEach { item ->
+            RecentSessionListItemContent(
+                item = item,
+                onOpenRecord = onOpenRecord,
+            )
+        }
+        if (hasMore) {
+            ViewAllShowMoreButton(
+                label = if (isLoadingMore) "Loading..." else "Show More",
+                enabled = !isLoadingMore,
+                onClick = { loadMore(VIEW_ALL_PAGE_SIZE) },
+                onCustomCount = ::loadMore,
+            )
+        }
     }
 }
 
@@ -558,11 +606,37 @@ private fun groupedRecentSessionItems(sessions: List<ListeningSession>): List<Re
 }
 
 @Composable
+private fun RecentSessionListItemContent(
+    item: RecentSessionListItem,
+    onOpenRecord: (String) -> Unit,
+    onEditSession: ((String) -> Unit)? = null,
+) {
+    when (item) {
+        is RecentSessionListItem.Group ->
+            TimedSessionGroupListItem(
+                item = item,
+                onOpenRecord = onOpenRecord,
+                onEditSession = onEditSession,
+            )
+
+        is RecentSessionListItem.Single ->
+            SessionListItem(
+                session = item.session,
+                onClick = { onOpenRecord(item.session.releaseId) },
+                onEditSession = onEditSession,
+            )
+    }
+}
+
+@Composable
 private fun TimedSessionGroupListItem(
     item: RecentSessionListItem.Group,
     onOpenRecord: (String) -> Unit,
-    onEditSession: (String) -> Unit,
+    onEditSession: ((String) -> Unit)? = null,
 ) {
+    val activeTimedSessionId = LocalActiveTimedSessionId.current
+    val isActiveTimedSession = item.sessionGroupId == activeTimedSessionId
+
     Column(
         modifier =
             Modifier
@@ -572,30 +646,34 @@ private fun TimedSessionGroupListItem(
                 .padding(VinylSpacing.SpaceMd),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        TimedSessionMetadataChips(sessions = item.sessions)
+        TimedSessionMetadataChips(sessions = item.sessions, isActive = isActiveTimedSession)
         item.sessions.forEach { session ->
             SessionListItem(
                 session = session,
                 borderColor = VinylColors.AccentGreen.copy(alpha = 0.72f),
                 onClick = { onOpenRecord(session.releaseId) },
-                onEditSession = { sessionId -> onEditSession(sessionId) },
+                onEditSession = onEditSession,
             )
         }
     }
 }
 
 @Composable
-private fun TimedSessionMetadataChips(sessions: List<ListeningSession>) {
+private fun TimedSessionMetadataChips(
+    sessions: List<ListeningSession>,
+    isActive: Boolean,
+) {
     val averageRating = timedSessionAverageRating(sessions)
     val topMood = timedSessionTopMood(sessions)
     val recordCount = sessions.distinctBy { it.releaseId }.size
     val trackCount = sessions.sumOf { it.tracks.size }
+    val timeLabel = if (isActive) "Playing..." else timedSessionDurationLabel(sessions)
 
     WrappingMetadataChipRow(
         horizontalSpacing = VinylSpacing.SpaceSm,
         verticalSpacing = VinylSpacing.SpaceSm,
     ) {
-        TimedSessionMetadataChip(text = "Time: ${timedSessionDurationLabel(sessions)}")
+        TimedSessionMetadataChip(text = "Time: $timeLabel")
         TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
         TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")
         TimedSessionMetadataChip(text = "Rating: $averageRating")
@@ -612,11 +690,10 @@ private fun TimedSessionMetadataChip(
         modifier =
             modifier
                 .clip(VinylShapes.Chip)
-                .background(VinylColors.GreenTint20)
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
                 .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         text = text,
-        color = VinylColors.AccentGreen,
+        color = VinylColors.TextOnSolidAccent,
         style = MaterialTheme.typography.bodyMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,

@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.sessions import SessionTrackResponse
 
 
 class MonthlyPlayItem(BaseModel):
@@ -38,12 +40,14 @@ class AnalyticsPagination(BaseModel):
 class AnalyticsSessionItem(BaseModel):
     session_id: str
     release_id: str
+    session_group_id: str | None = None
     artist: str
     title: str
     thumbnail_url: str | None = None
     date: str | None
     played_at: datetime | None = None
     side: str | None
+    tracks: list[SessionTrackResponse] = Field(default_factory=list)
     rating: int | None
     mood: str | None
     has_notes: bool

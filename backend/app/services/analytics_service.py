@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.releases import Releases
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.repositories.analytics_repository import AnalyticsRepository
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,7 @@ class AnalyticsPagination:
 class AnalyticsSession:
     session: Sessions
     release: Releases
+    tracks: list[SessionTracks]
 
 
 @dataclass(frozen=True)
@@ -124,7 +125,18 @@ class AnalyticsService:
             offset=offset,
         )
         total = self._analytics_repository.count_sessions_for_month(db, month=normalized_month)
-        sessions = [AnalyticsSession(session=session, release=release) for session, release in rows]
+        tracks_by_session_id = self._analytics_repository.get_tracks_by_session_ids(
+            db,
+            [session.id for session, _release in rows],
+        )
+        sessions = [
+            AnalyticsSession(
+                session=session,
+                release=release,
+                tracks=tracks_by_session_id.get(session.id, []),
+            )
+            for session, release in rows
+        ]
         return AnalyticsSessionPage(
             sessions=sessions,
             pagination=self._pagination(limit=limit, offset=offset, total=total, item_count=len(sessions)),

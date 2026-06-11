@@ -45,6 +45,7 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 
 internal val LocalTimedSessionBanner = compositionLocalOf<(@Composable () -> Unit)?> { null }
+internal val LocalActiveTimedSessionId = compositionLocalOf<String?> { null }
 
 @Composable
 internal fun ScreenContent(
