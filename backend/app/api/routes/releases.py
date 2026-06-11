@@ -7,11 +7,24 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.schemas.releases import ReleaseImportRequest, ReleaseImportResponse, ReleaseResponse, ReleaseSearchResponse
+from app.schemas.releases import (
+    RecordFlowInsightsResponse,
+    RecordFlowMoodTransitionResponse,
+    RecordFlowReleaseSummaryResponse,
+    ReleaseImportRequest,
+    ReleaseImportResponse,
+    ReleaseResponse,
+    ReleaseSearchResponse,
+)
 from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse, SessionTrackResponse
 from app.services.discogs_service import DiscogsClientError, DiscogsService
 from app.services.release_import_service import ReleaseImportService
-from app.services.sessions_service import ReleaseNotFoundError, SessionsService, SessionValidationError
+from app.services.sessions_service import (
+    RecordFlowInsights,
+    ReleaseNotFoundError,
+    SessionsService,
+    SessionValidationError,
+)
 from app.utils.discogs_display import clean_discogs_artist_name
 
 logger = logging.getLogger(__name__)
@@ -228,6 +241,65 @@ def _release_response(db: Session, service: ReleaseImportService, release) -> Re
             "tracklist": service.get_tracklist(db, release.discogs_release_id),
             "discogs_artists": service.get_artists(db, release.discogs_release_id),
         }
+    )
+
+
+@router.get(
+    "/{release_id}/flow-insights",
+    response_model=RecordFlowInsightsResponse,
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def get_release_flow_insights(
+    release_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionsService, Depends(get_sessions_service)],
+    limit: int = Query(default=5, ge=1, le=10),
+):
+    try:
+        insights = service.get_record_flow_insights(db, release_id, limit=limit)
+    except SessionValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except ReleaseNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "release_not_found", "message": str(error)}},
+        )
+
+    return _record_flow_insights_response(insights)
+
+
+def _record_flow_insights_response(insights: RecordFlowInsights) -> RecordFlowInsightsResponse:
+    return RecordFlowInsightsResponse(
+        release_id=insights.release_id,
+        before=[_record_flow_release_response(summary) for summary in insights.before],
+        after=[_record_flow_release_response(summary) for summary in insights.after],
+        mood_transitions=[
+            RecordFlowMoodTransitionResponse(
+                previous_mood=transition.previous_mood,
+                current_mood=transition.current_mood,
+                next_mood=transition.next_mood,
+                count=transition.count,
+            )
+            for transition in insights.mood_transitions
+        ],
+        sample_size=insights.sample_size,
+        confidence=insights.confidence,
+    )
+
+
+def _record_flow_release_response(summary) -> RecordFlowReleaseSummaryResponse:
+    return RecordFlowReleaseSummaryResponse(
+        release_id=summary.release.id,
+        artist=summary.release.artist,
+        title=summary.release.title,
+        year=summary.release.year,
+        thumbnail_url=getattr(summary.release, "thumbnail_url", None),
+        cover_image_url=summary.release.cover_image_url,
+        styles=summary.release.styles,
+        count=summary.count,
     )
 
 

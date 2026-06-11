@@ -11,7 +11,15 @@ from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
 from app.services.release_mapper import ReleaseArtistData, ReleaseSideOptionData, ReleaseTrackData
-from app.services.sessions_service import CreateSessionResult, HomeSummary, SessionReleaseSummary, TopReleaseSummary
+from app.services.sessions_service import (
+    CreateSessionResult,
+    HomeSummary,
+    RecordFlowInsights,
+    RecordFlowMoodTransition,
+    RecordFlowReleaseSummary,
+    SessionReleaseSummary,
+    TopReleaseSummary,
+)
 
 
 class StubIdentifyService:
@@ -326,6 +334,7 @@ class StubSessionsService:
         self.update_calls: list[tuple[str, dict]] = []
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
+        self.flow_calls: list[tuple[str, int]] = []
         self.create_mood_calls: list[str] = []
         self.delete_mood_calls: list[str] = []
         self.custom_moods = [
@@ -392,6 +401,51 @@ class StubSessionsService:
             cover_image_url="https://img.discogs.com/cover.jpg",
             created_at=datetime(2026, 4, 19, tzinfo=UTC),
             updated_at=datetime(2026, 4, 19, tzinfo=UTC),
+        )
+        self.before_release = ReleaseStub(
+            id="release-before",
+            discogs_release_id=555124,
+            artist="Aphex Twin",
+            title="Selected Ambient Works 85-92",
+            year=1992,
+            label="Apollo",
+            catalog_number="AMB3922LP",
+            barcode=None,
+            genres=["Electronic"],
+            styles=["Ambient"],
+            cover_image_url="https://img.discogs.com/before.jpg",
+            created_at=datetime(2026, 4, 19, tzinfo=UTC),
+            updated_at=datetime(2026, 4, 19, tzinfo=UTC),
+        )
+        self.after_release = ReleaseStub(
+            id="release-after",
+            discogs_release_id=555125,
+            artist="Basic Channel",
+            title="Quadrant Dub",
+            year=1994,
+            label="Basic Channel",
+            catalog_number="BC-06",
+            barcode=None,
+            genres=["Electronic"],
+            styles=["Dub Techno"],
+            cover_image_url="https://img.discogs.com/after.jpg",
+            created_at=datetime(2026, 4, 19, tzinfo=UTC),
+            updated_at=datetime(2026, 4, 19, tzinfo=UTC),
+        )
+        self.flow_insights = RecordFlowInsights(
+            release_id="release-123",
+            before=[RecordFlowReleaseSummary(release=self.before_release, count=2)],
+            after=[RecordFlowReleaseSummary(release=self.after_release, count=1)],
+            mood_transitions=[
+                RecordFlowMoodTransition(
+                    previous_mood="Calm",
+                    current_mood="Focused",
+                    next_mood="Energetic",
+                    count=1,
+                )
+            ],
+            sample_size=2,
+            confidence="low",
         )
 
     def create_session(self, _db, **kwargs) -> CreateSessionResult:
@@ -462,6 +516,12 @@ class StubSessionsService:
                 TopReleaseSummary(release=self.release, plays=2, average_rating=4.5),
             ],
         )
+
+    def get_record_flow_insights(self, _db, release_id: str, *, limit: int = 5) -> RecordFlowInsights:
+        self.flow_calls.append((release_id, limit))
+        if self.list_error is not None:
+            raise self.list_error
+        return self.flow_insights
 
     def list_custom_moods(self, _db):
         if self.mood_error is not None:

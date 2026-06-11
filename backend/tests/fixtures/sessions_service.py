@@ -76,6 +76,9 @@ class InMemorySessionsRepository:
         matching = [session for session in self.sessions if session.release_id == release_id]
         return matching[offset : offset + limit]
 
+    def get_flow_insight_sessions(self, _db) -> list[Sessions]:
+        return sorted(self.sessions, key=lambda session: session.played_at or session.created_at)
+
     def get_mood_by_name(self, _db, name: str) -> str | None:
         for session in sorted(self.sessions, key=lambda item: item.created_at):
             if session.mood is not None and session.mood.lower() == name.lower():
@@ -89,6 +92,9 @@ class InMemoryReleasesRepository:
 
     def get_by_id(self, _db, release_id: str) -> Releases | None:
         return self.releases.get(release_id)
+
+    def get_by_ids(self, _db, release_ids: list[str]) -> list[Releases]:
+        return [release for release_id, release in self.releases.items() if release_id in release_ids]
 
 
 class StubDiscogsRepository:

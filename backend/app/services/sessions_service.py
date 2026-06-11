@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 CUSTOM_MOOD_MIN_LENGTH = 3
 CUSTOM_MOOD_MAX_LENGTH = 20
 SESSION_EDIT_WINDOW = timedelta(minutes=15)
+FLOW_INSIGHTS_STANDALONE_GAP = timedelta(hours=1)
 BUILT_IN_SESSION_MOODS = {
     "energetic": "Energetic",
     "calm": "Calm",
@@ -143,6 +145,46 @@ class HomeSummary:
     total_sessions: int
     records_this_month: int
     top_records: list[TopReleaseSummary]
+
+
+@dataclass(frozen=True)
+class RecordFlowReleaseSummary:
+    release: Releases
+    count: int
+
+
+@dataclass(frozen=True)
+class RecordFlowMoodTransition:
+    previous_mood: str | None
+    current_mood: str | None
+    next_mood: str | None
+    count: int
+
+
+@dataclass(frozen=True)
+class RecordFlowInsights:
+    release_id: str
+    before: list[RecordFlowReleaseSummary]
+    after: list[RecordFlowReleaseSummary]
+    mood_transitions: list[RecordFlowMoodTransition]
+    sample_size: int
+    confidence: str
+
+
+@dataclass
+class _RecordFlowBlock:
+    release: Releases
+    moods: list[str | None]
+
+    @property
+    def primary_mood(self) -> str | None:
+        return next((mood for mood in self.moods if mood), None)
+
+
+@dataclass(frozen=True)
+class _RecordFlowItem:
+    session: Sessions
+    release: Releases
 
 
 class SessionsService:
@@ -303,6 +345,154 @@ class SessionsService:
 
     def get_tracks_by_session_ids(self, db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
         return self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+
+    def get_record_flow_insights(
+        self,
+        db: Session,
+        release_id: str,
+        *,
+        limit: int = 5,
+    ) -> RecordFlowInsights:
+        if limit <= 0 or limit > 10:
+            raise SessionValidationError("invalid_limit", "limit must be between 1 and 10.")
+
+        release = self._releases_repository.get_by_id(db, release_id)
+        if release is None:
+            logger.info("Release not found during flow insights lookup release_id=%s", release_id)
+            raise ReleaseNotFoundError(release_id)
+
+        sessions = self._sessions_repository.get_flow_insight_sessions(db)
+        releases = {
+            release.id: release
+            for release in self._releases_repository.get_by_ids(
+                db,
+                list({session.release_id for session in sessions}),
+            )
+        }
+        items = [
+            _RecordFlowItem(session=session, release=releases[session.release_id])
+            for session in sessions
+            if session.release_id in releases
+        ]
+        sequences = self._flow_sequences(items)
+
+        before_counts: Counter[str] = Counter()
+        after_counts: Counter[str] = Counter()
+        mood_counts: Counter[tuple[str | None, str | None, str | None]] = Counter()
+        release_by_id = {item.release.id: item.release for item in items}
+        sample_size = 0
+
+        for sequence in sequences:
+            for index, block in enumerate(sequence):
+                if block.release.id != release_id:
+                    continue
+
+                previous_block = sequence[index - 1] if index > 0 else None
+                next_block = sequence[index + 1] if index + 1 < len(sequence) else None
+                if previous_block is None and next_block is None:
+                    continue
+
+                sample_size += 1
+                if previous_block is not None:
+                    before_counts[previous_block.release.id] += 1
+                if next_block is not None:
+                    after_counts[next_block.release.id] += 1
+                mood_counts[
+                    (
+                        previous_block.primary_mood if previous_block is not None else None,
+                        block.primary_mood,
+                        next_block.primary_mood if next_block is not None else None,
+                    )
+                ] += 1
+
+        return RecordFlowInsights(
+            release_id=release_id,
+            before=self._release_flow_summaries(before_counts, release_by_id, limit),
+            after=self._release_flow_summaries(after_counts, release_by_id, limit),
+            mood_transitions=[
+                RecordFlowMoodTransition(
+                    previous_mood=previous_mood,
+                    current_mood=current_mood,
+                    next_mood=next_mood,
+                    count=count,
+                )
+                for (previous_mood, current_mood, next_mood), count in mood_counts.most_common(limit)
+            ],
+            sample_size=sample_size,
+            confidence=self._flow_confidence(sample_size),
+        )
+
+    @staticmethod
+    def _flow_sequences(items: list[_RecordFlowItem]) -> list[list[_RecordFlowBlock]]:
+        timed_groups: dict[str, list[_RecordFlowItem]] = {}
+        standalone_items: list[_RecordFlowItem] = []
+        for item in items:
+            if item.session.session_group_id:
+                timed_groups.setdefault(item.session.session_group_id, []).append(item)
+            else:
+                standalone_items.append(item)
+
+        sequences = [
+            SessionsService._collapse_release_blocks(sorted(group_items, key=SessionsService._flow_item_time))
+            for group_items in timed_groups.values()
+        ]
+
+        current_standalone_sequence: list[_RecordFlowItem] = []
+        for item in sorted(standalone_items, key=SessionsService._flow_item_time):
+            if current_standalone_sequence:
+                gap = SessionsService._flow_item_time(item) - SessionsService._flow_item_time(
+                    current_standalone_sequence[-1]
+                )
+                if gap > FLOW_INSIGHTS_STANDALONE_GAP:
+                    sequences.append(SessionsService._collapse_release_blocks(current_standalone_sequence))
+                    current_standalone_sequence = []
+            current_standalone_sequence.append(item)
+        if current_standalone_sequence:
+            sequences.append(SessionsService._collapse_release_blocks(current_standalone_sequence))
+
+        return [sequence for sequence in sequences if len(sequence) > 1]
+
+    @staticmethod
+    def _collapse_release_blocks(items: list[_RecordFlowItem]) -> list[_RecordFlowBlock]:
+        blocks: list[_RecordFlowBlock] = []
+        for item in items:
+            mood = SessionsService._flow_mood(item.session.mood)
+            if blocks and blocks[-1].release.id == item.release.id:
+                blocks[-1].moods.append(mood)
+            else:
+                blocks.append(_RecordFlowBlock(release=item.release, moods=[mood]))
+        return blocks
+
+    @staticmethod
+    def _release_flow_summaries(
+        counts: Counter[str],
+        release_by_id: dict[str, Releases],
+        limit: int,
+    ) -> list[RecordFlowReleaseSummary]:
+        return [
+            RecordFlowReleaseSummary(release=release_by_id[release_id], count=count)
+            for release_id, count in counts.most_common(limit)
+            if release_id in release_by_id
+        ]
+
+    @staticmethod
+    def _flow_confidence(sample_size: int) -> str:
+        if sample_size >= 10:
+            return "high"
+        if sample_size >= 3:
+            return "medium"
+        return "low"
+
+    @staticmethod
+    def _flow_mood(mood: str | None) -> str | None:
+        if mood is None:
+            return None
+        stripped = mood.strip()
+        return stripped or None
+
+    @staticmethod
+    def _flow_item_time(item: _RecordFlowItem) -> datetime:
+        return item.session.played_at or item.session.created_at
 
     def get_home_summary(
         self,

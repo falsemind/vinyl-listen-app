@@ -30,6 +30,11 @@ class SessionsRepository:
         )
 
     @staticmethod
+    def get_flow_insight_sessions(db: Session) -> list[Sessions]:
+        played_time = func.coalesce(Sessions.played_at, Sessions.created_at)
+        return db.query(Sessions).order_by(played_time.asc(), Sessions.created_at.asc()).all()
+
+    @staticmethod
     def get_mood_by_name(db: Session, name: str) -> str | None:
         row = (
             db.query(Sessions.mood)

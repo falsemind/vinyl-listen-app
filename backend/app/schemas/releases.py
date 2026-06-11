@@ -75,6 +75,33 @@ class ReleaseSearchResponse(BaseModel):
     has_more: bool | None = None
 
 
+class RecordFlowReleaseSummaryResponse(BaseModel):
+    release_id: str
+    artist: str
+    title: str
+    year: int | None = None
+    thumbnail_url: str | None = None
+    cover_image_url: str | None = None
+    styles: list[str] | None = None
+    count: int
+
+
+class RecordFlowMoodTransitionResponse(BaseModel):
+    previous_mood: str | None = None
+    current_mood: str | None = None
+    next_mood: str | None = None
+    count: int
+
+
+class RecordFlowInsightsResponse(BaseModel):
+    release_id: str
+    before: list[RecordFlowReleaseSummaryResponse] = Field(default_factory=list)
+    after: list[RecordFlowReleaseSummaryResponse] = Field(default_factory=list)
+    mood_transitions: list[RecordFlowMoodTransitionResponse] = Field(default_factory=list)
+    sample_size: int
+    confidence: str
+
+
 class ReleaseImportResponse(BaseModel):
     release_id: str
     discogs_release_id: int

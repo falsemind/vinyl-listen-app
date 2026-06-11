@@ -15,6 +15,13 @@ class ReleasesRepository:
         return db.query(Releases).filter(Releases.id == release_id).one_or_none()
 
     @staticmethod
+    def get_by_ids(db: Session, release_ids: Sequence[str]) -> Sequence[Releases]:
+        if not release_ids:
+            return []
+
+        return db.query(Releases).filter(Releases.id.in_(release_ids)).all()
+
+    @staticmethod
     def get_by_discogs_release_id(db: Session, discogs_release_id: int) -> Releases | None:
         return db.query(Releases).filter(Releases.discogs_release_id == discogs_release_id).one_or_none()
 
