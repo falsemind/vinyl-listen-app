@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -104,6 +106,7 @@ fun RecordDetailScreen(
     var sessions by remember(releaseId) { mutableStateOf<List<ListeningSession>>(emptyList()) }
     var flowInsights by remember(releaseId) { mutableStateOf<RecordFlowInsights?>(null) }
     var flowInsightsError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var selectedFlowInsightsPeriod by remember(releaseId) { mutableStateOf(FlowInsightsPeriod.ThreeMonths) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
@@ -138,9 +141,9 @@ fun RecordDetailScreen(
         return fetched
     }
 
-    suspend fun fetchFlowInsights() {
+    suspend fun fetchFlowInsights(period: FlowInsightsPeriod) {
         isLoadingFlowInsights = true
-        runCatching { apiClient.getReleaseFlowInsights(record.releaseId) }
+        runCatching { apiClient.getReleaseFlowInsights(record.releaseId, period = period.apiValue) }
             .onSuccess { insights ->
                 flowInsights = insights
                 flowInsightsError = null
@@ -258,11 +261,20 @@ fun RecordDetailScreen(
                     isLoading = isLoadingFlowInsights,
                     insights = flowInsights,
                     errorMessage = flowInsightsError,
+                    selectedPeriod = selectedFlowInsightsPeriod,
                     onExpandedChange = { isInsightsExpanded = it },
+                    onPeriodChange = { period ->
+                        if (period != selectedFlowInsightsPeriod) {
+                            selectedFlowInsightsPeriod = period
+                            flowInsights = null
+                            flowInsightsError = null
+                        }
+                    },
                     onOpenRecord = onOpenRecord,
                     onGetInsights = {
+                        val period = selectedFlowInsightsPeriod
                         scope.launch {
-                            fetchFlowInsights()
+                            fetchFlowInsights(period)
                         }
                     },
                 )
@@ -964,7 +976,9 @@ private fun RecordInsightsSummaryCard(
     isLoading: Boolean,
     insights: RecordFlowInsights?,
     errorMessage: String?,
+    selectedPeriod: FlowInsightsPeriod,
     onExpandedChange: (Boolean) -> Unit,
+    onPeriodChange: (FlowInsightsPeriod) -> Unit,
     onOpenRecord: (String) -> Unit,
     onGetInsights: () -> Unit,
 ) {
@@ -1036,11 +1050,18 @@ private fun RecordInsightsSummaryCard(
                             .height(1.dp)
                             .background(VinylColors.BorderDefault),
                 )
+                FlowInsightsActionRow(
+                    selectedPeriod = selectedPeriod,
+                    enabled = !isLoading,
+                    onPeriodChange = onPeriodChange,
+                    onGetInsights = onGetInsights,
+                )
                 when {
                     isLoading -> RecordInsightsLoading()
                     insights != null ->
                         RecordInsightsResult(
                             insights = insights,
+                            selectedPeriod = selectedPeriod,
                             onOpenRecord = onOpenRecord,
                         )
                     else ->
@@ -1057,20 +1078,155 @@ private fun RecordInsightsSummaryCard(
                                     textAlign = TextAlign.Center,
                                 )
                             }
-                            Text(
-                                text = "Get Insights",
-                                color = VinylColors.AccentGreen,
-                                style = MaterialTheme.typography.titleMedium,
-                                textAlign = TextAlign.Center,
-                                modifier =
-                                    Modifier.clickable(
-                                        enabled = !isLoading,
-                                        onClickLabel = "Get insights",
-                                        role = Role.Button,
-                                        onClick = onGetInsights,
-                                    ),
-                            )
                         }
+                }
+            }
+        }
+    }
+}
+
+private enum class FlowInsightsPeriod(
+    val apiValue: String,
+    val label: String,
+    val resultScopeLabel: String,
+) {
+    ThreeMonths("3m", "3 months", "in the last 3 months"),
+    SixMonths("6m", "6 months", "in the last 6 months"),
+    OneYear("1y", "1 year", "in the last year"),
+    FullHistory("all", "Full history", "in full history"),
+}
+
+@Composable
+private fun FlowInsightsActionRow(
+    selectedPeriod: FlowInsightsPeriod,
+    enabled: Boolean,
+    onPeriodChange: (FlowInsightsPeriod) -> Unit,
+    onGetInsights: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Get Insights",
+            color = if (enabled) VinylColors.AccentGreen else VinylColors.TextSecondary,
+            style = MaterialTheme.typography.titleMedium,
+            modifier =
+                Modifier.clickable(
+                    enabled = enabled,
+                    onClickLabel = "Get insights",
+                    role = Role.Button,
+                    onClick = onGetInsights,
+                ),
+        )
+        FlowInsightsPeriodSelector(
+            selectedPeriod = selectedPeriod,
+            enabled = enabled,
+            onPeriodChange = onPeriodChange,
+        )
+    }
+}
+
+@Composable
+private fun FlowInsightsPeriodSelector(
+    selectedPeriod: FlowInsightsPeriod,
+    enabled: Boolean,
+    onPeriodChange: (FlowInsightsPeriod) -> Unit,
+) {
+    var isMenuOpen by remember { mutableStateOf(false) }
+    var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
+    val density = LocalDensity.current
+    val actionLabel = if (isMenuOpen) "Close insights period selector" else "Open insights period selector"
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isMenuOpen) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "flowInsightsPeriodArrow",
+    )
+    val dropdownAlpha by animateFloatAsState(
+        targetValue = if (isMenuOpen) 1f else 0f,
+        animationSpec = tween(durationMillis = 140),
+        label = "flowInsightsPeriodDropdownFade",
+    )
+
+    Box(
+        modifier =
+            Modifier
+                .width(168.dp)
+                .onGloballyPositioned { coordinates ->
+                    selectorWidth = with(density) { coordinates.size.width.toDp() }
+                },
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                    .clickable(
+                        enabled = enabled,
+                        onClickLabel = actionLabel,
+                        role = Role.Button,
+                        onClick = { isMenuOpen = !isMenuOpen },
+                    ).padding(horizontal = VinylSpacing.SpaceMd)
+                    .height(56.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = selectedPeriod.label,
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.TextSecondary,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+            )
+        }
+        if (isMenuOpen) {
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
+                onDismissRequest = { isMenuOpen = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 168.dp)
+                            .graphicsLayer { alpha = dropdownAlpha }
+                            .shadow(4.dp, VinylShapes.Card)
+                            .clip(VinylShapes.Card)
+                            .background(VinylColors.SurfacePrimary)
+                            .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
+                ) {
+                    FlowInsightsPeriod.entries.forEach { period ->
+                        Text(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        enabled = enabled,
+                                        onClickLabel = "Select ${period.label}",
+                                        role = Role.Button,
+                                        onClick = {
+                                            isMenuOpen = false
+                                            onPeriodChange(period)
+                                        },
+                                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceMd),
+                            text = period.label,
+                            color = if (period == selectedPeriod) VinylColors.AccentGreen else VinylColors.TextPrimary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         }
@@ -1099,6 +1255,7 @@ private fun RecordInsightsLoading() {
 @Composable
 private fun RecordInsightsResult(
     insights: RecordFlowInsights,
+    selectedPeriod: FlowInsightsPeriod,
     onOpenRecord: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
@@ -1121,7 +1278,7 @@ private fun RecordInsightsResult(
                     .background(VinylColors.BorderDefault),
         )
         Text(
-            text = "Based on ${loggedPlaysLabel(insights.sampleSize)}",
+            text = "Based on ${loggedPlaysLabel(insights.sampleSize)} ${selectedPeriod.resultScopeLabel}",
             color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
         )

@@ -23,6 +23,12 @@ CUSTOM_MOOD_MIN_LENGTH = 3
 CUSTOM_MOOD_MAX_LENGTH = 20
 SESSION_EDIT_WINDOW = timedelta(minutes=15)
 FLOW_INSIGHTS_STANDALONE_GAP = timedelta(hours=1)
+FLOW_INSIGHTS_PERIOD_WINDOWS = {
+    "3m": timedelta(days=90),
+    "6m": timedelta(days=180),
+    "1y": timedelta(days=365),
+    "all": None,
+}
 BUILT_IN_SESSION_MOODS = {
     "energetic": "Energetic",
     "calm": "Calm",
@@ -352,16 +358,18 @@ class SessionsService:
         release_id: str,
         *,
         limit: int = 5,
+        period: str = "3m",
     ) -> RecordFlowInsights:
         if limit <= 0 or limit > 10:
             raise SessionValidationError("invalid_limit", "limit must be between 1 and 10.")
+        since = self._flow_insights_since(period)
 
         release = self._releases_repository.get_by_id(db, release_id)
         if release is None:
             logger.info("Release not found during flow insights lookup release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
-        sessions = self._sessions_repository.get_flow_insight_sessions(db)
+        sessions = self._sessions_repository.get_flow_insight_sessions(db, since=since)
         releases = {
             release.id: release
             for release in self._releases_repository.get_by_ids(
@@ -451,6 +459,16 @@ class SessionsService:
             sequences.append(SessionsService._collapse_release_blocks(current_standalone_sequence))
 
         return [sequence for sequence in sequences if len(sequence) > 1]
+
+    def _flow_insights_since(self, period: str) -> datetime | None:
+        normalized_period = period.strip().lower()
+        if normalized_period not in FLOW_INSIGHTS_PERIOD_WINDOWS:
+            raise SessionValidationError("invalid_period", "period must be one of: 3m, 6m, 1y, all.")
+
+        window = FLOW_INSIGHTS_PERIOD_WINDOWS[normalized_period]
+        if window is None:
+            return None
+        return self._current_time() - window
 
     @staticmethod
     def _collapse_release_blocks(items: list[_RecordFlowItem]) -> list[_RecordFlowBlock]:

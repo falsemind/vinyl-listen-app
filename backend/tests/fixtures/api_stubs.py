@@ -334,7 +334,7 @@ class StubSessionsService:
         self.update_calls: list[tuple[str, dict]] = []
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
-        self.flow_calls: list[tuple[str, int]] = []
+        self.flow_calls: list[tuple[str, int, str]] = []
         self.create_mood_calls: list[str] = []
         self.delete_mood_calls: list[str] = []
         self.custom_moods = [
@@ -517,8 +517,15 @@ class StubSessionsService:
             ],
         )
 
-    def get_record_flow_insights(self, _db, release_id: str, *, limit: int = 5) -> RecordFlowInsights:
-        self.flow_calls.append((release_id, limit))
+    def get_record_flow_insights(
+        self,
+        _db,
+        release_id: str,
+        *,
+        limit: int = 5,
+        period: str = "3m",
+    ) -> RecordFlowInsights:
+        self.flow_calls.append((release_id, limit, period))
         if self.list_error is not None:
             raise self.list_error
         return self.flow_insights

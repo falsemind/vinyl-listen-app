@@ -283,7 +283,7 @@ def test_get_release_flow_insights_endpoint_returns_record_flow_summary(
     override_sessions_service(service)
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/releases/release-123/flow-insights", params={"limit": 3})
+        response = client.get("/api/v1/releases/release-123/flow-insights", params={"limit": 3, "period": "6m"})
 
     assert response.status_code == 200
     assert response.json() == {
@@ -323,4 +323,4 @@ def test_get_release_flow_insights_endpoint_returns_record_flow_summary(
         "sample_size": 2,
         "confidence": "low",
     }
-    assert service.flow_calls == [("release-123", 3)]
+    assert service.flow_calls == [("release-123", 3, "6m")]

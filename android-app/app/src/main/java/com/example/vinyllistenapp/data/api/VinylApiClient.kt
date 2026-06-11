@@ -219,9 +219,15 @@ class VinylApiClient(
     suspend fun getReleaseFlowInsights(
         releaseId: String,
         limit: Int = 5,
+        period: String = "3m",
     ): RecordFlowInsights =
         apiCall {
-            val response = getJson("releases/${Uri.encode(releaseId)}/flow-insights?limit=$limit")
+            val query =
+                buildList {
+                    addQueryParam("limit", limit.toString())
+                    addQueryParam("period", period)
+                }.toQueryString()
+            val response = getJson("releases/${Uri.encode(releaseId)}/flow-insights$query")
             response.toRecordFlowInsights()
         }
 
