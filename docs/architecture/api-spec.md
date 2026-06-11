@@ -1056,13 +1056,20 @@ Used for listening history.
 Returns deterministic record-flow facts for the Record Details Insights Summary.
 Timed session groups are treated as strongest sequence evidence. Standalone
 sessions are only linked when neighboring plays are within 1 hour, and
-consecutive plays of the same release are collapsed into one record block.
+consecutive plays of the same release are collapsed into one record block. By
+default, insights use logged plays from the last 3 months.
 
 ### Query Parameters
 
-| Parameter | Description                         |
-| --------- | ----------------------------------- |
-| limit     | max before/after/mood items, 1..10  |
+| Parameter | Description                                                  |
+| --------- | ------------------------------------------------------------ |
+| limit     | max before/after/mood items, 1..10; defaults to 5            |
+| period    | history window; one of `3m`, `6m`, `1y`, `all`; defaults `3m` |
+
+The `period` filter is applied before sequence building and release hydration.
+`sample_size`, `before`, `after`, and `mood_transitions` describe only the
+selected window. Use `all` only when the caller explicitly requests full
+history.
 
 ### Response
 
@@ -1105,6 +1112,14 @@ consecutive plays of the same release are collapsed into one record block.
   "confidence": "low"
 }
 ```
+
+### Errors
+
+| Status | Code             | Description                                  |
+| ------ | ---------------- | -------------------------------------------- |
+| 404    | release_not_found | Release does not exist                       |
+| 422    | invalid_limit     | `limit` is outside the supported range       |
+| 422    | invalid_period    | `period` is not one of `3m`, `6m`, `1y`, `all` |
 
 ---
 
