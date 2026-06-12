@@ -100,6 +100,7 @@ def test_start_session_group_endpoint_returns_created_group(
                 "style_focus": "one_style",
                 "mood_direction": "energy_build",
                 "session_type": "dj_set",
+                "notes": "Warm up shelf.",
             },
         )
 
@@ -108,6 +109,7 @@ def test_start_session_group_endpoint_returns_created_group(
         style_focus="one_style",
         mood_direction="energy_build",
         session_type="dj_set",
+        notes="Warm up shelf.",
     )
     assert service.start_calls == [
         {
@@ -116,6 +118,7 @@ def test_start_session_group_endpoint_returns_created_group(
             "style_focus": "one_style",
             "mood_direction": "energy_build",
             "session_type": "dj_set",
+            "notes": "Warm up shelf.",
         }
     ]
 

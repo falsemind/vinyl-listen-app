@@ -740,11 +740,12 @@ Starts a timed session group. Only one group can be active at a time. The curren
   "started_at": "2026-04-19T08:00:00Z",
   "style_focus": "mixed",
   "mood_direction": "steady_mood",
-  "session_type": "casual_listening"
+  "session_type": "casual_listening",
+  "notes": "Starting with new arrivals."
 }
 ```
 
-All fields are optional. `title` is trimmed and limited to 100 characters. `started_at` defaults to server time.
+All fields are optional. `title` is trimmed and limited to 100 characters. `started_at` defaults to server time. `notes` is trimmed and limited to 500 characters.
 
 Metadata defaults:
 
@@ -829,7 +830,7 @@ Edits timed session metadata while the group is active or for 15 minutes after i
 }
 ```
 
-All fields are optional. `notes` is trimmed, limited to 1000 characters, and can be cleared with `null`.
+All fields are optional. `notes` is trimmed, limited to 500 characters, and can be cleared with `null`.
 
 Expired edit windows return `403` with `session_group_edit_window_expired`. Invalid metadata returns `422` with the matching `invalid_*` code.
 

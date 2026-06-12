@@ -29,6 +29,7 @@ class InMemorySessionGroupsRepository:
         style_focus: str,
         mood_direction: str,
         session_type: str,
+        notes: str | None,
         started_at: datetime,
     ) -> SessionGroups:
         self.created_payload = {
@@ -36,6 +37,7 @@ class InMemorySessionGroupsRepository:
             "style_focus": style_focus,
             "mood_direction": mood_direction,
             "session_type": session_type,
+            "notes": notes,
             "started_at": started_at,
         }
         group = SessionGroups(
@@ -45,6 +47,7 @@ class InMemorySessionGroupsRepository:
             style_focus=style_focus,
             mood_direction=mood_direction,
             session_type=session_type,
+            notes=notes,
             started_at=started_at,
             created_at=started_at,
             updated_at=started_at,
@@ -113,6 +116,7 @@ def test_start_session_group_creates_active_group_with_normalized_title() -> Non
         "style_focus": "mixed",
         "mood_direction": "steady_mood",
         "session_type": "casual_listening",
+        "notes": None,
         "started_at": datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
     }
 
@@ -130,18 +134,38 @@ def test_start_session_group_accepts_metadata() -> None:
         style_focus="one_style",
         mood_direction="energy_build",
         session_type="dj_set",
+        notes="  Warm up shelf.  ",
     )
 
     assert group.style_focus == "one_style"
     assert group.mood_direction == "energy_build"
     assert group.session_type == "dj_set"
+    assert group.notes == "Warm up shelf."
     assert repository.created_payload == {
         "title": None,
         "style_focus": "one_style",
         "mood_direction": "energy_build",
         "session_type": "dj_set",
+        "notes": "Warm up shelf.",
         "started_at": datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
     }
+
+
+def test_start_session_group_rejects_notes_over_500_characters() -> None:
+    service = SessionGroupsService(
+        session_groups_repository=InMemorySessionGroupsRepository(),
+        now_provider=lambda: datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(SessionGroupValidationError) as error:
+        service.start_session_group(
+            db=object(),
+            title=None,
+            notes="x" * 501,
+        )
+
+    assert error.value.code == "invalid_notes"
+    assert error.value.message == "notes must be 500 characters or fewer."
 
 
 def test_start_session_group_rejects_existing_active_group() -> None:

@@ -16,6 +16,7 @@ class SessionGroupsRepository:
         style_focus: str,
         mood_direction: str,
         session_type: str,
+        notes: str | None,
         started_at: datetime,
     ) -> SessionGroups:
         session_group = SessionGroups(
@@ -23,6 +24,7 @@ class SessionGroupsRepository:
             style_focus=style_focus,
             mood_direction=mood_direction,
             session_type=session_type,
+            notes=notes,
             started_at=started_at,
             status="active",
         )
