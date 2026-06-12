@@ -89,6 +89,7 @@ fun CollectionScreen(
     onInsights: () -> Unit,
     onManualSearch: () -> Unit,
     onOpenRecord: (String) -> Unit,
+    onArtistFilterCleared: () -> Unit = {},
     initialArtistFilter: String? = null,
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
@@ -251,7 +252,10 @@ fun CollectionScreen(
                 scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
                 onRetry = { scope.launch { followCollectionSync() } },
-                onClearArtistFilter = { artistFilter = null },
+                onClearArtistFilter = {
+                    artistFilter = null
+                    onArtistFilterCleared()
+                },
                 isActionMenuOpen = isActionMenuOpen,
                 onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
                 onActionMenuDismiss = { isActionMenuOpen = false },
