@@ -1,5 +1,7 @@
 package com.example.vinyllistenapp.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +47,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -223,6 +228,12 @@ fun TimedSessionBanner(
     modifier: Modifier = Modifier,
 ) {
     var nowEpochMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var isExpanded by remember(sessionGroup.id) { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "timedSessionBannerArrow",
+    )
 
     LaunchedEffect(sessionGroup.id) {
         while (true) {
@@ -231,55 +242,111 @@ fun TimedSessionBanner(
         }
     }
 
-    Row(
+    Column(
         modifier =
             modifier
                 .fillMaxWidth()
-                .height(72.dp)
                 .clip(VinylShapes.Card)
                 .background(VinylColors.AccentGreen.copy(alpha = 0.14f))
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card)
-                .padding(horizontal = VinylSpacing.SpaceLg),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .padding(horizontal = VinylSpacing.SpaceLg),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = elapsedSessionTime(sessionGroup.startedAt, nowEpochMillis),
-                color = VinylColors.AccentGreen,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            sessionGroup.title?.takeIf { it.isNotBlank() }?.let { title ->
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(
-                    text = title,
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = elapsedSessionTime(sessionGroup.startedAt, nowEpochMillis),
+                    color = VinylColors.AccentGreen,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                sessionGroup.title?.takeIf { it.isNotBlank() }?.let { title ->
+                    Text(
+                        text = title,
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimedSessionExpandAction(
+                    arrowRotation = arrowRotation,
+                    expanded = isExpanded,
+                    onClick = { isExpanded = !isExpanded },
+                )
+                TimedSessionCircleAction(
+                    icon = if (autoAddEnabled) Icons.Filled.Check else Icons.Filled.Add,
+                    contentDescription = if (autoAddEnabled) "Auto-add records to timed session" else "Do not auto-add records",
+                    selected = autoAddEnabled,
+                    onClick = onAutoAddToggle,
+                )
+                TimedSessionCircleAction(
+                    icon = Icons.Filled.Stop,
+                    contentDescription = "Stop timed session",
+                    selected = true,
+                    enabled = !isStopping,
+                    onClick = onStop,
                 )
             }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TimedSessionCircleAction(
-                icon = if (autoAddEnabled) Icons.Filled.Check else Icons.Filled.Add,
-                contentDescription = if (autoAddEnabled) "Auto-add records to timed session" else "Do not auto-add records",
-                selected = autoAddEnabled,
-                onClick = onAutoAddToggle,
+        if (isExpanded) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(VinylColors.AccentGreen.copy(alpha = 0.34f)),
             )
-            TimedSessionCircleAction(
-                icon = Icons.Filled.Stop,
-                contentDescription = "Stop timed session",
-                selected = true,
-                enabled = !isStopping,
-                onClick = onStop,
+            TimedSessionMetadataSummaryChips(
+                sessionGroup = sessionGroup,
+                modifier = Modifier.padding(VinylSpacing.SpaceLg),
             )
         }
+    }
+}
+
+@Composable
+private fun TimedSessionExpandAction(
+    arrowRotation: Float,
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(Color.Transparent)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
+                .clickable(
+                    onClickLabel = if (expanded) "Collapse timed session details" else "Expand timed session details",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+            modifier =
+                Modifier
+                    .size(24.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+        )
     }
 }
 
@@ -316,6 +383,79 @@ private fun TimedSessionCircleAction(
         )
     }
 }
+
+@Composable
+fun TimedSessionMetadataSummaryChips(
+    sessionGroup: TimedSessionGroup,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TimedSessionSummaryChip(
+            text = timedSessionTypeLabel(sessionGroup.sessionType),
+        )
+        TimedSessionSummaryChip(
+            text = timedSessionStyleFocusLabel(sessionGroup.styleFocus),
+        )
+        TimedSessionSummaryChip(
+            text = timedSessionMoodDirectionLabel(sessionGroup.moodDirection),
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionSummaryChip(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        modifier =
+            modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        text = text,
+        color = VinylColors.TextOnSolidAccent,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+fun timedSessionStyleFocusLabel(value: String): String =
+    when (value) {
+        "one_style" -> "One style"
+        "mixed" -> "Mixed"
+        "random" -> "Random"
+        else -> value.toTimedSessionFallbackLabel()
+    }
+
+fun timedSessionMoodDirectionLabel(value: String): String =
+    when (value) {
+        "steady_mood" -> "Steady mood"
+        "mood_switch" -> "Mood switch"
+        "energy_build" -> "Energy build"
+        "cool_down" -> "Cool down"
+        else -> value.toTimedSessionFallbackLabel()
+    }
+
+fun timedSessionTypeLabel(value: String): String =
+    when (value) {
+        "dj_set" -> "DJ set"
+        "casual_listening" -> "Casual listening"
+        "rediscovery" -> "Rediscovery"
+        "testing_records" -> "Testing records"
+        "background" -> "Background"
+        else -> value.toTimedSessionFallbackLabel()
+    }
+
+private fun String.toTimedSessionFallbackLabel(): String =
+    split("_")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { part -> part.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
 
 private fun elapsedSessionTime(
     startedAt: String,
