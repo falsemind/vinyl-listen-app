@@ -21,6 +21,7 @@ from app.services.collection_sync_job_service import (
 )
 
 router = APIRouter()
+COLLECTION_ARTIST_QUERY_MAX_LENGTH = 255
 
 _collection_sync_job_service: CollectionSyncJobService | None = None
 
@@ -97,6 +98,7 @@ def list_collection_releases(
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
+    artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:
     releases = repository.list_collection_releases(
@@ -104,6 +106,7 @@ def list_collection_releases(
         limit=limit + 1,
         offset=offset,
         include_removed=include_removed,
+        artist=artist,
     )
     visible_releases = releases[:limit]
     return CollectionReleasesResponse(
@@ -118,7 +121,7 @@ def list_collection_releases(
 def search_collection_releases(
     db: Annotated[Session, Depends(get_db)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
-    artist: Annotated[str | None, Query(min_length=1)] = None,
+    artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     title: Annotated[str | None, Query(min_length=1)] = None,
     catalog: Annotated[str | None, Query(min_length=1)] = None,
     barcode: Annotated[str | None, Query(min_length=1)] = None,
