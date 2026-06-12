@@ -319,9 +319,16 @@ fun VinylNavHost(
                     onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                    onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
                     onBack = {
                         if (!navController.popBackStack()) {
                             navController.navigate(VinylRoutes.HOME)
+                        }
+                    },
+                    onBackToHome = {
+                        navController.navigate(VinylRoutes.HOME) {
+                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                 )
@@ -360,7 +367,17 @@ fun VinylNavHost(
                     onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
                 )
             }
-            composable(VinylRoutes.COLLECTION) {
+            composable(
+                route = VinylRoutes.COLLECTION_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.ARTIST) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+            ) { backStackEntry ->
                 CollectionScreen(
                     apiClient = apiClient,
                     onHome = {
@@ -372,6 +389,12 @@ fun VinylNavHost(
                     onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                     onManualSearch = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_SEARCH) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
+                    onArtistFilterCleared = {
+                        navController.navigate(VinylRoutes.COLLECTION) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
+                    initialArtistFilter = backStackEntry.arguments?.getString(VinylRoutes.ARTIST),
                 )
             }
             composable(VinylRoutes.TOP_RECORDS) {

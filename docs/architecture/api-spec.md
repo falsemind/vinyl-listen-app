@@ -570,6 +570,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 | --- | --- | --- |
 | `limit` | integer | Page size. Android loads `25` by default and supports custom page sizes up to the configured max page limit, currently `250`. |
 | `offset` | integer | Number of active collection records to skip. |
+| `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
 
 ### Response
 

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -1081,10 +1082,11 @@ private fun TimedSessionEditIconAction(
     enabled: Boolean,
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier =
-            Modifier
+            modifier
                 .size(36.dp)
                 .clip(VinylShapes.Floating)
                 .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
@@ -1113,27 +1115,114 @@ private fun TimedSessionMetadataChips(
     isActive: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val sessionNotes = sessionGroup?.notes?.trim()?.takeIf { it.isNotBlank() }
+    var isNotesPopupOpen by remember(sessionGroup?.id, sessionNotes) { mutableStateOf(false) }
     val averageRating = timedSessionAverageRating(sessions)
     val topMood = timedSessionTopMood(sessions)
     val recordCount = sessions.distinctBy { it.releaseId }.size
     val trackCount = sessions.sumOf { it.tracks.size }
     val timeLabel = if (isActive) "Playing..." else timedSessionDurationLabel(sessions)
 
-    WrappingMetadataChipRow(
+    Column(
         modifier = modifier,
-        horizontalSpacing = VinylSpacing.SpaceSm,
-        verticalSpacing = VinylSpacing.SpaceSm,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
     ) {
-        sessionGroup?.let {
-            TimedSessionMetadataChip(text = timedSessionTypeLabel(it.sessionType))
-            TimedSessionMetadataChip(text = timedSessionStyleFocusLabel(it.styleFocus))
-            TimedSessionMetadataChip(text = timedSessionMoodDirectionLabel(it.moodDirection))
+        WrappingMetadataChipRow(
+            horizontalSpacing = VinylSpacing.SpaceSm,
+            verticalSpacing = VinylSpacing.SpaceSm,
+        ) {
+            sessionGroup?.let {
+                TimedSessionMetadataChip(text = timedSessionTypeLabel(it.sessionType))
+                TimedSessionMetadataChip(text = timedSessionStyleFocusLabel(it.styleFocus))
+                TimedSessionMetadataChip(text = timedSessionMoodDirectionLabel(it.moodDirection))
+                if (sessionNotes != null) {
+                    TimedSessionNotesMetadataChip(
+                        expanded = isNotesPopupOpen,
+                        onClick = { isNotesPopupOpen = !isNotesPopupOpen },
+                    )
+                }
+            }
+            TimedSessionMetadataChip(text = "Time: $timeLabel")
+            TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
+            TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")
+            TimedSessionMetadataChip(text = "Rating: $averageRating")
+            TimedSessionMetadataChip(text = "Mood: $topMood")
         }
-        TimedSessionMetadataChip(text = "Time: $timeLabel")
-        TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
-        TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")
-        TimedSessionMetadataChip(text = "Rating: $averageRating")
-        TimedSessionMetadataChip(text = "Mood: $topMood")
+        if (isNotesPopupOpen && sessionNotes != null) {
+            TimedSessionNotesPopup(
+                notes = sessionNotes,
+                onClose = { isNotesPopupOpen = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionNotesMetadataChip(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .clickable(
+                    onClickLabel = if (expanded) "Hide timed session notes" else "Show timed session notes",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Notes",
+            color = VinylColors.TextOnSolidAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Icons.Filled.Info,
+            contentDescription = null,
+            tint = VinylColors.TextOnSolidAccent,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionNotesPopup(
+    notes: String,
+    onClose: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, VinylShapes.Card)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = 42.dp),
+            text = notes,
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        TimedSessionEditIconAction(
+            icon = Icons.Filled.Close,
+            selected = false,
+            enabled = true,
+            label = "Close timed session notes",
+            onClick = onClose,
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
     }
 }
 

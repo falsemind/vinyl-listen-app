@@ -172,10 +172,22 @@ class ReleasesRepository:
         limit: int,
         offset: int,
         include_removed: bool = False,
+        artist: str | None = None,
     ) -> Sequence[Releases]:
         query = db.query(Releases)
         if not include_removed:
             query = query.filter(Releases.in_collection.is_(True))
+        if artist and artist.strip():
+            artist_pattern = f"%{artist.strip()}%"
+            query = query.outerjoin(
+                DiscogsReleaseCache,
+                DiscogsReleaseCache.discogs_release_id == Releases.discogs_release_id,
+            ).filter(
+                or_(
+                    Releases.artist.ilike(artist_pattern),
+                    cast(DiscogsReleaseCache.raw_discogs_json, String).ilike(artist_pattern),
+                )
+            )
 
         return (
             query.order_by(

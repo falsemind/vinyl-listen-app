@@ -129,9 +129,16 @@ class VinylApiClient(
     suspend fun getCollectionReleases(
         limit: Int = 25,
         offset: Int = 0,
+        artist: String? = null,
     ): CollectionRecordsPage =
         apiCall {
-            getJson("collection/releases?limit=$limit&offset=$offset").toCollectionRecordsPage()
+            val query =
+                buildList {
+                    addQueryParam("limit", limit.toString())
+                    addQueryParam("offset", offset.toString())
+                    addQueryParam("artist", artist)
+                }.joinToString("&")
+            getJson("collection/releases?$query").toCollectionRecordsPage()
         }
 
     suspend fun importRelease(discogsReleaseId: Long): String =

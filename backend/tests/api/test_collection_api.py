@@ -39,8 +39,16 @@ class StubReleasesRepository:
         self.releases = releases
         self.calls: list[dict] = []
 
-    def list_collection_releases(self, _db, *, limit: int, offset: int, include_removed: bool = False):
-        self.calls.append({"limit": limit, "offset": offset, "include_removed": include_removed})
+    def list_collection_releases(
+        self,
+        _db,
+        *,
+        limit: int,
+        offset: int,
+        include_removed: bool = False,
+        artist: str | None = None,
+    ):
+        self.calls.append({"limit": limit, "offset": offset, "include_removed": include_removed, "artist": artist})
         return self.releases[offset : offset + limit]
 
     def search_collection_releases(
@@ -225,7 +233,36 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
         "offset": 0,
         "has_more": True,
     }
-    assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False}]
+    assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False, "artist": None}]
+
+
+def test_list_collection_releases_filters_by_artist() -> None:
+    repository = StubReleasesRepository([_release("release-1", 101, "First")])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"artist": "Basic Channel"})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "release-1"
+    assert repository.calls == [{"limit": 26, "offset": 0, "include_removed": False, "artist": "Basic Channel"}]
+
+
+def test_list_collection_releases_rejects_oversized_artist_filter() -> None:
+    repository = StubReleasesRepository([])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"artist": "a" * 256})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert repository.calls == []
 
 
 def test_list_collection_releases_accepts_custom_max_limit() -> None:
@@ -240,7 +277,21 @@ def test_list_collection_releases_accepts_custom_max_limit() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False}
-    assert repository.calls == [{"limit": 251, "offset": 0, "include_removed": False}]
+    assert repository.calls == [{"limit": 251, "offset": 0, "include_removed": False, "artist": None}]
+
+
+def test_search_collection_releases_rejects_oversized_artist_filter() -> None:
+    repository = StubReleasesRepository([])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/search", params={"artist": "a" * 256})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert repository.calls == []
 
 
 def test_search_collection_releases_returns_internal_release_results() -> None:

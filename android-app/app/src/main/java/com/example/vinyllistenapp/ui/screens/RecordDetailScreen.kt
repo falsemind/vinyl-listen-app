@@ -2,9 +2,11 @@ package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -103,7 +105,9 @@ fun RecordDetailScreen(
     onAddSession: (String) -> Unit,
     onEditSession: (String) -> Unit,
     onOpenRecord: (String) -> Unit,
+    onOpenArtistCollection: (String) -> Unit,
     onBack: () -> Unit,
+    onBackToHome: () -> Unit,
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
@@ -116,6 +120,7 @@ fun RecordDetailScreen(
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
     var isArtistDiscographyExpanded by remember(releaseId) { mutableStateOf(false) }
+    var isArtistCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
     var isInsightsExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
@@ -310,6 +315,7 @@ fun RecordDetailScreen(
         )
         RecordDetailGoBackButton(
             onClick = onBack,
+            onLongClick = onBackToHome,
             modifier =
                 Modifier
                     .align(Alignment.BottomStart)
@@ -327,6 +333,7 @@ fun RecordDetailScreen(
                 onDismiss = {
                     isActionMenuOpen = false
                     isArtistDiscographyExpanded = false
+                    isArtistCollectionExpanded = false
                 },
             ) {
                 if (shouldShowGetFullReleaseAction(record)) {
@@ -367,9 +374,34 @@ fun RecordDetailScreen(
                             )
                         }
                     }
+                    if (record.discogsArtists.size == 1) {
+                        val artist = record.discogsArtists.first()
+                        ActionMenuAction(
+                            label = "More ${artist.name} in collection",
+                            onClick = {
+                                isActionMenuOpen = false
+                                onOpenArtistCollection(artist.name)
+                            },
+                        )
+                    } else {
+                        ArtistCollectionMenuAction(
+                            expanded = isArtistCollectionExpanded,
+                            onClick = { isArtistCollectionExpanded = !isArtistCollectionExpanded },
+                        )
+                        if (isArtistCollectionExpanded) {
+                            ArtistCollectionMenuLinks(
+                                artists = record.discogsArtists,
+                                onArtistClick = { artist ->
+                                    isActionMenuOpen = false
+                                    isArtistCollectionExpanded = false
+                                    onOpenArtistCollection(artist.name)
+                                },
+                            )
+                        }
+                    }
                 }
                 ActionMenuAction(
-                    label = "View on Discogs",
+                    label = "View release on Discogs",
                     onClick = {
                         isActionMenuOpen = false
                         uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
@@ -446,6 +478,52 @@ private fun ArtistDiscographyMenuAction(
 }
 
 @Composable
+private fun ArtistCollectionMenuAction(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Artist collection arrow rotation",
+    )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (expanded) "Close artist collection" else "Open artist collection",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = "More artists in collection",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            modifier =
+                Modifier
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+        )
+    }
+}
+
+@Composable
 private fun ArtistDiscographyMenuLinks(
     artists: List<ReleaseArtist>,
     onArtistClick: (ReleaseArtist) -> Unit,
@@ -463,6 +541,39 @@ private fun ArtistDiscographyMenuLinks(
                         .fillMaxWidth()
                         .clickable(
                             onClickLabel = "Open ${artist.name} on Discogs",
+                            role = Role.Button,
+                            onClick = { onArtistClick(artist) },
+                        ).padding(vertical = VinylSpacing.SpaceXs),
+                text = "• ${artist.name}",
+                color = VinylColors.AccentGreen,
+                textAlign = TextAlign.Start,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+    ActionMenuDelimiter()
+}
+
+@Composable
+private fun ArtistCollectionMenuLinks(
+    artists: List<ReleaseArtist>,
+    onArtistClick: (ReleaseArtist) -> Unit,
+) {
+    ActionMenuDelimiter()
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+    ) {
+        artists.forEach { artist ->
+            Text(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = "Filter collection by ${artist.name}",
                             role = Role.Button,
                             onClick = { onArtistClick(artist) },
                         ).padding(vertical = VinylSpacing.SpaceXs),
@@ -1700,9 +1811,11 @@ private fun ScrollableSessionNoteText(note: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecordDetailGoBackButton(
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val brush =
@@ -1725,9 +1838,11 @@ private fun RecordDetailGoBackButton(
                 ).clip(VinylShapes.Floating)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
-                .clickable(
+                .combinedClickable(
                     onClickLabel = "Go Back",
+                    onLongClickLabel = "Go Home",
                     role = Role.Button,
+                    onLongClick = onLongClick,
                     onClick = onClick,
                 ),
         contentAlignment = Alignment.Center,

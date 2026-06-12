@@ -53,6 +53,45 @@ def test_search_collection_releases_paginates_cached_track_artist_matches() -> N
     assert [release.title for release in second_page] == ["Remix Collection"]
 
 
+def test_list_collection_releases_filters_cached_artist_matches() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_release_search_tables(connection)
+        _insert_release(
+            connection,
+            discogs_release_id=1000,
+            artist="Basic Channel",
+            title="BCD",
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=2000,
+            artist="Various",
+            title="Maurizio Mix",
+            raw_discogs_json={
+                "artists": [{"name": "Maurizio"}, {"name": "Basic Channel"}],
+            },
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=3000,
+            artist="Unrelated",
+            title="Elsewhere",
+        )
+
+    with session_factory() as db:
+        releases = ReleasesRepository.list_collection_releases(
+            db,
+            artist="Maurizio",
+            limit=10,
+            offset=0,
+        )
+
+    assert [release.title for release in releases] == ["Maurizio Mix"]
+
+
 def _create_release_search_tables(connection: Connection) -> None:
     connection.exec_driver_sql("""
         CREATE TABLE releases (
