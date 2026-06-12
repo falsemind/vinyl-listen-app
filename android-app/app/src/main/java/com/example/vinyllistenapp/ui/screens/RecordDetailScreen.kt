@@ -374,30 +374,32 @@ fun RecordDetailScreen(
                             )
                         }
                     }
-                    if (record.discogsArtists.size == 1) {
-                        val artist = record.discogsArtists.first()
-                        ActionMenuAction(
-                            label = "More ${artist.name} in collection",
-                            onClick = {
+                }
+                val collectionArtistNames = collectionArtistNames(record)
+                if (collectionArtistNames.size == 1) {
+                    val artistName = collectionArtistNames.first()
+                    ActionMenuAction(
+                        label = "More $artistName in collection",
+                        onClick = {
+                            isActionMenuOpen = false
+                            isArtistCollectionExpanded = false
+                            onOpenArtistCollection(artistName)
+                        },
+                    )
+                } else if (collectionArtistNames.size > 1) {
+                    ArtistCollectionMenuAction(
+                        expanded = isArtistCollectionExpanded,
+                        onClick = { isArtistCollectionExpanded = !isArtistCollectionExpanded },
+                    )
+                    if (isArtistCollectionExpanded) {
+                        ArtistCollectionMenuLinks(
+                            artistNames = collectionArtistNames,
+                            onArtistClick = { artistName ->
                                 isActionMenuOpen = false
-                                onOpenArtistCollection(artist.name)
+                                isArtistCollectionExpanded = false
+                                onOpenArtistCollection(artistName)
                             },
                         )
-                    } else {
-                        ArtistCollectionMenuAction(
-                            expanded = isArtistCollectionExpanded,
-                            onClick = { isArtistCollectionExpanded = !isArtistCollectionExpanded },
-                        )
-                        if (isArtistCollectionExpanded) {
-                            ArtistCollectionMenuLinks(
-                                artists = record.discogsArtists,
-                                onArtistClick = { artist ->
-                                    isActionMenuOpen = false
-                                    isArtistCollectionExpanded = false
-                                    onOpenArtistCollection(artist.name)
-                                },
-                            )
-                        }
                     }
                 }
                 ActionMenuAction(
@@ -558,8 +560,8 @@ private fun ArtistDiscographyMenuLinks(
 
 @Composable
 private fun ArtistCollectionMenuLinks(
-    artists: List<ReleaseArtist>,
-    onArtistClick: (ReleaseArtist) -> Unit,
+    artistNames: List<String>,
+    onArtistClick: (String) -> Unit,
 ) {
     ActionMenuDelimiter()
     Column(
@@ -567,17 +569,17 @@ private fun ArtistCollectionMenuLinks(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
     ) {
-        artists.forEach { artist ->
+        artistNames.forEach { artistName ->
             Text(
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .clickable(
-                            onClickLabel = "Filter collection by ${artist.name}",
+                            onClickLabel = "Filter collection by $artistName",
                             role = Role.Button,
-                            onClick = { onArtistClick(artist) },
+                            onClick = { onArtistClick(artistName) },
                         ).padding(vertical = VinylSpacing.SpaceXs),
-                text = "• ${artist.name}",
+                text = "• $artistName",
                 color = VinylColors.AccentGreen,
                 textAlign = TextAlign.Start,
                 style = MaterialTheme.typography.labelLarge,
@@ -2071,6 +2073,15 @@ internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
 
 internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
     record.hasFullDiscogsInfo && record.discogsArtists.isNotEmpty()
+
+internal fun collectionArtistNames(record: RecordSummary): List<String> {
+    val discogsArtistNames =
+        record.discogsArtists
+            .mapNotNull { artist -> artist.name.trim().takeIf { it.isNotEmpty() } }
+    return discogsArtistNames.ifEmpty {
+        listOfNotNull(record.artist.trim().takeIf { it.isNotEmpty() })
+    }
+}
 
 internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
 
