@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -250,6 +251,7 @@ private fun StartTimedSessionAction(
     var sessionNotes by remember { mutableStateOf("") }
     var draftSessionNotes by remember { mutableStateOf("") }
     var isNotesEditorOpen by remember { mutableStateOf(false) }
+    var isTimedSessionInfoOpen by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else -90f,
         animationSpec = tween(durationMillis = 180),
@@ -345,6 +347,17 @@ private fun StartTimedSessionAction(
                         ),
                 )
             }
+            if (isTimedSessionInfoOpen) {
+                TimedSessionInfoPopup(
+                    onClose = { isTimedSessionInfoOpen = false },
+                    modifier =
+                        Modifier.padding(
+                            start = VinylSpacing.SpaceLg,
+                            end = VinylSpacing.SpaceLg,
+                            bottom = VinylSpacing.SpaceMd,
+                        ),
+                )
+            }
             HomeTimedSessionDivider()
             Row(
                 modifier =
@@ -355,6 +368,19 @@ private fun StartTimedSessionAction(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TimedSessionSetupAction(
+                    icon = Icons.Filled.Info,
+                    label = "Info",
+                    selected = isTimedSessionInfoOpen,
+                    enabled = !isStarting,
+                    onClick = {
+                        isTimedSessionInfoOpen = !isTimedSessionInfoOpen
+                        if (isTimedSessionInfoOpen) {
+                            isNotesEditorOpen = false
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                TimedSessionSetupAction(
                     icon = Icons.Filled.Edit,
                     label = "Add notes",
                     selected = sessionNotes.isNotBlank(),
@@ -362,6 +388,7 @@ private fun StartTimedSessionAction(
                     onClick = {
                         draftSessionNotes = sessionNotes
                         isNotesEditorOpen = true
+                        isTimedSessionInfoOpen = false
                     },
                     modifier = Modifier.weight(1f),
                 )
@@ -619,6 +646,46 @@ private fun TimedSessionSetupAction(
 }
 
 @Composable
+private fun TimedSessionInfoPopup(
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(156.dp)
+                .shadow(8.dp, VinylShapes.Card)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = 42.dp),
+            text =
+                "Timed sessions group records you play together, like a set logger. Use them for DJ sets, " +
+                    "focused listening, testing records, or background sessions. They help summaries and " +
+                    "deeper insights understand order, mood, style, and notes.",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 6,
+            overflow = TextOverflow.Clip,
+        )
+        TimedSessionNotesIconButton(
+            icon = Icons.Filled.Close,
+            selected = false,
+            label = "Close timed session info",
+            onClick = onClose,
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
+    }
+}
+
+@Composable
 private fun TimedSessionNotesEditor(
     notes: String,
     onNotesChange: (String) -> Unit,
@@ -702,10 +769,11 @@ private fun TimedSessionNotesIconButton(
     selected: Boolean,
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier =
-            Modifier
+            modifier
                 .size(32.dp)
                 .clip(CircleShape)
                 .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
