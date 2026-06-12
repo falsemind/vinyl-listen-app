@@ -652,7 +652,7 @@ private fun TimedSessionNotesEditor(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(end = 42.dp)
+                    .padding(end = if (canSave) 80.dp else 42.dp)
                     .focusRequester(focusRequester),
             textStyle =
                 MaterialTheme.typography.bodyMedium.copy(
@@ -670,28 +670,59 @@ private fun TimedSessionNotesEditor(
                 innerTextField()
             },
         )
-        Box(
+        Row(
             modifier =
                 Modifier
                     .align(Alignment.TopEnd)
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(if (canSave) VinylColors.AccentGreen else Color.Transparent)
-                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
-                    .clickable(
-                        onClickLabel = if (canSave) "Save timed session notes" else "Close timed session notes",
-                        role = Role.Button,
-                        onClick = if (canSave) onSave else onClose,
-                    ),
-            contentAlignment = Alignment.Center,
+                    .height(32.dp),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = if (canSave) Icons.Filled.Check else Icons.Filled.Close,
-                contentDescription = null,
-                tint = if (canSave) VinylColors.TextOnAccent else VinylColors.AccentGreen,
-                modifier = Modifier.size(18.dp),
+            if (canSave) {
+                TimedSessionNotesIconButton(
+                    icon = Icons.Filled.Check,
+                    selected = true,
+                    label = "Save timed session notes",
+                    onClick = onSave,
+                )
+            }
+            TimedSessionNotesIconButton(
+                icon = Icons.Filled.Close,
+                selected = false,
+                label = "Close timed session notes",
+                onClick = onClose,
             )
         }
+    }
+}
+
+@Composable
+private fun TimedSessionNotesIconButton(
+    icon: ImageVector,
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
+                .clickable(
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
