@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,12 +26,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -71,6 +75,7 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
+import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
@@ -84,6 +89,7 @@ fun CollectionScreen(
     onInsights: () -> Unit,
     onManualSearch: () -> Unit,
     onOpenRecord: (String) -> Unit,
+    initialArtistFilter: String? = null,
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -94,21 +100,27 @@ fun CollectionScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
+    var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     suspend fun loadFirstPage() {
         isLoadingInitial = true
-        runCatching { apiClient.getCollectionReleases(limit = COLLECTION_PAGE_SIZE, offset = 0) }
-            .onSuccess { page ->
-                records = page.records
-                hasMore = page.hasMore
-                error = null
-            }.onFailure { failure ->
-                records = emptyList()
-                hasMore = false
-                error = failure.toUserMessage("Could not load collection records.")
-            }
+        runCatching {
+            apiClient.getCollectionReleases(
+                limit = COLLECTION_PAGE_SIZE,
+                offset = 0,
+                artist = artistFilter,
+            )
+        }.onSuccess { page ->
+            records = page.records
+            hasMore = page.hasMore
+            error = null
+        }.onFailure { failure ->
+            records = emptyList()
+            hasMore = false
+            error = failure.toUserMessage("Could not load collection records.")
+        }
         isLoadingInitial = false
     }
 
@@ -148,7 +160,7 @@ fun CollectionScreen(
         loadFirstPage()
     }
 
-    LaunchedEffect(retryKey) {
+    LaunchedEffect(retryKey, artistFilter) {
         loadCollectionState()
     }
 
@@ -185,9 +197,10 @@ fun CollectionScreen(
         },
         floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
-        val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing
+        val hasArtistFilter = artistFilter != null
+        val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing && !hasArtistFilter
         val showCenteredStatus = records.isEmpty() && !showEmptyLoad
-        if (showEmptyLoad || showCenteredStatus) {
+        if ((showEmptyLoad || showCenteredStatus) && !hasArtistFilter) {
             Box(
                 modifier =
                     Modifier
@@ -234,9 +247,11 @@ fun CollectionScreen(
                 isSyncing = isSyncing,
                 syncMessage = syncMessage,
                 error = error,
+                artistFilter = artistFilter,
                 scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
                 onRetry = { scope.launch { followCollectionSync() } },
+                onClearArtistFilter = { artistFilter = null },
                 isActionMenuOpen = isActionMenuOpen,
                 onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
                 onActionMenuDismiss = { isActionMenuOpen = false },
@@ -250,6 +265,7 @@ fun CollectionScreen(
                             apiClient.getCollectionReleases(
                                 limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
                                 offset = records.size,
+                                artist = artistFilter,
                             )
                         }.onSuccess { page ->
                             records = records + page.records
@@ -280,9 +296,11 @@ private fun CollectionListContent(
     isSyncing: Boolean,
     syncMessage: String?,
     error: String?,
+    artistFilter: String?,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
+    onClearArtistFilter: () -> Unit,
     isActionMenuOpen: Boolean,
     onActionMenuToggle: () -> Unit,
     onActionMenuDismiss: () -> Unit,
@@ -331,6 +349,12 @@ private fun CollectionListContent(
                 }
             }
             LocalTimedSessionBanner.current?.invoke()
+            artistFilter?.let { artist ->
+                ArtistCollectionFilterChip(
+                    artist = artist,
+                    onDismiss = onClearArtistFilter,
+                )
+            }
             syncMessage?.let { message -> CollectionStatusText(message) }
             error?.let {
                 CollectionStatusText(message = it, isError = true)
@@ -338,6 +362,9 @@ private fun CollectionListContent(
             }
             if (isLoadingInitial) {
                 CollectionStatusText("Loading...")
+            }
+            if (!isLoadingInitial && records.isEmpty() && error == null && artistFilter != null) {
+                CollectionStatusText("No collection records for $artistFilter.")
             }
             records.forEach { record ->
                 CollectionRecordCard(record = record, onClick = { onOpenRecord(record.releaseId) })
@@ -467,6 +494,41 @@ private fun CollectionStatusText(
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyMedium,
     )
+}
+
+@Composable
+private fun ArtistCollectionFilterChip(
+    artist: String,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                .clickable(
+                    onClickLabel = "Clear artist filter",
+                    role = Role.Button,
+                    onClick = onDismiss,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = artist,
+            color = VinylColors.TextOnAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(16.dp),
+        )
+    }
 }
 
 @Composable

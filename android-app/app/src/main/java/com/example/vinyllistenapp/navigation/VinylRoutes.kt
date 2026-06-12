@@ -25,6 +25,7 @@ object VinylRoutes {
     const val RATING = "rating"
     const val MOOD = "mood"
     const val STYLE = "style"
+    const val ARTIST = "artist"
     const val SESSION_LOGGING_PATTERN = "session_logging/{$RELEASE_ID}"
     const val SESSION_EDIT = "session_edit"
     const val SESSION_EDIT_PATTERN = "$SESSION_EDIT/{$SESSION_ID}"
@@ -36,6 +37,7 @@ object VinylRoutes {
     const val ANALYTICS = "analytics"
     const val AI_INSIGHTS = "ai_insights"
     const val COLLECTION = "collection"
+    const val COLLECTION_PATTERN = "$COLLECTION?$ARTIST={$ARTIST}"
     const val SETTINGS = "settings"
 
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"
@@ -51,6 +53,8 @@ object VinylRoutes {
     fun analyticsMoodRecords(mood: String): String = "$ANALYTICS_MOOD_RECORDS/${Uri.encode(mood)}"
 
     fun analyticsStyleRecords(style: String): String = "$ANALYTICS_STYLE_RECORDS/${Uri.encode(style)}"
+
+    fun collectionArtist(artist: String): String = "$COLLECTION?$ARTIST=${Uri.encode(artist)}"
 
     fun processing(imageUri: Uri): String = "processing?imageUri=${Uri.encode(imageUri.toString())}"
 }
