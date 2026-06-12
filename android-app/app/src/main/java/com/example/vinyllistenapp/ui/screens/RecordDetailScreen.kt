@@ -1315,12 +1315,12 @@ private fun RecordInsightsResult(
     Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
         RecordInsightReleaseSection(
             title = "Usually before",
-            items = insights.before,
+            items = insights.after,
             onOpenRecord = onOpenRecord,
         )
         RecordInsightReleaseSection(
             title = "Usually after",
-            items = insights.after,
+            items = insights.before,
             onOpenRecord = onOpenRecord,
         )
         RecordInsightMoodFlowSection(transitions = insights.moodTransitions)
