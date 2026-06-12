@@ -325,6 +325,12 @@ fun VinylNavHost(
                             navController.navigate(VinylRoutes.HOME)
                         }
                     },
+                    onBackToHome = {
+                        navController.navigate(VinylRoutes.HOME) {
+                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable(VinylRoutes.ANALYTICS) {

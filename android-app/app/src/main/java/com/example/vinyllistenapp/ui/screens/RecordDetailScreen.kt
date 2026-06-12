@@ -2,9 +2,11 @@ package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -105,6 +107,7 @@ fun RecordDetailScreen(
     onOpenRecord: (String) -> Unit,
     onOpenArtistCollection: (String) -> Unit,
     onBack: () -> Unit,
+    onBackToHome: () -> Unit,
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
@@ -312,6 +315,7 @@ fun RecordDetailScreen(
         )
         RecordDetailGoBackButton(
             onClick = onBack,
+            onLongClick = onBackToHome,
             modifier =
                 Modifier
                     .align(Alignment.BottomStart)
@@ -1807,9 +1811,11 @@ private fun ScrollableSessionNoteText(note: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecordDetailGoBackButton(
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val brush =
@@ -1832,9 +1838,11 @@ private fun RecordDetailGoBackButton(
                 ).clip(VinylShapes.Floating)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
-                .clickable(
+                .combinedClickable(
                     onClickLabel = "Go Back",
+                    onLongClickLabel = "Go Home",
                     role = Role.Button,
+                    onLongClick = onLongClick,
                     onClick = onClick,
                 ),
         contentAlignment = Alignment.Center,
