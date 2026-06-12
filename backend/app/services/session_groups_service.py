@@ -8,7 +8,26 @@ from app.repositories.session_groups_repository import SessionGroupsRepository
 from app.repositories.sessions_repository import SessionsRepository
 
 SESSION_GROUP_INACTIVITY_TIMEOUT = timedelta(minutes=30)
+SESSION_GROUP_EDIT_WINDOW = timedelta(minutes=15)
 SESSION_GROUP_TITLE_MAX_LENGTH = 100
+SESSION_GROUP_NOTES_MAX_LENGTH = 1000
+SESSION_GROUP_STYLE_FOCUS_VALUES = {"one_style", "mixed", "random"}
+SESSION_GROUP_MOOD_DIRECTION_VALUES = {"steady_mood", "mood_switch", "energy_build", "cool_down"}
+SESSION_GROUP_TYPE_VALUES = {
+    "dj_set",
+    "casual_listening",
+    "rediscovery",
+    "testing_records",
+    "background",
+}
+SESSION_GROUP_METADATA_FIELDS = {
+    "style_focus": SESSION_GROUP_STYLE_FOCUS_VALUES,
+    "mood_direction": SESSION_GROUP_MOOD_DIRECTION_VALUES,
+    "session_type": SESSION_GROUP_TYPE_VALUES,
+}
+DEFAULT_SESSION_GROUP_STYLE_FOCUS = "mixed"
+DEFAULT_SESSION_GROUP_MOOD_DIRECTION = "steady_mood"
+DEFAULT_SESSION_GROUP_TYPE = "casual_listening"
 
 
 class SessionGroupServiceError(Exception):
@@ -52,6 +71,16 @@ class SessionGroupInactiveError(SessionGroupServiceError):
         self.message = "Timed listening session is not active."
 
 
+class SessionGroupEditWindowExpiredError(SessionGroupServiceError):
+    """Raised when a stopped timed session group can no longer be edited."""
+
+    def __init__(self, session_group_id: str) -> None:
+        super().__init__(f"Session group '{session_group_id}' can no longer be edited.")
+        self.session_group_id = session_group_id
+        self.code = "session_group_edit_window_expired"
+        self.message = "Timed listening session can only be edited for 15 minutes after it stops."
+
+
 class SessionGroupsService:
     """Business logic for optional timed listening session groups."""
 
@@ -71,6 +100,9 @@ class SessionGroupsService:
         *,
         title: str | None,
         started_at: str | None = None,
+        style_focus: str | None = None,
+        mood_direction: str | None = None,
+        session_type: str | None = None,
     ) -> SessionGroups:
         active_group = self._expire_if_inactive(db, self._session_groups_repository.get_active(db))
         if active_group is not None:
@@ -79,6 +111,21 @@ class SessionGroupsService:
         return self._session_groups_repository.create(
             db,
             title=self._normalize_title(title),
+            style_focus=self._normalize_metadata_value(
+                "style_focus",
+                style_focus,
+                default=DEFAULT_SESSION_GROUP_STYLE_FOCUS,
+            ),
+            mood_direction=self._normalize_metadata_value(
+                "mood_direction",
+                mood_direction,
+                default=DEFAULT_SESSION_GROUP_MOOD_DIRECTION,
+            ),
+            session_type=self._normalize_metadata_value(
+                "session_type",
+                session_type,
+                default=DEFAULT_SESSION_GROUP_TYPE,
+            ),
             started_at=self._parse_optional_datetime(started_at, field_name="started_at") or self._current_time(),
         )
 
@@ -91,12 +138,20 @@ class SessionGroupsService:
             raise SessionGroupNotFoundError(session_group_id)
         return session_group
 
+    def get_session_groups_by_ids(self, db: Session, session_group_ids: list[str]) -> list[SessionGroups]:
+        unique_ids = list(dict.fromkeys(session_group_ids))
+        return self._session_groups_repository.get_by_ids(db, unique_ids)
+
     def finish_session_group(
         self,
         db: Session,
         session_group_id: str,
         *,
         ended_at: str | None = None,
+        style_focus: str | None = None,
+        mood_direction: str | None = None,
+        session_type: str | None = None,
+        notes: str | None = None,
     ) -> SessionGroups:
         session_group = self.get_session_group(db, session_group_id)
         if session_group.status != "active":
@@ -108,7 +163,19 @@ class SessionGroupsService:
         if normalized_ended_at < self._as_aware_utc(session_group.started_at):
             raise SessionGroupValidationError("invalid_ended_at", "ended_at must be after started_at.")
 
-        return self._session_groups_repository.finish(db, session_group, ended_at=normalized_ended_at)
+        return self._session_groups_repository.finish(
+            db,
+            session_group,
+            ended_at=normalized_ended_at,
+            notes=self._normalize_notes(notes),
+            metadata=self._normalize_metadata_fields(
+                {
+                    "style_focus": style_focus,
+                    "mood_direction": mood_direction,
+                    "session_type": session_type,
+                }
+            ),
+        )
 
     def validate_active_session_group(self, db: Session, session_group_id: str | None) -> str | None:
         if session_group_id is None:
@@ -120,6 +187,34 @@ class SessionGroupsService:
         if self._expire_if_inactive(db, session_group) is None:
             raise SessionGroupInactiveError(session_group_id)
         return session_group.id
+
+    def update_session_group(
+        self,
+        db: Session,
+        session_group_id: str,
+        *,
+        fields: dict,
+    ) -> SessionGroups:
+        session_group = self.get_session_group(db, session_group_id)
+        if not self.can_edit_session_group(session_group):
+            raise SessionGroupEditWindowExpiredError(session_group_id)
+
+        normalized_fields = self._normalize_update_fields(fields)
+        return self._session_groups_repository.update(
+            db,
+            session_group,
+            fields=normalized_fields,
+            updated_at=self._current_time(),
+        )
+
+    def can_edit_session_group(self, session_group: SessionGroups) -> bool:
+        editable_until = self.editable_until(session_group)
+        return editable_until is None or self._current_time() <= editable_until
+
+    def editable_until(self, session_group: SessionGroups) -> datetime | None:
+        if session_group.ended_at is None:
+            return None
+        return self._as_aware_utc(session_group.ended_at) + SESSION_GROUP_EDIT_WINDOW
 
     def _expire_if_inactive(self, db: Session, session_group: SessionGroups | None) -> SessionGroups | None:
         if session_group is None or session_group.status != "active":
@@ -147,6 +242,49 @@ class SessionGroupsService:
             raise SessionGroupValidationError(
                 "invalid_title",
                 f"title must be {SESSION_GROUP_TITLE_MAX_LENGTH} characters or fewer.",
+            )
+        return normalized
+
+    def _normalize_update_fields(self, fields: dict) -> dict:
+        normalized_fields: dict = {}
+        for field, value in fields.items():
+            if field in SESSION_GROUP_METADATA_FIELDS:
+                normalized_fields[field] = self._normalize_metadata_value(field, value)
+            elif field == "notes":
+                normalized_fields[field] = self._normalize_notes(value)
+            else:
+                raise SessionGroupValidationError("invalid_field", f"{field} cannot be updated.")
+        return normalized_fields
+
+    def _normalize_metadata_fields(self, fields: dict[str, str | None]) -> dict[str, str]:
+        return {
+            field: self._normalize_metadata_value(field, value) for field, value in fields.items() if value is not None
+        }
+
+    @staticmethod
+    def _normalize_metadata_value(field: str, value: str | None, *, default: str | None = None) -> str:
+        if value is None:
+            if default is not None:
+                return default
+            raise SessionGroupValidationError(f"invalid_{field}", f"{field} is required.")
+        normalized = value.strip().lower()
+        allowed_values = SESSION_GROUP_METADATA_FIELDS[field]
+        if normalized not in allowed_values:
+            allowed = ", ".join(sorted(allowed_values))
+            raise SessionGroupValidationError(f"invalid_{field}", f"{field} must be one of: {allowed}.")
+        return normalized
+
+    @staticmethod
+    def _normalize_notes(notes: str | None) -> str | None:
+        if notes is None:
+            return None
+        normalized = notes.strip()
+        if not normalized:
+            return None
+        if len(normalized) > SESSION_GROUP_NOTES_MAX_LENGTH:
+            raise SessionGroupValidationError(
+                "invalid_notes",
+                f"notes must be {SESSION_GROUP_NOTES_MAX_LENGTH} characters or fewer.",
             )
         return normalized
 

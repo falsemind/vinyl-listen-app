@@ -23,6 +23,17 @@ class SessionGroups(Base):
     )
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active")
+    style_focus: Mapped[str] = mapped_column(String, nullable=False, default="mixed", server_default="mixed")
+    mood_direction: Mapped[str] = mapped_column(
+        String, nullable=False, default="steady_mood", server_default="steady_mood"
+    )
+    session_type: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="casual_listening",
+        server_default="casual_listening",
+    )
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

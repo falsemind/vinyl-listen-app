@@ -5,6 +5,7 @@ import pytest
 from app.models.sessions import SessionGroups
 from app.services.session_groups_service import (
     SessionGroupAlreadyActiveError,
+    SessionGroupEditWindowExpiredError,
     SessionGroupInactiveError,
     SessionGroupsService,
     SessionGroupValidationError,
@@ -20,12 +21,30 @@ class InMemorySessionGroupsRepository:
         if active_group is not None:
             self.groups[active_group.id] = active_group
 
-    def create(self, _db, *, title: str | None, started_at: datetime) -> SessionGroups:
-        self.created_payload = {"title": title, "started_at": started_at}
+    def create(
+        self,
+        _db,
+        *,
+        title: str | None,
+        style_focus: str,
+        mood_direction: str,
+        session_type: str,
+        started_at: datetime,
+    ) -> SessionGroups:
+        self.created_payload = {
+            "title": title,
+            "style_focus": style_focus,
+            "mood_direction": mood_direction,
+            "session_type": session_type,
+            "started_at": started_at,
+        }
         group = SessionGroups(
             id="group-123",
             title=title,
             status="active",
+            style_focus=style_focus,
+            mood_direction=mood_direction,
+            session_type=session_type,
             started_at=started_at,
             created_at=started_at,
             updated_at=started_at,
@@ -40,13 +59,32 @@ class InMemorySessionGroupsRepository:
     def get_active(self, _db) -> SessionGroups | None:
         return self.active_group
 
-    def finish(self, _db, session_group: SessionGroups, *, ended_at: datetime) -> SessionGroups:
+    def finish(
+        self,
+        _db,
+        session_group: SessionGroups,
+        *,
+        ended_at: datetime,
+        notes: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> SessionGroups:
         self.finished_payload = (session_group.id, ended_at)
         session_group.status = "completed"
         session_group.ended_at = ended_at
+        if notes is not None:
+            session_group.notes = notes
+        if metadata:
+            for field, value in metadata.items():
+                setattr(session_group, field, value)
         session_group.updated_at = ended_at
         if self.active_group is session_group:
             self.active_group = None
+        return session_group
+
+    def update(self, _db, session_group: SessionGroups, *, fields: dict, updated_at: datetime) -> SessionGroups:
+        for field, value in fields.items():
+            setattr(session_group, field, value)
+        session_group.updated_at = updated_at
         return session_group
 
 
@@ -72,6 +110,36 @@ def test_start_session_group_creates_active_group_with_normalized_title() -> Non
     assert group.status == "active"
     assert repository.created_payload == {
         "title": "Late night stack",
+        "style_focus": "mixed",
+        "mood_direction": "steady_mood",
+        "session_type": "casual_listening",
+        "started_at": datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    }
+
+
+def test_start_session_group_accepts_metadata() -> None:
+    repository = InMemorySessionGroupsRepository()
+    service = SessionGroupsService(
+        session_groups_repository=repository,
+        now_provider=lambda: datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+
+    group = service.start_session_group(
+        db=object(),
+        title=None,
+        style_focus="one_style",
+        mood_direction="energy_build",
+        session_type="dj_set",
+    )
+
+    assert group.style_focus == "one_style"
+    assert group.mood_direction == "energy_build"
+    assert group.session_type == "dj_set"
+    assert repository.created_payload == {
+        "title": None,
+        "style_focus": "one_style",
+        "mood_direction": "energy_build",
+        "session_type": "dj_set",
         "started_at": datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
     }
 
@@ -221,3 +289,106 @@ def test_finish_session_group_rejects_ended_at_before_started_at() -> None:
         )
 
     assert exc_info.value.code == "invalid_ended_at"
+
+
+def test_finish_session_group_saves_metadata_and_notes() -> None:
+    active_group = SessionGroups(
+        id="group-123",
+        title="Late night stack",
+        status="active",
+        started_at=datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+    service = SessionGroupsService(
+        session_groups_repository=InMemorySessionGroupsRepository(active_group),
+        sessions_repository=InMemorySessionsRepository(),
+        now_provider=lambda: datetime(2026, 4, 19, 8, 10, tzinfo=UTC),
+    )
+
+    group = service.finish_session_group(
+        db=object(),
+        session_group_id="group-123",
+        ended_at="2026-04-19T09:00:00Z",
+        style_focus="one_style",
+        mood_direction="mood_switch",
+        session_type="rediscovery",
+        notes="  Pulled older favorites.  ",
+    )
+
+    assert group.style_focus == "one_style"
+    assert group.mood_direction == "mood_switch"
+    assert group.session_type == "rediscovery"
+    assert group.notes == "Pulled older favorites."
+
+
+def test_update_session_group_edits_completed_group_inside_window() -> None:
+    group = SessionGroups(
+        id="group-123",
+        title="Late night stack",
+        status="completed",
+        style_focus="mixed",
+        mood_direction="steady_mood",
+        session_type="casual_listening",
+        ended_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC),
+        started_at=datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+    service = SessionGroupsService(
+        session_groups_repository=InMemorySessionGroupsRepository(group),
+        sessions_repository=InMemorySessionsRepository(),
+        now_provider=lambda: datetime(2026, 4, 19, 9, 10, tzinfo=UTC),
+    )
+
+    updated = service.update_session_group(
+        db=object(),
+        session_group_id="group-123",
+        fields={
+            "style_focus": "random",
+            "mood_direction": "cool_down",
+            "session_type": "background",
+            "notes": "  Gentle finish.  ",
+        },
+    )
+
+    assert updated.style_focus == "random"
+    assert updated.mood_direction == "cool_down"
+    assert updated.session_type == "background"
+    assert updated.notes == "Gentle finish."
+    assert updated.updated_at == datetime(2026, 4, 19, 9, 10, tzinfo=UTC)
+
+
+def test_update_session_group_rejects_completed_group_after_edit_window() -> None:
+    group = SessionGroups(
+        id="group-123",
+        title="Late night stack",
+        status="completed",
+        ended_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC),
+        started_at=datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+    service = SessionGroupsService(
+        session_groups_repository=InMemorySessionGroupsRepository(group),
+        sessions_repository=InMemorySessionsRepository(),
+        now_provider=lambda: datetime(2026, 4, 19, 9, 16, tzinfo=UTC),
+    )
+
+    with pytest.raises(SessionGroupEditWindowExpiredError) as exc_info:
+        service.update_session_group(db=object(), session_group_id="group-123", fields={"notes": "Too late"})
+
+    assert exc_info.value.code == "session_group_edit_window_expired"
+
+
+def test_update_session_group_rejects_invalid_metadata() -> None:
+    group = SessionGroups(
+        id="group-123",
+        title="Late night stack",
+        status="active",
+        started_at=datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+    service = SessionGroupsService(
+        session_groups_repository=InMemorySessionGroupsRepository(group),
+        sessions_repository=InMemorySessionsRepository(),
+        now_provider=lambda: datetime(2026, 4, 19, 8, 10, tzinfo=UTC),
+    )
+
+    with pytest.raises(SessionGroupValidationError) as exc_info:
+        service.update_session_group(db=object(), session_group_id="group-123", fields={"session_type": "archive"})
+
+    assert exc_info.value.code == "invalid_session_type"
