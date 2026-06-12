@@ -10,7 +10,7 @@ from app.repositories.sessions_repository import SessionsRepository
 SESSION_GROUP_INACTIVITY_TIMEOUT = timedelta(minutes=30)
 SESSION_GROUP_EDIT_WINDOW = timedelta(minutes=15)
 SESSION_GROUP_TITLE_MAX_LENGTH = 100
-SESSION_GROUP_NOTES_MAX_LENGTH = 1000
+SESSION_GROUP_NOTES_MAX_LENGTH = 500
 SESSION_GROUP_STYLE_FOCUS_VALUES = {"one_style", "mixed", "random"}
 SESSION_GROUP_MOOD_DIRECTION_VALUES = {"steady_mood", "mood_switch", "energy_build", "cool_down"}
 SESSION_GROUP_TYPE_VALUES = {
@@ -103,6 +103,7 @@ class SessionGroupsService:
         style_focus: str | None = None,
         mood_direction: str | None = None,
         session_type: str | None = None,
+        notes: str | None = None,
     ) -> SessionGroups:
         active_group = self._expire_if_inactive(db, self._session_groups_repository.get_active(db))
         if active_group is not None:
@@ -126,6 +127,7 @@ class SessionGroupsService:
                 session_type,
                 default=DEFAULT_SESSION_GROUP_TYPE,
             ),
+            notes=self._normalize_notes(notes),
             started_at=self._parse_optional_datetime(started_at, field_name="started_at") or self._current_time(),
         )
 

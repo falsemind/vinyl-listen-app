@@ -50,6 +50,7 @@ class StartSessionGroupRequest(BaseModel):
     style_focus: str | None = None
     mood_direction: str | None = None
     session_type: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class FinishSessionGroupRequest(BaseModel):
@@ -59,7 +60,7 @@ class FinishSessionGroupRequest(BaseModel):
     style_focus: str | None = None
     mood_direction: str | None = None
     session_type: str | None = None
-    notes: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class UpdateSessionGroupRequest(BaseModel):
@@ -68,7 +69,7 @@ class UpdateSessionGroupRequest(BaseModel):
     style_focus: str | None = None
     mood_direction: str | None = None
     session_type: str | None = None
-    notes: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class SessionGroupResponse(BaseModel):

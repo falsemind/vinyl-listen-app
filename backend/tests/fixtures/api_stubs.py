@@ -305,6 +305,7 @@ class StubSessionGroupsService:
         style_focus: str | None = None,
         mood_direction: str | None = None,
         session_type: str | None = None,
+        notes: str | None = None,
     ) -> SessionGroupStub:
         self.start_calls.append(
             {
@@ -313,6 +314,7 @@ class StubSessionGroupsService:
                 "style_focus": style_focus,
                 "mood_direction": mood_direction,
                 "session_type": session_type,
+                "notes": notes,
             }
         )
         if self.start_error is not None:
@@ -323,6 +325,8 @@ class StubSessionGroupsService:
             self.group.mood_direction = mood_direction
         if session_type is not None:
             self.group.session_type = session_type
+        if notes is not None:
+            self.group.notes = notes
         return self.group
 
     def get_active_session_group(self, _db) -> SessionGroupStub | None:

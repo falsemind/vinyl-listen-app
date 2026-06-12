@@ -75,6 +75,7 @@ def start_session_group(
             style_focus=payload.style_focus,
             mood_direction=payload.mood_direction,
             session_type=payload.session_type,
+            notes=payload.notes,
         )
     except SessionGroupAlreadyActiveError as error:
         return JSONResponse(
