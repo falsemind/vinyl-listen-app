@@ -293,6 +293,10 @@ Only one group should be active at a time. This invariant is currently enforced 
 |id|UUID|Primary key|
 |title|TEXT|Optional user title|
 |status|TEXT|`active` or `completed`|
+|style_focus|TEXT|Timed-session style intent: `one_style`, `mixed`, or `random`; defaults to `mixed`|
+|mood_direction|TEXT|Timed-session mood intent: `steady_mood`, `mood_switch`, `energy_build`, or `cool_down`; defaults to `steady_mood`|
+|session_type|TEXT|Timed-session context: `dj_set`, `casual_listening`, `rediscovery`, `testing_records`, or `background`; defaults to `casual_listening`|
+|notes|TEXT|Optional notes for the overall timed session|
 |started_at|TIMESTAMP|Timer start time|
 |ended_at|TIMESTAMP|Timer stop time, nullable while active|
 |created_at|TIMESTAMP|Group creation time|
