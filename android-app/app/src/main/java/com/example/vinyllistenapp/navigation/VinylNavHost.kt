@@ -85,6 +85,7 @@ fun VinylNavHost(
         styleFocus: String,
         moodDirection: String,
         sessionType: String,
+        notes: String?,
     ) {
         if (isStartingTimedSession) return
         isStartingTimedSession = true
@@ -94,6 +95,7 @@ fun VinylNavHost(
                     styleFocus = styleFocus,
                     moodDirection = moodDirection,
                     sessionType = sessionType,
+                    notes = notes,
                 )
             }.onSuccess { activeTimedSession = it }
                 .onFailure { refreshTimedSession() }

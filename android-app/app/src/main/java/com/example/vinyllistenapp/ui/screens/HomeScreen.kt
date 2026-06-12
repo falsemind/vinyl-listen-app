@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,11 +19,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -47,12 +51,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -104,7 +112,12 @@ fun HomeScreen(
     isStartingTimedSession: Boolean = false,
     autoAddTimedSessionRecords: Boolean = true,
     onAutoAddTimedSessionRecordsToggle: () -> Unit = {},
-    onStartTimedSession: (styleFocus: String, moodDirection: String, sessionType: String) -> Unit = { _, _, _ -> },
+    onStartTimedSession: (
+        styleFocus: String,
+        moodDirection: String,
+        sessionType: String,
+        notes: String?,
+    ) -> Unit = { _, _, _, _ -> },
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -228,12 +241,15 @@ private fun StartTimedSessionAction(
     isStarting: Boolean,
     autoAddEnabled: Boolean,
     onAutoAddToggle: () -> Unit,
-    onStart: (styleFocus: String, moodDirection: String, sessionType: String) -> Unit,
+    onStart: (styleFocus: String, moodDirection: String, sessionType: String, notes: String?) -> Unit,
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     var selectedSessionType by remember { mutableStateOf(TIMED_SESSION_TYPE_OPTIONS.first()) }
     var selectedStyleFocus by remember { mutableStateOf(TIMED_SESSION_STYLE_OPTIONS.first()) }
     var selectedMoodDirection by remember { mutableStateOf(TIMED_SESSION_MOOD_OPTIONS.first()) }
+    var sessionNotes by remember { mutableStateOf("") }
+    var draftSessionNotes by remember { mutableStateOf("") }
+    var isNotesEditorOpen by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else -90f,
         animationSpec = tween(durationMillis = 180),
@@ -312,15 +328,43 @@ private fun StartTimedSessionAction(
                     onOptionSelected = { selectedMoodDirection = it },
                 )
             }
+            if (isNotesEditorOpen) {
+                TimedSessionNotesEditor(
+                    notes = draftSessionNotes,
+                    onNotesChange = { draftSessionNotes = it.take(TIMED_SESSION_NOTES_MAX_LENGTH) },
+                    onClose = { isNotesEditorOpen = false },
+                    onSave = {
+                        sessionNotes = draftSessionNotes.trim()
+                        isNotesEditorOpen = false
+                    },
+                    modifier =
+                        Modifier.padding(
+                            start = VinylSpacing.SpaceLg,
+                            end = VinylSpacing.SpaceLg,
+                            bottom = VinylSpacing.SpaceMd,
+                        ),
+                )
+            }
             HomeTimedSessionDivider()
             Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceMd),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                TimedSessionSetupAction(
+                    icon = Icons.Filled.Edit,
+                    label = "Add notes",
+                    selected = sessionNotes.isNotBlank(),
+                    enabled = !isStarting,
+                    onClick = {
+                        draftSessionNotes = sessionNotes
+                        isNotesEditorOpen = true
+                    },
+                    modifier = Modifier.weight(1f),
+                )
                 TimedSessionSetupAction(
                     icon = if (autoAddEnabled) Icons.Filled.Check else Icons.Filled.Add,
                     label = "Auto add records",
@@ -339,6 +383,7 @@ private fun StartTimedSessionAction(
                             selectedStyleFocus.apiValue,
                             selectedMoodDirection.apiValue,
                             selectedSessionType.apiValue,
+                            sessionNotes.takeIf { it.isNotBlank() },
                         )
                     },
                     modifier = Modifier.weight(1f),
@@ -574,6 +619,83 @@ private fun TimedSessionSetupAction(
 }
 
 @Composable
+private fun TimedSessionNotesEditor(
+    notes: String,
+    onNotesChange: (String) -> Unit,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val canSave = notes.trim().length >= 3
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(118.dp)
+                .shadow(8.dp, VinylShapes.Card)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+    ) {
+        BasicTextField(
+            value = notes,
+            onValueChange = onNotesChange,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(end = 42.dp)
+                    .focusRequester(focusRequester),
+            textStyle =
+                MaterialTheme.typography.bodyMedium.copy(
+                    color = VinylColors.TextPrimary,
+                ),
+            cursorBrush = SolidColor(VinylColors.AccentGreen),
+            decorationBox = { innerTextField ->
+                if (notes.isEmpty()) {
+                    Text(
+                        text = "Add timed session notes...",
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                innerTextField()
+            },
+        )
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (canSave) VinylColors.AccentGreen else Color.Transparent)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
+                    .clickable(
+                        onClickLabel = if (canSave) "Save timed session notes" else "Close timed session notes",
+                        role = Role.Button,
+                        onClick = if (canSave) onSave else onClose,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (canSave) Icons.Filled.Check else Icons.Filled.Close,
+                contentDescription = null,
+                tint = if (canSave) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun HomeTimedSessionDivider() {
     Box(
         modifier =
@@ -588,6 +710,8 @@ private data class TimedSessionSetupOption(
     val apiValue: String,
     val label: String,
 )
+
+private const val TIMED_SESSION_NOTES_MAX_LENGTH = 500
 
 private val TIMED_SESSION_TYPE_OPTIONS =
     listOf(

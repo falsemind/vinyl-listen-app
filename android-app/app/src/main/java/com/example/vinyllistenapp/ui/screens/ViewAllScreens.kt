@@ -1,5 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,12 +14,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,9 +41,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -45,6 +59,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
@@ -76,6 +92,12 @@ import java.util.Locale
 
 private const val VIEW_ALL_PAGE_SIZE = 10
 
+private val TIMED_SESSION_TYPE_VALUES =
+    listOf("casual_listening", "dj_set", "rediscovery", "testing_records", "background")
+private val TIMED_SESSION_STYLE_VALUES = listOf("mixed", "one_style", "random")
+private val TIMED_SESSION_MOOD_VALUES = listOf("steady_mood", "mood_switch", "energy_build", "cool_down")
+private const val TIMED_SESSION_NOTES_MAX_LENGTH = 500
+
 @Composable
 fun RecentSessionsScreen(
     apiClient: VinylApiClient,
@@ -86,6 +108,10 @@ fun RecentSessionsScreen(
     var sessions by remember { mutableStateOf(emptyList<ListeningSession>()) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
+    var editingSessionGroup by remember { mutableStateOf<TimedSessionGroup?>(null) }
+    var isSavingSessionGroup by remember { mutableStateOf(false) }
+    var sessionGroupEditError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(retryKey) {
         runCatching { apiClient.getHomeSummary(recentLimit = SHOW_MORE_MAX_COUNT, topLimit = 5) }
@@ -95,6 +121,41 @@ fun RecentSessionsScreen(
             }.onFailure { failure ->
                 error = failure.toUserMessage("Could not load sessions.")
             }
+    }
+
+    fun saveSessionGroup(
+        sessionGroup: TimedSessionGroup,
+        styleFocus: String,
+        moodDirection: String,
+        sessionType: String,
+        notes: String?,
+    ) {
+        scope.launch {
+            isSavingSessionGroup = true
+            runCatching {
+                apiClient.updateSessionGroup(
+                    sessionGroupId = sessionGroup.id,
+                    styleFocus = styleFocus,
+                    moodDirection = moodDirection,
+                    sessionType = sessionType,
+                    notes = notes,
+                )
+            }.onSuccess { updated ->
+                sessions =
+                    sessions.map { session ->
+                        if (session.sessionGroupId == updated.id) {
+                            session.copy(sessionGroup = updated)
+                        } else {
+                            session
+                        }
+                    }
+                editingSessionGroup = null
+                sessionGroupEditError = null
+            }.onFailure { failure ->
+                sessionGroupEditError = failure.toUserMessage("Could not save timed session.")
+            }
+            isSavingSessionGroup = false
+        }
     }
 
     ViewAllScreenContent(
@@ -108,6 +169,18 @@ fun RecentSessionsScreen(
                 item = item,
                 onOpenRecord = onOpenRecord,
                 onEditSession = onEditSession,
+                editingSessionGroup = editingSessionGroup,
+                isSavingSessionGroup = isSavingSessionGroup,
+                sessionGroupEditError = sessionGroupEditError,
+                onEditSessionGroup = { group ->
+                    editingSessionGroup = group
+                    sessionGroupEditError = null
+                },
+                onSaveSessionGroup = ::saveSessionGroup,
+                onCloseSessionGroupEditor = {
+                    editingSessionGroup = null
+                    sessionGroupEditError = null
+                },
             )
         }
     }
@@ -616,6 +689,12 @@ private fun RecentSessionListItemContent(
     item: RecentSessionListItem,
     onOpenRecord: (String) -> Unit,
     onEditSession: ((String) -> Unit)? = null,
+    editingSessionGroup: TimedSessionGroup? = null,
+    isSavingSessionGroup: Boolean = false,
+    sessionGroupEditError: String? = null,
+    onEditSessionGroup: ((TimedSessionGroup) -> Unit)? = null,
+    onSaveSessionGroup: ((TimedSessionGroup, String, String, String, String?) -> Unit)? = null,
+    onCloseSessionGroupEditor: () -> Unit = {},
 ) {
     when (item) {
         is RecentSessionListItem.Group ->
@@ -623,6 +702,12 @@ private fun RecentSessionListItemContent(
                 item = item,
                 onOpenRecord = onOpenRecord,
                 onEditSession = onEditSession,
+                editingSessionGroup = editingSessionGroup,
+                isSavingSessionGroup = isSavingSessionGroup,
+                sessionGroupEditError = sessionGroupEditError,
+                onEditSessionGroup = onEditSessionGroup,
+                onSaveSessionGroup = onSaveSessionGroup,
+                onCloseSessionGroupEditor = onCloseSessionGroupEditor,
             )
 
         is RecentSessionListItem.Single ->
@@ -639,9 +724,17 @@ private fun TimedSessionGroupListItem(
     item: RecentSessionListItem.Group,
     onOpenRecord: (String) -> Unit,
     onEditSession: ((String) -> Unit)? = null,
+    editingSessionGroup: TimedSessionGroup? = null,
+    isSavingSessionGroup: Boolean = false,
+    sessionGroupEditError: String? = null,
+    onEditSessionGroup: ((TimedSessionGroup) -> Unit)? = null,
+    onSaveSessionGroup: ((TimedSessionGroup, String, String, String, String?) -> Unit)? = null,
+    onCloseSessionGroupEditor: () -> Unit = {},
 ) {
     val activeTimedSessionId = LocalActiveTimedSessionId.current
     val isActiveTimedSession = item.sessionGroupId == activeTimedSessionId
+    val sessionGroup = item.sessionGroup
+    val editableSessionGroup = sessionGroup?.takeIf { it.status == "completed" && it.canEdit }
 
     Column(
         modifier =
@@ -652,11 +745,31 @@ private fun TimedSessionGroupListItem(
                 .padding(VinylSpacing.SpaceMd),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        TimedSessionMetadataChips(
-            sessionGroup = item.sessionGroup,
-            sessions = item.sessions,
-            isActive = isActiveTimedSession,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            TimedSessionMetadataChips(
+                sessionGroup = sessionGroup,
+                sessions = item.sessions,
+                isActive = isActiveTimedSession,
+                modifier = Modifier.padding(end = if (editableSessionGroup != null) 42.dp else 0.dp),
+            )
+            if (editableSessionGroup != null && onEditSessionGroup != null) {
+                TimedSessionGroupEditButton(
+                    onClick = { onEditSessionGroup(editableSessionGroup) },
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
+        }
+        if (editingSessionGroup?.id == item.sessionGroupId && sessionGroup != null && onSaveSessionGroup != null) {
+            TimedSessionGroupEditPanel(
+                sessionGroup = editingSessionGroup,
+                isSaving = isSavingSessionGroup,
+                errorMessage = sessionGroupEditError,
+                onClose = onCloseSessionGroupEditor,
+                onSave = { styleFocus, moodDirection, sessionType, notes ->
+                    onSaveSessionGroup(editingSessionGroup, styleFocus, moodDirection, sessionType, notes)
+                },
+            )
+        }
         item.sessions.forEach { session ->
             SessionListItem(
                 session = session,
@@ -669,10 +782,336 @@ private fun TimedSessionGroupListItem(
 }
 
 @Composable
+private fun TimedSessionGroupEditButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .size(34.dp)
+                .clip(VinylShapes.Floating)
+                .background(VinylColors.SurfaceSecondary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.55f), VinylShapes.Floating)
+                .clickable(
+                    onClickLabel = "Edit timed session",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Edit,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+            modifier = Modifier.size(17.dp),
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionGroupEditPanel(
+    sessionGroup: TimedSessionGroup,
+    isSaving: Boolean,
+    errorMessage: String?,
+    onClose: () -> Unit,
+    onSave: (styleFocus: String, moodDirection: String, sessionType: String, notes: String?) -> Unit,
+) {
+    var selectedSessionType by remember(sessionGroup.id) { mutableStateOf(sessionGroup.sessionType) }
+    var selectedStyleFocus by remember(sessionGroup.id) { mutableStateOf(sessionGroup.styleFocus) }
+    var selectedMoodDirection by remember(sessionGroup.id) { mutableStateOf(sessionGroup.moodDirection) }
+    var notes by remember(sessionGroup.id) { mutableStateOf(sessionGroup.notes.orEmpty().take(TIMED_SESSION_NOTES_MAX_LENGTH)) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(sessionGroup.id) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, VinylShapes.Card)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TimedSessionEditDropdown(
+                selectedValue = selectedSessionType,
+                options = TIMED_SESSION_TYPE_VALUES,
+                labelForValue = ::timedSessionTypeLabel,
+                onValueChange = { selectedSessionType = it },
+                modifier = Modifier.weight(1f),
+            )
+            TimedSessionEditDropdown(
+                selectedValue = selectedStyleFocus,
+                options = TIMED_SESSION_STYLE_VALUES,
+                labelForValue = ::timedSessionStyleFocusLabel,
+                onValueChange = { selectedStyleFocus = it },
+                modifier = Modifier.weight(1f),
+            )
+            TimedSessionEditDropdown(
+                selectedValue = selectedMoodDirection,
+                options = TIMED_SESSION_MOOD_VALUES,
+                labelForValue = ::timedSessionMoodDirectionLabel,
+                onValueChange = { selectedMoodDirection = it },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.55f), VinylShapes.Card)
+                    .padding(VinylSpacing.SpaceMd),
+        ) {
+            BasicTextField(
+                value = notes,
+                onValueChange = { notes = it.take(TIMED_SESSION_NOTES_MAX_LENGTH) },
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .focusRequester(focusRequester),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = VinylColors.TextPrimary),
+                cursorBrush = SolidColor(VinylColors.AccentGreen),
+                decorationBox = { innerTextField ->
+                    if (notes.isEmpty()) {
+                        Text(
+                            text = "Timed session notes...",
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    innerTextField()
+                },
+            )
+        }
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = VinylColors.AccentOrange,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TimedSessionEditIconAction(
+                icon = Icons.Filled.Close,
+                selected = false,
+                enabled = !isSaving,
+                label = "Close timed session editor",
+                onClick = onClose,
+            )
+            Spacer(modifier = Modifier.width(VinylSpacing.SpaceSm))
+            TimedSessionEditIconAction(
+                icon = Icons.Filled.Check,
+                selected = true,
+                enabled = !isSaving,
+                label = "Save timed session",
+                onClick = {
+                    onSave(
+                        selectedStyleFocus,
+                        selectedMoodDirection,
+                        selectedSessionType,
+                        notes.trim().takeIf { it.isNotBlank() },
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionEditDropdown(
+    selectedValue: String,
+    options: List<String>,
+    labelForValue: (String) -> String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isMenuOpen by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isMenuOpen) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "timedSessionEditDropdownArrow",
+    )
+    val controlHeight = 42.dp
+
+    Box(modifier = modifier) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(controlHeight)
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.72f), VinylShapes.Card)
+                    .clickable(
+                        onClickLabel = "Open ${labelForValue(selectedValue)} selector",
+                        role = Role.Button,
+                        onClick = { isMenuOpen = !isMenuOpen },
+                    ).padding(start = VinylSpacing.SpaceSm, end = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = labelForValue(selectedValue),
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.AccentGreen,
+                modifier =
+                    Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+            )
+        }
+        if (isMenuOpen) {
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(x = 0, y = with(density) { 46.dp.roundToPx() }),
+                onDismissRequest = { isMenuOpen = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .width(172.dp)
+                            .shadow(4.dp, VinylShapes.Card)
+                            .clip(VinylShapes.Card)
+                            .background(VinylColors.SurfacePrimary)
+                            .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.72f), VinylShapes.Card),
+                ) {
+                    options.forEachIndexed { index, value ->
+                        TimedSessionEditDropdownOption(
+                            text = labelForValue(value),
+                            selected = value == selectedValue,
+                            alternate = index % 2 == 0,
+                            onClick = {
+                                isMenuOpen = false
+                                onValueChange(value)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionEditDropdownOption(
+    text: String,
+    selected: Boolean,
+    alternate: Boolean,
+    onClick: () -> Unit,
+) {
+    val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(rowColor)
+                .clickable(
+                    role = Role.RadioButton,
+                    onClickLabel = "Select $text",
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(16.dp)
+                    .clip(VinylShapes.Floating)
+                    .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault,
+                        shape = VinylShapes.Floating,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = VinylColors.SurfacePrimary,
+                    modifier = Modifier.size(11.dp),
+                )
+            }
+        }
+        Text(
+            text = text,
+            color = if (selected) VinylColors.AccentGreen else VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionEditIconAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    enabled: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(36.dp)
+                .clip(VinylShapes.Floating)
+                .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.70f), VinylShapes.Floating)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
 private fun TimedSessionMetadataChips(
     sessionGroup: TimedSessionGroup?,
     sessions: List<ListeningSession>,
     isActive: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val averageRating = timedSessionAverageRating(sessions)
     val topMood = timedSessionTopMood(sessions)
@@ -681,6 +1120,7 @@ private fun TimedSessionMetadataChips(
     val timeLabel = if (isActive) "Playing..." else timedSessionDurationLabel(sessions)
 
     WrappingMetadataChipRow(
+        modifier = modifier,
         horizontalSpacing = VinylSpacing.SpaceSm,
         verticalSpacing = VinylSpacing.SpaceSm,
     ) {

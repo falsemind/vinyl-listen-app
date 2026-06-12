@@ -426,6 +426,7 @@ class VinylApiClient(
         styleFocus: String = "mixed",
         moodDirection: String = "steady_mood",
         sessionType: String = "casual_listening",
+        notes: String? = null,
     ): TimedSessionGroup =
         apiCall {
             val body =
@@ -434,6 +435,7 @@ class VinylApiClient(
                     .put("style_focus", styleFocus)
                     .put("mood_direction", moodDirection)
                     .put("session_type", sessionType)
+                    .putNullable("notes", notes?.takeIf { it.isNotBlank() })
             postJson("sessions/groups", body).toTimedSessionGroup()
         }
 
@@ -447,6 +449,23 @@ class VinylApiClient(
     suspend fun finishSessionGroup(sessionGroupId: String): TimedSessionGroup =
         apiCall {
             patchJson("sessions/groups/${Uri.encode(sessionGroupId)}/finish", JSONObject()).toTimedSessionGroup()
+        }
+
+    suspend fun updateSessionGroup(
+        sessionGroupId: String,
+        styleFocus: String,
+        moodDirection: String,
+        sessionType: String,
+        notes: String?,
+    ): TimedSessionGroup =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("style_focus", styleFocus)
+                    .put("mood_direction", moodDirection)
+                    .put("session_type", sessionType)
+                    .putNullable("notes", notes?.takeIf { it.isNotBlank() })
+            patchJson("sessions/groups/${Uri.encode(sessionGroupId)}", body).toTimedSessionGroup()
         }
 
     suspend fun getSession(sessionId: String): ListeningSession =
