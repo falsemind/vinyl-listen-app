@@ -421,9 +421,19 @@ class VinylApiClient(
             postJson("sessions/", body).getString("session_id")
         }
 
-    suspend fun startSessionGroup(title: String? = null): TimedSessionGroup =
+    suspend fun startSessionGroup(
+        title: String? = null,
+        styleFocus: String = "mixed",
+        moodDirection: String = "steady_mood",
+        sessionType: String = "casual_listening",
+    ): TimedSessionGroup =
         apiCall {
-            val body = JSONObject().putNullable("title", title?.takeIf { it.isNotBlank() })
+            val body =
+                JSONObject()
+                    .putNullable("title", title?.takeIf { it.isNotBlank() })
+                    .put("style_focus", styleFocus)
+                    .put("mood_direction", moodDirection)
+                    .put("session_type", sessionType)
             postJson("sessions/groups", body).toTimedSessionGroup()
         }
 
@@ -936,6 +946,7 @@ internal fun JSONObject.toListeningSession(
         notes = notes,
         sessionId = optNullableString("session_id") ?: optNullableString("id"),
         sessionGroupId = optNullableString("session_group_id"),
+        sessionGroup = optJSONObject("session_group")?.toTimedSessionGroup(),
         createdAt = optNullableString("created_at"),
         canEdit = optBoolean("can_edit", false),
         editableUntil = optNullableString("editable_until"),
@@ -943,16 +954,25 @@ internal fun JSONObject.toListeningSession(
     )
 }
 
-private fun JSONObject.toTimedSessionGroup(): TimedSessionGroup =
-    TimedSessionGroup(
+private fun JSONObject.toTimedSessionGroup(): TimedSessionGroup {
+    val startedAt = optNullableString("started_at") ?: optNullableString("created_at") ?: ""
+    val endedAt = optNullableString("ended_at")
+    return TimedSessionGroup(
         id = getString("id"),
         title = optNullableString("title"),
         status = optString("status", "active"),
-        startedAt = getString("started_at"),
-        endedAt = optNullableString("ended_at"),
-        createdAt = getString("created_at"),
-        updatedAt = getString("updated_at"),
+        styleFocus = optString("style_focus", "mixed"),
+        moodDirection = optString("mood_direction", "steady_mood"),
+        sessionType = optString("session_type", "casual_listening"),
+        notes = optNullableString("notes"),
+        startedAt = startedAt,
+        endedAt = endedAt,
+        createdAt = optNullableString("created_at") ?: startedAt,
+        updatedAt = optNullableString("updated_at") ?: endedAt ?: startedAt,
+        canEdit = optBoolean("can_edit", false),
+        editableUntil = optNullableString("editable_until"),
     )
+}
 
 internal fun JSONObject.toAnalyticsRecordCountsPage(): AnalyticsRecordCountsPage =
     AnalyticsRecordCountsPage(

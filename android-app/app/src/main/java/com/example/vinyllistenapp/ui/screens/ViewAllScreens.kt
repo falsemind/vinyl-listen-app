@@ -50,6 +50,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.TimedSessionGroup
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
@@ -60,6 +61,9 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
+import com.example.vinyllistenapp.ui.components.timedSessionMoodDirectionLabel
+import com.example.vinyllistenapp.ui.components.timedSessionStyleFocusLabel
+import com.example.vinyllistenapp.ui.components.timedSessionTypeLabel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -579,6 +583,7 @@ private sealed interface RecentSessionListItem {
 
     data class Group(
         val sessionGroupId: String,
+        val sessionGroup: TimedSessionGroup?,
         val sessions: List<ListeningSession>,
     ) : RecentSessionListItem
 }
@@ -597,6 +602,7 @@ private fun groupedRecentSessionItems(sessions: List<ListeningSession>): List<Re
         } else if (renderedGroupIds.add(sessionGroupId)) {
             RecentSessionListItem.Group(
                 sessionGroupId = sessionGroupId,
+                sessionGroup = groupedSessions[sessionGroupId].orEmpty().firstNotNullOfOrNull { it.sessionGroup },
                 sessions = groupedSessions[sessionGroupId].orEmpty(),
             )
         } else {
@@ -646,7 +652,11 @@ private fun TimedSessionGroupListItem(
                 .padding(VinylSpacing.SpaceMd),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        TimedSessionMetadataChips(sessions = item.sessions, isActive = isActiveTimedSession)
+        TimedSessionMetadataChips(
+            sessionGroup = item.sessionGroup,
+            sessions = item.sessions,
+            isActive = isActiveTimedSession,
+        )
         item.sessions.forEach { session ->
             SessionListItem(
                 session = session,
@@ -660,6 +670,7 @@ private fun TimedSessionGroupListItem(
 
 @Composable
 private fun TimedSessionMetadataChips(
+    sessionGroup: TimedSessionGroup?,
     sessions: List<ListeningSession>,
     isActive: Boolean,
 ) {
@@ -673,6 +684,11 @@ private fun TimedSessionMetadataChips(
         horizontalSpacing = VinylSpacing.SpaceSm,
         verticalSpacing = VinylSpacing.SpaceSm,
     ) {
+        sessionGroup?.let {
+            TimedSessionMetadataChip(text = timedSessionTypeLabel(it.sessionType))
+            TimedSessionMetadataChip(text = timedSessionStyleFocusLabel(it.styleFocus))
+            TimedSessionMetadataChip(text = timedSessionMoodDirectionLabel(it.moodDirection))
+        }
         TimedSessionMetadataChip(text = "Time: $timeLabel")
         TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
         TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")

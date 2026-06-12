@@ -47,22 +47,44 @@ class StartSessionGroupRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=100)
     started_at: str | None = None
+    style_focus: str | None = None
+    mood_direction: str | None = None
+    session_type: str | None = None
 
 
 class FinishSessionGroupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ended_at: str | None = None
+    style_focus: str | None = None
+    mood_direction: str | None = None
+    session_type: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class UpdateSessionGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    style_focus: str | None = None
+    mood_direction: str | None = None
+    session_type: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class SessionGroupResponse(BaseModel):
     id: str
     title: str | None = None
     status: str
+    style_focus: str
+    mood_direction: str
+    session_type: str
+    notes: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    can_edit: bool
+    editable_until: datetime | None = None
 
 
 class ActiveSessionGroupResponse(BaseModel):
@@ -130,10 +152,25 @@ class ReleaseSessionsResponse(BaseModel):
     sessions: list[ReleaseSessionHistoryItem]
 
 
+class HomeRecentSessionGroupItem(BaseModel):
+    id: str
+    title: str | None = None
+    status: str
+    style_focus: str
+    mood_direction: str
+    session_type: str
+    notes: str | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
+    can_edit: bool
+    editable_until: datetime | None = None
+
+
 class HomeRecentSessionItem(BaseModel):
     session_id: str
     release_id: str
     session_group_id: str | None = None
+    session_group: HomeRecentSessionGroupItem | None = None
     artist: str
     title: str
     thumbnail_url: str | None = None

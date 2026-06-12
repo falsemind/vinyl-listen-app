@@ -273,6 +273,10 @@ class SessionGroupStub:
     id: str = "group-123"
     title: str | None = "Late night stack"
     status: str = "active"
+    style_focus: str = "mixed"
+    mood_direction: str = "steady_mood"
+    session_type: str = "casual_listening"
+    notes: str | None = None
     started_at: datetime = datetime(2026, 4, 19, 8, 0, tzinfo=UTC)
     ended_at: datetime | None = None
     created_at: datetime = datetime(2026, 4, 19, 8, 0, tzinfo=UTC)
@@ -288,12 +292,37 @@ class StubSessionGroupsService:
         self.finish_error: Exception | None = None
         self.start_calls: list[dict] = []
         self.get_calls: list[str] = []
-        self.finish_calls: list[tuple[str, str | None]] = []
+        self.get_by_ids_calls: list[list[str]] = []
+        self.update_calls: list[tuple[str, dict]] = []
+        self.finish_calls: list[tuple[str, str | None, str | None, str | None, str | None, str | None]] = []
 
-    def start_session_group(self, _db, *, title: str | None, started_at: str | None = None) -> SessionGroupStub:
-        self.start_calls.append({"title": title, "started_at": started_at})
+    def start_session_group(
+        self,
+        _db,
+        *,
+        title: str | None,
+        started_at: str | None = None,
+        style_focus: str | None = None,
+        mood_direction: str | None = None,
+        session_type: str | None = None,
+    ) -> SessionGroupStub:
+        self.start_calls.append(
+            {
+                "title": title,
+                "started_at": started_at,
+                "style_focus": style_focus,
+                "mood_direction": mood_direction,
+                "session_type": session_type,
+            }
+        )
         if self.start_error is not None:
             raise self.start_error
+        if style_focus is not None:
+            self.group.style_focus = style_focus
+        if mood_direction is not None:
+            self.group.mood_direction = mood_direction
+        if session_type is not None:
+            self.group.session_type = session_type
         return self.group
 
     def get_active_session_group(self, _db) -> SessionGroupStub | None:
@@ -305,20 +334,54 @@ class StubSessionGroupsService:
             raise self.get_error
         return self.group
 
+    def get_session_groups_by_ids(self, _db, session_group_ids: list[str]) -> list[SessionGroupStub]:
+        self.get_by_ids_calls.append(session_group_ids)
+        if self.get_error is not None:
+            raise self.get_error
+        return [self.group] if self.group.id in session_group_ids else []
+
+    def update_session_group(self, _db, session_group_id: str, *, fields: dict) -> SessionGroupStub:
+        self.update_calls.append((session_group_id, fields))
+        if self.get_error is not None:
+            raise self.get_error
+        for field, value in fields.items():
+            setattr(self.group, field, value)
+        return self.group
+
     def finish_session_group(
         self,
         _db,
         session_group_id: str,
         *,
         ended_at: str | None = None,
+        style_focus: str | None = None,
+        mood_direction: str | None = None,
+        session_type: str | None = None,
+        notes: str | None = None,
     ) -> SessionGroupStub:
-        self.finish_calls.append((session_group_id, ended_at))
+        self.finish_calls.append((session_group_id, ended_at, style_focus, mood_direction, session_type, notes))
         if self.finish_error is not None:
             raise self.finish_error
+        if style_focus is not None:
+            self.group.style_focus = style_focus
+        if mood_direction is not None:
+            self.group.mood_direction = mood_direction
+        if session_type is not None:
+            self.group.session_type = session_type
+        if notes is not None:
+            self.group.notes = notes
         self.group.status = "completed"
         self.group.ended_at = datetime(2026, 4, 19, 9, 0, tzinfo=UTC)
         self.group.updated_at = self.group.ended_at
         return self.group
+
+    def can_edit_session_group(self, _session_group: SessionGroupStub) -> bool:
+        return True
+
+    def editable_until(self, session_group: SessionGroupStub) -> datetime | None:
+        if session_group.ended_at is None:
+            return None
+        return session_group.ended_at.replace(minute=session_group.ended_at.minute + 15)
 
 
 class StubSessionsService:

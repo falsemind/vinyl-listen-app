@@ -22,6 +22,7 @@ from app.schemas.analytics import (
 )
 from app.schemas.sessions import ErrorResponse, SessionTrackResponse
 from app.services.analytics_service import AnalyticsService, AnalyticsValidationError
+from app.services.session_groups_service import SessionGroupsService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,6 +30,10 @@ router = APIRouter()
 
 def get_analytics_service() -> AnalyticsService:
     return AnalyticsService()
+
+
+def get_session_groups_service() -> SessionGroupsService:
+    return SessionGroupsService()
 
 
 @router.get("/plays/monthly", response_model=MonthlyPlaysResponse)
@@ -89,6 +94,7 @@ def get_top_records(
 def get_sessions_for_month(
     db: Annotated[Session, Depends(get_db)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
+    session_groups_service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
     month: str = Query(...),
     limit: int = Query(default=10),
     offset: int = Query(default=0),
@@ -98,8 +104,23 @@ def get_sessions_for_month(
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
+    session_group_ids = [
+        item.session.session_group_id for item in page.sessions if item.session.session_group_id is not None
+    ]
+    session_groups_by_id = {
+        session_group.id: session_group
+        for session_group in session_groups_service.get_session_groups_by_ids(db, session_group_ids)
+    }
+
     return AnalyticsSessionsResponse(
-        sessions=[_map_analytics_session(item) for item in page.sessions],
+        sessions=[
+            _map_analytics_session(
+                item,
+                session_group=session_groups_by_id.get(item.session.session_group_id),
+                session_groups_service=session_groups_service,
+            )
+            for item in page.sessions
+        ],
         pagination=_map_pagination(page.pagination),
     )
 
@@ -213,13 +234,23 @@ def _map_pagination(pagination: Any) -> AnalyticsPagination:
     )
 
 
-def _map_analytics_session(item: Any) -> AnalyticsSessionItem:
+def _map_analytics_session(
+    item: Any,
+    *,
+    session_group: Any | None = None,
+    session_groups_service: SessionGroupsService | None = None,
+) -> AnalyticsSessionItem:
     session = item.session
     release = item.release
     return AnalyticsSessionItem(
         session_id=session.id,
         release_id=release.id,
         session_group_id=session.session_group_id,
+        session_group=(
+            _map_analytics_session_group(session_group, session_groups_service)
+            if session_group is not None and session_groups_service is not None
+            else None
+        ),
         artist=release.artist,
         title=release.title,
         thumbnail_url=release.cover_image_url,
@@ -238,6 +269,24 @@ def _map_analytics_session(item: Any) -> AnalyticsSessionItem:
         rating=session.rating,
         mood=session.mood,
         has_notes=bool(session.notes and session.notes.strip()),
+    )
+
+
+def _map_analytics_session_group(session_group: Any, service: SessionGroupsService):
+    from app.schemas.sessions import HomeRecentSessionGroupItem
+
+    return HomeRecentSessionGroupItem(
+        id=session_group.id,
+        title=session_group.title,
+        status=session_group.status,
+        style_focus=session_group.style_focus,
+        mood_direction=session_group.mood_direction,
+        session_type=session_group.session_type,
+        notes=session_group.notes,
+        started_at=session_group.started_at,
+        ended_at=session_group.ended_at,
+        can_edit=service.can_edit_session_group(session_group),
+        editable_until=service.editable_until(session_group),
     )
 
 

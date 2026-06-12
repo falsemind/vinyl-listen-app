@@ -100,6 +100,7 @@ data class ListeningSession(
     val notes: String? = null,
     val sessionId: String? = null,
     val sessionGroupId: String? = null,
+    val sessionGroup: TimedSessionGroup? = null,
     val createdAt: String? = null,
     val canEdit: Boolean = false,
     val editableUntil: String? = null,
@@ -110,10 +111,16 @@ data class TimedSessionGroup(
     val id: String,
     val title: String? = null,
     val status: String,
+    val styleFocus: String = "mixed",
+    val moodDirection: String = "steady_mood",
+    val sessionType: String = "casual_listening",
+    val notes: String? = null,
     val startedAt: String,
     val endedAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
+    val canEdit: Boolean = false,
+    val editableUntil: String? = null,
 )
 
 data class TopRecordSummary(

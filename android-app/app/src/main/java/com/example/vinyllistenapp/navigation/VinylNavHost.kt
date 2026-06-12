@@ -81,12 +81,21 @@ fun VinylNavHost(
             .onSuccess { activeTimedSession = it }
     }
 
-    fun startTimedSession() {
+    fun startTimedSession(
+        styleFocus: String,
+        moodDirection: String,
+        sessionType: String,
+    ) {
         if (isStartingTimedSession) return
         isStartingTimedSession = true
         appScope.launch {
-            runCatching { apiClient.startSessionGroup() }
-                .onSuccess { activeTimedSession = it }
+            runCatching {
+                apiClient.startSessionGroup(
+                    styleFocus = styleFocus,
+                    moodDirection = moodDirection,
+                    sessionType = sessionType,
+                )
+            }.onSuccess { activeTimedSession = it }
                 .onFailure { refreshTimedSession() }
             isStartingTimedSession = false
         }
@@ -156,6 +165,10 @@ fun VinylNavHost(
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                     hasActiveTimedSession = activeTimedSession != null,
                     isStartingTimedSession = isStartingTimedSession,
+                    autoAddTimedSessionRecords = autoAddTimedSessionRecords,
+                    onAutoAddTimedSessionRecordsToggle = {
+                        autoAddTimedSessionRecords = !autoAddTimedSessionRecords
+                    },
                     onStartTimedSession = ::startTimedSession,
                 )
             }

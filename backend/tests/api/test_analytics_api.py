@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.api.routes.analytics import get_analytics_service
+from app.api.routes.analytics import get_analytics_service, get_session_groups_service
 from app.main import app
 from app.services.analytics_service import (
     AnalyticsPagination,
@@ -125,6 +125,32 @@ class StubAnalyticsService:
         )
 
 
+class StubSessionGroupsService:
+    def __init__(self) -> None:
+        self.get_by_ids_calls: list[list[str]] = []
+        self.group = SimpleNamespace(
+            id="group-123",
+            title="Late night stack",
+            status="completed",
+            style_focus="one_style",
+            mood_direction="mood_switch",
+            session_type="rediscovery",
+            notes=None,
+            started_at=datetime(2026, 5, 12, 9, 0, tzinfo=UTC),
+            ended_at=datetime(2026, 5, 12, 10, 30, tzinfo=UTC),
+        )
+
+    def get_session_groups_by_ids(self, _db, session_group_ids: list[str]):
+        self.get_by_ids_calls.append(session_group_ids)
+        return [self.group] if self.group.id in session_group_ids else []
+
+    def can_edit_session_group(self, _session_group) -> bool:
+        return False
+
+    def editable_until(self, _session_group):
+        return datetime(2026, 5, 12, 10, 45, tzinfo=UTC)
+
+
 def test_monthly_plays_endpoint_returns_chart_data() -> None:
     service = StubAnalyticsService()
     app.dependency_overrides[get_analytics_service] = lambda: service
@@ -203,7 +229,9 @@ def test_distribution_endpoints_return_chart_data() -> None:
 
 def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
     service = StubAnalyticsService()
+    session_groups_service = StubSessionGroupsService()
     app.dependency_overrides[get_analytics_service] = lambda: service
+    app.dependency_overrides[get_session_groups_service] = lambda: session_groups_service
 
     with TestClient(app) as client:
         response = client.get("/api/v1/analytics/sessions?month=2026-05&limit=5&offset=5")
@@ -215,6 +243,19 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 "session_id": "session-123",
                 "release_id": "release-123",
                 "session_group_id": "group-123",
+                "session_group": {
+                    "id": "group-123",
+                    "title": "Late night stack",
+                    "status": "completed",
+                    "style_focus": "one_style",
+                    "mood_direction": "mood_switch",
+                    "session_type": "rediscovery",
+                    "notes": None,
+                    "started_at": "2026-05-12T09:00:00Z",
+                    "ended_at": "2026-05-12T10:30:00Z",
+                    "can_edit": False,
+                    "editable_until": "2026-05-12T10:45:00Z",
+                },
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
@@ -237,6 +278,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
         "pagination": {"limit": 5, "offset": 5, "total": 12, "has_more": True},
     }
     assert service.month_calls == [("2026-05", 5, 5)]
+    assert session_groups_service.get_by_ids_calls == [["group-123"]]
 
 
 def test_record_drilldown_endpoints_return_paged_record_counts() -> None:

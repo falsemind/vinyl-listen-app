@@ -1,5 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,11 +16,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueryStats
@@ -40,13 +46,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
@@ -66,6 +82,9 @@ import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
+import com.example.vinyllistenapp.ui.components.timedSessionMoodDirectionLabel
+import com.example.vinyllistenapp.ui.components.timedSessionStyleFocusLabel
+import com.example.vinyllistenapp.ui.components.timedSessionTypeLabel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -83,7 +102,9 @@ fun HomeScreen(
     onEditSession: (String) -> Unit,
     hasActiveTimedSession: Boolean = false,
     isStartingTimedSession: Boolean = false,
-    onStartTimedSession: () -> Unit = {},
+    autoAddTimedSessionRecords: Boolean = true,
+    onAutoAddTimedSessionRecordsToggle: () -> Unit = {},
+    onStartTimedSession: (styleFocus: String, moodDirection: String, sessionType: String) -> Unit = { _, _, _ -> },
 ) {
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -147,7 +168,9 @@ fun HomeScreen(
                 if (!hasActiveTimedSession) {
                     StartTimedSessionAction(
                         isStarting = isStartingTimedSession,
-                        onClick = onStartTimedSession,
+                        autoAddEnabled = autoAddTimedSessionRecords,
+                        onAutoAddToggle = onAutoAddTimedSessionRecordsToggle,
+                        onStart = onStartTimedSession,
                     )
                 }
             },
@@ -203,72 +226,392 @@ fun HomeScreen(
 @Composable
 private fun StartTimedSessionAction(
     isStarting: Boolean,
-    onClick: () -> Unit,
+    autoAddEnabled: Boolean,
+    onAutoAddToggle: () -> Unit,
+    onStart: (styleFocus: String, moodDirection: String, sessionType: String) -> Unit,
 ) {
-    Row(
+    var isExpanded by remember { mutableStateOf(false) }
+    var selectedSessionType by remember { mutableStateOf(TIMED_SESSION_TYPE_OPTIONS.first()) }
+    var selectedStyleFocus by remember { mutableStateOf(TIMED_SESSION_STYLE_OPTIONS.first()) }
+    var selectedMoodDirection by remember { mutableStateOf(TIMED_SESSION_MOOD_OPTIONS.first()) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "startTimedSessionArrow",
+    )
+
+    Column(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(72.dp)
                 .clip(VinylShapes.Card)
                 .background(VinylColors.AccentGreen.copy(alpha = 0.14f))
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card)
-                .clickable(
-                    enabled = !isStarting,
-                    onClickLabel = "Start timed session",
-                    role = Role.Button,
-                    onClick = onClick,
-                ).padding(horizontal = VinylSpacing.SpaceLg),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.62f), VinylShapes.Card),
     ) {
-        Text(
-            text = if (isStarting) "Starting Timed Session..." else "Start Timed Session",
-            color = VinylColors.AccentGreen,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f),
-        )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .clickable(
+                        enabled = !isStarting,
+                        onClickLabel = if (isExpanded) "Collapse timed session setup" else "Expand timed session setup",
+                        role = Role.Button,
+                        onClick = { isExpanded = !isExpanded },
+                    ).padding(horizontal = VinylSpacing.SpaceLg),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TimedSessionActionIcon(
-                icon = Icons.Filled.Add,
-                contentDescription = "Add records to timed session",
-                selected = false,
+            Text(
+                text = if (isStarting) "Starting Timed Session..." else "Start Timed Session",
+                color = VinylColors.AccentGreen,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
             )
-            TimedSessionActionIcon(
-                icon = if (isStarting) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                contentDescription = if (isStarting) "Starting timed session" else "Start timed session",
-                selected = true,
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.AccentGreen,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
             )
+        }
+        if (isExpanded) {
+            HomeTimedSessionDivider()
+            Column(
+                modifier =
+                    Modifier.padding(
+                        start = VinylSpacing.SpaceLg,
+                        top = VinylSpacing.SpaceMd,
+                        end = VinylSpacing.SpaceLg,
+                        bottom = VinylSpacing.SpaceMd,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+            ) {
+                TimedSessionSetupRow(
+                    label = "Session type",
+                    selectedOption = selectedSessionType,
+                    options = TIMED_SESSION_TYPE_OPTIONS,
+                    enabled = !isStarting,
+                    onOptionSelected = { selectedSessionType = it },
+                )
+                TimedSessionSetupRow(
+                    label = "Style",
+                    selectedOption = selectedStyleFocus,
+                    options = TIMED_SESSION_STYLE_OPTIONS,
+                    enabled = !isStarting,
+                    onOptionSelected = { selectedStyleFocus = it },
+                )
+                TimedSessionSetupRow(
+                    label = "Mood direction",
+                    selectedOption = selectedMoodDirection,
+                    options = TIMED_SESSION_MOOD_OPTIONS,
+                    enabled = !isStarting,
+                    onOptionSelected = { selectedMoodDirection = it },
+                )
+            }
+            HomeTimedSessionDivider()
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceMd),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimedSessionSetupAction(
+                    icon = if (autoAddEnabled) Icons.Filled.Check else Icons.Filled.Add,
+                    label = "Auto add records",
+                    selected = autoAddEnabled,
+                    enabled = !isStarting,
+                    onClick = onAutoAddToggle,
+                    modifier = Modifier.weight(1f),
+                )
+                TimedSessionSetupAction(
+                    icon = if (isStarting) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    label = "Start session",
+                    selected = true,
+                    enabled = !isStarting,
+                    onClick = {
+                        onStart(
+                            selectedStyleFocus.apiValue,
+                            selectedMoodDirection.apiValue,
+                            selectedSessionType.apiValue,
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TimedSessionActionIcon(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    selected: Boolean,
+private fun TimedSessionSetupRow(
+    label: String,
+    selectedOption: TimedSessionSetupOption,
+    options: List<TimedSessionSetupOption>,
+    enabled: Boolean,
+    onOptionSelected: (TimedSessionSetupOption) -> Unit,
 ) {
-    Box(
-        modifier =
-            Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(if (selected) VinylColors.AccentGreen else androidx.compose.ui.graphics.Color.Transparent)
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape),
-        contentAlignment = Alignment.Center,
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
-            modifier = Modifier.size(22.dp),
+        Text(
+            text = label,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        TimedSessionSetupSelector(
+            selectedOption = selectedOption,
+            options = options,
+            enabled = enabled,
+            onOptionSelected = onOptionSelected,
         )
     }
 }
+
+@Composable
+private fun TimedSessionSetupSelector(
+    selectedOption: TimedSessionSetupOption,
+    options: List<TimedSessionSetupOption>,
+    enabled: Boolean,
+    onOptionSelected: (TimedSessionSetupOption) -> Unit,
+) {
+    var isMenuOpen by remember { mutableStateOf(false) }
+    var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
+    val density = LocalDensity.current
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isMenuOpen) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "timedSessionSetupSelectorArrow",
+    )
+    val selectorControlWidth = 164.dp
+    val selectorControlHeight = 42.dp
+
+    Box(
+        modifier =
+            Modifier
+                .width(selectorControlWidth)
+                .onGloballyPositioned { coordinates ->
+                    selectorWidth = with(density) { coordinates.size.width.toDp() }
+                },
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.72f), VinylShapes.Card)
+                    .clickable(
+                        enabled = enabled,
+                        onClickLabel = "Open ${selectedOption.label} selector",
+                        role = Role.Button,
+                        onClick = { isMenuOpen = !isMenuOpen },
+                    ).padding(horizontal = VinylSpacing.SpaceSm)
+                    .height(selectorControlHeight),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = selectedOption.label,
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowUp,
+                contentDescription = null,
+                tint = VinylColors.AccentGreen,
+                modifier =
+                    Modifier
+                        .size(24.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+            )
+        }
+        if (isMenuOpen) {
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(x = 0, y = with(density) { 48.dp.roundToPx() }),
+                onDismissRequest = { isMenuOpen = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: selectorControlWidth)
+                            .shadow(4.dp, VinylShapes.Card)
+                            .clip(VinylShapes.Card)
+                            .background(VinylColors.SurfacePrimary)
+                            .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.72f), VinylShapes.Card)
+                            .verticalScroll(rememberScrollState()),
+                ) {
+                    options.forEachIndexed { index, option ->
+                        TimedSessionSetupOptionRow(
+                            option = option,
+                            selected = option == selectedOption,
+                            alternate = index % 2 == 0,
+                            enabled = enabled,
+                            onClick = {
+                                isMenuOpen = false
+                                onOptionSelected(option)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimedSessionSetupOptionRow(
+    option: TimedSessionSetupOption,
+    selected: Boolean,
+    alternate: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(rowColor)
+                .clickable(
+                    enabled = enabled,
+                    role = Role.RadioButton,
+                    onClickLabel = "Select ${option.label}",
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault,
+                        shape = CircleShape,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = VinylColors.SurfacePrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        Text(
+            text = option.label,
+            color = if (selected) VinylColors.AccentGreen else VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionSetupAction(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) VinylColors.AccentGreen else Color.Transparent)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.7f), CircleShape)
+                    .clickable(
+                        enabled = enabled,
+                        onClickLabel = label,
+                        role = Role.Button,
+                        onClick = onClick,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) VinylColors.TextOnAccent else VinylColors.AccentGreen,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Text(
+            text = label,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun HomeTimedSessionDivider() {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(VinylColors.AccentGreen.copy(alpha = 0.34f)),
+    )
+}
+
+private data class TimedSessionSetupOption(
+    val apiValue: String,
+    val label: String,
+)
+
+private val TIMED_SESSION_TYPE_OPTIONS =
+    listOf(
+        TimedSessionSetupOption("casual_listening", timedSessionTypeLabel("casual_listening")),
+        TimedSessionSetupOption("dj_set", timedSessionTypeLabel("dj_set")),
+        TimedSessionSetupOption("rediscovery", timedSessionTypeLabel("rediscovery")),
+        TimedSessionSetupOption("testing_records", timedSessionTypeLabel("testing_records")),
+        TimedSessionSetupOption("background", timedSessionTypeLabel("background")),
+    )
+
+private val TIMED_SESSION_STYLE_OPTIONS =
+    listOf(
+        TimedSessionSetupOption("mixed", timedSessionStyleFocusLabel("mixed")),
+        TimedSessionSetupOption("one_style", timedSessionStyleFocusLabel("one_style")),
+        TimedSessionSetupOption("random", timedSessionStyleFocusLabel("random")),
+    )
+
+private val TIMED_SESSION_MOOD_OPTIONS =
+    listOf(
+        TimedSessionSetupOption("steady_mood", timedSessionMoodDirectionLabel("steady_mood")),
+        TimedSessionSetupOption("mood_switch", timedSessionMoodDirectionLabel("mood_switch")),
+        TimedSessionSetupOption("energy_build", timedSessionMoodDirectionLabel("energy_build")),
+        TimedSessionSetupOption("cool_down", timedSessionMoodDirectionLabel("cool_down")),
+    )
 
 private const val COMPACT_HOME_BREAKPOINT_DP = 430
 

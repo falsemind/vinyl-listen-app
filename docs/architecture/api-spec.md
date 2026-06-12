@@ -737,11 +737,26 @@ Starts a timed session group. Only one group can be active at a time. The curren
 ```json
 {
   "title": "Late night stack",
-  "started_at": "2026-04-19T08:00:00Z"
+  "started_at": "2026-04-19T08:00:00Z",
+  "style_focus": "mixed",
+  "mood_direction": "steady_mood",
+  "session_type": "casual_listening"
 }
 ```
 
-Both fields are optional. `title` is trimmed and limited to 100 characters. `started_at` defaults to server time.
+All fields are optional. `title` is trimmed and limited to 100 characters. `started_at` defaults to server time.
+
+Metadata defaults:
+
+- `style_focus`: `mixed`
+- `mood_direction`: `steady_mood`
+- `session_type`: `casual_listening`
+
+Allowed values:
+
+- `style_focus`: `one_style`, `mixed`, `random`
+- `mood_direction`: `steady_mood`, `mood_switch`, `energy_build`, `cool_down`
+- `session_type`: `dj_set`, `casual_listening`, `rediscovery`, `testing_records`, `background`
 
 ### Response
 
@@ -754,10 +769,16 @@ Both fields are optional. `title` is trimmed and limited to 100 characters. `sta
   "id": "group-123",
   "title": "Late night stack",
   "status": "active",
+  "style_focus": "mixed",
+  "mood_direction": "steady_mood",
+  "session_type": "casual_listening",
+  "notes": null,
   "started_at": "2026-04-19T08:00:00Z",
   "ended_at": null,
   "created_at": "2026-04-19T08:00:00Z",
-  "updated_at": "2026-04-19T08:00:00Z"
+  "updated_at": "2026-04-19T08:00:00Z",
+  "can_edit": true,
+  "editable_until": null
 }
 ```
 
@@ -773,10 +794,16 @@ Returns the active timed session group, or `null` when none is active. This endp
     "id": "group-123",
     "title": "Late night stack",
     "status": "active",
+    "style_focus": "mixed",
+    "mood_direction": "steady_mood",
+    "session_type": "casual_listening",
+    "notes": null,
     "started_at": "2026-04-19T08:00:00Z",
     "ended_at": null,
     "created_at": "2026-04-19T08:00:00Z",
-    "updated_at": "2026-04-19T08:00:00Z"
+    "updated_at": "2026-04-19T08:00:00Z",
+    "can_edit": true,
+    "editable_until": null
   }
 }
 ```
@@ -787,15 +814,38 @@ Returns one timed session group by id.
 
 Missing groups return `404` with `session_group_not_found`.
 
-## PATCH /sessions/groups/{session_group_id}/finish
+## PATCH /sessions/groups/{session_group_id}
 
-Stops an active timed session group. `ended_at` is optional and defaults to server time.
+Edits timed session metadata while the group is active or for 15 minutes after it stops.
 
 ### Request
 
 ```json
 {
-  "ended_at": "2026-04-19T09:00:00Z"
+  "style_focus": "one_style",
+  "mood_direction": "mood_switch",
+  "session_type": "rediscovery",
+  "notes": "Ended with a few forgotten shelves."
+}
+```
+
+All fields are optional. `notes` is trimmed, limited to 1000 characters, and can be cleared with `null`.
+
+Expired edit windows return `403` with `session_group_edit_window_expired`. Invalid metadata returns `422` with the matching `invalid_*` code.
+
+## PATCH /sessions/groups/{session_group_id}/finish
+
+Stops an active timed session group. `ended_at` is optional and defaults to server time. Optional metadata and notes can be saved at the same time.
+
+### Request
+
+```json
+{
+  "ended_at": "2026-04-19T09:00:00Z",
+  "style_focus": "one_style",
+  "mood_direction": "mood_switch",
+  "session_type": "rediscovery",
+  "notes": "Ended with a few forgotten shelves."
 }
 ```
 
@@ -806,10 +856,16 @@ Stops an active timed session group. `ended_at` is optional and defaults to serv
   "id": "group-123",
   "title": "Late night stack",
   "status": "completed",
+  "style_focus": "one_style",
+  "mood_direction": "mood_switch",
+  "session_type": "rediscovery",
+  "notes": "Ended with a few forgotten shelves.",
   "started_at": "2026-04-19T08:00:00Z",
   "ended_at": "2026-04-19T09:00:00Z",
   "created_at": "2026-04-19T08:00:00Z",
-  "updated_at": "2026-04-19T09:00:00Z"
+  "updated_at": "2026-04-19T09:00:00Z",
+  "can_edit": true,
+  "editable_until": "2026-04-19T09:15:00Z"
 }
 ```
 
@@ -910,6 +966,19 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "session_id": "session-123",
       "release_id": "release-123",
       "session_group_id": "group-123",
+      "session_group": {
+        "id": "group-123",
+        "title": "Late night stack",
+        "status": "completed",
+        "style_focus": "one_style",
+        "mood_direction": "mood_switch",
+        "session_type": "rediscovery",
+        "notes": "Ended with a few forgotten shelves.",
+        "started_at": "2026-05-10T22:45:00Z",
+        "ended_at": "2026-05-10T23:45:00Z",
+        "can_edit": true,
+        "editable_until": "2026-05-11T00:00:00Z"
+      },
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
       "thumbnail_url": "https://...",
@@ -950,6 +1019,8 @@ Used by the **Home screen** to show real listening data after sessions are logge
 The Android app prefers `played_at` for device-timezone-aware labels such as `Today`, `1d`, `1w`, or `1m`. `date` remains as a calendar-date fallback.
 
 On the expanded Recent Sessions screen, Android groups adjacent items with the same non-null `session_group_id` into a timed-session container. Existing sessions with `session_group_id = null` remain individual cards. This grouping is client-side for the currently fetched recent-session list; a future mixed-feed endpoint can preserve groups across page boundaries.
+
+When `session_group_id` is non-null, `session_group` carries the timed-session metadata for metadata chips. Ungrouped rows return `session_group: null`.
 
 ---
 
@@ -1255,6 +1326,20 @@ Returns listening sessions for a selected month from Plays Over Time.
     {
       "session_id": "session-123",
       "release_id": "release-123",
+      "session_group_id": "group-123",
+      "session_group": {
+        "id": "group-123",
+        "title": "Late night stack",
+        "status": "completed",
+        "style_focus": "one_style",
+        "mood_direction": "mood_switch",
+        "session_type": "rediscovery",
+        "notes": null,
+        "started_at": "2026-05-10T22:45:00Z",
+        "ended_at": "2026-05-10T23:45:00Z",
+        "can_edit": true,
+        "editable_until": "2026-05-11T00:00:00Z"
+      },
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
       "thumbnail_url": "https://...",

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.sessions import SessionTrackResponse
+from app.schemas.sessions import HomeRecentSessionGroupItem, SessionTrackResponse
 
 
 class MonthlyPlayItem(BaseModel):
@@ -41,6 +41,7 @@ class AnalyticsSessionItem(BaseModel):
     session_id: str
     release_id: str
     session_group_id: str | None = None
+    session_group: HomeRecentSessionGroupItem | None = None
     artist: str
     title: str
     thumbnail_url: str | None = None

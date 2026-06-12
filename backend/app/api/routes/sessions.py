@@ -12,6 +12,7 @@ from app.schemas.sessions import (
     CreateSessionRequest,
     ErrorResponse,
     FinishSessionGroupRequest,
+    HomeRecentSessionGroupItem,
     HomeRecentSessionItem,
     HomeSummaryResponse,
     HomeTopRecordItem,
@@ -23,10 +24,12 @@ from app.schemas.sessions import (
     SessionResponse,
     SessionTrackResponse,
     StartSessionGroupRequest,
+    UpdateSessionGroupRequest,
     UpdateSessionRequest,
 )
 from app.services.session_groups_service import (
     SessionGroupAlreadyActiveError,
+    SessionGroupEditWindowExpiredError,
     SessionGroupInactiveError,
     SessionGroupNotFoundError,
     SessionGroupsService,
@@ -65,7 +68,14 @@ def start_session_group(
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
-        session_group = service.start_session_group(db, title=payload.title, started_at=payload.started_at)
+        session_group = service.start_session_group(
+            db,
+            title=payload.title,
+            started_at=payload.started_at,
+            style_focus=payload.style_focus,
+            mood_direction=payload.mood_direction,
+            session_type=payload.session_type,
+        )
     except SessionGroupAlreadyActiveError as error:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
@@ -77,7 +87,7 @@ def start_session_group(
             content={"error": {"code": error.code, "message": error.message}},
         )
 
-    return _map_session_group_response(session_group)
+    return _map_session_group_response(session_group, service)
 
 
 @router.get(
@@ -90,7 +100,7 @@ def get_active_session_group(
 ):
     session_group = service.get_active_session_group(db)
     return ActiveSessionGroupResponse(
-        session_group=_map_session_group_response(session_group) if session_group is not None else None,
+        session_group=_map_session_group_response(session_group, service) if session_group is not None else None,
     )
 
 
@@ -112,7 +122,43 @@ def get_session_group(
             content={"error": {"code": "session_group_not_found", "message": str(error)}},
         )
 
-    return _map_session_group_response(session_group)
+    return _map_session_group_response(session_group, service)
+
+
+@router.patch(
+    "/groups/{session_group_id}",
+    response_model=SessionGroupResponse,
+    responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def update_session_group(
+    session_group_id: str,
+    payload: UpdateSessionGroupRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+):
+    try:
+        session_group = service.update_session_group(
+            db,
+            session_group_id,
+            fields=payload.model_dump(exclude_unset=True),
+        )
+    except SessionGroupValidationError as error:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionGroupEditWindowExpiredError as error:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": {"code": error.code, "message": error.message}},
+        )
+    except SessionGroupNotFoundError as error:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": {"code": "session_group_not_found", "message": str(error)}},
+        )
+
+    return _map_session_group_response(session_group, service)
 
 
 @router.patch(
@@ -127,7 +173,15 @@ def finish_session_group(
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
-        session_group = service.finish_session_group(db, session_group_id, ended_at=payload.ended_at)
+        session_group = service.finish_session_group(
+            db,
+            session_group_id,
+            ended_at=payload.ended_at,
+            style_focus=payload.style_focus,
+            mood_direction=payload.mood_direction,
+            session_type=payload.session_type,
+            notes=payload.notes,
+        )
     except SessionGroupNotFoundError as error:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -144,7 +198,7 @@ def finish_session_group(
             content={"error": {"code": error.code, "message": error.message}},
         )
 
-    return _map_session_group_response(session_group)
+    return _map_session_group_response(session_group, service)
 
 
 @router.post(
@@ -211,6 +265,7 @@ def log_session(
 def get_home_summary(
     db: Annotated[Session, Depends(get_db)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
+    session_groups_service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
     recent_limit: int = Query(default=5),
     top_limit: int = Query(default=3),
 ):
@@ -226,6 +281,13 @@ def get_home_summary(
         db,
         [item.session.id for item in summary.recent_sessions],
     )
+    session_group_ids = [
+        item.session.session_group_id for item in summary.recent_sessions if item.session.session_group_id is not None
+    ]
+    session_groups_by_id = {
+        session_group.id: session_group
+        for session_group in session_groups_service.get_session_groups_by_ids(db, session_group_ids)
+    }
 
     return HomeSummaryResponse(
         recent_sessions=[
@@ -233,6 +295,14 @@ def get_home_summary(
                 session_id=item.session.id,
                 release_id=item.release.id,
                 session_group_id=item.session.session_group_id,
+                session_group=(
+                    _map_home_recent_session_group(
+                        session_groups_by_id.get(item.session.session_group_id),
+                        session_groups_service,
+                    )
+                    if item.session.session_group_id is not None
+                    else None
+                ),
                 artist=item.release.artist,
                 title=item.release.title,
                 thumbnail_url=item.release.cover_image_url,
@@ -422,13 +492,37 @@ def _map_session_tracks(tracks) -> list[SessionTrackResponse]:
     ]
 
 
-def _map_session_group_response(session_group) -> SessionGroupResponse:
+def _map_home_recent_session_group(session_group, service: SessionGroupsService) -> HomeRecentSessionGroupItem | None:
+    if session_group is None:
+        return None
+    return HomeRecentSessionGroupItem(
+        id=session_group.id,
+        title=session_group.title,
+        status=session_group.status,
+        style_focus=session_group.style_focus,
+        mood_direction=session_group.mood_direction,
+        session_type=session_group.session_type,
+        notes=session_group.notes,
+        started_at=session_group.started_at,
+        ended_at=session_group.ended_at,
+        can_edit=service.can_edit_session_group(session_group),
+        editable_until=service.editable_until(session_group),
+    )
+
+
+def _map_session_group_response(session_group, service: SessionGroupsService) -> SessionGroupResponse:
     return SessionGroupResponse(
         id=session_group.id,
         title=session_group.title,
         status=session_group.status,
+        style_focus=session_group.style_focus,
+        mood_direction=session_group.mood_direction,
+        session_type=session_group.session_type,
+        notes=session_group.notes,
         started_at=session_group.started_at,
         ended_at=session_group.ended_at,
         created_at=session_group.created_at,
         updated_at=session_group.updated_at,
+        can_edit=service.can_edit_session_group(session_group),
+        editable_until=service.editable_until(session_group),
     )
