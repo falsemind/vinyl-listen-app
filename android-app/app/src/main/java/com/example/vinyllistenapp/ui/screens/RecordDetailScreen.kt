@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -1223,22 +1224,56 @@ private fun FlowInsightsActionRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "Get Insights",
-            color = if (enabled) VinylColors.AccentGreen else VinylColors.TextSecondary,
-            style = MaterialTheme.typography.titleMedium,
-            modifier =
-                Modifier.clickable(
-                    enabled = enabled,
-                    onClickLabel = "Get insights",
-                    role = Role.Button,
-                    onClick = onGetInsights,
-                ),
+        FlowInsightsGetButton(
+            label = "Get Insights",
+            onClick = onGetInsights,
+            enabled = enabled,
         )
         FlowInsightsPeriodSelector(
             selectedPeriod = selectedPeriod,
             enabled = enabled,
             onPeriodChange = onPeriodChange,
+        )
+    }
+}
+
+@Composable
+private fun FlowInsightsGetButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val brush =
+        Brush.linearGradient(
+            listOf(
+                VinylColors.AccentGreen.copy(alpha = 0.85f),
+                VinylColors.AccentGreen.copy(alpha = 0.70f),
+            ),
+        )
+
+    Box(
+        modifier =
+            Modifier
+                .width(148.dp)
+                .height(46.dp)
+                .alpha(if (enabled) 1f else 0.55f)
+                .clip(VinylShapes.Card)
+                .background(brush)
+                .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Card)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = label,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceSm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = VinylColors.TextOnAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
