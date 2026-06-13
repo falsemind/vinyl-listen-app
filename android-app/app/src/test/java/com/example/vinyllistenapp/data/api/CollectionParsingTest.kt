@@ -31,6 +31,7 @@ class CollectionParsingTest {
                   ],
                   "limit": 25,
                   "offset": 0,
+                  "total": 41,
                   "has_more": true
                 }
                 """.trimIndent(),
@@ -51,6 +52,7 @@ class CollectionParsingTest {
         assertTrue(record.inCollection)
         assertEquals(25, page.limit)
         assertEquals(0, page.offset)
+        assertEquals(41, page.total)
         assertTrue(page.hasMore)
     }
 

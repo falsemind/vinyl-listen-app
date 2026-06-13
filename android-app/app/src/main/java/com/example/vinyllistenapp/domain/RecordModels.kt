@@ -215,6 +215,7 @@ data class CollectionRecordsPage(
     val records: List<CollectionRecord>,
     val limit: Int,
     val offset: Int,
+    val total: Int,
     val hasMore: Boolean,
     val hasFavorites: Boolean = false,
 )

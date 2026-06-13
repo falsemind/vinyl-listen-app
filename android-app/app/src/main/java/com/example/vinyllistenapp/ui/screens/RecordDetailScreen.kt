@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -28,10 +29,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -53,6 +56,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -102,6 +106,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
+private val discogsNameIdentifierSuffixRegex = Regex("""\s+\(\d+\)$""")
 
 @Composable
 fun RecordDetailScreen(
@@ -125,9 +130,8 @@ fun RecordDetailScreen(
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
-    var isArtistDiscographyExpanded by remember(releaseId) { mutableStateOf(false) }
-    var isArtistCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
-    var isLabelCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
+    var isMoreInCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
+    var isViewOnDiscogsExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
     var isInsightsExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
@@ -142,9 +146,8 @@ fun RecordDetailScreen(
                 recordActionMenuLabels(
                     record = record,
                     isFetchingFullRelease = isFetchingFullRelease,
-                    isArtistDiscographyExpanded = isArtistDiscographyExpanded,
-                    isArtistCollectionExpanded = isArtistCollectionExpanded,
-                    isLabelCollectionExpanded = isLabelCollectionExpanded,
+                    isMoreInCollectionExpanded = isMoreInCollectionExpanded,
+                    isViewOnDiscogsExpanded = isViewOnDiscogsExpanded,
                 ),
             maxWidth = actionMenuMaxWidth,
         )
@@ -379,11 +382,12 @@ fun RecordDetailScreen(
                 width = actionMenuWidth,
                 onDismiss = {
                     isActionMenuOpen = false
-                    isArtistDiscographyExpanded = false
-                    isArtistCollectionExpanded = false
-                    isLabelCollectionExpanded = false
+                    isMoreInCollectionExpanded = false
+                    isViewOnDiscogsExpanded = false
                 },
             ) {
+                val collectionArtistNames = collectionArtistNames(record)
+                val collectionLabelNames = collectionLabelNames(record)
                 if (shouldShowGetFullReleaseAction(record)) {
                     ActionMenuAction(
                         label = if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release",
@@ -405,93 +409,97 @@ fun RecordDetailScreen(
                         scope.launch { updateFavorite(!record.isFavorite) }
                     },
                 )
-                if (shouldShowArtistDiscographyAction(record)) {
-                    if (record.discogsArtists.size == 1) {
-                        ActionMenuAction(
-                            label = "View artist discography",
-                            onClick = {
-                                isActionMenuOpen = false
-                                uriHandler.openUri(discogsArtistUrl(record.discogsArtists.first().discogsArtistId))
-                            },
-                        )
-                    } else {
-                        ArtistDiscographyMenuAction(
-                            expanded = isArtistDiscographyExpanded,
-                            onClick = { isArtistDiscographyExpanded = !isArtistDiscographyExpanded },
-                        )
-                        if (isArtistDiscographyExpanded) {
-                            ArtistDiscographyMenuLinks(
-                                artists = record.discogsArtists,
-                                onArtistClick = { artist ->
+                if (collectionArtistNames.isNotEmpty() || collectionLabelNames.isNotEmpty()) {
+                    ActionMenuGroupAction(
+                        label = "More in collection",
+                        expanded = isMoreInCollectionExpanded,
+                        onClick = { isMoreInCollectionExpanded = !isMoreInCollectionExpanded },
+                    )
+                    if (isMoreInCollectionExpanded) {
+                        ActionMenuDelimiter()
+                        collectionArtistNames.forEach { artistName ->
+                            ActionMenuSubOption(
+                                label = artistName,
+                                icon = Icons.Filled.Person,
+                                onClickLabel = "Filter collection by $artistName",
+                                onClick = {
                                     isActionMenuOpen = false
-                                    isArtistDiscographyExpanded = false
-                                    uriHandler.openUri(discogsArtistUrl(artist.discogsArtistId))
+                                    isMoreInCollectionExpanded = false
+                                    onOpenArtistCollection(artistName)
                                 },
                             )
                         }
+                        collectionLabelNames.forEach { labelName ->
+                            ActionMenuSubOption(
+                                label = labelName,
+                                icon = Icons.Filled.Album,
+                                onClickLabel = "Filter collection by $labelName",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isMoreInCollectionExpanded = false
+                                    onOpenLabelCollection(labelName)
+                                },
+                            )
+                        }
+                        ActionMenuDelimiter()
                     }
                 }
-                val collectionArtistNames = collectionArtistNames(record)
-                if (collectionArtistNames.size == 1) {
-                    val artistName = collectionArtistNames.first()
-                    ActionMenuAction(
-                        label = "More $artistName in collection",
-                        onClick = {
-                            isActionMenuOpen = false
-                            isArtistCollectionExpanded = false
-                            onOpenArtistCollection(artistName)
-                        },
-                    )
-                } else if (collectionArtistNames.size > 1) {
-                    ArtistCollectionMenuAction(
-                        expanded = isArtistCollectionExpanded,
-                        onClick = { isArtistCollectionExpanded = !isArtistCollectionExpanded },
-                    )
-                    if (isArtistCollectionExpanded) {
-                        ArtistCollectionMenuLinks(
-                            artistNames = collectionArtistNames,
-                            onArtistClick = { artistName ->
-                                isActionMenuOpen = false
-                                isArtistCollectionExpanded = false
-                                onOpenArtistCollection(artistName)
-                            },
-                        )
-                    }
-                }
-                val collectionLabelNames = collectionLabelNames(record)
-                if (collectionLabelNames.size == 1) {
-                    val labelName = collectionLabelNames.first()
-                    ActionMenuAction(
-                        label = "More $labelName in collection",
-                        onClick = {
-                            isActionMenuOpen = false
-                            isLabelCollectionExpanded = false
-                            onOpenLabelCollection(labelName)
-                        },
-                    )
-                } else if (collectionLabelNames.size > 1) {
-                    LabelCollectionMenuAction(
-                        expanded = isLabelCollectionExpanded,
-                        onClick = { isLabelCollectionExpanded = !isLabelCollectionExpanded },
-                    )
-                    if (isLabelCollectionExpanded) {
-                        LabelCollectionMenuLinks(
-                            labelNames = collectionLabelNames,
-                            onLabelClick = { labelName ->
-                                isActionMenuOpen = false
-                                isLabelCollectionExpanded = false
-                                onOpenLabelCollection(labelName)
-                            },
-                        )
-                    }
-                }
-                ActionMenuAction(
-                    label = "View release on Discogs",
-                    onClick = {
-                        isActionMenuOpen = false
-                        uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
-                    },
+                ActionMenuGroupAction(
+                    label = "View on Discogs",
+                    expanded = isViewOnDiscogsExpanded,
+                    onClick = { isViewOnDiscogsExpanded = !isViewOnDiscogsExpanded },
                 )
+                if (isViewOnDiscogsExpanded) {
+                    ActionMenuDelimiter()
+                    ActionMenuSubOption(
+                        label = "View release page",
+                        icon = Icons.Filled.Album,
+                        onClickLabel = "View release page on Discogs",
+                        onClick = {
+                            isActionMenuOpen = false
+                            isViewOnDiscogsExpanded = false
+                            uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
+                        },
+                    )
+                    val discogsArtistRows =
+                        record.discogsArtists.ifEmpty {
+                            collectionArtistNames.map { artistName ->
+                                ReleaseArtist(name = artistName, discogsArtistId = 0)
+                            }
+                        }
+                    discogsArtistRows.forEach { artist ->
+                        val displayArtistName = cleanDiscogsDisplayName(artist.name)
+                        ActionMenuSubOption(
+                            label = displayArtistName,
+                            icon = Icons.Filled.Person,
+                            onClickLabel = "Open $displayArtistName on Discogs",
+                            onClick = {
+                                isActionMenuOpen = false
+                                isViewOnDiscogsExpanded = false
+                                uriHandler.openUri(
+                                    if (artist.discogsArtistId > 0) {
+                                        discogsArtistUrl(artist.discogsArtistId)
+                                    } else {
+                                        discogsArtistSearchUrl(displayArtistName)
+                                    },
+                                )
+                            },
+                        )
+                    }
+                    collectionLabelNames.forEach { labelName ->
+                        ActionMenuSubOption(
+                            label = labelName,
+                            icon = Icons.Filled.Album,
+                            onClickLabel = "Open $labelName on Discogs",
+                            onClick = {
+                                isActionMenuOpen = false
+                                isViewOnDiscogsExpanded = false
+                                uriHandler.openUri(discogsLabelSearchUrl(labelName))
+                            },
+                        )
+                    }
+                    ActionMenuDelimiter()
+                }
             }
         }
     }
@@ -517,21 +525,22 @@ private fun CollectionRemovedMessageCard(message: String) {
 }
 
 @Composable
-private fun ArtistDiscographyMenuAction(
+private fun ActionMenuGroupAction(
+    label: String,
     expanded: Boolean,
     onClick: () -> Unit,
 ) {
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else -90f,
         animationSpec = tween(durationMillis = 180),
-        label = "Artist discography arrow rotation",
+        label = "$label arrow rotation",
     )
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .clickable(
-                    onClickLabel = if (expanded) "Close artist discography" else "Open artist discography",
+                    onClickLabel = if (expanded) "Close $label" else "Open $label",
                     role = Role.Button,
                     onClick = onClick,
                 ).padding(vertical = VinylSpacing.SpaceXs),
@@ -543,7 +552,7 @@ private fun ArtistDiscographyMenuAction(
                 Modifier
                     .weight(1f)
                     .padding(end = VinylSpacing.SpaceSm),
-            text = "View artists discography",
+            text = label,
             color = VinylColors.AccentGreen,
             textAlign = TextAlign.Start,
             style = MaterialTheme.typography.labelLarge,
@@ -563,21 +572,18 @@ private fun ArtistDiscographyMenuAction(
 }
 
 @Composable
-private fun ArtistCollectionMenuAction(
-    expanded: Boolean,
+private fun ActionMenuSubOption(
+    label: String,
+    icon: ImageVector,
+    onClickLabel: String,
     onClick: () -> Unit,
 ) {
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else -90f,
-        animationSpec = tween(durationMillis = 180),
-        label = "Artist collection arrow rotation",
-    )
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .clickable(
-                    onClickLabel = if (expanded) "Close artist collection" else "Open artist collection",
+                    onClickLabel = onClickLabel,
                     role = Role.Button,
                     onClick = onClick,
                 ).padding(vertical = VinylSpacing.SpaceXs),
@@ -589,7 +595,7 @@ private fun ArtistCollectionMenuAction(
                 Modifier
                     .weight(1f)
                     .padding(end = VinylSpacing.SpaceSm),
-            text = "More artists in collection",
+            text = "• $label",
             color = VinylColors.AccentGreen,
             textAlign = TextAlign.Start,
             style = MaterialTheme.typography.labelLarge,
@@ -597,160 +603,12 @@ private fun ArtistCollectionMenuAction(
             overflow = TextOverflow.Ellipsis,
         )
         Icon(
-            modifier =
-                Modifier
-                    .size(18.dp)
-                    .graphicsLayer { rotationZ = arrowRotation },
-            imageVector = Icons.Filled.KeyboardArrowUp,
+            modifier = Modifier.size(16.dp),
+            imageVector = icon,
             contentDescription = null,
             tint = VinylColors.AccentGreen,
         )
     }
-}
-
-@Composable
-private fun LabelCollectionMenuAction(
-    expanded: Boolean,
-    onClick: () -> Unit,
-) {
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else -90f,
-        animationSpec = tween(durationMillis = 180),
-        label = "Label collection arrow rotation",
-    )
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(
-                    onClickLabel = if (expanded) "Close label collection" else "Open label collection",
-                    role = Role.Button,
-                    onClick = onClick,
-                ).padding(vertical = VinylSpacing.SpaceXs),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .padding(end = VinylSpacing.SpaceSm),
-            text = "More from labels in collection",
-            color = VinylColors.AccentGreen,
-            textAlign = TextAlign.Start,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            modifier =
-                Modifier
-                    .size(18.dp)
-                    .graphicsLayer { rotationZ = arrowRotation },
-            imageVector = Icons.Filled.KeyboardArrowUp,
-            contentDescription = null,
-            tint = VinylColors.AccentGreen,
-        )
-    }
-}
-
-@Composable
-private fun ArtistDiscographyMenuLinks(
-    artists: List<ReleaseArtist>,
-    onArtistClick: (ReleaseArtist) -> Unit,
-) {
-    ActionMenuDelimiter()
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-    ) {
-        artists.forEach { artist ->
-            Text(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            onClickLabel = "Open ${artist.name} on Discogs",
-                            role = Role.Button,
-                            onClick = { onArtistClick(artist) },
-                        ).padding(vertical = VinylSpacing.SpaceXs),
-                text = "• ${artist.name}",
-                color = VinylColors.AccentGreen,
-                textAlign = TextAlign.Start,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-    ActionMenuDelimiter()
-}
-
-@Composable
-private fun ArtistCollectionMenuLinks(
-    artistNames: List<String>,
-    onArtistClick: (String) -> Unit,
-) {
-    ActionMenuDelimiter()
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-    ) {
-        artistNames.forEach { artistName ->
-            Text(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            onClickLabel = "Filter collection by $artistName",
-                            role = Role.Button,
-                            onClick = { onArtistClick(artistName) },
-                        ).padding(vertical = VinylSpacing.SpaceXs),
-                text = "• $artistName",
-                color = VinylColors.AccentGreen,
-                textAlign = TextAlign.Start,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-    ActionMenuDelimiter()
-}
-
-@Composable
-private fun LabelCollectionMenuLinks(
-    labelNames: List<String>,
-    onLabelClick: (String) -> Unit,
-) {
-    ActionMenuDelimiter()
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
-    ) {
-        labelNames.forEach { labelName ->
-            Text(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            onClickLabel = "Filter collection by $labelName",
-                            role = Role.Button,
-                            onClick = { onLabelClick(labelName) },
-                        ).padding(vertical = VinylSpacing.SpaceXs),
-                text = "• $labelName",
-                color = VinylColors.AccentGreen,
-                textAlign = TextAlign.Start,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-    ActionMenuDelimiter()
 }
 
 @Composable
@@ -1073,6 +931,10 @@ private fun RecordTracklistContent(
 private fun discogsReleaseUrl(discogsReleaseId: Long): String = "https://www.discogs.com/release/$discogsReleaseId"
 
 internal fun discogsArtistUrl(discogsArtistId: Long): String = "https://www.discogs.com/artist/$discogsArtistId"
+
+private fun discogsArtistSearchUrl(artistName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(artistName)}&type=artist"
+
+private fun discogsLabelSearchUrl(labelName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(labelName)}&type=label"
 
 private fun displayReleaseTrack(track: ReleaseTrack): String {
     val duration =
@@ -2319,9 +2181,8 @@ private fun recordActionMenuWidth(
 private fun recordActionMenuLabels(
     record: RecordSummary,
     isFetchingFullRelease: Boolean,
-    isArtistDiscographyExpanded: Boolean,
-    isArtistCollectionExpanded: Boolean,
-    isLabelCollectionExpanded: Boolean,
+    isMoreInCollectionExpanded: Boolean,
+    isViewOnDiscogsExpanded: Boolean,
 ): List<String> =
     buildList {
         if (shouldShowGetFullReleaseAction(record)) {
@@ -2330,51 +2191,45 @@ private fun recordActionMenuLabels(
             add("Full Discogs release")
         }
         add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
-        if (shouldShowArtistDiscographyAction(record)) {
-            if (record.discogsArtists.size == 1) {
-                add("View artist discography")
-            } else {
-                add("View artists discography")
-                if (isArtistDiscographyExpanded) {
-                    record.discogsArtists.forEach { artist -> add("• ${artist.name}") }
-                }
-            }
-        }
         val collectionArtists = collectionArtistNames(record)
-        if (collectionArtists.size == 1) {
-            add("More ${collectionArtists.first()} in collection")
-        } else if (collectionArtists.size > 1) {
-            add("More artists in collection")
-            if (isArtistCollectionExpanded) {
-                collectionArtists.forEach { artistName -> add("• $artistName") }
-            }
-        }
         val collectionLabels = collectionLabelNames(record)
-        if (collectionLabels.size == 1) {
-            add("More ${collectionLabels.first()} in collection")
-        } else if (collectionLabels.size > 1) {
-            add("More from labels in collection")
-            if (isLabelCollectionExpanded) {
+        if (collectionArtists.isNotEmpty() || collectionLabels.isNotEmpty()) {
+            add("More in collection")
+            if (isMoreInCollectionExpanded) {
+                collectionArtists.forEach { artistName -> add("• $artistName") }
                 collectionLabels.forEach { labelName -> add("• $labelName") }
             }
         }
-        add("View release on Discogs")
+        add("View on Discogs")
+        if (isViewOnDiscogsExpanded) {
+            add("• View release page")
+            val discogsArtistNames =
+                record.discogsArtists
+                    .map { artist -> cleanDiscogsDisplayName(artist.name) }
+                    .ifEmpty { collectionArtists }
+            discogsArtistNames.forEach { artistName -> add("• $artistName") }
+            collectionLabels.forEach { labelName -> add("• $labelName") }
+        }
     }
+
+internal fun cleanDiscogsDisplayName(name: String): String = name.trim().replace(discogsNameIdentifierSuffixRegex, "")
 
 internal fun collectionArtistNames(record: RecordSummary): List<String> {
     val discogsArtistNames =
         record.discogsArtists
-            .mapNotNull { artist -> artist.name.trim().takeIf { it.isNotEmpty() } }
+            .mapNotNull { artist -> cleanDiscogsDisplayName(artist.name).takeIf { it.isNotEmpty() } }
     return discogsArtistNames.ifEmpty {
-        listOfNotNull(record.artist.trim().takeIf { it.isNotEmpty() })
+        listOfNotNull(cleanDiscogsDisplayName(record.artist).takeIf { it.isNotEmpty() })
     }
 }
 
-internal fun collectionLabelNames(record: RecordSummary): List<String> =
-    record.label
-        .split(Regex("""\s*(?:,|;|/)\s*"""))
-        .mapNotNull { label -> label.trim().takeIf { it.isNotEmpty() && !it.equals("Unknown label", ignoreCase = true) } }
-        .distinct()
+internal fun collectionLabelNames(record: RecordSummary): List<String> {
+    val labelNames =
+        record.label.split(Regex("""\s*(?:,|;|/)\s*""")).mapNotNull { label ->
+            cleanDiscogsDisplayName(label).takeIf { it.isNotEmpty() && !it.equals("Unknown label", ignoreCase = true) }
+        }
+    return labelNames.distinct()
+}
 
 internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
 

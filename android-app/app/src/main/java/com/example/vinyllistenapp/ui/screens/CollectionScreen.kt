@@ -97,6 +97,7 @@ fun CollectionScreen(
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
+    var totalRecords by remember { mutableIntStateOf(0) }
     var hasFavorites by remember { mutableStateOf(false) }
     var isLoadingInitial by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
@@ -118,6 +119,7 @@ fun CollectionScreen(
         isLoadingInitial = true
         records = emptyList()
         hasMore = false
+        totalRecords = 0
         runCatching {
             apiClient.getCollectionReleases(
                 limit = COLLECTION_PAGE_SIZE,
@@ -135,11 +137,13 @@ fun CollectionScreen(
             }
             records = page.records
             hasMore = page.hasMore
+            totalRecords = page.total
             hasFavorites = page.hasFavorites
             error = null
         }.onFailure { failure ->
             records = emptyList()
             hasMore = false
+            totalRecords = 0
             error = failure.toUserMessage("Could not load collection records.")
         }
         isLoadingInitial = false
@@ -271,6 +275,7 @@ fun CollectionScreen(
                 artistFilter = artistFilter,
                 labelFilter = labelFilter,
                 favoriteFilter = favoriteFilter,
+                filterResultCount = totalRecords,
                 hasFavorites = hasFavorites,
                 scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
@@ -321,6 +326,7 @@ fun CollectionScreen(
                             }
                             records = records + page.records
                             hasMore = page.hasMore
+                            totalRecords = page.total
                             error = null
                         }.onFailure { failure ->
                             error = failure.toUserMessage("Could not load more collection records.")
@@ -350,6 +356,7 @@ private fun CollectionListContent(
     artistFilter: String?,
     labelFilter: String?,
     favoriteFilter: Boolean,
+    filterResultCount: Int,
     hasFavorites: Boolean,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
@@ -409,17 +416,22 @@ private fun CollectionListContent(
             artistFilter?.let { artist ->
                 ArtistCollectionFilterChip(
                     artist = artist,
+                    resultCount = filterResultCount,
                     onDismiss = onClearArtistFilter,
                 )
             }
             labelFilter?.let { label ->
                 LabelCollectionFilterChip(
                     label = label,
+                    resultCount = filterResultCount,
                     onDismiss = onClearLabelFilter,
                 )
             }
             if (favoriteFilter) {
-                FavoriteCollectionFilterChip(onDismiss = onClearFavoriteFilter)
+                FavoriteCollectionFilterChip(
+                    resultCount = filterResultCount,
+                    onDismiss = onClearFavoriteFilter,
+                )
             }
             syncMessage?.let { message -> CollectionStatusText(message) }
             error?.let {
@@ -582,103 +594,136 @@ private fun CollectionStatusText(
 @Composable
 private fun ArtistCollectionFilterChip(
     artist: String,
+    resultCount: Int,
     onDismiss: () -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier
-                .clip(VinylShapes.Chip)
-                .background(VinylColors.AccentGreen, VinylShapes.Chip)
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
-                .clickable(
-                    onClickLabel = "Clear artist filter",
-                    role = Role.Button,
-                    onClick = onDismiss,
-                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = artist,
-            color = VinylColors.AppBackground,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            imageVector = Icons.Filled.Close,
-            contentDescription = null,
-            tint = VinylColors.AppBackground,
-            modifier = Modifier.size(16.dp),
-        )
+        Row(
+            modifier =
+                Modifier
+                    .clip(VinylShapes.Chip)
+                    .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                    .clickable(
+                        onClickLabel = "Clear artist filter",
+                        role = Role.Button,
+                        onClick = onDismiss,
+                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = artist,
+                color = VinylColors.AppBackground,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = null,
+                tint = VinylColors.AppBackground,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        FilterResultCountSuffix(resultCount)
     }
 }
 
 @Composable
 private fun LabelCollectionFilterChip(
     label: String,
+    resultCount: Int,
     onDismiss: () -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier
-                .clip(VinylShapes.Chip)
-                .background(VinylColors.AccentGreen, VinylShapes.Chip)
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
-                .clickable(
-                    onClickLabel = "Clear label filter",
-                    role = Role.Button,
-                    onClick = onDismiss,
-                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            color = VinylColors.AppBackground,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            imageVector = Icons.Filled.Close,
-            contentDescription = null,
-            tint = VinylColors.AppBackground,
-            modifier = Modifier.size(16.dp),
-        )
+        Row(
+            modifier =
+                Modifier
+                    .clip(VinylShapes.Chip)
+                    .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                    .clickable(
+                        onClickLabel = "Clear label filter",
+                        role = Role.Button,
+                        onClick = onDismiss,
+                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                color = VinylColors.AppBackground,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = null,
+                tint = VinylColors.AppBackground,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        FilterResultCountSuffix(resultCount)
     }
 }
 
 @Composable
-private fun FavoriteCollectionFilterChip(onDismiss: () -> Unit) {
+private fun FavoriteCollectionFilterChip(
+    resultCount: Int,
+    onDismiss: () -> Unit,
+) {
     Row(
-        modifier =
-            Modifier
-                .clip(VinylShapes.Chip)
-                .background(VinylColors.AccentGreen, VinylShapes.Chip)
-                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
-                .clickable(
-                    onClickLabel = "Clear favorites filter",
-                    role = Role.Button,
-                    onClick = onDismiss,
-                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
         horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "Favorites",
-            color = VinylColors.AppBackground,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            imageVector = Icons.Filled.Close,
-            contentDescription = null,
-            tint = VinylColors.AppBackground,
-            modifier = Modifier.size(16.dp),
-        )
+        Row(
+            modifier =
+                Modifier
+                    .clip(VinylShapes.Chip)
+                    .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                    .clickable(
+                        onClickLabel = "Clear favorites filter",
+                        role = Role.Button,
+                        onClick = onDismiss,
+                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Favorites",
+                color = VinylColors.AppBackground,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = null,
+                tint = VinylColors.AppBackground,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        FilterResultCountSuffix(resultCount)
     }
+}
+
+@Composable
+private fun FilterResultCountSuffix(resultCount: Int) {
+    Text(
+        text = "x $resultCount",
+        color = VinylColors.AccentGreen,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+    )
 }
 
 @Composable
