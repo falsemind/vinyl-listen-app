@@ -47,9 +47,22 @@ class StubReleasesRepository:
         offset: int,
         include_removed: bool = False,
         artist: str | None = None,
+        favorite: bool = False,
     ):
-        self.calls.append({"limit": limit, "offset": offset, "include_removed": include_removed, "artist": artist})
-        return self.releases[offset : offset + limit]
+        self.calls.append(
+            {
+                "limit": limit,
+                "offset": offset,
+                "include_removed": include_removed,
+                "artist": artist,
+                "favorite": favorite,
+            }
+        )
+        releases = [release for release in self.releases if release.is_favorite] if favorite else self.releases
+        return releases[offset : offset + limit]
+
+    def has_favorite_collection_releases(self, _db) -> bool:
+        return any(release.in_collection and release.is_favorite for release in self.releases)
 
     def search_collection_releases(
         self,
@@ -213,6 +226,7 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
                 "thumb_url": "https://example.test/thumb.jpg",
                 "collection_added_at": "2021-10-05T12:32:40Z",
                 "in_collection": True,
+                "is_favorite": False,
             },
             {
                 "id": "release-2",
@@ -227,13 +241,15 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
                 "thumb_url": "https://example.test/thumb.jpg",
                 "collection_added_at": "2021-10-05T12:32:40Z",
                 "in_collection": True,
+                "is_favorite": False,
             },
         ],
         "limit": 2,
         "offset": 0,
         "has_more": True,
+        "has_favorites": False,
     }
-    assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False, "artist": None}]
+    assert repository.calls == [{"limit": 3, "offset": 0, "include_removed": False, "artist": None, "favorite": False}]
 
 
 def test_list_collection_releases_filters_by_artist() -> None:
@@ -248,7 +264,30 @@ def test_list_collection_releases_filters_by_artist() -> None:
 
     assert response.status_code == 200
     assert response.json()["items"][0]["id"] == "release-1"
-    assert repository.calls == [{"limit": 26, "offset": 0, "include_removed": False, "artist": "Basic Channel"}]
+    assert repository.calls == [
+        {"limit": 26, "offset": 0, "include_removed": False, "artist": "Basic Channel", "favorite": False}
+    ]
+
+
+def test_list_collection_releases_filters_by_favorites() -> None:
+    repository = StubReleasesRepository(
+        [
+            _release("release-1", 101, "Favorite", is_favorite=True),
+            _release("release-2", 202, "Regular"),
+        ]
+    )
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"favorite": True})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["has_favorites"] is True
+    assert response.json()["items"][0]["is_favorite"] is True
+    assert repository.calls == [{"limit": 26, "offset": 0, "include_removed": False, "artist": None, "favorite": True}]
 
 
 def test_list_collection_releases_rejects_oversized_artist_filter() -> None:
@@ -276,8 +315,10 @@ def test_list_collection_releases_accepts_custom_max_limit() -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False}
-    assert repository.calls == [{"limit": 251, "offset": 0, "include_removed": False, "artist": None}]
+    assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False, "has_favorites": False}
+    assert repository.calls == [
+        {"limit": 251, "offset": 0, "include_removed": False, "artist": None, "favorite": False}
+    ]
 
 
 def test_search_collection_releases_rejects_oversized_artist_filter() -> None:
@@ -400,7 +441,13 @@ def _job_response(
     )
 
 
-def _release(release_id: str, discogs_release_id: int, title: str) -> SimpleNamespace:
+def _release(
+    release_id: str,
+    discogs_release_id: int,
+    title: str,
+    *,
+    is_favorite: bool = False,
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=release_id,
         discogs_release_id=discogs_release_id,
@@ -415,4 +462,5 @@ def _release(release_id: str, discogs_release_id: int, title: str) -> SimpleName
         cover_image_url="https://example.test/cover.jpg",
         collection_added_at=datetime(2021, 10, 5, 12, 32, 40, tzinfo=UTC),
         in_collection=True,
+        is_favorite=is_favorite,
     )

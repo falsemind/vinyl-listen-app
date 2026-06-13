@@ -173,10 +173,13 @@ class ReleasesRepository:
         offset: int,
         include_removed: bool = False,
         artist: str | None = None,
+        favorite: bool = False,
     ) -> Sequence[Releases]:
         query = db.query(Releases)
         if not include_removed:
             query = query.filter(Releases.in_collection.is_(True))
+        if favorite:
+            query = query.filter(Releases.is_favorite.is_(True))
         if artist and artist.strip():
             artist_pattern = f"%{artist.strip()}%"
             query = query.outerjoin(
@@ -198,6 +201,34 @@ class ReleasesRepository:
             .offset(offset)
             .limit(limit)
             .all()
+        )
+
+    @staticmethod
+    def set_favorite(
+        db: Session,
+        release: Releases,
+        *,
+        is_favorite: bool,
+        commit: bool = True,
+    ) -> Releases:
+        release.is_favorite = is_favorite
+
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    @staticmethod
+    def has_favorite_collection_releases(db: Session) -> bool:
+        return (
+            db.query(Releases.id)
+            .filter(Releases.in_collection.is_(True))
+            .filter(Releases.is_favorite.is_(True))
+            .first()
+            is not None
         )
 
     @staticmethod

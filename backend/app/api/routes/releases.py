@@ -7,10 +7,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.releases import (
     RecordFlowInsightsResponse,
     RecordFlowMoodTransitionResponse,
     RecordFlowReleaseSummaryResponse,
+    ReleaseFavoriteRequest,
     ReleaseImportRequest,
     ReleaseImportResponse,
     ReleaseResponse,
@@ -42,6 +44,10 @@ def get_discogs_service() -> DiscogsService:
 
 def get_sessions_service() -> SessionsService:
     return SessionsService()
+
+
+def get_releases_repository() -> ReleasesRepository:
+    return ReleasesRepository()
 
 
 @router.get("/")
@@ -200,6 +206,25 @@ def get_release(
         )
 
     return _release_response(db, service, release)
+
+
+@router.patch("/{release_id}/favorite", response_model=ReleaseResponse)
+def update_release_favorite(
+    release_id: str,
+    payload: ReleaseFavoriteRequest,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+):
+    release = service.get_release(db, release_id)
+    if release is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{release_id}' was not found.",
+        )
+
+    updated_release = repository.set_favorite(db, release, is_favorite=payload.is_favorite)
+    return _release_response(db, service, updated_release)
 
 
 @router.post("/{release_id}/refresh", response_model=ReleaseResponse)

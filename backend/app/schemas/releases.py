@@ -47,6 +47,7 @@ class ReleaseResponse(BaseModel):
     collection_removed_at: datetime | None = None
     last_discogs_sync_at: datetime | None = None
     discogs_instance_id: int | None = None
+    is_favorite: bool = False
     has_full_discogs_info: bool = False
     available_sides: list[str] = Field(default_factory=list)
     available_side_options: list[ReleaseSideOptionResponse] = Field(default_factory=list)
@@ -106,3 +107,7 @@ class ReleaseImportResponse(BaseModel):
     release_id: str
     discogs_release_id: int
     status: str
+
+
+class ReleaseFavoriteRequest(BaseModel):
+    is_favorite: bool
