@@ -92,6 +92,48 @@ def test_list_collection_releases_filters_cached_artist_matches() -> None:
     assert [release.title for release in releases] == ["Maurizio Mix"]
 
 
+def test_list_collection_releases_filters_cached_label_matches() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_release_search_tables(connection)
+        _insert_release(
+            connection,
+            discogs_release_id=1000,
+            artist="Scientist",
+            title="Wins The World Cup",
+            label="Greensleeves",
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=2000,
+            artist="Various",
+            title="Studio One Roots",
+            label="Compilation",
+            raw_discogs_json={
+                "labels": [{"name": "Studio One"}, {"name": "Soul Jazz Records"}],
+            },
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=3000,
+            artist="Unrelated",
+            title="Elsewhere",
+            label="Other",
+        )
+
+    with session_factory() as db:
+        releases = ReleasesRepository.list_collection_releases(
+            db,
+            label="Studio One",
+            limit=10,
+            offset=0,
+        )
+
+    assert [release.title for release in releases] == ["Studio One Roots"]
+
+
 def test_list_collection_releases_filters_favorites() -> None:
     engine = create_engine("sqlite:///:memory:")
     session_factory = sessionmaker(bind=engine)
@@ -166,6 +208,7 @@ def _insert_release(
     artist: str,
     title: str,
     raw_discogs_json: dict | None = None,
+    label: str = "Label",
     is_favorite: bool = False,
 ) -> None:
     connection.exec_driver_sql(
@@ -175,6 +218,7 @@ def _insert_release(
             discogs_release_id,
             artist,
             title,
+            label,
             in_collection,
             is_favorite,
             created_at,
@@ -185,6 +229,7 @@ def _insert_release(
             :discogs_release_id,
             :artist,
             :title,
+            :label,
             1,
             :is_favorite,
             '2026-06-05T10:00:00+00:00',
@@ -196,6 +241,7 @@ def _insert_release(
             "discogs_release_id": discogs_release_id,
             "artist": artist,
             "title": title,
+            "label": label,
             "is_favorite": is_favorite,
         },
     )

@@ -111,6 +111,7 @@ fun RecordDetailScreen(
     onEditSession: (String) -> Unit,
     onOpenRecord: (String) -> Unit,
     onOpenArtistCollection: (String) -> Unit,
+    onOpenLabelCollection: (String) -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
 ) {
@@ -126,6 +127,7 @@ fun RecordDetailScreen(
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
     var isArtistDiscographyExpanded by remember(releaseId) { mutableStateOf(false) }
     var isArtistCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
+    var isLabelCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
     var isInsightsExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
@@ -142,6 +144,7 @@ fun RecordDetailScreen(
                     isFetchingFullRelease = isFetchingFullRelease,
                     isArtistDiscographyExpanded = isArtistDiscographyExpanded,
                     isArtistCollectionExpanded = isArtistCollectionExpanded,
+                    isLabelCollectionExpanded = isLabelCollectionExpanded,
                 ),
             maxWidth = actionMenuMaxWidth,
         )
@@ -378,6 +381,7 @@ fun RecordDetailScreen(
                     isActionMenuOpen = false
                     isArtistDiscographyExpanded = false
                     isArtistCollectionExpanded = false
+                    isLabelCollectionExpanded = false
                 },
             ) {
                 if (shouldShowGetFullReleaseAction(record)) {
@@ -450,6 +454,33 @@ fun RecordDetailScreen(
                                 isActionMenuOpen = false
                                 isArtistCollectionExpanded = false
                                 onOpenArtistCollection(artistName)
+                            },
+                        )
+                    }
+                }
+                val collectionLabelNames = collectionLabelNames(record)
+                if (collectionLabelNames.size == 1) {
+                    val labelName = collectionLabelNames.first()
+                    ActionMenuAction(
+                        label = "More $labelName in collection",
+                        onClick = {
+                            isActionMenuOpen = false
+                            isLabelCollectionExpanded = false
+                            onOpenLabelCollection(labelName)
+                        },
+                    )
+                } else if (collectionLabelNames.size > 1) {
+                    LabelCollectionMenuAction(
+                        expanded = isLabelCollectionExpanded,
+                        onClick = { isLabelCollectionExpanded = !isLabelCollectionExpanded },
+                    )
+                    if (isLabelCollectionExpanded) {
+                        LabelCollectionMenuLinks(
+                            labelNames = collectionLabelNames,
+                            onLabelClick = { labelName ->
+                                isActionMenuOpen = false
+                                isLabelCollectionExpanded = false
+                                onOpenLabelCollection(labelName)
                             },
                         )
                     }
@@ -578,6 +609,52 @@ private fun ArtistCollectionMenuAction(
 }
 
 @Composable
+private fun LabelCollectionMenuAction(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Label collection arrow rotation",
+    )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (expanded) "Close label collection" else "Open label collection",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = "More from labels in collection",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            modifier =
+                Modifier
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+        )
+    }
+}
+
+@Composable
 private fun ArtistDiscographyMenuLinks(
     artists: List<ReleaseArtist>,
     onArtistClick: (ReleaseArtist) -> Unit,
@@ -632,6 +709,39 @@ private fun ArtistCollectionMenuLinks(
                             onClick = { onArtistClick(artistName) },
                         ).padding(vertical = VinylSpacing.SpaceXs),
                 text = "• $artistName",
+                color = VinylColors.AccentGreen,
+                textAlign = TextAlign.Start,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+    ActionMenuDelimiter()
+}
+
+@Composable
+private fun LabelCollectionMenuLinks(
+    labelNames: List<String>,
+    onLabelClick: (String) -> Unit,
+) {
+    ActionMenuDelimiter()
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+    ) {
+        labelNames.forEach { labelName ->
+            Text(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = "Filter collection by $labelName",
+                            role = Role.Button,
+                            onClick = { onLabelClick(labelName) },
+                        ).padding(vertical = VinylSpacing.SpaceXs),
+                text = "• $labelName",
                 color = VinylColors.AccentGreen,
                 textAlign = TextAlign.Start,
                 style = MaterialTheme.typography.labelLarge,
@@ -2211,6 +2321,7 @@ private fun recordActionMenuLabels(
     isFetchingFullRelease: Boolean,
     isArtistDiscographyExpanded: Boolean,
     isArtistCollectionExpanded: Boolean,
+    isLabelCollectionExpanded: Boolean,
 ): List<String> =
     buildList {
         if (shouldShowGetFullReleaseAction(record)) {
@@ -2238,6 +2349,15 @@ private fun recordActionMenuLabels(
                 collectionArtists.forEach { artistName -> add("• $artistName") }
             }
         }
+        val collectionLabels = collectionLabelNames(record)
+        if (collectionLabels.size == 1) {
+            add("More ${collectionLabels.first()} in collection")
+        } else if (collectionLabels.size > 1) {
+            add("More from labels in collection")
+            if (isLabelCollectionExpanded) {
+                collectionLabels.forEach { labelName -> add("• $labelName") }
+            }
+        }
         add("View release on Discogs")
     }
 
@@ -2249,6 +2369,12 @@ internal fun collectionArtistNames(record: RecordSummary): List<String> {
         listOfNotNull(record.artist.trim().takeIf { it.isNotEmpty() })
     }
 }
+
+internal fun collectionLabelNames(record: RecordSummary): List<String> =
+    record.label
+        .split(Regex("""\s*(?:,|;|/)\s*"""))
+        .mapNotNull { label -> label.trim().takeIf { it.isNotEmpty() && !it.equals("Unknown label", ignoreCase = true) } }
+        .distinct()
 
 internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
 

@@ -320,6 +320,7 @@ fun VinylNavHost(
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
+                    onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
                     onBack = {
                         if (!navController.popBackStack()) {
                             navController.navigate(VinylRoutes.HOME)
@@ -376,6 +377,11 @@ fun VinylNavHost(
                             nullable = true
                             defaultValue = null
                         },
+                        navArgument(VinylRoutes.LABEL) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 CollectionScreen(
@@ -394,7 +400,13 @@ fun VinylNavHost(
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
                     },
+                    onLabelFilterCleared = {
+                        navController.navigate(VinylRoutes.COLLECTION) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
                     initialArtistFilter = backStackEntry.arguments?.getString(VinylRoutes.ARTIST),
+                    initialLabelFilter = backStackEntry.arguments?.getString(VinylRoutes.LABEL),
                 )
             }
             composable(VinylRoutes.TOP_RECORDS) {
