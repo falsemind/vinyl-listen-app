@@ -30,7 +30,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,9 +58,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -129,6 +133,18 @@ fun RecordDetailScreen(
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val density = LocalDensity.current
+    var actionMenuMaxWidth by remember { mutableStateOf(260.dp) }
+    val actionMenuWidth =
+        recordActionMenuWidth(
+            labels =
+                recordActionMenuLabels(
+                    record = record,
+                    isFetchingFullRelease = isFetchingFullRelease,
+                    isArtistDiscographyExpanded = isArtistDiscographyExpanded,
+                    isArtistCollectionExpanded = isArtistCollectionExpanded,
+                ),
+            maxWidth = actionMenuMaxWidth,
+        )
     val menuOffset =
         with(density) {
             IntOffset(
@@ -149,6 +165,23 @@ fun RecordDetailScreen(
                 }.isSuccess
         isFetchingFullRelease = false
         return fetched
+    }
+
+    suspend fun updateFavorite(isFavorite: Boolean) {
+        runCatching { apiClient.setReleaseFavorite(record.releaseId, isFavorite) }
+            .onSuccess { updatedRecord ->
+                record = updatedRecord
+                detailError = null
+            }.onFailure { error ->
+                detailError =
+                    error.toUserMessage(
+                        if (isFavorite) {
+                            "Could not add record to favorites."
+                        } else {
+                            "Could not remove record from favorites."
+                        },
+                    )
+            }
     }
 
     suspend fun fetchFlowInsights(period: FlowInsightsPeriod) {
@@ -243,17 +276,26 @@ fun RecordDetailScreen(
                         onRetry = { retryKey += 1 },
                     )
                 }
-                RecordDetailHeroCard(
-                    record = record,
-                    isFetchingFullRelease = isFetchingFullRelease,
-                    isTracklistExpanded = isTracklistExpanded,
-                    onTracklistExpandedChange = { isTracklistExpanded = it },
-                    onGetFullRelease = {
-                        scope.launch {
-                            fetchFullRelease()
-                        }
-                    },
-                )
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { size ->
+                                actionMenuMaxWidth = with(density) { size.width.toDp() }
+                            },
+                ) {
+                    RecordDetailHeroCard(
+                        record = record,
+                        isFetchingFullRelease = isFetchingFullRelease,
+                        isTracklistExpanded = isTracklistExpanded,
+                        onTracklistExpandedChange = { isTracklistExpanded = it },
+                        onGetFullRelease = {
+                            scope.launch {
+                                fetchFullRelease()
+                            }
+                        },
+                    )
+                }
                 if (shouldShowCollectionRemovedMessage(record)) {
                     CollectionRemovedMessageCard(message = recordCollectionRemovedMessage(record))
                 }
@@ -331,6 +373,7 @@ fun RecordDetailScreen(
         if (isActionMenuOpen) {
             ActionMenuPopup(
                 offset = menuOffset,
+                width = actionMenuWidth,
                 onDismiss = {
                     isActionMenuOpen = false
                     isArtistDiscographyExpanded = false
@@ -350,6 +393,14 @@ fun RecordDetailScreen(
                 } else if (record.hasFullDiscogsInfo) {
                     ActionMenuStatus(label = "Full Discogs release")
                 }
+                ActionMenuAction(
+                    label = if (record.isFavorite) "Remove from favorites" else "Add to favorites",
+                    icon = if (record.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    onClick = {
+                        isActionMenuOpen = false
+                        scope.launch { updateFavorite(!record.isFavorite) }
+                    },
+                )
                 if (shouldShowArtistDiscographyAction(record)) {
                     if (record.discogsArtists.size == 1) {
                         ActionMenuAction(
@@ -669,13 +720,31 @@ private fun RecordDetailHeroCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
                 ) {
-                    Text(
-                        text = record.artist,
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .padding(end = VinylSpacing.SpaceSm),
+                            text = record.artist,
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (record.isFavorite) {
+                            Icon(
+                                imageVector = Icons.Filled.Favorite,
+                                contentDescription = "Favorite record",
+                                tint = VinylColors.AccentGreen,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
                     Text(
                         text = record.title,
                         color = VinylColors.TextPrimary,
@@ -2108,6 +2177,69 @@ internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
 
 internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
     record.hasFullDiscogsInfo && record.discogsArtists.isNotEmpty()
+
+@Composable
+private fun recordActionMenuWidth(
+    labels: List<String>,
+    maxWidth: Dp,
+): Dp {
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    val widestLabelWidth =
+        labels.maxOfOrNull { label ->
+            textMeasurer
+                .measure(
+                    text = AnnotatedString(label),
+                    style = labelStyle,
+                    maxLines = 1,
+                ).size.width
+        } ?: 0
+    val contentWidth =
+        with(density) { widestLabelWidth.toDp() } +
+            VinylSpacing.SpaceLg +
+            VinylSpacing.SpaceLg +
+            VinylSpacing.SpaceSm +
+            18.dp +
+            8.dp
+    val minimumWidth = 260.dp.coerceAtMost(maxWidth)
+    return contentWidth.coerceAtLeast(minimumWidth).coerceAtMost(maxWidth)
+}
+
+private fun recordActionMenuLabels(
+    record: RecordSummary,
+    isFetchingFullRelease: Boolean,
+    isArtistDiscographyExpanded: Boolean,
+    isArtistCollectionExpanded: Boolean,
+): List<String> =
+    buildList {
+        if (shouldShowGetFullReleaseAction(record)) {
+            add(if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release")
+        } else if (record.hasFullDiscogsInfo) {
+            add("Full Discogs release")
+        }
+        add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
+        if (shouldShowArtistDiscographyAction(record)) {
+            if (record.discogsArtists.size == 1) {
+                add("View artist discography")
+            } else {
+                add("View artists discography")
+                if (isArtistDiscographyExpanded) {
+                    record.discogsArtists.forEach { artist -> add("• ${artist.name}") }
+                }
+            }
+        }
+        val collectionArtists = collectionArtistNames(record)
+        if (collectionArtists.size == 1) {
+            add("More ${collectionArtists.first()} in collection")
+        } else if (collectionArtists.size > 1) {
+            add("More artists in collection")
+            if (isArtistCollectionExpanded) {
+                collectionArtists.forEach { artistName -> add("• $artistName") }
+            }
+        }
+        add("View release on Discogs")
+    }
 
 internal fun collectionArtistNames(record: RecordSummary): List<String> {
     val discogsArtistNames =

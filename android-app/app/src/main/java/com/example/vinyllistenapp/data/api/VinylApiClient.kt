@@ -130,6 +130,7 @@ class VinylApiClient(
         limit: Int = 25,
         offset: Int = 0,
         artist: String? = null,
+        favorite: Boolean = false,
     ): CollectionRecordsPage =
         apiCall {
             val query =
@@ -137,6 +138,7 @@ class VinylApiClient(
                     addQueryParam("limit", limit.toString())
                     addQueryParam("offset", offset.toString())
                     addQueryParam("artist", artist)
+                    if (favorite) addQueryParam("favorite", "true")
                 }.joinToString("&")
             getJson("collection/releases?$query").toCollectionRecordsPage()
         }
@@ -208,6 +210,16 @@ class VinylApiClient(
     suspend fun refreshRelease(releaseId: String): RecordSummary =
         apiCall {
             val response = postJson("releases/${Uri.encode(releaseId)}/refresh", JSONObject())
+            response.toRecordSummary()
+        }
+
+    suspend fun setReleaseFavorite(
+        releaseId: String,
+        isFavorite: Boolean,
+    ): RecordSummary =
+        apiCall {
+            val body = JSONObject().put("is_favorite", isFavorite)
+            val response = patchJson("releases/${Uri.encode(releaseId)}/favorite", body)
             response.toRecordSummary()
         }
 
@@ -870,6 +882,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         inCollection = optBoolean("in_collection", true),
         collectionAddedAt = optNullableString("collection_added_at"),
         collectionRemovedAt = optNullableString("collection_removed_at"),
+        isFavorite = optBoolean("is_favorite", false),
         hasFullDiscogsInfo = optBoolean("has_full_discogs_info", false),
         tracklist = optJSONArray("tracklist").orEmpty().toReleaseTracks(),
         discogsArtists = optJSONArray("discogs_artists").orEmpty().toReleaseArtists(),
@@ -894,6 +907,7 @@ internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
         limit = optInt("limit", 25),
         offset = optInt("offset", 0),
         hasMore = optBoolean("has_more", false),
+        hasFavorites = optBoolean("has_favorites", false),
     )
 
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
@@ -940,6 +954,7 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         thumbnailUrl = optNullableString("thumb_url"),
         collectionAddedAt = optNullableString("collection_added_at"),
         inCollection = optBoolean("in_collection", false),
+        isFavorite = optBoolean("is_favorite", false),
     )
 
 internal fun JSONObject.toAnalyticsSessionsPage(): AnalyticsSessionsPage =

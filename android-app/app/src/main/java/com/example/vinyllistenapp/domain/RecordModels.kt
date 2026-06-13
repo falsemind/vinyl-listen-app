@@ -20,6 +20,7 @@ data class RecordSummary(
     val inCollection: Boolean = true,
     val collectionAddedAt: String? = null,
     val collectionRemovedAt: String? = null,
+    val isFavorite: Boolean = false,
     val hasFullDiscogsInfo: Boolean = false,
     val tracklist: List<ReleaseTrack> = emptyList(),
     val discogsArtists: List<ReleaseArtist> = emptyList(),
@@ -207,6 +208,7 @@ data class CollectionRecord(
     val thumbnailUrl: String?,
     val collectionAddedAt: String?,
     val inCollection: Boolean,
+    val isFavorite: Boolean = false,
 )
 
 data class CollectionRecordsPage(
@@ -214,6 +216,7 @@ data class CollectionRecordsPage(
     val limit: Int,
     val offset: Int,
     val hasMore: Boolean,
+    val hasFavorites: Boolean = false,
 )
 
 data class MatchCandidate(

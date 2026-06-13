@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -94,6 +95,7 @@ fun CollectionScreen(
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
+    var hasFavorites by remember { mutableStateOf(false) }
     var isLoadingInitial by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var isSyncing by remember { mutableStateOf(false) }
@@ -102,6 +104,7 @@ fun CollectionScreen(
     var isActionMenuOpen by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
     var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
+    var favoriteFilter by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -112,10 +115,12 @@ fun CollectionScreen(
                 limit = COLLECTION_PAGE_SIZE,
                 offset = 0,
                 artist = artistFilter,
+                favorite = favoriteFilter,
             )
         }.onSuccess { page ->
             records = page.records
             hasMore = page.hasMore
+            hasFavorites = page.hasFavorites
             error = null
         }.onFailure { failure ->
             records = emptyList()
@@ -161,7 +166,7 @@ fun CollectionScreen(
         loadFirstPage()
     }
 
-    LaunchedEffect(retryKey, artistFilter) {
+    LaunchedEffect(retryKey, artistFilter, favoriteFilter) {
         loadCollectionState()
     }
 
@@ -198,10 +203,10 @@ fun CollectionScreen(
         },
         floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
-        val hasArtistFilter = artistFilter != null
-        val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing && !hasArtistFilter
+        val hasActiveFilter = artistFilter != null || favoriteFilter
+        val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter
         val showCenteredStatus = records.isEmpty() && !showEmptyLoad
-        if ((showEmptyLoad || showCenteredStatus) && !hasArtistFilter) {
+        if ((showEmptyLoad || showCenteredStatus) && !hasActiveFilter) {
             Box(
                 modifier =
                     Modifier
@@ -249,12 +254,22 @@ fun CollectionScreen(
                 syncMessage = syncMessage,
                 error = error,
                 artistFilter = artistFilter,
+                favoriteFilter = favoriteFilter,
+                hasFavorites = hasFavorites,
                 scrollState = scrollState,
                 onOpenRecord = onOpenRecord,
                 onRetry = { scope.launch { followCollectionSync() } },
                 onClearArtistFilter = {
                     artistFilter = null
                     onArtistFilterCleared()
+                },
+                onClearFavoriteFilter = {
+                    favoriteFilter = false
+                },
+                onShowFavorites = {
+                    artistFilter = null
+                    favoriteFilter = true
+                    isActionMenuOpen = false
                 },
                 isActionMenuOpen = isActionMenuOpen,
                 onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
@@ -270,6 +285,7 @@ fun CollectionScreen(
                                 limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
                                 offset = records.size,
                                 artist = artistFilter,
+                                favorite = favoriteFilter,
                             )
                         }.onSuccess { page ->
                             records = records + page.records
@@ -301,10 +317,14 @@ private fun CollectionListContent(
     syncMessage: String?,
     error: String?,
     artistFilter: String?,
+    favoriteFilter: Boolean,
+    hasFavorites: Boolean,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
     onClearArtistFilter: () -> Unit,
+    onClearFavoriteFilter: () -> Unit,
+    onShowFavorites: () -> Unit,
     isActionMenuOpen: Boolean,
     onActionMenuToggle: () -> Unit,
     onActionMenuDismiss: () -> Unit,
@@ -359,6 +379,9 @@ private fun CollectionListContent(
                     onDismiss = onClearArtistFilter,
                 )
             }
+            if (favoriteFilter) {
+                FavoriteCollectionFilterChip(onDismiss = onClearFavoriteFilter)
+            }
             syncMessage?.let { message -> CollectionStatusText(message) }
             error?.let {
                 CollectionStatusText(message = it, isError = true)
@@ -367,8 +390,14 @@ private fun CollectionListContent(
             if (isLoadingInitial) {
                 CollectionStatusText("Loading...")
             }
-            if (!isLoadingInitial && records.isEmpty() && error == null && artistFilter != null) {
-                CollectionStatusText("No collection records for $artistFilter.")
+            if (!isLoadingInitial && records.isEmpty() && error == null && (artistFilter != null || favoriteFilter)) {
+                CollectionStatusText(
+                    if (favoriteFilter) {
+                        "No favorite records."
+                    } else {
+                        "No collection records for $artistFilter."
+                    },
+                )
             }
             records.forEach { record ->
                 CollectionRecordCard(record = record, onClick = { onOpenRecord(record.releaseId) })
@@ -393,6 +422,13 @@ private fun CollectionListContent(
                     enabled = !isSyncing,
                     onClick = onSync,
                 )
+                if (hasFavorites && !favoriteFilter) {
+                    ActionMenuAction(
+                        label = "Personal favorites",
+                        icon = Icons.Filled.Favorite,
+                        onClick = onShowFavorites,
+                    )
+                }
             }
         }
     }
@@ -536,6 +572,38 @@ private fun ArtistCollectionFilterChip(
 }
 
 @Composable
+private fun FavoriteCollectionFilterChip(onDismiss: () -> Unit) {
+    Row(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                .clickable(
+                    onClickLabel = "Clear favorites filter",
+                    role = Role.Button,
+                    onClick = onDismiss,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Favorites",
+            color = VinylColors.TextOnAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
 private fun CollectionProcessingSpinner() {
     val transition = rememberInfiniteTransition(label = "collection-spinner")
     val rotation by transition.animateFloat(
@@ -590,13 +658,31 @@ private fun CollectionRecordCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
             ) {
-                Text(
-                    text = record.title,
-                    color = VinylColors.TextPrimary,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .padding(end = VinylSpacing.SpaceSm),
+                        text = record.title,
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (record.isFavorite) {
+                        Icon(
+                            imageVector = Icons.Filled.Favorite,
+                            contentDescription = "Favorite record",
+                            tint = VinylColors.AccentGreen,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
                 Text(
                     text = record.artist,
                     color = VinylColors.TextSecondary,
