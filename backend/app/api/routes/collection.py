@@ -99,6 +99,7 @@ def list_collection_releases(
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
+    label: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     favorite: bool = False,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:
@@ -108,6 +109,7 @@ def list_collection_releases(
         offset=offset,
         include_removed=include_removed,
         artist=artist,
+        label=label,
         favorite=favorite,
     )
     visible_releases = releases[:limit]

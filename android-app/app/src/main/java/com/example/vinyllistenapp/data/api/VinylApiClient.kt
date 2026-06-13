@@ -130,6 +130,7 @@ class VinylApiClient(
         limit: Int = 25,
         offset: Int = 0,
         artist: String? = null,
+        label: String? = null,
         favorite: Boolean = false,
     ): CollectionRecordsPage =
         apiCall {
@@ -138,6 +139,7 @@ class VinylApiClient(
                     addQueryParam("limit", limit.toString())
                     addQueryParam("offset", offset.toString())
                     addQueryParam("artist", artist)
+                    addQueryParam("label", label)
                     if (favorite) addQueryParam("favorite", "true")
                 }.joinToString("&")
             getJson("collection/releases?$query").toCollectionRecordsPage()

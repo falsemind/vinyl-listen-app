@@ -91,7 +91,9 @@ fun CollectionScreen(
     onManualSearch: () -> Unit,
     onOpenRecord: (String) -> Unit,
     onArtistFilterCleared: () -> Unit = {},
+    onLabelFilterCleared: () -> Unit = {},
     initialArtistFilter: String? = null,
+    initialLabelFilter: String? = null,
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -104,20 +106,33 @@ fun CollectionScreen(
     var isActionMenuOpen by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
     var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
+    var labelFilter by remember(initialLabelFilter) { mutableStateOf(initialLabelFilter?.takeIf { it.isNotBlank() }) }
     var favoriteFilter by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     suspend fun loadFirstPage() {
+        val requestedArtistFilter = artistFilter
+        val requestedLabelFilter = labelFilter
+        val requestedFavoriteFilter = favoriteFilter
         isLoadingInitial = true
+        records = emptyList()
+        hasMore = false
         runCatching {
             apiClient.getCollectionReleases(
                 limit = COLLECTION_PAGE_SIZE,
                 offset = 0,
-                artist = artistFilter,
-                favorite = favoriteFilter,
+                artist = requestedArtistFilter,
+                label = requestedLabelFilter,
+                favorite = requestedFavoriteFilter,
             )
         }.onSuccess { page ->
+            if (requestedArtistFilter != artistFilter ||
+                requestedLabelFilter != labelFilter ||
+                requestedFavoriteFilter != favoriteFilter
+            ) {
+                return@onSuccess
+            }
             records = page.records
             hasMore = page.hasMore
             hasFavorites = page.hasFavorites
@@ -166,7 +181,7 @@ fun CollectionScreen(
         loadFirstPage()
     }
 
-    LaunchedEffect(retryKey, artistFilter, favoriteFilter) {
+    LaunchedEffect(retryKey, artistFilter, labelFilter, favoriteFilter) {
         loadCollectionState()
     }
 
@@ -203,7 +218,7 @@ fun CollectionScreen(
         },
         floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
-        val hasActiveFilter = artistFilter != null || favoriteFilter
+        val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter
         val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter
         val showCenteredStatus = records.isEmpty() && !showEmptyLoad
         if ((showEmptyLoad || showCenteredStatus) && !hasActiveFilter) {
@@ -254,6 +269,7 @@ fun CollectionScreen(
                 syncMessage = syncMessage,
                 error = error,
                 artistFilter = artistFilter,
+                labelFilter = labelFilter,
                 favoriteFilter = favoriteFilter,
                 hasFavorites = hasFavorites,
                 scrollState = scrollState,
@@ -263,11 +279,16 @@ fun CollectionScreen(
                     artistFilter = null
                     onArtistFilterCleared()
                 },
+                onClearLabelFilter = {
+                    labelFilter = null
+                    onLabelFilterCleared()
+                },
                 onClearFavoriteFilter = {
                     favoriteFilter = false
                 },
                 onShowFavorites = {
                     artistFilter = null
+                    labelFilter = null
                     favoriteFilter = true
                     isActionMenuOpen = false
                 },
@@ -279,15 +300,25 @@ fun CollectionScreen(
                 },
                 onShowMore = { count ->
                     scope.launch {
+                        val requestedArtistFilter = artistFilter
+                        val requestedLabelFilter = labelFilter
+                        val requestedFavoriteFilter = favoriteFilter
                         isLoadingMore = true
                         runCatching {
                             apiClient.getCollectionReleases(
                                 limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
                                 offset = records.size,
-                                artist = artistFilter,
-                                favorite = favoriteFilter,
+                                artist = requestedArtistFilter,
+                                label = requestedLabelFilter,
+                                favorite = requestedFavoriteFilter,
                             )
                         }.onSuccess { page ->
+                            if (requestedArtistFilter != artistFilter ||
+                                requestedLabelFilter != labelFilter ||
+                                requestedFavoriteFilter != favoriteFilter
+                            ) {
+                                return@onSuccess
+                            }
                             records = records + page.records
                             hasMore = page.hasMore
                             error = null
@@ -317,12 +348,14 @@ private fun CollectionListContent(
     syncMessage: String?,
     error: String?,
     artistFilter: String?,
+    labelFilter: String?,
     favoriteFilter: Boolean,
     hasFavorites: Boolean,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
     onClearArtistFilter: () -> Unit,
+    onClearLabelFilter: () -> Unit,
     onClearFavoriteFilter: () -> Unit,
     onShowFavorites: () -> Unit,
     isActionMenuOpen: Boolean,
@@ -379,6 +412,12 @@ private fun CollectionListContent(
                     onDismiss = onClearArtistFilter,
                 )
             }
+            labelFilter?.let { label ->
+                LabelCollectionFilterChip(
+                    label = label,
+                    onDismiss = onClearLabelFilter,
+                )
+            }
             if (favoriteFilter) {
                 FavoriteCollectionFilterChip(onDismiss = onClearFavoriteFilter)
             }
@@ -390,12 +429,16 @@ private fun CollectionListContent(
             if (isLoadingInitial) {
                 CollectionStatusText("Loading...")
             }
-            if (!isLoadingInitial && records.isEmpty() && error == null && (artistFilter != null || favoriteFilter)) {
+            if (!isLoadingInitial &&
+                records.isEmpty() &&
+                error == null &&
+                (artistFilter != null || labelFilter != null || favoriteFilter)
+            ) {
                 CollectionStatusText(
-                    if (favoriteFilter) {
-                        "No favorite records."
-                    } else {
-                        "No collection records for $artistFilter."
+                    when {
+                        favoriteFilter -> "No favorite records."
+                        labelFilter != null -> "No collection records for $labelFilter."
+                        else -> "No collection records for $artistFilter."
                     },
                 )
             }
@@ -557,6 +600,41 @@ private fun ArtistCollectionFilterChip(
     ) {
         Text(
             text = artist,
+            color = VinylColors.TextOnAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = null,
+            tint = VinylColors.TextOnAccent,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun LabelCollectionFilterChip(
+    label: String,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                .clickable(
+                    onClickLabel = "Clear label filter",
+                    role = Role.Button,
+                    onClick = onDismiss,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
             color = VinylColors.TextOnAccent,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
