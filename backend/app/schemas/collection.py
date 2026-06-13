@@ -53,6 +53,7 @@ class CollectionReleaseResponse(BaseModel):
     thumb_url: str | None = None
     collection_added_at: datetime | None = None
     in_collection: bool
+    is_favorite: bool = False
 
 
 class CollectionReleasesResponse(BaseModel):
@@ -60,3 +61,4 @@ class CollectionReleasesResponse(BaseModel):
     limit: int
     offset: int
     has_more: bool
+    has_favorites: bool = False

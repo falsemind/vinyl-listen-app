@@ -24,6 +24,7 @@ class Releases(Base):
         Index("idx_releases_styles", "styles", postgresql_using="gin"),
         Index("idx_releases_in_collection", "in_collection"),
         Index("idx_releases_collection_added_at", "collection_added_at"),
+        Index("idx_releases_is_favorite", "is_favorite"),
     )
 
     # Primary key – a UUID stored as a string for portability.
@@ -59,6 +60,7 @@ class Releases(Base):
     collection_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_discogs_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discogs_instance_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    is_favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     # Timestamps.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -149,6 +149,7 @@ class ReleaseStub:
     cover_image_url: str | None
     created_at: datetime
     updated_at: datetime
+    is_favorite: bool = False
 
 
 class StubReleaseImportService:
@@ -173,6 +174,7 @@ class StubReleaseImportService:
         self.import_calls: list[tuple[int, bool]] = []
         self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
+        self.favorite_calls: list[tuple[str, bool]] = []
         self.has_full_discogs_info_value = True
         self.available_sides = ["A", "AA"]
         self.available_side_options = [
@@ -228,6 +230,11 @@ class StubReleaseImportService:
         if discogs_release_id == self.release.discogs_release_id:
             return self.artists
         return []
+
+    def set_favorite(self, _db, release: ReleaseStub, *, is_favorite: bool) -> ReleaseStub:
+        self.favorite_calls.append((release.id, is_favorite))
+        release.is_favorite = is_favorite
+        return release
 
 
 class StubDiscogsSearchService:

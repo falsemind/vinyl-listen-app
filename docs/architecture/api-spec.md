@@ -450,6 +450,7 @@ Returns stored release metadata for an internal release ID.
   "collection_removed_at": null,
   "last_discogs_sync_at": "2026-06-04T20:15:00Z",
   "discogs_instance_id": 123456,
+  "is_favorite": false,
   "has_full_discogs_info": true,
   "available_sides": ["A", "B"],
   "available_side_options": [
@@ -483,6 +484,24 @@ Returns stored release metadata for an internal release ID.
 `available_sides`, `available_side_options`, and `tracklist` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached. `tracklist` contains Discogs track rows only; headings and other non-track rows are omitted. `duration` may be `null`.
 
 `discogs_artists` is derived from the cached full Discogs release artist list and includes only artists with Discogs artist IDs. Android uses it to link to artist discography pages.
+
+## PATCH /releases/{release_id}/favorite
+
+Sets the local favorite flag for a release and returns the same response shape as `GET /releases/{release_id}`.
+
+### Request
+
+```json
+{
+  "is_favorite": true
+}
+```
+
+### Errors
+
+| Status | Meaning |
+| --- | --- |
+| `404 Not Found` | No local release exists for `release_id`. |
 
 ## POST /releases/{release_id}/refresh
 
@@ -571,6 +590,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 | `limit` | integer | Page size. Android loads `25` by default and supports custom page sizes up to the configured max page limit, currently `250`. |
 | `offset` | integer | Number of active collection records to skip. |
 | `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
+| `favorite` | boolean | Optional flag. When `true`, returns only records marked as personal favorites. |
 
 ### Response
 
@@ -589,12 +609,14 @@ Returns active collection records ordered by Discogs collection add date, newest
       "styles": ["Dub", "Dub Techno"],
       "thumb_url": "https://...",
       "collection_added_at": "2021-10-05T19:32:40Z",
-      "in_collection": true
+      "in_collection": true,
+      "is_favorite": true
     }
   ],
   "limit": 25,
   "offset": 0,
-  "has_more": true
+  "has_more": true,
+  "has_favorites": true
 }
 ```
 
@@ -1046,6 +1068,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
   "barcode": "...",
   "cover_image_url": "...",
   "in_collection": true,
+  "is_favorite": false,
   "has_full_discogs_info": true,
   "available_sides": ["X", "Y"],
   "available_side_options": [

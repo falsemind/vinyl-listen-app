@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.api.routes.releases import get_releases_repository
 from app.main import app
 from app.services.discogs_service import DiscogsClientError
 
@@ -212,6 +213,7 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "collection_removed_at": None,
         "last_discogs_sync_at": None,
         "discogs_instance_id": None,
+        "is_favorite": False,
         "has_full_discogs_info": True,
         "available_sides": ["A", "AA"],
         "available_side_options": [
@@ -229,6 +231,24 @@ def test_get_release_endpoint_returns_local_release_metadata(
         "updated_at": "2026-04-19T00:00:00Z",
     }
     assert service.lookup_calls == ["release-123"]
+
+
+def test_update_release_favorite_endpoint_updates_release(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+    app.dependency_overrides[get_releases_repository] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.patch("/api/v1/releases/release-123/favorite", json={"is_favorite": True})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["is_favorite"] is True
+    assert service.favorite_calls == [("release-123", True)]
 
 
 def test_refresh_release_endpoint_fetches_full_release(

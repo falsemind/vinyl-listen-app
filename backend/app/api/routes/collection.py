@@ -99,6 +99,7 @@ def list_collection_releases(
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
+    favorite: bool = False,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:
     releases = repository.list_collection_releases(
@@ -107,6 +108,7 @@ def list_collection_releases(
         offset=offset,
         include_removed=include_removed,
         artist=artist,
+        favorite=favorite,
     )
     visible_releases = releases[:limit]
     return CollectionReleasesResponse(
@@ -114,6 +116,7 @@ def list_collection_releases(
         limit=limit,
         offset=offset,
         has_more=len(releases) > limit,
+        has_favorites=repository.has_favorite_collection_releases(db),
     )
 
 
@@ -175,6 +178,7 @@ def _to_collection_release_response(release) -> CollectionReleaseResponse:
         thumb_url=release.thumbnail_url or release.cover_image_url,
         collection_added_at=release.collection_added_at,
         in_collection=release.in_collection,
+        is_favorite=release.is_favorite,
     )
 
 

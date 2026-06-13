@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -99,8 +100,10 @@ fun ActionMenuAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    icon: ImageVector? = null,
+    iconTint: Color = VinylColors.AccentGreen,
 ) {
-    Text(
+    Row(
         modifier =
             modifier
                 .fillMaxWidth()
@@ -110,13 +113,30 @@ fun ActionMenuAction(
                     role = Role.Button,
                     onClick = onClick,
                 ).padding(vertical = VinylSpacing.SpaceXs),
-        text = label,
-        color = VinylColors.AccentGreen,
-        textAlign = TextAlign.Start,
-        style = MaterialTheme.typography.labelLarge,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = label,
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        icon?.let {
+            Icon(
+                modifier = Modifier.size(18.dp),
+                imageVector = it,
+                contentDescription = null,
+                tint = iconTint,
+            )
+        }
+    }
 }
 
 @Composable
