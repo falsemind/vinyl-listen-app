@@ -600,7 +600,7 @@ private fun ArtistCollectionFilterChip(
     ) {
         Text(
             text = artist,
-            color = VinylColors.TextOnAccent,
+            color = VinylColors.AppBackground,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -608,7 +608,7 @@ private fun ArtistCollectionFilterChip(
         Icon(
             imageVector = Icons.Filled.Close,
             contentDescription = null,
-            tint = VinylColors.TextOnAccent,
+            tint = VinylColors.AppBackground,
             modifier = Modifier.size(16.dp),
         )
     }
@@ -635,7 +635,7 @@ private fun LabelCollectionFilterChip(
     ) {
         Text(
             text = label,
-            color = VinylColors.TextOnAccent,
+            color = VinylColors.AppBackground,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -643,7 +643,7 @@ private fun LabelCollectionFilterChip(
         Icon(
             imageVector = Icons.Filled.Close,
             contentDescription = null,
-            tint = VinylColors.TextOnAccent,
+            tint = VinylColors.AppBackground,
             modifier = Modifier.size(16.dp),
         )
     }
@@ -667,7 +667,7 @@ private fun FavoriteCollectionFilterChip(onDismiss: () -> Unit) {
     ) {
         Text(
             text = "Favorites",
-            color = VinylColors.TextOnAccent,
+            color = VinylColors.AppBackground,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -675,7 +675,7 @@ private fun FavoriteCollectionFilterChip(onDismiss: () -> Unit) {
         Icon(
             imageVector = Icons.Filled.Close,
             contentDescription = null,
-            tint = VinylColors.TextOnAccent,
+            tint = VinylColors.AppBackground,
             modifier = Modifier.size(16.dp),
         )
     }
