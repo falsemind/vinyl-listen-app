@@ -900,17 +900,20 @@ private fun JSONObject.toRecordFlowInsights(): RecordFlowInsights =
         confidence = optString("confidence", "low"),
     )
 
-internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage =
-    CollectionRecordsPage(
-        records =
-            optJSONArray("items")
-                .orEmpty()
-                .mapObjects { item -> item.toCollectionRecord() },
+internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage {
+    val records =
+        optJSONArray("items")
+            .orEmpty()
+            .mapObjects { item -> item.toCollectionRecord() }
+    return CollectionRecordsPage(
+        records = records,
         limit = optInt("limit", 25),
         offset = optInt("offset", 0),
+        total = optInt("total", records.size),
         hasMore = optBoolean("has_more", false),
         hasFavorites = optBoolean("has_favorites", false),
     )
+}
 
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
     ReleaseSearchResult(

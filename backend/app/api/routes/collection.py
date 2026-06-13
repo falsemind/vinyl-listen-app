@@ -103,6 +103,13 @@ def list_collection_releases(
     favorite: bool = False,
     include_removed: bool = False,
 ) -> CollectionReleasesResponse:
+    total = repository.count_collection_releases(
+        db,
+        include_removed=include_removed,
+        artist=artist,
+        label=label,
+        favorite=favorite,
+    )
     releases = repository.list_collection_releases(
         db,
         limit=limit + 1,
@@ -117,7 +124,8 @@ def list_collection_releases(
         items=[_to_collection_release_response(release) for release in visible_releases],
         limit=limit,
         offset=offset,
-        has_more=len(releases) > limit,
+        total=total,
+        has_more=offset + len(visible_releases) < total,
         has_favorites=repository.has_favorite_collection_releases(db),
     )
 

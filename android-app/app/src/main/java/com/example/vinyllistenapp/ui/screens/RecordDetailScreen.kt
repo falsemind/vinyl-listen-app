@@ -2147,6 +2147,9 @@ internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean 
 internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
     record.inCollection && !record.hasFullDiscogsInfo && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
 
+internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
+    record.hasFullDiscogsInfo && record.discogsArtists.isNotEmpty()
+
 @Composable
 private fun recordActionMenuWidth(
     labels: List<String>,

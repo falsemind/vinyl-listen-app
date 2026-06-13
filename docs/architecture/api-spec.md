@@ -616,6 +616,7 @@ Returns active collection records ordered by Discogs collection add date, newest
   ],
   "limit": 25,
   "offset": 0,
+  "total": 41,
   "has_more": true,
   "has_favorites": true
 }

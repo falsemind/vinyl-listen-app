@@ -176,6 +176,51 @@ class ReleasesRepository:
         label: str | None = None,
         favorite: bool = False,
     ) -> Sequence[Releases]:
+        query = ReleasesRepository._collection_releases_query(
+            db,
+            include_removed=include_removed,
+            artist=artist,
+            label=label,
+            favorite=favorite,
+        )
+
+        return (
+            query.order_by(
+                Releases.collection_added_at.desc().nullslast(),
+                Releases.artist.asc(),
+                Releases.title.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_collection_releases(
+        db: Session,
+        *,
+        include_removed: bool = False,
+        artist: str | None = None,
+        label: str | None = None,
+        favorite: bool = False,
+    ) -> int:
+        return ReleasesRepository._collection_releases_query(
+            db,
+            include_removed=include_removed,
+            artist=artist,
+            label=label,
+            favorite=favorite,
+        ).count()
+
+    @staticmethod
+    def _collection_releases_query(
+        db: Session,
+        *,
+        include_removed: bool = False,
+        artist: str | None = None,
+        label: str | None = None,
+        favorite: bool = False,
+    ):
         query = db.query(Releases)
         if not include_removed:
             query = query.filter(Releases.in_collection.is_(True))
@@ -202,17 +247,7 @@ class ReleasesRepository:
                     cast(DiscogsReleaseCache.raw_discogs_json, String).ilike(label_pattern),
                 )
             )
-
-        return (
-            query.order_by(
-                Releases.collection_added_at.desc().nullslast(),
-                Releases.artist.asc(),
-                Releases.title.asc(),
-            )
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        return query
 
     @staticmethod
     def set_favorite(

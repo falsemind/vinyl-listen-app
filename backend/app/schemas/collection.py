@@ -60,5 +60,6 @@ class CollectionReleasesResponse(BaseModel):
     items: list[CollectionReleaseResponse]
     limit: int
     offset: int
+    total: int
     has_more: bool
     has_favorites: bool = False

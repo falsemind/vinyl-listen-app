@@ -60,13 +60,29 @@ class StubReleasesRepository:
                 "favorite": favorite,
             }
         )
-        releases = [release for release in self.releases if release.is_favorite] if favorite else self.releases
-        if label is not None:
-            releases = [release for release in releases if release.label == label]
+        releases = self._filtered_releases(label=label, favorite=favorite)
         return releases[offset : offset + limit]
+
+    def count_collection_releases(
+        self,
+        _db,
+        *,
+        include_removed: bool = False,
+        artist: str | None = None,
+        label: str | None = None,
+        favorite: bool = False,
+    ) -> int:
+        _ = include_removed, artist
+        return len(self._filtered_releases(label=label, favorite=favorite))
 
     def has_favorite_collection_releases(self, _db) -> bool:
         return any(release.in_collection and release.is_favorite for release in self.releases)
+
+    def _filtered_releases(self, *, label: str | None, favorite: bool) -> list[SimpleNamespace]:
+        releases = [release for release in self.releases if release.is_favorite] if favorite else self.releases
+        if label is not None:
+            releases = [release for release in releases if release.label == label]
+        return releases
 
     def search_collection_releases(
         self,
@@ -250,6 +266,7 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
         ],
         "limit": 2,
         "offset": 0,
+        "total": 3,
         "has_more": True,
         "has_favorites": False,
     }
@@ -366,7 +383,14 @@ def test_list_collection_releases_accepts_custom_max_limit() -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "limit": 250, "offset": 0, "has_more": False, "has_favorites": False}
+    assert response.json() == {
+        "items": [],
+        "limit": 250,
+        "offset": 0,
+        "total": 0,
+        "has_more": False,
+        "has_favorites": False,
+    }
     assert repository.calls == [
         {"limit": 251, "offset": 0, "include_removed": False, "artist": None, "label": None, "favorite": False}
     ]
