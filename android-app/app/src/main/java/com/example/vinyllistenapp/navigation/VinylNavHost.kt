@@ -552,6 +552,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.BARCODE_PROCESSING_PATTERN,
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
+            VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,

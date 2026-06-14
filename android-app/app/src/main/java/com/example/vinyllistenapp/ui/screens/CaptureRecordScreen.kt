@@ -114,6 +114,7 @@ fun CaptureRecordScreen(
     val photoCaptured = capturedImageUri != null
     val barcodeCaptured = capturedBarcode != null
     val captureComplete = photoCaptured || barcodeCaptured
+    val normalCaptureActionsEnabled = !isTakingPhoto && !captureComplete && !barcodeScanMode
     LaunchedEffect(capturedImageUri) {
         val uri = capturedImageUri ?: return@LaunchedEffect
         delay(SUCCESS_CONFIRMATION_DELAY_MS)
@@ -279,7 +280,7 @@ fun CaptureRecordScreen(
                         else -> "Take Photo"
                     },
                 onClick = {
-                    if (!isTakingPhoto && !captureComplete) {
+                    if (normalCaptureActionsEnabled) {
                         if (cameraPrivacyBlocked) {
                             retryCameraPrivacyAccess()
                         } else if (refreshCameraPermission(markDenied = false)) {
@@ -287,10 +288,11 @@ fun CaptureRecordScreen(
                         } else {
                             permissionLauncher.launch(Manifest.permission.CAMERA)
                         }
-                    } else {
+                    } else if (!barcodeScanMode) {
                         refreshCameraPermission(markDenied = true)
                     }
                 },
+                enabled = normalCaptureActionsEnabled,
             )
             if (permissionDenied) {
                 Spacer(Modifier.height(VinylSpacing.SpaceMd))
@@ -352,20 +354,22 @@ fun CaptureRecordScreen(
                     label = "Upload",
                     accentColor = VinylColors.AccentGreen,
                     onClick = {
-                        if (!isTakingPhoto && !captureComplete) {
+                        if (normalCaptureActionsEnabled) {
                             uploadLauncher.launch("image/*")
                         }
                     },
+                    enabled = normalCaptureActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
                 CaptureSecondaryButton(
                     label = "Manual Search",
                     accentColor = VinylColors.AccentOrange,
                     onClick = {
-                        if (!isTakingPhoto && !captureComplete) {
+                        if (normalCaptureActionsEnabled) {
                             onManualSearch()
                         }
                     },
+                    enabled = normalCaptureActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -906,6 +910,7 @@ private fun CaptureSecondaryButton(
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier =
@@ -915,6 +920,7 @@ private fun CaptureSecondaryButton(
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
                 .clickable(
+                    enabled = enabled,
                     onClickLabel = label,
                     role = Role.Button,
                     onClick = onClick,
@@ -923,12 +929,12 @@ private fun CaptureSecondaryButton(
     ) {
         CardTopAccentLine(
             accentColor = accentColor,
-            alpha = 0.35f,
+            alpha = if (enabled) 0.35f else 0.12f,
             modifier = Modifier.align(Alignment.TopCenter),
         )
         Text(
             text = label,
-            color = VinylColors.TextSecondary,
+            color = if (enabled) VinylColors.TextSecondary else VinylColors.TextSecondary.copy(alpha = 0.45f),
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
