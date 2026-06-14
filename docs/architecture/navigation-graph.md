@@ -25,15 +25,19 @@ Home
  │             └── SessionLogging
  │
  ├── CaptureRecord
- │     └── Processing
- │           ├── MatchConfirmation
- │           │      └── SessionLogging
- │           │             └── RecordDetail
- │           │                    └── Home
- │           │
- │           └── ManualSearch
- │                   └── SessionLogging
- │                          └── RecordDetail
+ │     ├── Processing
+ │     │     ├── MatchConfirmation
+ │     │     │      └── SessionLogging
+ │     │     │             └── RecordDetail
+ │     │     │                    └── Home
+ │     │     │
+ │     │     └── ManualSearch
+ │     │            └── SessionLogging
+ │     │                   └── RecordDetail
+ │     │
+ │     └── BarcodeProcessing
+ │            ├── MatchConfirmation
+ │            └── ManualSearch
  │
  ├── RecordDetail
  │      └── SessionLogging
@@ -58,8 +62,9 @@ Home, Analytics, Insights, and Collection are active bottom-navigation routes. S
 |Recent Sessions|`recent_sessions`|
 |Capture Record|`capture_record`|
 |Processing|`processing?imageUri={imageUri}`|
+|Barcode Processing|`barcode_processing?barcode={barcode}`|
 |Match Confirmation|`match_confirmation`|
-|Manual Search|`manual_search`|
+|Manual Search|`manual_search?barcode={barcode}`|
 |Collection Manual Search|`collection_manual_search`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
@@ -86,6 +91,7 @@ Current backend endpoints used by these routes:
 |Cancel active identify job|`POST /api/v1/identify/jobs/{job_id}/cancel`|
 |Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
 |Manual Discogs search|`GET /api/v1/releases/search`|
+|Barcode scan release search|`GET /api/v1/releases/search?barcode={barcode}`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
@@ -105,6 +111,8 @@ Current backend endpoints used by these routes:
 |Load Analytics dashboard|`GET /api/v1/analytics/plays/monthly`, `GET /api/v1/analytics/top-records`, `GET /api/v1/analytics/rating-distribution`, `GET /api/v1/analytics/mood-distribution`|
 
 The identify job flow returns candidates inside `result` when the job reaches `completed`. The synchronous `POST /api/v1/identify` flow returns the same candidate shape directly.
+
+Barcode scan starts from the existing `CaptureRecord` camera preview. After a stable on-device UPC/EAN read, the client shows a short captured state, opens `barcode_processing?barcode={barcode}`, searches releases by barcode, and routes to the same match confirmation candidates used by image identify. No-result, timeout, and API failure states can retry scanning, open manual search with the barcode prefilled, or cancel back out of the identify flow.
 
 Identify candidates include:
 

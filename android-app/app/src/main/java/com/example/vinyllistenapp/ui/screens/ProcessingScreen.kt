@@ -49,6 +49,7 @@ import com.example.vinyllistenapp.data.api.IdentifyJobState
 import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.SUCCESS_CONFIRMATION_DELAY_MS
 import com.example.vinyllistenapp.ui.components.SuccessStatusFeedback
@@ -56,8 +57,138 @@ import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val IDENTIFY_POLL_DELAY_MS = 750L
+private const val BARCODE_SEARCH_TIMEOUT_MS = 10_000L
+
+@Composable
+fun BarcodeProcessingScreen(
+    barcode: String?,
+    apiClient: VinylApiClient,
+    onComplete: (List<MatchCandidate>) -> Unit,
+    onRetryScan: () -> Unit,
+    onManualSearch: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var retryKey by rememberSaveable { mutableIntStateOf(0) }
+    var state by remember { mutableStateOf<BarcodeProcessingUiState>(BarcodeProcessingUiState.Loading) }
+    val normalizedBarcode = barcode.orEmpty()
+
+    BackHandler(enabled = state is BarcodeProcessingUiState.Loading) {
+        onDismiss()
+    }
+
+    LaunchedEffect(normalizedBarcode, retryKey) {
+        state = BarcodeProcessingUiState.Loading
+        if (normalizedBarcode.isBlank()) {
+            state = BarcodeProcessingUiState.Error("Barcode could not be read. Retry or use Manual Search.")
+            return@LaunchedEffect
+        }
+
+        val candidates =
+            withTimeoutOrNull(BARCODE_SEARCH_TIMEOUT_MS) {
+                runCatching {
+                    apiClient
+                        .searchReleases(
+                            artist = null,
+                            title = null,
+                            catalog = null,
+                            barcode = normalizedBarcode,
+                            year = null,
+                            limit = 10,
+                            offset = 0,
+                        ).results
+                        .mapIndexed { index, result -> result.toBarcodeMatchCandidate(normalizedBarcode, index) }
+                }.getOrElse { error ->
+                    state = BarcodeProcessingUiState.Error(error.toBarcodeSearchErrorMessage())
+                    null
+                }
+            }
+
+        when {
+            candidates == null && state is BarcodeProcessingUiState.Loading ->
+                state = BarcodeProcessingUiState.Error("Barcode search timed out. Retry or use Manual Search.")
+
+            candidates == null -> Unit
+            candidates.isEmpty() -> state = BarcodeProcessingUiState.Empty
+            else -> {
+                state = BarcodeProcessingUiState.Success
+                delay(SUCCESS_CONFIRMATION_DELAY_MS)
+                onComplete(candidates)
+            }
+        }
+    }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(VinylColors.AppBackground)
+                .padding(horizontal = VinylSpacing.SpaceMd),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp, bottom = VinylSpacing.SpaceXl),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CloseCircleButton(
+                onClick = onDismiss,
+                contentDescription = "Cancel barcode search",
+            )
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Identifying Record",
+                color = VinylColors.TextPrimary,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.headlineLarge,
+            )
+            Spacer(Modifier.width(40.dp))
+        }
+        Box(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (state is BarcodeProcessingUiState.Success) {
+                SuccessStatusFeedback(message = "Matches found")
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(32.dp),
+                ) {
+                    ProcessingSpinner(animated = state is BarcodeProcessingUiState.Loading)
+                    Text(
+                        modifier = Modifier.width(260.dp),
+                        text = barcodeProcessingSubtitle(state),
+                        color = if (state is BarcodeProcessingUiState.Error) VinylColors.AccentOrange else VinylColors.TextSecondary,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    when (state) {
+                        BarcodeProcessingUiState.Empty,
+                        is BarcodeProcessingUiState.Error,
+                        ->
+                            ProcessingRecoveryActions(
+                                onRetry = onRetryScan,
+                                onManualSearch = { onManualSearch(normalizedBarcode) },
+                            )
+
+                        BarcodeProcessingUiState.Loading,
+                        BarcodeProcessingUiState.Success,
+                        -> Unit
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun ProcessingScreen(
@@ -322,6 +453,54 @@ private fun processingSubtitle(state: IdentifyUiState): String =
         IdentifyUiState.Empty -> "No matches found"
         is IdentifyUiState.Error -> state.message
     }
+
+private sealed interface BarcodeProcessingUiState {
+    data object Loading : BarcodeProcessingUiState
+
+    data object Success : BarcodeProcessingUiState
+
+    data object Empty : BarcodeProcessingUiState
+
+    data class Error(
+        val message: String,
+    ) : BarcodeProcessingUiState
+}
+
+private fun barcodeProcessingSubtitle(state: BarcodeProcessingUiState): String =
+    when (state) {
+        BarcodeProcessingUiState.Loading -> "Searching matches..."
+        BarcodeProcessingUiState.Success -> "Matches found"
+        BarcodeProcessingUiState.Empty -> "No matches found"
+        is BarcodeProcessingUiState.Error -> state.message
+    }
+
+private fun ReleaseSearchResult.toBarcodeMatchCandidate(
+    barcode: String,
+    index: Int,
+): MatchCandidate =
+    MatchCandidate(
+        releaseId = releaseId,
+        discogsReleaseId = discogsReleaseId,
+        artist = artist,
+        title = title,
+        label = label ?: "Unknown label",
+        confidence = maxOf(72, 95 - index * 4),
+        year = year,
+        catalogNumber = catalogNumber,
+        barcode = barcode,
+        coverImageUrl = thumbnailUrl,
+        format = format,
+        matchSource = "Barcode scan",
+        matchedOn = listOf("Barcode"),
+    )
+
+private fun Throwable.toBarcodeSearchErrorMessage(): String {
+    val apiError = this as? ApiException ?: return "Barcode search could not finish. Retry or use Manual Search."
+    return when (apiError.kind) {
+        ApiErrorKind.Offline -> "Barcode search could not finish. Retry or use Manual Search."
+        else -> apiError.message ?: "Barcode search could not finish. Retry or use Manual Search."
+    }
+}
 
 @Composable
 private fun processingSubtitleColor(state: IdentifyUiState) =

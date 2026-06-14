@@ -47,6 +47,7 @@ docs/
 │   ├── ai-insights-chat-plan.md
 │   ├── android-app-implementation-plan.md
 │   ├── android-client-rate-limit-backoff-plan.md
+│   ├── android-live-barcode-identify-plan.md
 │   ├── backend-mvp-stabilization-plan.md
 │   ├── backend-rate-limiting-and-throttling-plan.md
 │   ├── discogs-integration-plan.md
@@ -416,11 +417,11 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify jobs, manual search, release import/detail/refresh/history, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. |
+| `data/api/` | Lightweight HTTP client for identify jobs, manual/barcode release search, release import/detail/refresh/history, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. |
 | `domain/` | UI-facing domain models for records, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
-| `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
+| `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, image/barcode processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, active timed-session banner, and navigation chrome. |
-| `ui/screens/` | Home, analytics, AI insights, collection, capture, processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, grouped timed-session history, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, AI insights, collection, capture, image/barcode processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, grouped timed-session history, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
@@ -433,7 +434,9 @@ android-app/
 - View All Recent Sessions groups fetched rows with the same `session_group_id` into a green outlined timed-session container with metadata chips. Grouping applies to the loaded page window, so a very long timed session can continue on the next page if its rows cross a pagination boundary.
 - The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`.
 - Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
-- The Processing screen starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
+- Capture can enter barcode scan mode on the existing CameraX preview. ML Kit bundled barcode scanning reads UPC/EAN frames locally, shows a short captured confirmation, then opens barcode processing.
+- Image Processing starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
+- Barcode processing calls `GET /api/v1/releases/search?barcode={barcode}`, shows the same green processing language, routes successful candidates to Match Confirmation, and offers Try Again, Manual Search with the barcode prefilled, or Cancel on no result, API failure, or timeout.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
 - Session logging can optionally attach a listen to the active timed session when auto-add is enabled, sending the active `session_group_id` with the regular side/rating/mood payload.
 - `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.
