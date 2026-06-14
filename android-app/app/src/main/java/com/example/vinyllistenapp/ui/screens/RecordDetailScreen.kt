@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -432,7 +433,6 @@ fun RecordDetailScreen(
                         collectionLabelNames.forEach { labelName ->
                             ActionMenuSubOption(
                                 label = labelName,
-                                icon = Icons.Filled.Album,
                                 onClickLabel = "Filter collection by $labelName",
                                 onClick = {
                                     isActionMenuOpen = false
@@ -452,7 +452,7 @@ fun RecordDetailScreen(
                 if (isViewOnDiscogsExpanded) {
                     ActionMenuDelimiter()
                     ActionMenuSubOption(
-                        label = "View release page",
+                        label = "Release page",
                         icon = Icons.Filled.Album,
                         onClickLabel = "View release page on Discogs",
                         onClick = {
@@ -489,7 +489,6 @@ fun RecordDetailScreen(
                     collectionLabelNames.forEach { labelName ->
                         ActionMenuSubOption(
                             label = labelName,
-                            icon = Icons.Filled.Album,
                             onClickLabel = "Open $labelName on Discogs",
                             onClick = {
                                 isActionMenuOpen = false
@@ -574,7 +573,7 @@ private fun ActionMenuGroupAction(
 @Composable
 private fun ActionMenuSubOption(
     label: String,
-    icon: ImageVector,
+    icon: ImageVector? = null,
     onClickLabel: String,
     onClick: () -> Unit,
 ) {
@@ -602,12 +601,14 @@ private fun ActionMenuSubOption(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Icon(
-            modifier = Modifier.size(16.dp),
-            imageVector = icon,
-            contentDescription = null,
-            tint = VinylColors.AccentGreen,
-        )
+        icon?.let {
+            Icon(
+                modifier = Modifier.size(16.dp),
+                imageVector = it,
+                contentDescription = null,
+                tint = VinylColors.AccentGreen,
+            )
+        }
     }
 }
 
@@ -1757,7 +1758,7 @@ private fun RecordHistoryCard(
                 Row(
                     modifier =
                         Modifier
-                            .width(metadataLeadWidth),
+                            .widthIn(min = metadataLeadWidth),
                     horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -2202,7 +2203,7 @@ private fun recordActionMenuLabels(
         }
         add("View on Discogs")
         if (isViewOnDiscogsExpanded) {
-            add("• View release page")
+            add("• Release page")
             val discogsArtistNames =
                 record.discogsArtists
                     .map { artist -> cleanDiscogsDisplayName(artist.name) }

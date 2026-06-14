@@ -377,7 +377,7 @@ private fun CollectionListContent(
         with(density) {
             IntOffset(
                 x = -VinylSpacing.SpaceMd.roundToPx(),
-                y = 104.dp.roundToPx(),
+                y = 88.dp.roundToPx(),
             )
         }
     val showActionMenu = records.isNotEmpty() && error == null && !isLoadingInitial

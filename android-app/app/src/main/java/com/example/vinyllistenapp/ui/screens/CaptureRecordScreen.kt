@@ -9,10 +9,14 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -46,8 +50,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,17 +77,26 @@ import com.example.vinyllistenapp.ui.components.SuccessStatusFeedback
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.ZoomSuggestionOptions
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.delay
 import java.io.File
+import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 
 @Composable
 fun CaptureRecordScreen(
     onImageSelected: (Uri) -> Unit,
     onManualSearch: () -> Unit,
+    onBarcodeDetected: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
@@ -90,15 +105,26 @@ fun CaptureRecordScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
+    var barcodeScanMode by rememberSaveable { mutableStateOf(false) }
+    var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
+    var capturedBarcode by remember { mutableStateOf<String?>(null) }
     var cameraPrivacyBlocked by rememberSaveable { mutableStateOf(false) }
     var cameraRetryAttempt by rememberSaveable { mutableStateOf(0) }
     val photoCaptured = capturedImageUri != null
-
+    val barcodeCaptured = capturedBarcode != null
+    val captureComplete = photoCaptured || barcodeCaptured
+    val normalCaptureActionsEnabled = !isTakingPhoto && !captureComplete && !barcodeScanMode
     LaunchedEffect(capturedImageUri) {
         val uri = capturedImageUri ?: return@LaunchedEffect
         delay(SUCCESS_CONFIRMATION_DELAY_MS)
         onImageSelected(Uri.parse(uri))
+    }
+    LaunchedEffect(capturedBarcode) {
+        val barcode = capturedBarcode ?: return@LaunchedEffect
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        delay(SUCCESS_CONFIRMATION_DELAY_MS)
+        onBarcodeDetected(barcode)
     }
 
     fun refreshCameraPermission(markDenied: Boolean): Boolean {
@@ -221,8 +247,16 @@ fun CaptureRecordScreen(
             CameraPreviewSurface(
                 cameraPermissionGranted = cameraPermissionGranted && !cameraPrivacyBlocked,
                 photoCaptured = photoCaptured,
+                barcodeCaptured = barcodeCaptured,
                 retryAttempt = cameraRetryAttempt,
+                barcodeScanMode = barcodeScanMode,
+                torchEnabled = torchEnabled,
                 onImageCaptureReady = { imageCapture = it },
+                onBarcodeDetected = { barcode ->
+                    barcodeScanMode = false
+                    torchEnabled = false
+                    capturedBarcode = barcode
+                },
                 onCameraError = { captureError = it },
                 onCameraPrivacyBlockedChange = { blocked ->
                     cameraPrivacyBlocked = blocked
@@ -241,11 +275,12 @@ fun CaptureRecordScreen(
                 label =
                     when {
                         photoCaptured -> "Photo Captured"
+                        barcodeCaptured -> "Barcode Captured"
                         isTakingPhoto -> "Taking Photo..."
                         else -> "Take Photo"
                     },
                 onClick = {
-                    if (!isTakingPhoto && !photoCaptured) {
+                    if (normalCaptureActionsEnabled) {
                         if (cameraPrivacyBlocked) {
                             retryCameraPrivacyAccess()
                         } else if (refreshCameraPermission(markDenied = false)) {
@@ -253,10 +288,11 @@ fun CaptureRecordScreen(
                         } else {
                             permissionLauncher.launch(Manifest.permission.CAMERA)
                         }
-                    } else {
+                    } else if (!barcodeScanMode) {
                         refreshCameraPermission(markDenied = true)
                     }
                 },
+                enabled = normalCaptureActionsEnabled,
             )
             if (permissionDenied) {
                 Spacer(Modifier.height(VinylSpacing.SpaceMd))
@@ -279,6 +315,37 @@ fun CaptureRecordScreen(
                 )
             }
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
+            CaptureSecondaryButton(
+                label = if (barcodeScanMode) "Cancel Barcode Scan" else "Scan Barcode",
+                accentColor = VinylColors.AccentPurple,
+                onClick = {
+                    if (!isTakingPhoto && !captureComplete) {
+                        if (barcodeScanMode) {
+                            barcodeScanMode = false
+                            torchEnabled = false
+                            captureError = null
+                        } else if (cameraPrivacyBlocked) {
+                            retryCameraPrivacyAccess()
+                        } else if (refreshCameraPermission(markDenied = false)) {
+                            captureError = null
+                            barcodeScanMode = true
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (barcodeScanMode) {
+                Spacer(Modifier.height(VinylSpacing.SpaceMd))
+                CaptureSecondaryButton(
+                    label = if (torchEnabled) "Torch Off" else "Torch On",
+                    accentColor = VinylColors.AccentGreen,
+                    onClick = { torchEnabled = !torchEnabled },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(VinylSpacing.SpaceMd))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
@@ -287,20 +354,22 @@ fun CaptureRecordScreen(
                     label = "Upload",
                     accentColor = VinylColors.AccentGreen,
                     onClick = {
-                        if (!isTakingPhoto && !photoCaptured) {
+                        if (normalCaptureActionsEnabled) {
                             uploadLauncher.launch("image/*")
                         }
                     },
+                    enabled = normalCaptureActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
                 CaptureSecondaryButton(
                     label = "Manual Search",
                     accentColor = VinylColors.AccentOrange,
                     onClick = {
-                        if (!isTakingPhoto && !photoCaptured) {
+                        if (normalCaptureActionsEnabled) {
                             onManualSearch()
                         }
                     },
+                    enabled = normalCaptureActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -326,6 +395,11 @@ private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by 
 private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
 private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
 private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
+private const val BARCODE_STABLE_MILLIS = 900L
+private const val MIN_ZOOM_RATIO_DELTA = 0.08f
+private const val GUIDE_AREA_HORIZONTAL_MARGIN_FRACTION = 0.08f
+private const val GUIDE_AREA_TOP_FRACTION = 0.24f
+private const val GUIDE_AREA_BOTTOM_FRACTION = 0.76f
 
 private tailrec fun Context.findActivity(): Activity? =
     when (this) {
@@ -376,6 +450,26 @@ private fun File.isLikelyCameraPrivacyPlaceholder(): Boolean {
     val averageLuma = totalLuma / pixelCount
     return averageLuma <= PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA &&
         maxLuma - minLuma <= PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE
+}
+
+private fun normalizeDetectedBarcode(value: String?): String? {
+    val digits = value?.filter(Char::isDigit).orEmpty()
+    return digits.takeIf { it.length == 8 || it.length == 12 || it.length == 13 }
+}
+
+private fun Barcode.isInsideGuideArea(
+    imageWidth: Int,
+    imageHeight: Int,
+): Boolean {
+    val box = boundingBox ?: return true
+    if (imageWidth <= 0 || imageHeight <= 0) return true
+    val centerX = box.centerX().toFloat()
+    val centerY = box.centerY().toFloat()
+    val minX = imageWidth * GUIDE_AREA_HORIZONTAL_MARGIN_FRACTION
+    val maxX = imageWidth * (1f - GUIDE_AREA_HORIZONTAL_MARGIN_FRACTION)
+    val minY = imageHeight * GUIDE_AREA_TOP_FRACTION
+    val maxY = imageHeight * GUIDE_AREA_BOTTOM_FRACTION
+    return centerX in minX..maxX && centerY in minY..maxY
 }
 
 @Composable
@@ -444,8 +538,12 @@ private fun CaptureInfoPopup(onDismiss: () -> Unit) {
 private fun CameraPreviewSurface(
     cameraPermissionGranted: Boolean,
     photoCaptured: Boolean,
+    barcodeCaptured: Boolean,
     retryAttempt: Int,
+    barcodeScanMode: Boolean,
+    torchEnabled: Boolean,
     onImageCaptureReady: (ImageCapture?) -> Unit,
+    onBarcodeDetected: (String) -> Unit,
     onCameraError: (String?) -> Unit,
     onCameraPrivacyBlockedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -466,6 +564,7 @@ private fun CameraPreviewSurface(
 
     val context = LocalContext.current
     val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
+    val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
     val previewView =
         remember(context) {
             PreviewView(context).apply {
@@ -473,7 +572,11 @@ private fun CameraPreviewSurface(
             }
         }
 
-    DisposableEffect(lifecycleOwner, previewView, retryAttempt) {
+    DisposableEffect(analyzerExecutor) {
+        onDispose { analyzerExecutor.shutdown() }
+    }
+
+    DisposableEffect(lifecycleOwner, previewView, retryAttempt, barcodeScanMode, torchEnabled) {
         val owner = lifecycleOwner
         if (owner == null) {
             onImageCaptureReady(null)
@@ -483,7 +586,51 @@ private fun CameraPreviewSurface(
 
         onImageCaptureReady(null)
         var disposed = false
+        var boundCamera: Camera? = null
+        var zoomRequestInFlight = false
         var removeCameraStateObserver: (() -> Unit)? = null
+        var analysisInFlight = false
+        var acceptedBarcode = false
+        var lastBarcode: String? = null
+        var stableSinceMillis = 0L
+        val barcodeScanner =
+            if (barcodeScanMode) {
+                val zoomCallback =
+                    ZoomSuggestionOptions.ZoomCallback { zoomRatio ->
+                        val camera = boundCamera ?: return@ZoomCallback false
+                        val zoomState = camera.cameraInfo.zoomState.value
+                        val maxZoomRatio = zoomState?.maxZoomRatio ?: zoomRatio
+                        val currentZoomRatio = zoomState?.zoomRatio ?: 1f
+                        val targetZoomRatio = zoomRatio.coerceIn(1f, maxZoomRatio)
+                        if (zoomRequestInFlight || abs(targetZoomRatio - currentZoomRatio) < MIN_ZOOM_RATIO_DELTA) {
+                            return@ZoomCallback true
+                        }
+                        zoomRequestInFlight = true
+                        camera.cameraControl
+                            .setZoomRatio(targetZoomRatio)
+                            .addListener(
+                                { zoomRequestInFlight = false },
+                                ContextCompat.getMainExecutor(context),
+                            )
+                        true
+                    }
+                val options =
+                    BarcodeScannerOptions
+                        .Builder()
+                        .setBarcodeFormats(
+                            Barcode.FORMAT_UPC_A,
+                            Barcode.FORMAT_UPC_E,
+                            Barcode.FORMAT_EAN_13,
+                            Barcode.FORMAT_EAN_8,
+                        ).setZoomSuggestionOptions(
+                            ZoomSuggestionOptions
+                                .Builder(zoomCallback)
+                                .build(),
+                        ).build()
+                BarcodeScanning.getClient(options)
+            } else {
+                null
+            }
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener =
             Runnable {
@@ -500,15 +647,89 @@ private fun CameraPreviewSurface(
                             .Builder()
                             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                             .build()
+                    val imageAnalysis =
+                        if (barcodeScanMode && barcodeScanner != null) {
+                            val scanner = barcodeScanner
+                            ImageAnalysis
+                                .Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+                                .also { analysis ->
+                                    analysis.setAnalyzer(analyzerExecutor) { imageProxy ->
+                                        if (analysisInFlight || acceptedBarcode) {
+                                            imageProxy.close()
+                                            return@setAnalyzer
+                                        }
+                                        val mediaImage = imageProxy.mediaImageOrNull()
+                                        if (mediaImage == null) {
+                                            imageProxy.close()
+                                            return@setAnalyzer
+                                        }
+
+                                        analysisInFlight = true
+                                        val inputImage =
+                                            InputImage.fromMediaImage(
+                                                mediaImage,
+                                                imageProxy.imageInfo.rotationDegrees,
+                                            )
+                                        scanner
+                                            .process(inputImage)
+                                            .addOnSuccessListener { barcodes ->
+                                                val barcode =
+                                                    barcodes.firstNotNullOfOrNull { barcode ->
+                                                        normalizeDetectedBarcode(barcode.rawValue)
+                                                            ?.takeIf {
+                                                                barcode.isInsideGuideArea(
+                                                                    imageWidth = inputImage.width,
+                                                                    imageHeight = inputImage.height,
+                                                                )
+                                                            }
+                                                    }
+                                                val nowMillis = System.currentTimeMillis()
+                                                if (barcode == null) {
+                                                    lastBarcode = null
+                                                    stableSinceMillis = 0L
+                                                    return@addOnSuccessListener
+                                                }
+                                                if (barcode != lastBarcode) {
+                                                    lastBarcode = barcode
+                                                    stableSinceMillis = nowMillis
+                                                    return@addOnSuccessListener
+                                                }
+                                                if (nowMillis - stableSinceMillis >= BARCODE_STABLE_MILLIS) {
+                                                    acceptedBarcode = true
+                                                    onBarcodeDetected(barcode)
+                                                }
+                                            }.addOnCompleteListener {
+                                                analysisInFlight = false
+                                                imageProxy.close()
+                                            }
+                                    }
+                                }
+                        } else {
+                            null
+                        }
 
                     cameraProvider.unbindAll()
                     val camera =
-                        cameraProvider.bindToLifecycle(
-                            owner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            imageCapture,
-                        )
+                        if (imageAnalysis == null) {
+                            cameraProvider.bindToLifecycle(
+                                owner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                imageCapture,
+                            )
+                        } else {
+                            cameraProvider.bindToLifecycle(
+                                owner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                imageCapture,
+                                imageAnalysis,
+                            )
+                        }
+                    boundCamera = camera
+                    camera.cameraControl.enableTorch(torchEnabled)
                     val cameraState = camera.cameraInfo.cameraState
                     val cameraStateObserver =
                         Observer<CameraState> { state ->
@@ -544,6 +765,9 @@ private fun CameraPreviewSurface(
 
         onDispose {
             disposed = true
+            barcodeScanner?.close()
+            boundCamera?.cameraControl?.enableTorch(false)
+            boundCamera?.cameraControl?.setZoomRatio(1f)
             removeCameraStateObserver?.invoke()
             onImageCaptureReady(null)
             if (cameraProviderFuture.isDone) {
@@ -562,7 +786,7 @@ private fun CameraPreviewSurface(
             factory = { previewView },
             modifier = Modifier.matchParentSize(),
         )
-        if (photoCaptured) {
+        if (photoCaptured || barcodeCaptured) {
             Box(
                 modifier =
                     Modifier
@@ -570,8 +794,16 @@ private fun CameraPreviewSurface(
                         .background(VinylColors.AppBackground.copy(alpha = 0.72f)),
                 contentAlignment = Alignment.Center,
             ) {
-                SuccessStatusFeedback(message = "Photo captured")
+                SuccessStatusFeedback(message = if (barcodeCaptured) "Barcode captured" else "Photo captured")
             }
+        } else if (barcodeScanMode) {
+            BarcodeScanGuideOverlay(
+                modifier =
+                    Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .padding(horizontal = VinylSpacing.Space2Xl),
+            )
         } else {
             CaptureHintCard(
                 modifier =
@@ -583,6 +815,9 @@ private fun CameraPreviewSurface(
         }
     }
 }
+
+@androidx.annotation.OptIn(ExperimentalGetImage::class)
+private fun ImageProxy.mediaImageOrNull() = image
 
 @Composable
 private fun CameraPlaceholderSurface(
@@ -622,7 +857,35 @@ private fun CameraPlaceholderSurface(
 }
 
 @Composable
-private fun CaptureHintCard(modifier: Modifier = Modifier) {
+private fun BarcodeScanGuideOverlay(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(132.dp)
+                    .clip(VinylShapes.Card)
+                    .border(2.dp, VinylColors.AccentGreen.copy(alpha = 0.86f), VinylShapes.Card)
+                    .background(VinylColors.AppBackground.copy(alpha = 0.08f)),
+        )
+        Spacer(Modifier.height(VinylSpacing.SpaceMd))
+        Text(
+            text = "Hold still...",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+private fun CaptureHintCard(
+    modifier: Modifier = Modifier,
+    message: String = "Capture the record barcode, label, or runout etching",
+) {
     Box(
         modifier =
             modifier
@@ -633,7 +896,7 @@ private fun CaptureHintCard(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "Capture the record barcode, label, or runout etching",
+            text = message,
             color = VinylColors.TextSecondary,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
@@ -647,6 +910,7 @@ private fun CaptureSecondaryButton(
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier =
@@ -656,6 +920,7 @@ private fun CaptureSecondaryButton(
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, VinylColors.BorderDefault, VinylShapes.Button)
                 .clickable(
+                    enabled = enabled,
                     onClickLabel = label,
                     role = Role.Button,
                     onClick = onClick,
@@ -664,12 +929,12 @@ private fun CaptureSecondaryButton(
     ) {
         CardTopAccentLine(
             accentColor = accentColor,
-            alpha = 0.35f,
+            alpha = if (enabled) 0.35f else 0.12f,
             modifier = Modifier.align(Alignment.TopCenter),
         )
         Text(
             text = label,
-            color = VinylColors.TextSecondary,
+            color = if (enabled) VinylColors.TextSecondary else VinylColors.TextSecondary.copy(alpha = 0.45f),
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

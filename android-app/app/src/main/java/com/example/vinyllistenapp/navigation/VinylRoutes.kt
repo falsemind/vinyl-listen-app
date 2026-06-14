@@ -8,8 +8,12 @@ object VinylRoutes {
     const val PROCESSING = "processing"
     const val PROCESSING_PATTERN = "processing?imageUri={imageUri}"
     const val IMAGE_URI = "imageUri"
+    const val BARCODE_PROCESSING = "barcode_processing"
+    const val BARCODE_PROCESSING_PATTERN = "$BARCODE_PROCESSING?barcode={barcode}"
     const val MATCH_CONFIRMATION = "match_confirmation"
     const val MANUAL_SEARCH = "manual_search"
+    const val MANUAL_SEARCH_PATTERN = "$MANUAL_SEARCH?barcode={barcode}"
+    const val BARCODE = "barcode"
     const val COLLECTION_MANUAL_SEARCH = "collection_manual_search"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
@@ -60,4 +64,8 @@ object VinylRoutes {
     fun collectionLabel(label: String): String = "$COLLECTION?$LABEL=${Uri.encode(label)}"
 
     fun processing(imageUri: Uri): String = "processing?imageUri=${Uri.encode(imageUri.toString())}"
+
+    fun barcodeProcessing(barcode: String): String = "$BARCODE_PROCESSING?$BARCODE=${Uri.encode(barcode)}"
+
+    fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${Uri.encode(barcode)}"
 }

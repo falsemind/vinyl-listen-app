@@ -30,6 +30,7 @@ import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.components.TimedSessionBanner
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
+import com.example.vinyllistenapp.ui.screens.BarcodeProcessingScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
@@ -186,6 +187,48 @@ fun VinylNavHost(
                 CaptureRecordScreen(
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri)) },
                     onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                    onBarcodeDetected = { barcode ->
+                        navController.navigate(VinylRoutes.barcodeProcessing(barcode)) {
+                            popUpTo(VinylRoutes.CAPTURE_RECORD) { inclusive = true }
+                        }
+                    },
+                    onDismiss = {
+                        navController.navigate(VinylRoutes.HOME) {
+                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable(
+                route = VinylRoutes.BARCODE_PROCESSING_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.BARCODE) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) { backStackEntry ->
+                val barcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty()
+                BarcodeProcessingScreen(
+                    barcode = barcode,
+                    apiClient = apiClient,
+                    onComplete = { candidates ->
+                        latestCandidates = candidates
+                        navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {
+                            popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                        }
+                    },
+                    onRetryScan = {
+                        navController.navigate(VinylRoutes.CAPTURE_RECORD) {
+                            popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                        }
+                    },
+                    onManualSearch = { detectedBarcode ->
+                        navController.navigate(VinylRoutes.manualSearchBarcode(detectedBarcode)) {
+                            popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                        }
+                    },
                     onDismiss = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -234,9 +277,19 @@ fun VinylNavHost(
                     },
                 )
             }
-            composable(VinylRoutes.MANUAL_SEARCH) {
+            composable(
+                route = VinylRoutes.MANUAL_SEARCH_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.BARCODE) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) { backStackEntry ->
                 ManualSearchScreen(
                     apiClient = apiClient,
+                    initialBarcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty(),
                     onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onDismiss = {
                         navController.navigate(VinylRoutes.HOME) {
@@ -496,8 +549,10 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
         setOf(
             VinylRoutes.CAPTURE_RECORD,
             VinylRoutes.PROCESSING_PATTERN,
+            VinylRoutes.BARCODE_PROCESSING_PATTERN,
             VinylRoutes.MATCH_CONFIRMATION,
             VinylRoutes.MANUAL_SEARCH,
+            VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
@@ -510,6 +565,7 @@ private fun String?.isIdentifyFlowWithoutTimedSessionBanner(): Boolean =
         setOf(
             VinylRoutes.CAPTURE_RECORD,
             VinylRoutes.PROCESSING_PATTERN,
+            VinylRoutes.BARCODE_PROCESSING_PATTERN,
             VinylRoutes.MATCH_CONFIRMATION,
         )
 
