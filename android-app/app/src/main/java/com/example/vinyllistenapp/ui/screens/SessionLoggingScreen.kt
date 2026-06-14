@@ -379,7 +379,13 @@ fun EditSessionScreen(
 
     LaunchedEffect(trackOptions) {
         val availablePositions = trackOptions.map { it.position }.toSet()
-        selectedTrackPositions = selectedTrackPositions.filter { it in availablePositions }
+        val singleTrackPosition = trackOptions.singleOrNull()?.position
+        selectedTrackPositions =
+            if (singleTrackPosition != null) {
+                listOf(singleTrackPosition)
+            } else {
+                selectedTrackPositions.filter { it in availablePositions }
+            }
     }
 
     LaunchedEffect(customMoodRetryKey) {
@@ -456,7 +462,12 @@ fun EditSessionScreen(
                     sideOptions = sideOptions,
                     onSideSelected = {
                         selectedSide = it
-                        selectedTrackPositions = emptyList()
+                        val selectedOption = sideOptions.firstOrNull { option -> option.value == it }
+                        selectedTrackPositions =
+                            sessionTrackOptions(record, selectedOption)
+                                .singleOrNull()
+                                ?.let { trackOption -> listOf(trackOption.position) }
+                                ?: emptyList()
                     },
                 )
                 if (trackOptions.isNotEmpty()) {
@@ -776,6 +787,11 @@ private fun SessionTrackSelector(
     val selectedPositionSet = selectedPositions.toSet()
     val allPositions = trackOptions.map { it.position }
     val allTracksSelected = trackOptions.isNotEmpty() && selectedPositionSet.containsAll(allPositions)
+    val singleSelectedTrackLabel =
+        trackOptions
+            .singleOrNull()
+            ?.takeIf { trackOption -> trackOption.position in selectedPositionSet }
+            ?.label
     val showAllTracksOption = shouldShowAllTracksOption(trackOptions)
     val actionLabel = if (expanded) "Close track selector" else "Open track selector"
     val arrowRotation by animateFloatAsState(
@@ -810,6 +826,7 @@ private fun SessionTrackSelector(
             TrackSelectionSummary(
                 selectedCount = selectedPositionSet.size,
                 totalCount = trackOptions.size,
+                singleSelectedTrackLabel = singleSelectedTrackLabel,
                 modifier = Modifier.weight(1f),
             )
             Icon(
@@ -887,6 +904,7 @@ private fun SessionTrackSelector(
 private fun TrackSelectionSummary(
     selectedCount: Int,
     totalCount: Int,
+    singleSelectedTrackLabel: String?,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -899,6 +917,17 @@ private fun TrackSelectionSummary(
                     text = "Track(s) played",
                     color = VinylColors.TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            singleSelectedTrackLabel != null -> {
+                Text(
+                    text = singleSelectedTrackLabel,
+                    color = VinylColors.AccentGreen,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
