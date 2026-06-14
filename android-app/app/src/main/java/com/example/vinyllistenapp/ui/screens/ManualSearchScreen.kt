@@ -64,6 +64,7 @@ fun ManualSearchScreen(
     onSelectRecord: (String) -> Unit,
     onDismiss: () -> Unit,
     mode: ManualSearchMode = ManualSearchMode.Discogs,
+    initialBarcode: String = "",
 ) {
     val pageSize = 10
     val focusManager = LocalFocusManager.current
@@ -71,7 +72,9 @@ fun ManualSearchScreen(
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
     var catalogQuery by rememberSaveable { mutableStateOf("") }
-    var barcodeQuery by rememberSaveable { mutableStateOf("") }
+    var barcodeQuery by rememberSaveable(initialBarcode) {
+        mutableStateOf(initialBarcode.digitsOnly(maxLength = BARCODE_MAX_DIGITS))
+    }
     var yearQuery by rememberSaveable { mutableStateOf("") }
     var state by remember { mutableStateOf<ManualSearchUiState>(ManualSearchUiState.Idle) }
     var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }

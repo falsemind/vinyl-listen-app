@@ -999,7 +999,7 @@ private fun TimedSessionEditDropdown(
                 Column(
                     modifier =
                         Modifier
-                            .width(172.dp)
+                            .width(156.dp)
                             .shadow(4.dp, VinylShapes.Card)
                             .clip(VinylShapes.Card)
                             .background(VinylColors.SurfacePrimary)

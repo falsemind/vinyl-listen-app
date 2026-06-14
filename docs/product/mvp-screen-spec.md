@@ -109,7 +109,7 @@ Tap Settings tab → Settings Screen
 
 ## Purpose
 
-Capture a photo to identify the record.
+Capture a photo or scan a sleeve barcode to identify the record.
 
 ## Main Components
 
@@ -123,10 +123,19 @@ Camera preview using device camera.
 Take Photo
 ```
 
+### Barcode Scan Mode
+
+```
+Scan Barcode
+```
+
+When barcode mode is active, the camera preview stays on the Capture Record screen and shows a green rounded guide with `Hold still...` below it. The app accepts a stable UPC/EAN read automatically, shows a short green check state with `Barcode captured`, then opens the processing flow.
+
 ### Alternative Actions
 
 ```
 Upload Photo
+Scan Barcode
 Manual Search
 ```
 
@@ -143,6 +152,7 @@ Capture the record label, runout etching, or barcode.
 ```
 Take Photo → Processing Screen
 Upload Photo → Processing Screen
+Scan Barcode → Barcode Processing Screen
 Manual Search → Manual Search Screen
 ```
 
@@ -152,7 +162,7 @@ Manual Search → Manual Search Screen
 
 ## Purpose
 
-Show system progress while identifying the record.
+Show system progress while identifying the record or searching barcode matches.
 
 ## UI Elements
 
@@ -176,7 +186,7 @@ Green checkmark → complete
 Orange ! → issue
 ```
 
-Statuses are backed by the server identify job flow. The client starts `POST /api/v1/identify/jobs` and polls `GET /api/v1/identify/jobs/{job_id}` until the backend returns a terminal state.
+Photo identify statuses are backed by the server identify job flow. The client starts `POST /api/v1/identify/jobs` and polls `GET /api/v1/identify/jobs/{job_id}` until the backend returns a terminal state.
 
 Visible phases map to backend statuses:
 
@@ -188,6 +198,8 @@ Visible phases map to backend statuses:
 | Identify canceled | `canceled` |
 
 If the job fails, the backend returns `failed_step` so the client can mark upload, extraction, or search as the failed phase.
+
+Barcode processing reuses the same green spinner/success language but calls `GET /api/v1/releases/search?barcode={barcode}` directly. If no barcode candidates are found within roughly 8-10 seconds, the recovery state offers `Try Again`, `Manual Search`, and `Cancel`.
 
 ### Cancel Behavior
 
@@ -202,6 +214,8 @@ If matches found → Match Confirmation Screen
 If no results → Manual Search Screen
 Cancel active identify → Home
 ```
+
+For barcode processing, `Manual Search` opens with the detected barcode prefilled.
 
 ---
 
