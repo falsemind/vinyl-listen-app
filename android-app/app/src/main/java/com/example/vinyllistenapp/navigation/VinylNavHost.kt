@@ -35,6 +35,7 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
+import com.example.vinyllistenapp.ui.screens.ManualCollectionEntryScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchMode
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
@@ -310,6 +311,18 @@ fun VinylNavHost(
                     onDismiss = { navController.popBackStack() },
                 )
             }
+            composable(VinylRoutes.COLLECTION_MANUAL_ENTRY) {
+                ManualCollectionEntryScreen(
+                    onHome = {
+                        navController.navigate(VinylRoutes.HOME) {
+                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        }
+                    },
+                    onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
+                    onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                    onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                )
+            }
             composable(
                 route = VinylRoutes.SESSION_LOGGING_PATTERN,
                 arguments = listOf(navArgument(VinylRoutes.RELEASE_ID) { type = NavType.StringType }),
@@ -446,6 +459,9 @@ fun VinylNavHost(
                     },
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
+                    onCollectionSettings = { navController.navigate(VinylRoutes.SETTINGS) },
+                    onIdentifyRecord = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
+                    onManualEntry = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_ENTRY) },
                     onManualSearch = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_SEARCH) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onArtistFilterCleared = {
@@ -529,7 +545,8 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.SETTINGS) {
                 SettingsScreen(
-                    message = "Settings stays out of this prototype pass.",
+                    apiClient = apiClient,
+                    message = "Collection management",
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -554,6 +571,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
+            VinylRoutes.COLLECTION_MANUAL_ENTRY,
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,

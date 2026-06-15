@@ -25,8 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -88,6 +91,9 @@ fun CollectionScreen(
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
+    onCollectionSettings: () -> Unit,
+    onIdentifyRecord: () -> Unit,
+    onManualEntry: () -> Unit,
     onManualSearch: () -> Unit,
     onOpenRecord: (String) -> Unit,
     onArtistFilterCleared: () -> Unit = {},
@@ -105,6 +111,7 @@ fun CollectionScreen(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
+    var isAddMenuExpanded by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
     var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
     var labelFilter by remember(initialLabelFilter) { mutableStateOf(initialLabelFilter?.takeIf { it.isNotBlank() }) }
@@ -211,6 +218,10 @@ fun CollectionScreen(
                             scrollState.animateScrollTo(0)
                         }
                     },
+                    addMenuExpanded = isAddMenuExpanded,
+                    onAddMenuExpandedChange = { isAddMenuExpanded = it },
+                    onIdentifyRecord = onIdentifyRecord,
+                    onManualEntry = onManualEntry,
                     onManualSearch = onManualSearch,
                     modifier =
                         Modifier.padding(
@@ -248,11 +259,22 @@ fun CollectionScreen(
                 }
                 when {
                     showEmptyLoad ->
-                        CollectionTextActionButton(
-                            label = "Load Discogs Collection",
-                            enabled = true,
-                            onClick = { scope.launch { followCollectionSync() } },
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
+                        ) {
+                            CollectionAddActions(
+                                expanded = isAddMenuExpanded,
+                                onExpandedChange = { isAddMenuExpanded = it },
+                                onIdentifyRecord = onIdentifyRecord,
+                                onManualEntry = onManualEntry,
+                            )
+                            CollectionTextActionButton(
+                                label = "Load Discogs Collection",
+                                enabled = true,
+                                onClick = { scope.launch { followCollectionSync() } },
+                            )
+                        }
 
                     else ->
                         CollectionCenteredStatus(
@@ -300,6 +322,7 @@ fun CollectionScreen(
                 isActionMenuOpen = isActionMenuOpen,
                 onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
                 onActionMenuDismiss = { isActionMenuOpen = false },
+                onCollectionSettings = onCollectionSettings,
                 onSync = {
                     scope.launch { followCollectionSync() }
                 },
@@ -368,6 +391,7 @@ private fun CollectionListContent(
     isActionMenuOpen: Boolean,
     onActionMenuToggle: () -> Unit,
     onActionMenuDismiss: () -> Unit,
+    onCollectionSettings: () -> Unit,
     onSync: () -> Unit,
     onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -473,6 +497,10 @@ private fun CollectionListContent(
                 onDismiss = onActionMenuDismiss,
             ) {
                 ActionMenuAction(
+                    label = "Collection settings",
+                    onClick = onCollectionSettings,
+                )
+                ActionMenuAction(
                     label = if (isSyncing) "Syncing..." else "Sync Items",
                     enabled = !isSyncing,
                     onClick = onSync,
@@ -493,6 +521,10 @@ private fun CollectionListContent(
 private fun CollectionFloatingActions(
     showScrollToTop: Boolean,
     onScrollToTop: () -> Unit,
+    addMenuExpanded: Boolean,
+    onAddMenuExpandedChange: (Boolean) -> Unit,
+    onIdentifyRecord: () -> Unit,
+    onManualEntry: () -> Unit,
     onManualSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -508,10 +540,51 @@ private fun CollectionFloatingActions(
                 onClick = onScrollToTop,
             )
         }
+        CollectionAddActions(
+            expanded = addMenuExpanded,
+            onExpandedChange = onAddMenuExpandedChange,
+            onIdentifyRecord = onIdentifyRecord,
+            onManualEntry = onManualEntry,
+        )
         FloatingIconButton(
             icon = Icons.Filled.Search,
             contentDescription = "Search collection",
             onClick = onManualSearch,
+        )
+    }
+}
+
+@Composable
+private fun CollectionAddActions(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onIdentifyRecord: () -> Unit,
+    onManualEntry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (expanded) {
+            FloatingIconButton(
+                icon = Icons.Filled.CameraAlt,
+                contentDescription = "Identify record",
+                onClick = onIdentifyRecord,
+            )
+            Spacer(Modifier.width(VinylSpacing.SpaceSm))
+            FloatingIconButton(
+                icon = Icons.Filled.Edit,
+                contentDescription = "Manual release entry",
+                onClick = onManualEntry,
+            )
+            Spacer(Modifier.width(VinylSpacing.SpaceSm))
+        }
+        FloatingIconButton(
+            icon = if (expanded) Icons.Filled.Close else Icons.Filled.Add,
+            contentDescription = if (expanded) "Close add menu" else "Add to collection",
+            onClick = { onExpandedChange(!expanded) },
         )
     }
 }

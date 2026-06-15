@@ -15,6 +15,7 @@ object VinylRoutes {
     const val MANUAL_SEARCH_PATTERN = "$MANUAL_SEARCH?barcode={barcode}"
     const val BARCODE = "barcode"
     const val COLLECTION_MANUAL_SEARCH = "collection_manual_search"
+    const val COLLECTION_MANUAL_ENTRY = "collection_manual_entry"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
     const val MOOD_DISTRIBUTION = "mood_distribution"

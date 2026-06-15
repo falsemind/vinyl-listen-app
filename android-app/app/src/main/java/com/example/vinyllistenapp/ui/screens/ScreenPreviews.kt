@@ -38,7 +38,8 @@ private fun ManualSearchScreenPreview() {
 private fun SettingsScreenPreview() {
     VinylListenAppTheme {
         SettingsScreen(
-            message = "Settings stays out of this prototype pass.",
+            apiClient = VinylApiClient(),
+            message = "Collection management",
             onHome = {},
             onStats = {},
             onInsights = {},
@@ -56,6 +57,9 @@ private fun CollectionScreenPreview() {
             onHome = {},
             onStats = {},
             onInsights = {},
+            onCollectionSettings = {},
+            onIdentifyRecord = {},
+            onManualEntry = {},
             onManualSearch = {},
             onOpenRecord = {},
         )
