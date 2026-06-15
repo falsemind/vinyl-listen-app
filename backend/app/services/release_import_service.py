@@ -7,7 +7,7 @@ from app.models.releases import Releases
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_integration_service import DiscogsIntegrationService
-from app.services.discogs_service import DiscogsConfigurationError, DiscogsService
+from app.services.discogs_service import DiscogsService
 from app.services.release_mapper import (
     InternalReleaseData,
     ReleaseArtistData,
@@ -75,10 +75,27 @@ class ReleaseImportService:
         return ReleaseImportResult(release=release, created=created)
 
     def _build_discogs_service_for_import(self, db: Session) -> DiscogsService:
-        try:
-            return self._discogs_integration_service.build_discogs_service(db)
-        except DiscogsConfigurationError:
-            return self._discogs_integration_service.build_unauthenticated_discogs_service()
+        return self._discogs_integration_service.build_discogs_service(db)
+
+    def import_client_discogs_release(
+        self,
+        db: Session,
+        raw_payload: dict,
+    ) -> ReleaseImportResult:
+        release_data = map_discogs_to_internal(raw_payload)
+        self._discogs_repository.upsert(
+            db,
+            discogs_release_id=release_data.discogs_release_id,
+            raw_discogs_json=raw_payload,
+        )
+        release, created = self._repository.save_or_update(db, release_data)
+        logger.info(
+            "Imported client-provided Discogs release discogs_release_id=%s release_id=%s created=%s",
+            release_data.discogs_release_id,
+            release.id,
+            created,
+        )
+        return ReleaseImportResult(release=release, created=created)
 
     def get_release(self, db: Session, release_id: str) -> Releases | None:
         logger.info("Loading release release_id=%s", release_id)

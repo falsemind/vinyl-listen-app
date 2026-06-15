@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -6,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class ReleaseImportRequest(BaseModel):
     discogs_release_id: int = Field(gt=0)
     force_refresh: bool = False
+
+
+class ClientDiscogsReleaseImportRequest(BaseModel):
+    discogs_release: dict[str, Any]
 
 
 class ReleaseSideOptionResponse(BaseModel):

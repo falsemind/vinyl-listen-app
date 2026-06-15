@@ -179,6 +179,8 @@ class StubReleaseImportService:
         self.import_result = ReleaseImportResult(release=self.release, created=True)
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
+        self.client_import_error: Exception | None = None
+        self.client_import_calls: list[dict] = []
         self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
         self.favorite_calls: list[tuple[str, bool]] = []
@@ -202,6 +204,12 @@ class StubReleaseImportService:
         self.import_calls.append((discogs_release_id, force_refresh))
         if self.import_error is not None:
             raise self.import_error
+        return self.import_result
+
+    def import_client_discogs_release(self, _db, raw_payload: dict) -> ReleaseImportResult:
+        self.client_import_calls.append(raw_payload)
+        if self.client_import_error is not None:
+            raise self.client_import_error
         return self.import_result
 
     def get_release(self, _db, release_id: str) -> ReleaseStub | None:
