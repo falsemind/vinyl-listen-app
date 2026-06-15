@@ -62,6 +62,8 @@ class CollectionSyncService:
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
         source_of_truth = self._settings_repository.get_source_of_truth(db)
+        has_local_collection_records = self._repository.count_collection_releases(db, include_removed=True) > 0
+        should_activate_imports = source_of_truth == CollectionSourceOfTruth.DISCOGS or not has_local_collection_records
         mirror_discogs_collection = source_of_truth == CollectionSourceOfTruth.DISCOGS
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         try:
@@ -82,7 +84,7 @@ class CollectionSyncService:
             for processed_count, item in enumerate(collection_items, start=1):
                 release_data = _map_collection_item_to_release(item)
                 release, created = self._repository.save_or_update(db, release_data, commit=False)
-                if mirror_discogs_collection:
+                if should_activate_imports:
                     self._repository.mark_in_collection(
                         db,
                         release,

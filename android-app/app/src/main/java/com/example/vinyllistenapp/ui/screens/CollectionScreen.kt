@@ -88,6 +88,7 @@ private const val COLLECTION_PAGE_SIZE = 25
 @Composable
 fun CollectionScreen(
     apiClient: VinylApiClient,
+    refreshKey: Int = 0,
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
@@ -171,7 +172,7 @@ fun CollectionScreen(
                     syncMessage = job.displayMessage()
                 }
             }
-            syncMessage = "Loading..."
+            syncMessage = null
             loadFirstPage()
         }.onFailure { failure ->
             error = failure.toUserMessage("Could not sync Discogs collection.")
@@ -192,9 +193,11 @@ fun CollectionScreen(
         loadFirstPage()
     }
 
-    LaunchedEffect(retryKey, artistFilter, labelFilter, favoriteFilter) {
+    LaunchedEffect(retryKey, refreshKey, artistFilter, labelFilter, favoriteFilter) {
         loadCollectionState()
     }
+
+    val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter
 
     Scaffold(
         containerColor = VinylColors.AppBackground,
@@ -210,7 +213,7 @@ fun CollectionScreen(
             )
         },
         floatingActionButton = {
-            if (records.isNotEmpty()) {
+            if (records.isNotEmpty() || (error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter)) {
                 CollectionFloatingActions(
                     showScrollToTop = scrollState.value > 0,
                     onScrollToTop = {
@@ -223,6 +226,7 @@ fun CollectionScreen(
                     onIdentifyRecord = onIdentifyRecord,
                     onManualEntry = onManualEntry,
                     onManualSearch = onManualSearch,
+                    showSearch = records.isNotEmpty(),
                     modifier =
                         Modifier.padding(
                             end = VinylSpacing.SpaceMd,
@@ -233,137 +237,84 @@ fun CollectionScreen(
         },
         floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
-        val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter
-        val showEmptyLoad = records.isEmpty() && error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter
-        val showCenteredStatus = records.isEmpty() && !showEmptyLoad
-        if ((showEmptyLoad || showCenteredStatus) && !hasActiveFilter) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(VinylColors.AppBackground)
-                        .padding(innerPadding)
-                        .padding(horizontal = VinylSpacing.SpaceMd),
-                contentAlignment = Alignment.Center,
-            ) {
-                LocalTimedSessionBanner.current?.let { banner ->
-                    Column(
-                        modifier =
-                            Modifier
-                                .align(Alignment.TopCenter)
-                                .fillMaxWidth()
-                                .padding(top = VinylSpacing.Space2Xl),
-                    ) {
-                        banner()
-                    }
-                }
-                when {
-                    showEmptyLoad ->
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
-                        ) {
-                            CollectionAddActions(
-                                expanded = isAddMenuExpanded,
-                                onExpandedChange = { isAddMenuExpanded = it },
-                                onIdentifyRecord = onIdentifyRecord,
-                                onManualEntry = onManualEntry,
-                            )
-                            CollectionTextActionButton(
-                                label = "Load Discogs Collection",
-                                enabled = true,
-                                onClick = { scope.launch { followCollectionSync() } },
-                            )
-                        }
-
-                    else ->
-                        CollectionCenteredStatus(
-                            message = error ?: syncMessage ?: "Loading...",
-                            isLoading = isSyncing || isLoadingInitial,
-                            isError = error != null,
-                            onRetry = { scope.launch { followCollectionSync() } },
+        CollectionListContent(
+            records = records,
+            hasMore = hasMore,
+            isLoadingInitial = isLoadingInitial,
+            isLoadingMore = isLoadingMore,
+            isSyncing = isSyncing,
+            syncMessage = syncMessage,
+            error = error,
+            artistFilter = artistFilter,
+            labelFilter = labelFilter,
+            favoriteFilter = favoriteFilter,
+            filterResultCount = totalRecords,
+            hasFavorites = hasFavorites,
+            showLoadDiscogsAction = records.isEmpty() && !hasActiveFilter,
+            scrollState = scrollState,
+            onOpenRecord = onOpenRecord,
+            onRetry = { scope.launch { followCollectionSync() } },
+            onClearArtistFilter = {
+                artistFilter = null
+                onArtistFilterCleared()
+            },
+            onClearLabelFilter = {
+                labelFilter = null
+                onLabelFilterCleared()
+            },
+            onClearFavoriteFilter = {
+                favoriteFilter = false
+            },
+            onShowFavorites = {
+                artistFilter = null
+                labelFilter = null
+                favoriteFilter = true
+                isActionMenuOpen = false
+            },
+            isActionMenuOpen = isActionMenuOpen,
+            onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
+            onActionMenuDismiss = { isActionMenuOpen = false },
+            onCollectionSettings = onCollectionSettings,
+            onSync = {
+                scope.launch { followCollectionSync() }
+            },
+            onShowMore = { count ->
+                scope.launch {
+                    val requestedArtistFilter = artistFilter
+                    val requestedLabelFilter = labelFilter
+                    val requestedFavoriteFilter = favoriteFilter
+                    isLoadingMore = true
+                    runCatching {
+                        apiClient.getCollectionReleases(
+                            limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
+                            offset = records.size,
+                            artist = requestedArtistFilter,
+                            label = requestedLabelFilter,
+                            favorite = requestedFavoriteFilter,
                         )
-                }
-            }
-        } else {
-            CollectionListContent(
-                records = records,
-                hasMore = hasMore,
-                isLoadingInitial = isLoadingInitial,
-                isLoadingMore = isLoadingMore,
-                isSyncing = isSyncing,
-                syncMessage = syncMessage,
-                error = error,
-                artistFilter = artistFilter,
-                labelFilter = labelFilter,
-                favoriteFilter = favoriteFilter,
-                filterResultCount = totalRecords,
-                hasFavorites = hasFavorites,
-                scrollState = scrollState,
-                onOpenRecord = onOpenRecord,
-                onRetry = { scope.launch { followCollectionSync() } },
-                onClearArtistFilter = {
-                    artistFilter = null
-                    onArtistFilterCleared()
-                },
-                onClearLabelFilter = {
-                    labelFilter = null
-                    onLabelFilterCleared()
-                },
-                onClearFavoriteFilter = {
-                    favoriteFilter = false
-                },
-                onShowFavorites = {
-                    artistFilter = null
-                    labelFilter = null
-                    favoriteFilter = true
-                    isActionMenuOpen = false
-                },
-                isActionMenuOpen = isActionMenuOpen,
-                onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
-                onActionMenuDismiss = { isActionMenuOpen = false },
-                onCollectionSettings = onCollectionSettings,
-                onSync = {
-                    scope.launch { followCollectionSync() }
-                },
-                onShowMore = { count ->
-                    scope.launch {
-                        val requestedArtistFilter = artistFilter
-                        val requestedLabelFilter = labelFilter
-                        val requestedFavoriteFilter = favoriteFilter
-                        isLoadingMore = true
-                        runCatching {
-                            apiClient.getCollectionReleases(
-                                limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
-                                offset = records.size,
-                                artist = requestedArtistFilter,
-                                label = requestedLabelFilter,
-                                favorite = requestedFavoriteFilter,
-                            )
-                        }.onSuccess { page ->
-                            if (requestedArtistFilter != artistFilter ||
-                                requestedLabelFilter != labelFilter ||
-                                requestedFavoriteFilter != favoriteFilter
-                            ) {
-                                return@onSuccess
-                            }
-                            records = records + page.records
-                            hasMore = page.hasMore
-                            totalRecords = page.total
-                            error = null
-                        }.onFailure { failure ->
-                            error = failure.toUserMessage("Could not load more collection records.")
+                    }.onSuccess { page ->
+                        if (requestedArtistFilter != artistFilter ||
+                            requestedLabelFilter != labelFilter ||
+                            requestedFavoriteFilter != favoriteFilter
+                        ) {
+                            return@onSuccess
                         }
-                        isLoadingMore = false
+                        records = records + page.records
+                        hasMore = page.hasMore
+                        totalRecords = page.total
+                        error = null
+                    }.onFailure { failure ->
+                        error = failure.toUserMessage("Could not load more collection records.")
                     }
-                },
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(VinylColors.AppBackground)
-                        .padding(innerPadding),
-            )
-        }
+                    isLoadingMore = false
+                }
+            },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(VinylColors.AppBackground)
+                    .padding(innerPadding),
+        )
     }
 }
 
@@ -381,6 +332,7 @@ private fun CollectionListContent(
     favoriteFilter: Boolean,
     filterResultCount: Int,
     hasFavorites: Boolean,
+    showLoadDiscogsAction: Boolean,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
@@ -404,7 +356,7 @@ private fun CollectionListContent(
                 y = 88.dp.roundToPx(),
             )
         }
-    val showActionMenu = records.isNotEmpty() && error == null && !isLoadingInitial
+    val showActionMenu = error == null && !isLoadingInitial
 
     Box(modifier = modifier) {
         Column(
@@ -468,13 +420,14 @@ private fun CollectionListContent(
             if (!isLoadingInitial &&
                 records.isEmpty() &&
                 error == null &&
-                (artistFilter != null || labelFilter != null || favoriteFilter)
+                !isSyncing
             ) {
                 CollectionStatusText(
                     when {
                         favoriteFilter -> "No favorite records."
                         labelFilter != null -> "No collection records for $labelFilter."
-                        else -> "No collection records for $artistFilter."
+                        artistFilter != null -> "No collection records for $artistFilter."
+                        else -> "No records in collection."
                     },
                 )
             }
@@ -501,7 +454,12 @@ private fun CollectionListContent(
                     onClick = onCollectionSettings,
                 )
                 ActionMenuAction(
-                    label = if (isSyncing) "Syncing..." else "Sync Items",
+                    label =
+                        when {
+                            isSyncing -> "Syncing..."
+                            showLoadDiscogsAction -> "Load Discogs collection"
+                            else -> "Sync Items"
+                        },
                     enabled = !isSyncing,
                     onClick = onSync,
                 )
@@ -526,6 +484,7 @@ private fun CollectionFloatingActions(
     onIdentifyRecord: () -> Unit,
     onManualEntry: () -> Unit,
     onManualSearch: () -> Unit,
+    showSearch: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -546,11 +505,13 @@ private fun CollectionFloatingActions(
             onIdentifyRecord = onIdentifyRecord,
             onManualEntry = onManualEntry,
         )
-        FloatingIconButton(
-            icon = Icons.Filled.Search,
-            contentDescription = "Search collection",
-            onClick = onManualSearch,
-        )
+        if (showSearch) {
+            FloatingIconButton(
+                icon = Icons.Filled.Search,
+                contentDescription = "Search collection",
+                onClick = onManualSearch,
+            )
+        }
     }
 }
 
@@ -660,7 +621,10 @@ private fun CollectionStatusText(
         text = message,
         color = if (isError) VinylColors.AccentOrange else VinylColors.TextSecondary,
         textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.bodyMedium,
+        style =
+            MaterialTheme.typography.bodyMedium.copy(
+                fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
+            ),
     )
 }
 

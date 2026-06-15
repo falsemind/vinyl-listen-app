@@ -132,6 +132,11 @@ class FakeReleasesRepository:
                 removed_count += 1
         return removed_count
 
+    def count_collection_releases(self, _db: object, *, include_removed: bool = False) -> int:
+        if include_removed:
+            return len(self.releases)
+        return sum(1 for release in self.releases.values() if release.in_collection)
+
 
 class FakeCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
@@ -179,7 +184,7 @@ def test_collapse_collection_items_uses_lowest_instance_id_as_tie_breaker() -> N
     assert collapsed.basic_information["title"] == "Lower Instance"
 
 
-def test_sync_collection_imports_metadata_without_membership_changes_in_app_mode() -> None:
+def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None:
     now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
     repository = FakeReleasesRepository()
     service = CollectionSyncService(
@@ -205,10 +210,57 @@ def test_sync_collection_imports_metadata_without_membership_changes_in_app_mode
     assert result.updated_count == 0
     assert result.removed_count == 0
     assert repository.releases[116].title == "Newer Copy"
-    assert repository.releases[116].in_collection is False
-    assert repository.releases[116].discogs_instance_id is None
+    assert repository.releases[116].in_collection is True
+    assert repository.releases[116].discogs_instance_id == 10
     assert repository.releases[116].collection_removed_at is None
-    assert repository.commit_flags == [False, False]
+    assert repository.commit_flags == [False, False, False, False]
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
+def test_sync_collection_keeps_removed_releases_inactive_in_app_mode() -> None:
+    removed_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    repository = FakeReleasesRepository(
+        [
+            FakeRelease(
+                discogs_release_id=116,
+                artist="Removed Artist",
+                title="Removed Record",
+                year=1999,
+                format=None,
+                label=None,
+                catalog_number=None,
+                barcode=None,
+                genres=None,
+                styles=None,
+                thumbnail_url=None,
+                cover_image_url=None,
+                in_collection=False,
+                collection_removed_at=removed_at,
+            )
+        ]
+    )
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService(
+            [_collection_item(116, 10, "2021-01-01T10:00:00-07:00", title="Updated Removed Record")]
+        ),
+        repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
+
+    assert result.added_count == 0
+    assert result.updated_count == 1
+    assert result.removed_count == 0
+    assert repository.releases[116].title == "Updated Removed Record"
+    assert repository.releases[116].in_collection is False
+    assert repository.releases[116].collection_removed_at == removed_at
+    assert repository.commit_flags == [False]
     assert db.commit_count == 1
     assert db.rollback_count == 0
 
@@ -343,7 +395,7 @@ def test_sync_collection_rolls_back_when_later_item_fails() -> None:
 
     assert db.commit_count == 0
     assert db.rollback_count == 1
-    assert repository.commit_flags == [False]
+    assert repository.commit_flags == [False, False]
 
 
 def test_collapse_collection_items_rejects_missing_basic_information() -> None:

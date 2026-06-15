@@ -124,6 +124,7 @@ fun RecordDetailScreen(
     onOpenLabelCollection: (String) -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
+    onCollectionMembershipChanged: () -> Unit = {},
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
@@ -209,6 +210,7 @@ fun RecordDetailScreen(
         }.onSuccess { updatedRecord ->
             record = updatedRecord
             detailError = null
+            onCollectionMembershipChanged()
         }.onFailure { error ->
             detailError =
                 error.toUserMessage(

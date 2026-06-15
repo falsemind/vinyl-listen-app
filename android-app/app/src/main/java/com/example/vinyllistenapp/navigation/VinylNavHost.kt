@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,7 @@ import kotlinx.coroutines.launch
 
 private const val NAV_FADE_DURATION_MILLIS = 140
 private const val TIMED_SESSION_REFRESH_MILLIS = 60_000L
+private const val COLLECTION_MEMBERSHIP_REFRESH_KEY = "collectionMembershipRefreshKey"
 
 @Composable
 fun VinylNavHost(
@@ -387,6 +389,13 @@ fun VinylNavHost(
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
                     onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
+                    onCollectionMembershipChanged = {
+                        val handle = navController.previousBackStackEntry?.savedStateHandle
+                        handle?.set(
+                            COLLECTION_MEMBERSHIP_REFRESH_KEY,
+                            (handle.get<Int>(COLLECTION_MEMBERSHIP_REFRESH_KEY) ?: 0) + 1,
+                        )
+                    },
                     onBack = {
                         if (!navController.popBackStack()) {
                             navController.navigate(VinylRoutes.HOME)
@@ -450,8 +459,12 @@ fun VinylNavHost(
                         },
                     ),
             ) { backStackEntry ->
+                val collectionRefreshKey by backStackEntry.savedStateHandle
+                    .getStateFlow(COLLECTION_MEMBERSHIP_REFRESH_KEY, 0)
+                    .collectAsState()
                 CollectionScreen(
                     apiClient = apiClient,
+                    refreshKey = collectionRefreshKey,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
