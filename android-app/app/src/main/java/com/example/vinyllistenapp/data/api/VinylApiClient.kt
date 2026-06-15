@@ -179,6 +179,13 @@ class VinylApiClient(
             response.getString("release_id")
         }
 
+    suspend fun importClientDiscogsRelease(discogsRelease: JSONObject): String =
+        apiCall {
+            val body = JSONObject().put("discogs_release", discogsRelease)
+            val response = postJson("releases/import/client-discogs", body)
+            response.getString("release_id")
+        }
+
     suspend fun searchReleases(
         artist: String?,
         title: String?,

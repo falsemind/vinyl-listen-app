@@ -186,13 +186,15 @@ fun ManualSearchScreen(
                 return@launch
             }
             val releaseId =
-                runCatching { apiClient.importRelease(result.discogsReleaseId) }
-                    .getOrElse { error ->
-                        selectingDiscogsReleaseId = null
-                        failedImportResult = result
-                        retryError = error.toUserMessage("Could not import that record. Retry.")
-                        return@launch
-                    }
+                runCatching {
+                    val discogsRelease = discogsApiClient.fetchRelease(result.discogsReleaseId)
+                    apiClient.importClientDiscogsRelease(discogsRelease)
+                }.getOrElse { error ->
+                    selectingDiscogsReleaseId = null
+                    failedImportResult = result
+                    retryError = error.toUserMessage("Could not import that record. Retry.")
+                    return@launch
+                }
             selectingDiscogsReleaseId = null
             onSelectRecord(releaseId)
         }
