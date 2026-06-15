@@ -106,6 +106,7 @@ backend/app/
 │       ├── collection.py
 │       ├── health.py
 │       ├── identify.py
+│       ├── integrations.py
 │       ├── releases.py
 │       └── sessions.py
 ├── core/
@@ -123,6 +124,7 @@ backend/app/
 │   ├── collection_sync_job.py
 │   ├── discogs_release_cache.py
 │   ├── identify_job.py
+│   ├── provider_integration.py
 │   ├── releases.py
 │   ├── sessions.py
 │   ├── sessions_moods.py
@@ -136,6 +138,7 @@ backend/app/
 │   ├── collection_sync_job_repository.py
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
+│   ├── provider_integration_repository.py
 │   ├── releases_repository.py
 │   ├── session_groups_repository.py
 │   ├── sessions_moods_repository.py
@@ -146,6 +149,7 @@ backend/app/
 │   ├── analytics.py
 │   ├── collection.py
 │   ├── identify.py
+│   ├── integrations.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
@@ -153,11 +157,13 @@ backend/app/
 │   ├── analytics_service.py
 │   ├── collection_sync_job_service.py
 │   ├── collection_sync_service.py
+│   ├── discogs_integration_service.py
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
 │   ├── identify_service.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
+│   ├── token_cipher.py
 │   ├── session_groups_service.py
 │   ├── sessions_service.py
 │   ├── spotify_listening_import_service.py
@@ -169,14 +175,14 @@ backend/app/
 | --- | --- |
 | `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
 | `ai/` | AI runtime adapters owned by the backend, currently disabled fallback plus LM Studio native chat and OpenAI-compatible chat completions support. |
-| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/collection`, `/sessions`, `/analytics`, and `/ai`. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/collection`, `/integrations`, `/sessions`, `/analytics`, and `/ai`. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, collection settings, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for releases, collection settings, provider integrations, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -197,8 +203,10 @@ All routes are nested under `/api/v1`.
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`. |
 | `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
+| `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
+| `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
-| `GET /releases/search` | `api/routes/releases.py` | Manual Discogs release search. |
+| `GET /releases/search` | `api/routes/releases.py` | Token-backed backend Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `POST /releases/{release_id}/refresh` | `api/routes/releases.py` | `ReleaseImportService`. |
@@ -271,7 +279,7 @@ backend/tests/
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
 | `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
-| `services/` | Analytics, Discogs client/service, collection settings, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
+| `services/` | Analytics, Discogs client/service, Discogs integration service, token ciphering, collection settings, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
 | `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 
@@ -292,6 +300,7 @@ backend/alembic/
     ├── 4e2a1c9d8b70_add_spotify_listening_import.py
     ├── 8c1d2e3f4a5b_add_session_groups.py
     ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
+    ├── ab12cd34ef56_add_provider_integrations.py
     └── eed6974773b8_init.py
 
 backend/scripts/
@@ -364,6 +373,7 @@ android-app/
 │       │   │   │   ├── MockVinylData.kt
 │       │   │   │   └── api/
 │       │   │   │       ├── ApiRetryPolicy.kt
+│       │   │   │       ├── DiscogsApiClient.kt
 │       │   │   │       └── VinylApiClient.kt
 │       │   │   ├── domain/
 │       │   │   │   └── RecordModels.kt
@@ -406,6 +416,7 @@ android-app/
 │       │       ├── ExampleUnitTest.kt
 │       │       ├── data/api/
 │       │       │   ├── ApiRetryPolicyTest.kt
+│       │       │   ├── CollectionParsingTest.kt
 │       │       │   └── IdentifyJobStateParsingTest.kt
 │       │       ├── navigation/
 │       │       │   └── VinylNavHostStateTest.kt
@@ -430,11 +441,11 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP client for identify jobs, manual/barcode release search, release import/detail/refresh/history, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. |
+| `data/api/` | Lightweight HTTP clients for backend API calls and direct Discogs search. `VinylApiClient` covers identify jobs, integration status/token save, release import/detail/refresh/history, collection APIs, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. `DiscogsApiClient` handles device-side manual/barcode Discogs search with local unauthenticated rate limiting. |
 | `domain/` | UI-facing domain models for records, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, image/barcode processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, active timed-session banner, and navigation chrome. |
-| `ui/screens/` | Home, analytics, AI insights, collection, capture, image/barcode processing, match confirmation, manual search, session logging, record detail, settings placeholder, View All lists, grouped timed-session history, and small screen-specific formatters. |
+| `ui/screens/` | Home, analytics, AI insights, collection, capture, image/barcode processing, match confirmation, manual search, session logging, record detail, integration settings, View All lists, grouped timed-session history, and small screen-specific formatters. |
 | `ui/theme/` | Compose colors, typography, shapes, spacing, and app theme. |
 
 ### Android Runtime Notes
@@ -445,11 +456,12 @@ android-app/
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - The Recent Sessions, Top Records, Mood Distribution, and Style Distribution expanded screens live in `ViewAllScreens.kt`; list-style screens show up to 25 sessions or records, while distribution screens show the full loaded distribution.
 - View All Recent Sessions groups fetched rows with the same `session_group_id` into a green outlined timed-session container with metadata chips. Grouping applies to the loaded page window, so a very long timed session can continue on the next page if its rows cross a pagination boundary.
-- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`.
-- Manual search calls `GET /api/v1/releases/search`, paginates in 10-result pages, imports selected Discogs candidates, and displays the release format returned by the backend.
+- Settings calls `GET /api/v1/integrations/discogs` and `PUT /api/v1/integrations/discogs/token` for Discogs token state, identity validation, and source-of-truth controls.
+- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`. Discogs sync actions are hidden until a saved token exists.
+- Manual search uses `DiscogsApiClient` for direct device-side Discogs search, paginates in 10-result pages, imports selected Discogs candidates through the backend, and displays the release format returned by Discogs.
 - Capture can enter barcode scan mode on the existing CameraX preview. ML Kit bundled barcode scanning reads UPC/EAN frames locally, shows a short captured confirmation, then opens barcode processing.
 - Image Processing starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
-- Barcode processing calls `GET /api/v1/releases/search?barcode={barcode}`, shows the same green processing language, routes successful candidates to Match Confirmation, and offers Try Again, Manual Search with the barcode prefilled, or Cancel on no result, API failure, or timeout.
+- Barcode processing uses `DiscogsApiClient` for direct device-side barcode search, shows the same green processing language, routes successful candidates to Match Confirmation, and offers Try Again, Manual Search with the barcode prefilled, or Cancel on no result, API failure, or timeout.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
 - Session logging can optionally attach a listen to the active timed session when auto-add is enabled, sending the active `session_group_id` with the regular side/rating/mood payload.
 - `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.

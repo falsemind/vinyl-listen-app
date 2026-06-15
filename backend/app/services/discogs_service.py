@@ -44,28 +44,39 @@ class DiscogsRateLimitState:
 @dataclass(frozen=True)
 class DiscogsApiConfig:
     base_url: str
-    token: str
+    token: str | None
     user_agent: str
     timeout_seconds: float
 
     @classmethod
-    def from_settings(cls) -> "DiscogsApiConfig":
-        if not settings.discogs_token:
+    def from_token(cls, token: str) -> "DiscogsApiConfig":
+        if not token.strip():
             raise DiscogsConfigurationError("Discogs token is not configured.")
 
         return cls(
             base_url=settings.discogs_base_url.rstrip("/"),
-            token=settings.discogs_token,
+            token=token,
+            user_agent=settings.discogs_user_agent,
+            timeout_seconds=settings.discogs_request_timeout_seconds,
+        )
+
+    @classmethod
+    def unauthenticated(cls) -> "DiscogsApiConfig":
+        return cls(
+            base_url=settings.discogs_base_url.rstrip("/"),
+            token=None,
             user_agent=settings.discogs_user_agent,
             timeout_seconds=settings.discogs_request_timeout_seconds,
         )
 
     def build_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Discogs token={self.token}",
+        headers = {
             "User-Agent": self.user_agent,
             "Accept": "application/json",
         }
+        if self.token:
+            headers["Authorization"] = f"Discogs token={self.token}"
+        return headers
 
 
 @dataclass(frozen=True)
@@ -165,11 +176,11 @@ class DiscogsClient:
 
     def __init__(
         self,
-        config: DiscogsApiConfig | None = None,
+        config: DiscogsApiConfig,
         rate_limiter: DiscogsRateLimiter | None = None,
         transport: Callable[[str, dict[str, str], float], dict[str, Any] | DiscogsResponse] | None = None,
     ) -> None:
-        self._config = config or DiscogsApiConfig.from_settings()
+        self._config = config
         self._rate_limiter = rate_limiter or DiscogsRateLimiter(settings.api_rate_limit_per_minute)
         self._transport = transport or self._default_transport
 
@@ -277,12 +288,12 @@ class DiscogsService:
 
     def __init__(
         self,
-        client: DiscogsClient | None = None,
+        client: DiscogsClient,
         repository: DiscogsReleaseRepository | None = None,
         cache_ttl: timedelta | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
-        self._client = client or DiscogsClient()
+        self._client = client
         self._repository = repository or DiscogsReleaseRepository()
         self._cache_ttl = cache_ttl or timedelta(seconds=settings.discogs_cache_ttl_seconds)
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
@@ -364,7 +375,7 @@ class DiscogsService:
         sort: str = "added",
         sort_order: str = "desc",
     ) -> list[dict[str, Any]]:
-        resolved_username = (username or settings.discogs_username or "").strip()
+        resolved_username = (username or "").strip()
         if not resolved_username:
             raise DiscogsConfigurationError("Discogs username is not configured.")
 

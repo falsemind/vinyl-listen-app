@@ -6,6 +6,7 @@ import pytest
 
 from app.schemas.collection import CollectionSourceOfTruth
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncService, collapse_collection_items
+from app.services.discogs_integration_service import SavedDiscogsCredentials
 from app.services.release_mapper import InternalReleaseData
 
 
@@ -33,9 +34,19 @@ class FakeRelease:
 class FakeDiscogsService:
     def __init__(self, items: list[dict[str, Any]]) -> None:
         self.items = items
+        self.usernames: list[str | None] = []
 
-    def fetch_collection_releases(self) -> list[dict[str, Any]]:
+    def fetch_collection_releases(self, username: str | None = None) -> list[dict[str, Any]]:
+        self.usernames.append(username)
         return self.items
+
+
+class FakeDiscogsIntegrationService:
+    def __init__(self, credentials: SavedDiscogsCredentials) -> None:
+        self.credentials = credentials
+
+    def get_saved_credentials(self, _db: object) -> SavedDiscogsCredentials:
+        return self.credentials
 
 
 class FakeDb:
@@ -191,6 +202,31 @@ def test_collapse_collection_items_uses_lowest_instance_id_as_tie_breaker() -> N
 
     assert collapsed.instance_id == 10
     assert collapsed.basic_information["title"] == "Lower Instance"
+
+
+def test_sync_collection_uses_saved_discogs_credentials() -> None:
+    db = FakeDb()
+    discogs_service = FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")])
+    access_tokens: list[str] = []
+    service = CollectionSyncService(
+        discogs_integration_service=FakeDiscogsIntegrationService(
+            SavedDiscogsCredentials(
+                access_token="stored-token",
+                username="discogs-user",
+                external_user_id="123",
+            )
+        ),
+        discogs_service_factory=lambda access_token: access_tokens.append(access_token) or discogs_service,
+        repository=FakeReleasesRepository(),
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
+    )
+
+    result = service.sync_collection(db)
+
+    assert access_tokens == ["stored-token"]
+    assert discogs_service.usernames == ["discogs-user"]
+    assert result.total_items == 1
 
 
 def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None:

@@ -19,8 +19,7 @@ class Settings(BaseSettings):
     database_echo: bool = False
     max_page_limit: int = Field(default=250, ge=1)
 
-    discogs_username: str | None = None
-    discogs_token: str | None = None
+    discogs_token_encryption_key: str | None = None
     discogs_base_url: str
     discogs_user_agent: str = "vinyl-listen-app/0.1.0"
     discogs_request_timeout_seconds: float = 10.0

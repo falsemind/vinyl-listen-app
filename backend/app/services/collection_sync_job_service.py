@@ -6,12 +6,12 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.database.db import SessionLocal
 from app.models.collection_sync_job import CollectionSyncJob
 from app.repositories.collection_sync_job_repository import CollectionSyncJobRepository
 from app.schemas.collection import CollectionSyncJobStatusResponse
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncService
+from app.services.discogs_integration_service import DiscogsIntegrationService
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ class CollectionSyncJobService:
         self,
         *,
         sync_service: CollectionSyncService | None = None,
+        discogs_integration_service: DiscogsIntegrationService | None = None,
         repository: CollectionSyncJobRepository | None = None,
         session_factory: Callable[[], Session] = SessionLocal,
         now_provider: Callable[[], datetime] | None = None,
@@ -50,6 +51,7 @@ class CollectionSyncJobService:
         require_discogs_config: bool = True,
     ) -> None:
         self._sync_service = sync_service or CollectionSyncService()
+        self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or CollectionSyncJobRepository()
         self._session_factory = session_factory
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
@@ -60,7 +62,7 @@ class CollectionSyncJobService:
 
     def create_job(self, db: Session) -> CollectionSyncJobStatusResponse:
         if self._require_discogs_config:
-            self._validate_discogs_config()
+            self._validate_discogs_config(db)
 
         created_at = self._now_provider()
         self._expire_stale_active_jobs(db, now=created_at)
@@ -200,8 +202,8 @@ class CollectionSyncJobService:
             failed_step="unknown",
         )
 
-    def _validate_discogs_config(self) -> None:
-        if not settings.discogs_username or not settings.discogs_token:
+    def _validate_discogs_config(self, db: Session) -> None:
+        if not self._discogs_integration_service.get_status(db).access_token_saved:
             raise CollectionSyncConfigurationError()
 
     def _expire_stale_active_jobs(self, db: Session, *, now: datetime) -> int:

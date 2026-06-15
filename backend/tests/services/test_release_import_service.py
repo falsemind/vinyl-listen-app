@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
 from app.models.releases import Releases
+from app.services.discogs_service import DiscogsConfigurationError
+from app.services.release_import_service import ReleaseImportService
 
 
 def test_import_release_creates_a_new_internal_release(
@@ -57,6 +59,41 @@ def test_import_release_updates_existing_release_when_present(
     assert result.release.title == "Music Has The Right To Children"
     assert result.release.cover_image_url == "https://img.discogs.com/thumb.jpg"
     assert discogs_service.calls == [(555123, True)]
+
+
+def test_import_release_falls_back_to_unauthenticated_discogs_when_token_missing(
+    discogs_release_payload,
+    release_import_discogs_service_factory,
+    release_import_repository_factory,
+) -> None:
+    unauthenticated_discogs_service = release_import_discogs_service_factory(discogs_release_payload)
+
+    class MissingTokenIntegrationService:
+        def __init__(self) -> None:
+            self.authenticated_calls = 0
+            self.unauthenticated_calls = 0
+
+        def build_discogs_service(self, _db):
+            self.authenticated_calls += 1
+            raise DiscogsConfigurationError("Discogs token is not configured.")
+
+        def build_unauthenticated_discogs_service(self):
+            self.unauthenticated_calls += 1
+            return unauthenticated_discogs_service
+
+    integration_service = MissingTokenIntegrationService()
+    repository = release_import_repository_factory()
+    service = ReleaseImportService(
+        discogs_integration_service=integration_service,
+        repository=repository,
+    )
+
+    result = service.import_release(db=object(), discogs_release_id=555123)
+
+    assert result.release.id == "release-123"
+    assert integration_service.authenticated_calls == 1
+    assert integration_service.unauthenticated_calls == 1
+    assert unauthenticated_discogs_service.calls == [(555123, False)]
 
 
 def test_get_release_returns_repository_result(

@@ -132,8 +132,10 @@ The repository root keeps `docker-compose.yml` because it orchestrates project-l
 
 Create a root `.env` file or export these variables in your shell:
 
+Generate `DISCOGS_TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep it stable across backend restarts so saved Discogs tokens remain decryptable.
+
 ```env
-DISCOGS_TOKEN=your_discogs_token
+DISCOGS_TOKEN_ENCRYPTION_KEY=generate_with_openssl_rand_base64_32
 DISCOGS_BASE_URL=https://api.discogs.com
 IDENTIFY_OCR_BACKEND=auto
 IDENTIFY_MLX_VLM_SERVICE_URL=http://host.docker.internal:8111
@@ -233,11 +235,13 @@ POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-root
 
 Create `backend/.env`:
 
+Generate `DISCOGS_TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep it stable across backend restarts so saved Discogs tokens remain decryptable.
+
 ```env
 DATABASE_PROFILE=dev
 DATABASE_DEV_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_dev
 DATABASE_COLLECTION_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_collection
-DISCOGS_TOKEN=your_discogs_token
+DISCOGS_TOKEN_ENCRYPTION_KEY=generate_with_openssl_rand_base64_32
 DISCOGS_BASE_URL=https://api.discogs.com
 API_RATE_LIMIT_PER_MINUTE=60
 IDENTIFY_OCR_BACKEND=auto
@@ -454,8 +458,8 @@ Key documents include:
 Planned improvements beyond MVP:
 
 * improved record identification accuracy
-* Discogs OAuth authentication
-* collection management
+* multi-user auth, registration, and account-scoped integrations
+* deeper collection-management workflows
 * social listening features
 * advanced analytics
 * cloud deployment

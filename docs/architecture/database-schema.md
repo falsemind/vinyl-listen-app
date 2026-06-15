@@ -18,6 +18,7 @@ The schema supports:
 - analytics queries
     
 - Discogs metadata caching
+- encrypted provider integration storage
 - server-backed identify job progress
     
 
@@ -51,6 +52,7 @@ session_moods
 discogs_release_cache
 identify_jobs
 collection_settings
+provider_integrations
 ai_chat_sessions
 ai_chat_messages
 spotify_listening_import_batches
@@ -92,6 +94,9 @@ collection_sync_jobs
 
 collection_settings
     └── stores the app-wide collection source of truth
+
+provider_integrations
+    └── stores encrypted provider tokens and external account identity
 
 ai_chat_sessions
    └── ai_chat_messages
@@ -261,6 +266,40 @@ CHECK (source_of_truth IN ('APP', 'DISCOGS'))
 ```
 
 `APP` means local collection membership is authoritative. Discogs sync may enrich metadata but must not remove, deactivate, or re-add local releases. `DISCOGS` is persisted for future explicit mirror behavior.
+
+---
+
+# Table: provider_integrations
+
+Stores optional external provider integration state. The current implementation
+uses this table for the app-wide Discogs token, while nullable `user_id` keeps
+the schema ready for future multi-user ownership.
+
+## Columns
+
+| Column                  | Type      | Notes |
+| ----------------------- | --------- | ----- |
+| id                      | INTEGER   | Primary key |
+| provider                | VARCHAR   | Provider key, currently `DISCOGS` |
+| user_id                 | VARCHAR   | Nullable future owner id; null means app-wide single-user integration |
+| access_token_ciphertext | TEXT      | Encrypted provider access token |
+| external_user_id        | VARCHAR   | Provider account id returned by identity validation |
+| external_username       | VARCHAR   | Provider username returned by identity validation |
+| is_active               | BOOLEAN   | Whether this integration should be used |
+| created_at              | TIMESTAMP | Row creation time |
+| updated_at              | TIMESTAMP | Last integration update time |
+
+## Indexes
+
+```sql
+idx_provider_integrations_provider
+idx_provider_integrations_user_id
+idx_provider_integrations_provider_user_id
+```
+
+Discogs tokens are never stored in plaintext. `DISCOGS_TOKEN_ENCRYPTION_KEY`
+must remain stable across backend restarts so saved tokens can be decrypted.
+Changing or removing the key makes existing ciphertext unreadable.
 
 ---
 
@@ -721,6 +760,31 @@ if release not exists
    → cache full payload
 ```
 
+Release import uses a saved active Discogs integration token from
+`provider_integrations` when available. If no token is saved, the backend can
+fetch one selected release through unauthenticated Discogs access. In both
+cases, the backend does not read a Discogs access token from configuration.
+
+---
+
+### Discogs Integration Token
+
+```text
+save token
+   → validate token with Discogs /oauth/identity
+   → encrypt token with DISCOGS_TOKEN_ENCRYPTION_KEY
+   → upsert provider_integrations row
+   → store external_user_id and external_username from Discogs
+
+use token
+   → load active provider_integrations row
+   → decrypt access_token_ciphertext
+   → build DiscogsApiConfig.from_token(...)
+```
+
+Collection sync uses `external_username` from identity validation. It does not
+read a Discogs username from backend environment variables.
+
 ---
 
 ### Collection Membership
@@ -738,6 +802,11 @@ reactivate release
 ```
 
 `collection_settings.source_of_truth = APP` makes local membership authoritative. In that mode, Discogs sync does not remove, deactivate, or re-add releases based on missing Discogs items.
+
+Changing `collection_settings.source_of_truth` to `DISCOGS` requires an active
+Discogs integration token. In Discogs-owned mode, sync can mark local collection
+items inactive when they are missing from the Discogs collection, but release
+metadata, sessions, analytics, and cached Discogs payloads remain stored.
 
 ---
 
@@ -786,6 +855,7 @@ session_moods
 discogs_release_cache
 identify_jobs
 collection_settings
+provider_integrations
 ```
 
 ---

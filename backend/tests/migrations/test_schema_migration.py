@@ -71,3 +71,8 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE TABLE collection_settings" in sql
     assert "source_of_truth VARCHAR(20) DEFAULT 'APP' NOT NULL" in sql
     assert "ck_collection_settings_source_of_truth" in sql
+    assert "CREATE TABLE provider_integrations" in sql
+    assert "access_token_ciphertext TEXT" in sql
+    assert "external_user_id VARCHAR(255)" in sql
+    assert "external_username VARCHAR(255)" in sql
+    assert "CREATE INDEX idx_provider_integrations_provider_user_id" in sql

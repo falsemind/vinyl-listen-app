@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.vinyllistenapp.data.api.DiscogsApiClient
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
@@ -66,6 +68,8 @@ fun ManualSearchScreen(
     mode: ManualSearchMode = ManualSearchMode.Discogs,
     initialBarcode: String = "",
 ) {
+    val context = LocalContext.current
+    val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     val pageSize = 10
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -122,7 +126,7 @@ fun ManualSearchScreen(
                 runCatching {
                     when (mode) {
                         ManualSearchMode.Discogs ->
-                            apiClient.searchReleases(
+                            discogsApiClient.searchReleases(
                                 artist = artist,
                                 title = title,
                                 catalog = catalog,

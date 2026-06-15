@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
+from app.repositories.provider_integration_repository import ProviderIntegrationRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
     CollectionReleaseResponse,
     CollectionReleasesResponse,
     CollectionSettingsRequest,
     CollectionSettingsResponse,
+    CollectionSourceOfTruth,
     CollectionSyncJobStatusResponse,
 )
 from app.schemas.releases import ReleaseSearchResponse, ReleaseSearchResult
@@ -44,6 +46,10 @@ def get_collection_settings_repository() -> CollectionSettingsRepository:
     return CollectionSettingsRepository()
 
 
+def get_provider_integration_repository() -> ProviderIntegrationRepository:
+    return ProviderIntegrationRepository()
+
+
 @router.get("/settings", response_model=CollectionSettingsResponse)
 def get_collection_settings(
     db: Annotated[Session, Depends(get_db)],
@@ -58,7 +64,23 @@ def update_collection_settings(
     payload: CollectionSettingsRequest,
     db: Annotated[Session, Depends(get_db)],
     repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
-) -> CollectionSettingsResponse:
+    integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
+) -> CollectionSettingsResponse | JSONResponse:
+    if payload.source_of_truth == CollectionSourceOfTruth.DISCOGS:
+        integration = integration_repository.get_discogs(db)
+        if not (
+            integration
+            and integration.is_active
+            and integration.access_token_ciphertext
+            and integration.external_user_id
+            and integration.external_username
+        ):
+            return _error_response(
+                status_code=400,
+                code="discogs_token_required",
+                message="Discogs access token is required before using Discogs as source of truth.",
+            )
+
     settings_record = repository.set_source_of_truth(db, payload.source_of_truth)
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 

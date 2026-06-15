@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.routes.collection import (
     get_collection_settings_repository,
     get_collection_sync_job_service,
+    get_provider_integration_repository,
     get_releases_repository,
 )
 from app.database.session import get_db
@@ -128,6 +129,21 @@ class StubCollectionSettingsRepository:
         return SimpleNamespace(source_of_truth=source_of_truth)
 
 
+class StubProviderIntegrationRepository:
+    def __init__(self, *, has_saved_token: bool) -> None:
+        self.has_saved_token = has_saved_token
+
+    def get_discogs(self, _db):
+        if not self.has_saved_token:
+            return None
+        return SimpleNamespace(
+            is_active=True,
+            access_token_ciphertext="encrypted-token",
+            external_user_id="123",
+            external_username="alex",
+        )
+
+
 def test_get_collection_settings_defaults_to_app_source_of_truth() -> None:
     repository = StubCollectionSettingsRepository()
     _override_db()
@@ -144,8 +160,10 @@ def test_get_collection_settings_defaults_to_app_source_of_truth() -> None:
 
 def test_update_collection_settings_persists_discogs_source_of_truth() -> None:
     repository = StubCollectionSettingsRepository()
+    integration_repository = StubProviderIntegrationRepository(has_saved_token=True)
     _override_db()
     app.dependency_overrides[get_collection_settings_repository] = lambda: repository
+    app.dependency_overrides[get_provider_integration_repository] = lambda: integration_repository
 
     with TestClient(app) as client:
         response = client.put("/api/v1/collection/settings", json={"source_of_truth": "DISCOGS"})
@@ -155,6 +173,28 @@ def test_update_collection_settings_persists_discogs_source_of_truth() -> None:
     assert response.status_code == 200
     assert response.json() == {"source_of_truth": "DISCOGS"}
     assert repository.update_calls == [CollectionSourceOfTruth.DISCOGS]
+
+
+def test_update_collection_settings_rejects_discogs_without_saved_token() -> None:
+    repository = StubCollectionSettingsRepository()
+    integration_repository = StubProviderIntegrationRepository(has_saved_token=False)
+    _override_db()
+    app.dependency_overrides[get_collection_settings_repository] = lambda: repository
+    app.dependency_overrides[get_provider_integration_repository] = lambda: integration_repository
+
+    with TestClient(app) as client:
+        response = client.put("/api/v1/collection/settings", json={"source_of_truth": "DISCOGS"})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "discogs_token_required",
+            "message": "Discogs access token is required before using Discogs as source of truth.",
+        }
+    }
+    assert repository.update_calls == []
 
 
 def test_update_collection_settings_rejects_unknown_source_of_truth() -> None:

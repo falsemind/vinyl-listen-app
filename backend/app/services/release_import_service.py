@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.models.releases import Releases
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
-from app.services.discogs_service import DiscogsService
+from app.services.discogs_integration_service import DiscogsIntegrationService
+from app.services.discogs_service import DiscogsConfigurationError, DiscogsService
 from app.services.release_mapper import (
     InternalReleaseData,
     ReleaseArtistData,
@@ -36,10 +37,12 @@ class ReleaseImportService:
     def __init__(
         self,
         discogs_service: DiscogsService | None = None,
+        discogs_integration_service: DiscogsIntegrationService | None = None,
         repository: ReleasesRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
     ) -> None:
-        self._discogs_service = discogs_service or DiscogsService()
+        self._discogs_service = discogs_service
+        self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
 
@@ -55,7 +58,8 @@ class ReleaseImportService:
             discogs_release_id,
             force_refresh,
         )
-        raw_payload = self._discogs_service.fetch_release(
+        discogs_service = self._discogs_service or self._build_discogs_service_for_import(db)
+        raw_payload = discogs_service.fetch_release(
             db,
             discogs_release_id,
             force_refresh=force_refresh,
@@ -69,6 +73,12 @@ class ReleaseImportService:
             created,
         )
         return ReleaseImportResult(release=release, created=created)
+
+    def _build_discogs_service_for_import(self, db: Session) -> DiscogsService:
+        try:
+            return self._discogs_integration_service.build_discogs_service(db)
+        except DiscogsConfigurationError:
+            return self._discogs_integration_service.build_unauthenticated_discogs_service()
 
     def get_release(self, db: Session, release_id: str) -> Releases | None:
         logger.info("Loading release release_id=%s", release_id)

@@ -19,6 +19,7 @@ from app.pipelines.identification.search_planner import (
     candidates_contain_identity_context,
 )
 from app.repositories.releases_repository import ReleasesRepository
+from app.services.discogs_integration_service import DiscogsIntegrationService
 from app.services.discogs_service import DiscogsService
 from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
 
@@ -56,6 +57,7 @@ class IdentifyService:
         *,
         discogs_service: DiscogsService | None = None,
         repository: ReleasesRepository | None = None,
+        discogs_integration_service: DiscogsIntegrationService | None = None,
         image_processor: ImageProcessor | None = None,
         identifier_extractor: IdentifierExtractor | None = None,
         ranker: CandidateRanker | None = None,
@@ -63,7 +65,8 @@ class IdentifyService:
         max_upload_size_bytes: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES,
         candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
     ) -> None:
-        self._discogs_service = discogs_service or DiscogsService()
+        self._discogs_service = discogs_service
+        self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or ReleasesRepository()
         self._image_processor = image_processor or ImageProcessor()
         self._identifier_extractor = identifier_extractor or IdentifierExtractor()
@@ -140,7 +143,7 @@ class IdentifyService:
 
         _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "searching_discogs", "Searching Discogs candidates")
-        external_result = self._find_external_candidates(identifiers, cancellation_checker=cancellation_checker)
+        external_result = self._find_external_candidates(db, identifiers, cancellation_checker=cancellation_checker)
         _raise_if_cancel_requested(cancellation_checker)
         logger.info(
             "Returning Discogs identify matches filename=%s count=%s discogs_query_count=%s",
@@ -214,12 +217,14 @@ class IdentifyService:
 
     def _find_external_candidates(
         self,
+        db: Session,
         identifiers: ExtractedIdentifiers,
         *,
         cancellation_checker: Callable[[], bool] | None = None,
     ) -> "_ExternalSearchResult":
         candidate_map: dict[int, IdentifyCandidate] = {}
         query_count = 0
+        discogs_service = self._discogs_service or self._discogs_integration_service.build_discogs_service(db)
 
         for search_step in self._build_search_plan(identifiers):
             _raise_if_cancel_requested(cancellation_checker)
@@ -237,7 +242,7 @@ class IdentifyService:
 
             logger.info("Searching Discogs identify strategy=%s", search_step.strategy)
             query_count += 1
-            payload = self._execute_search_step(search_step)
+            payload = self._execute_search_step(discogs_service, search_step)
             _raise_if_cancel_requested(cancellation_checker)
             candidates = self._map_external_candidates(payload.get("results", []))
             if candidates and search_step.strategy == "barcode":
@@ -307,14 +312,14 @@ class IdentifyService:
     def _build_search_plan(self, identifiers: ExtractedIdentifiers) -> list[SearchStep]:
         return build_search_plan(identifiers)
 
-    def _execute_search_step(self, search_step: SearchStep) -> dict[str, Any]:
+    def _execute_search_step(self, discogs_service: DiscogsService, search_step: SearchStep) -> dict[str, Any]:
         if search_step.strategy == "barcode":
-            return self._discogs_service.search_by_barcode(
+            return discogs_service.search_by_barcode(
                 str(search_step.params["barcode"]),
                 limit=self._candidate_limit,
             )
 
-        return self._discogs_service.search_releases(limit=self._candidate_limit, **search_step.params)
+        return discogs_service.search_releases(limit=self._candidate_limit, **search_step.params)
 
     def _map_local_release(self, release: Releases) -> IdentifyCandidate:
         return IdentifyCandidate(
