@@ -193,9 +193,10 @@ collection sync.
 - `discogs_request_timeout_seconds`
 
 Image identify and collection sync require a saved Discogs integration token.
-Release import uses saved credentials when available, then falls back to a
-single unauthenticated Discogs release fetch when no token is saved. Missing
-saved credentials still raise `DiscogsConfigurationError` for token-gated flows.
+Backend release import by Discogs ID also requires saved credentials. No-token
+barcode/manual-search imports fetch the selected release on Android, then submit
+the full payload to the backend through the client-provided import path. Missing
+saved credentials raise `DiscogsConfigurationError` for token-gated flows.
 
 `DiscogsIntegrationService` exposes:
 
@@ -275,6 +276,14 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 5. Return `ReleaseImportResult`.
 
 `ReleaseImportResult.status` returns `created` or `updated`, based on whether the repository created a new row.
+
+### Client-provided import flow
+
+1. Android fetches the selected Discogs release directly for no-token barcode/manual-search flows.
+2. Backend accepts the full Discogs payload without creating a Discogs client.
+3. Backend maps the payload to `InternalReleaseData`.
+4. Backend upserts the raw payload into `discogs_release_cache`.
+5. Backend saves or updates the local release and returns `ReleaseImportResult`.
 
 ### Refresh flow
 

@@ -397,7 +397,7 @@ GET /api/v1/releases/search?artist=boards+of+canada&title=music&limit=10&offset=
 }
 ```
 
-The response contains Discogs results, not local records. When the user selects a result, the client imports it with `POST /api/v1/releases/import` and navigates with the returned internal `release_id`.
+The response contains Discogs results, not local records. Android no-token flows do not use this backend search route; they search and fetch the selected release directly from Discogs, then import with `POST /api/v1/releases/import/client-discogs`.
 
 ### Errors
 
@@ -417,11 +417,9 @@ Collection sync imports only Discogs `basic_information` for each item. A detail
 
 ## POST /releases/import
 
-Imports a Discogs release into the local database. This endpoint is used after manual Discogs search or identify flow selection.
+Imports a Discogs release into the local database by Discogs release ID. This is a token-backed backend flow used after backend identify/OCR candidates or other server-owned Discogs flows.
 
-Uses the saved Discogs integration token when one exists. If no token is saved,
-the backend performs a single unauthenticated Discogs release fetch, maps it
-into the local release schema, and caches the raw payload.
+Requires a saved Discogs integration token. The backend must not use this endpoint to perform unauthenticated Discogs fetches for no-token users.
 
 ### Request
 
@@ -443,6 +441,34 @@ into the local release schema, and caches the raw payload.
 ```
 
 `status` is `created` or `updated`.
+
+## POST /releases/import/client-discogs
+
+Imports a Discogs release from a full Discogs payload already fetched by Android.
+
+Use this endpoint for no-token barcode/manual-search imports. Android owns the unauthenticated Discogs request and local rate limiting, then sends the selected release payload to the backend for validation, mapping, caching, and persistence.
+
+### Request
+
+```json
+{
+  "discogs_release": {
+    "id": 555123,
+    "title": "Music Has The Right To Children",
+    "artists_sort": "Boards of Canada"
+  }
+}
+```
+
+### Response
+
+Same response shape as `POST /releases/import`.
+
+### Errors
+
+| Status | Meaning |
+| ------ | ------- |
+| `422 Unprocessable Content` | The payload is missing required Discogs release fields or fails request validation. |
 
 ## GET /releases/{release_id}
 

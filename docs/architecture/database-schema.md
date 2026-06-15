@@ -761,9 +761,11 @@ if release not exists
 ```
 
 Release import uses a saved active Discogs integration token from
-`provider_integrations` when available. If no token is saved, the backend can
-fetch one selected release through unauthenticated Discogs access. In both
-cases, the backend does not read a Discogs access token from configuration.
+`provider_integrations` for backend-owned Discogs fetches. If no token is saved,
+Android fetches the selected release directly from Discogs and submits the full
+payload to the backend for mapping, cache upsert, and persistence. The backend
+does not perform unauthenticated Discogs fetches and does not read a Discogs
+access token from configuration.
 
 ---
 
