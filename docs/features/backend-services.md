@@ -12,11 +12,11 @@ description: This document explains the backend service layer in `backend/app/se
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsService`, `CandidateRanker`. |
 | `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
 | `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
-| `collection_sync_service.py` | Reconcile Discogs folder `0` collection membership with local releases while preserving historical session data. | `DiscogsService`, `ReleasesRepository`, `release_mapper.py`. |
+| `collection_sync_service.py` | Sync Discogs collection metadata while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsService`, `ReleasesRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
 | `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
-| `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections and timed-session membership. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
+| `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections, timed-session membership, and active collection membership checks. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
 | `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups. | `SessionGroupsRepository`, `SessionsRepository`. |
 | `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
 | `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
@@ -299,11 +299,12 @@ The mapper handles common Discogs shapes:
 
 1. Validates and normalizes input.
 2. Confirms the local release exists.
-3. Optionally checks the raw Discogs release payload for valid side labels.
-4. Validates optional `session_group_id` through `SessionGroupsService`.
-5. Creates a session through `SessionsRepository`.
-6. Persists optional selected tracks through `session_tracks`.
-7. Returns `CreateSessionResult` with session ID, timestamp, optional session group id, and success status.
+3. Confirms the release is active in the collection.
+4. Optionally checks the raw Discogs release payload for valid side labels.
+5. Validates optional `session_group_id` through `SessionGroupsService`.
+6. Creates a session through `SessionsRepository`.
+7. Persists optional selected tracks through `session_tracks`.
+8. Returns `CreateSessionResult` with session ID, timestamp, optional session group id, and success status.
 
 ### Edit flow
 
@@ -320,6 +321,7 @@ The mapper handles common Discogs shapes:
 The service validates:
 
 - `release_id` must point to a local release.
+- The release must be active in the collection.
 - `played_at` may be omitted or parsed from ISO datetime text.
 - `side` is trimmed and uppercased.
 - `mood` and `notes` are trimmed and stored as nullable optional text.
@@ -335,6 +337,7 @@ Errors are typed:
 - `SessionValidationError` for malformed input.
 - `SessionEditWindowExpiredError` when the edit window has passed.
 - `ReleaseNotFoundError` when a release does not exist.
+- `ReleaseNotInCollectionError` when a release was removed from active collection membership.
 - `SessionNotFoundError` when a session lookup misses.
 - `SessionGroupNotFoundError` or `SessionGroupInactiveError` when timed-session membership is invalid.
 

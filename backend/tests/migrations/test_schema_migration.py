@@ -68,3 +68,6 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE TABLE collection_sync_jobs" in sql
     assert "CREATE INDEX idx_collection_sync_jobs_status" in sql
     assert "CREATE INDEX idx_collection_sync_jobs_status_updated_at" in sql
+    assert "CREATE TABLE collection_settings" in sql
+    assert "source_of_truth VARCHAR(20) DEFAULT 'APP' NOT NULL" in sql
+    assert "ck_collection_settings_source_of_truth" in sql

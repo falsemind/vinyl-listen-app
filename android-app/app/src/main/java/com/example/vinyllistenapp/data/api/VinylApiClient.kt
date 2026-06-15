@@ -11,6 +11,7 @@ import com.example.vinyllistenapp.domain.AnalyticsSessionsPage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.CollectionRecord
 import com.example.vinyllistenapp.domain.CollectionRecordsPage
+import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -145,6 +146,17 @@ class VinylApiClient(
             getJson("collection/releases?$query").toCollectionRecordsPage()
         }
 
+    suspend fun getCollectionSettings(): CollectionSourceOfTruth =
+        apiCall {
+            getJson("collection/settings").toCollectionSourceOfTruth()
+        }
+
+    suspend fun updateCollectionSettings(sourceOfTruth: CollectionSourceOfTruth): CollectionSourceOfTruth =
+        apiCall {
+            val body = JSONObject().put("source_of_truth", sourceOfTruth.toWireValue())
+            putJson("collection/settings", body).toCollectionSourceOfTruth()
+        }
+
     suspend fun importRelease(discogsReleaseId: Long): String =
         apiCall {
             val body =
@@ -223,6 +235,16 @@ class VinylApiClient(
             val body = JSONObject().put("is_favorite", isFavorite)
             val response = patchJson("releases/${Uri.encode(releaseId)}/favorite", body)
             response.toRecordSummary()
+        }
+
+    suspend fun deactivateReleaseCollectionMembership(releaseId: String): RecordSummary =
+        apiCall {
+            postJson("releases/${Uri.encode(releaseId)}/collection/deactivate", JSONObject()).toRecordSummary()
+        }
+
+    suspend fun reactivateReleaseCollectionMembership(releaseId: String): RecordSummary =
+        apiCall {
+            postJson("releases/${Uri.encode(releaseId)}/collection/reactivate", JSONObject()).toRecordSummary()
         }
 
     suspend fun getReleaseSessions(releaseId: String): List<ListeningSession> =
@@ -717,6 +739,18 @@ class VinylApiClient(
         return readJsonResponse(connection)
     }
 
+    private fun putJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "PUT"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
     private suspend fun postRetryableJson(
         path: String,
         body: JSONObject,
@@ -915,6 +949,9 @@ internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage {
     )
 }
 
+internal fun JSONObject.toCollectionSourceOfTruth(): CollectionSourceOfTruth =
+    CollectionSourceOfTruth.fromWireValue(optString("source_of_truth", "APP"))
+
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
     ReleaseSearchResult(
         releaseId = optNullableString("release_id"),
@@ -961,6 +998,12 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         inCollection = optBoolean("in_collection", false),
         isFavorite = optBoolean("is_favorite", false),
     )
+
+private fun CollectionSourceOfTruth.toWireValue(): String =
+    when (this) {
+        CollectionSourceOfTruth.App -> "APP"
+        CollectionSourceOfTruth.Discogs -> "DISCOGS"
+    }
 
 internal fun JSONObject.toAnalyticsSessionsPage(): AnalyticsSessionsPage =
     AnalyticsSessionsPage(
@@ -1256,6 +1299,7 @@ private fun apiErrorMessage(
         code == "invalid_played_at" -> "Session time was invalid. Try saving again."
         code == "session_edit_window_expired" -> "This session can only be edited for 15 minutes after logging."
         code == "release_not_found" -> "This release is not available locally yet."
+        code == "release_not_in_collection" -> "Add this record back to collection before logging a new session."
         status == 404 -> "Could not find that record."
         status in 500..599 -> "Backend error. Retry in a moment."
         !rawMessage.isNullOrBlank() -> rawMessage

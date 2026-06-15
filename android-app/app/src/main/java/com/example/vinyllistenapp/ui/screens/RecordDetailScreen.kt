@@ -30,17 +30,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -120,6 +124,7 @@ fun RecordDetailScreen(
     onOpenLabelCollection: (String) -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
+    onCollectionMembershipChanged: () -> Unit = {},
 ) {
     val fallbackRecord = MockVinylData.record(releaseId)
     var record by remember(releaseId) { mutableStateOf(fallbackRecord) }
@@ -129,8 +134,10 @@ fun RecordDetailScreen(
     var selectedFlowInsightsPeriod by remember(releaseId) { mutableStateOf(FlowInsightsPeriod.ThreeMonths) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
+    var isUpdatingCollectionMembership by remember(releaseId) { mutableStateOf(false) }
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
+    var showDeleteCollectionConfirmation by remember(releaseId) { mutableStateOf(false) }
     var isMoreInCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
     var isViewOnDiscogsExpanded by remember(releaseId) { mutableStateOf(false) }
     var isTracklistExpanded by remember(releaseId) { mutableStateOf(false) }
@@ -147,6 +154,7 @@ fun RecordDetailScreen(
                 recordActionMenuLabels(
                     record = record,
                     isFetchingFullRelease = isFetchingFullRelease,
+                    isUpdatingCollectionMembership = isUpdatingCollectionMembership,
                     isMoreInCollectionExpanded = isMoreInCollectionExpanded,
                     isViewOnDiscogsExpanded = isViewOnDiscogsExpanded,
                 ),
@@ -189,6 +197,31 @@ fun RecordDetailScreen(
                         },
                     )
             }
+    }
+
+    suspend fun updateCollectionMembership(inCollection: Boolean) {
+        isUpdatingCollectionMembership = true
+        runCatching {
+            if (inCollection) {
+                apiClient.reactivateReleaseCollectionMembership(record.releaseId)
+            } else {
+                apiClient.deactivateReleaseCollectionMembership(record.releaseId)
+            }
+        }.onSuccess { updatedRecord ->
+            record = updatedRecord
+            detailError = null
+            onCollectionMembershipChanged()
+        }.onFailure { error ->
+            detailError =
+                error.toUserMessage(
+                    if (inCollection) {
+                        "Could not add record to collection."
+                    } else {
+                        "Could not delete record from collection."
+                    },
+                )
+        }
+        isUpdatingCollectionMembership = false
     }
 
     suspend fun fetchFlowInsights(period: FlowInsightsPeriod) {
@@ -355,14 +388,16 @@ fun RecordDetailScreen(
                 Spacer(Modifier.height(128.dp))
             }
         }
-        FloatingGlassButton(
-            label = "+ Add Session",
-            onClick = { onAddSession(record.releaseId) },
-            modifier =
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = VinylSpacing.SpaceXl, bottom = 104.dp),
-        )
+        if (record.inCollection) {
+            FloatingGlassButton(
+                label = "+ Add Session",
+                onClick = { onAddSession(record.releaseId) },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = VinylSpacing.SpaceXl, bottom = 104.dp),
+            )
+        }
         RecordDetailGoBackButton(
             onClick = onBack,
             onLongClick = onBackToHome,
@@ -408,6 +443,25 @@ fun RecordDetailScreen(
                     onClick = {
                         isActionMenuOpen = false
                         scope.launch { updateFavorite(!record.isFavorite) }
+                    },
+                )
+                ActionMenuAction(
+                    label =
+                        when {
+                            isUpdatingCollectionMembership -> "Updating collection..."
+                            record.inCollection -> "Delete from collection"
+                            else -> "Add to collection"
+                        },
+                    enabled = !isUpdatingCollectionMembership,
+                    icon = if (record.inCollection) Icons.Filled.Delete else Icons.Filled.Add,
+                    iconTint = if (record.inCollection) VinylColors.AccentOrange else VinylColors.AccentGreen,
+                    onClick = {
+                        isActionMenuOpen = false
+                        if (record.inCollection) {
+                            showDeleteCollectionConfirmation = true
+                        } else {
+                            scope.launch { updateCollectionMembership(true) }
+                        }
                     },
                 )
                 if (collectionArtistNames.isNotEmpty() || collectionLabelNames.isNotEmpty()) {
@@ -500,6 +554,29 @@ fun RecordDetailScreen(
                     ActionMenuDelimiter()
                 }
             }
+        }
+        if (showDeleteCollectionConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showDeleteCollectionConfirmation = false },
+                title = { Text("Delete from collection") },
+                text = { Text("Listening history, analytics, and insights stay preserved.") },
+                confirmButton = {
+                    TextButton(
+                        enabled = !isUpdatingCollectionMembership,
+                        onClick = {
+                            showDeleteCollectionConfirmation = false
+                            scope.launch { updateCollectionMembership(false) }
+                        },
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteCollectionConfirmation = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
         }
     }
 }
@@ -2182,6 +2259,7 @@ private fun recordActionMenuWidth(
 private fun recordActionMenuLabels(
     record: RecordSummary,
     isFetchingFullRelease: Boolean,
+    isUpdatingCollectionMembership: Boolean,
     isMoreInCollectionExpanded: Boolean,
     isViewOnDiscogsExpanded: Boolean,
 ): List<String> =
@@ -2192,6 +2270,13 @@ private fun recordActionMenuLabels(
             add("Full Discogs release")
         }
         add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
+        add(
+            when {
+                isUpdatingCollectionMembership -> "Updating collection..."
+                record.inCollection -> "Delete from collection"
+                else -> "Add to collection"
+            },
+        )
         val collectionArtists = collectionArtistNames(record)
         val collectionLabels = collectionLabelNames(record)
         if (collectionArtists.isNotEmpty() || collectionLabels.isNotEmpty()) {
@@ -2232,7 +2317,7 @@ internal fun collectionLabelNames(record: RecordSummary): List<String> {
     return labelNames.distinct()
 }
 
-internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record was removed from your Discogs collection."
+internal fun recordCollectionRemovedMessage(record: RecordSummary): String = "This record is not in your collection."
 
 private fun shouldUsePrototypeRecordDetailFallback(releaseId: String): Boolean =
     releaseId in setOf("release-001", "release-002", "release-003")

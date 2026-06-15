@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app.api.routes.releases import get_releases_repository
@@ -249,6 +251,51 @@ def test_update_release_favorite_endpoint_updates_release(
     assert response.status_code == 200
     assert response.json()["is_favorite"] is True
     assert service.favorite_calls == [("release-123", True)]
+
+
+def test_deactivate_release_collection_membership_endpoint_preserves_release(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.release.in_collection = True
+    service.release.collection_added_at = datetime(2026, 6, 1, tzinfo=UTC)
+    override_release_import_service(service)
+    app.dependency_overrides[get_releases_repository] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/releases/release-123/collection/deactivate")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "release-123"
+    assert response.json()["in_collection"] is False
+    assert response.json()["collection_removed_at"] is not None
+    assert service.deactivate_calls == ["release-123"]
+
+
+def test_reactivate_release_collection_membership_endpoint_restores_existing_release(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.release.in_collection = False
+    service.release.collection_removed_at = datetime(2026, 6, 1, tzinfo=UTC)
+    override_release_import_service(service)
+    app.dependency_overrides[get_releases_repository] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/releases/release-123/collection/reactivate")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "release-123"
+    assert response.json()["in_collection"] is True
+    assert response.json()["collection_added_at"] is not None
+    assert response.json()["collection_removed_at"] is None
+    assert service.reactivate_calls == ["release-123"]
 
 
 def test_refresh_release_endpoint_fetches_full_release(

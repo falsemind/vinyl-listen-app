@@ -220,6 +220,20 @@ data class CollectionRecordsPage(
     val hasFavorites: Boolean = false,
 )
 
+enum class CollectionSourceOfTruth {
+    App,
+    Discogs,
+    ;
+
+    companion object {
+        fun fromWireValue(value: String): CollectionSourceOfTruth =
+            when (value.uppercase()) {
+                "DISCOGS" -> Discogs
+                else -> App
+            }
+    }
+}
+
 data class MatchCandidate(
     val releaseId: String?,
     val discogsReleaseId: Long,

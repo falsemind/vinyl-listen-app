@@ -517,15 +517,72 @@ Android uses this endpoint from Record Details to hydrate one collection import 
 | `422 Unprocessable Content` | The Discogs payload cannot be mapped into local release metadata. |
 | `502 Bad Gateway` | Discogs returned a non-404 client error. |
 
+## POST /releases/{release_id}/collection/deactivate
+
+Marks a release as removed from the active collection without deleting the release row, sessions, analytics inputs, or cached Discogs metadata. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: false` and `collection_removed_at` set.
+
+### Errors
+
+| Status | Meaning |
+| --- | --- |
+| `404 Not Found` | No local release exists for `release_id`. |
+
+## POST /releases/{release_id}/collection/reactivate
+
+Restores an existing release to the active collection without creating a duplicate. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: true`.
+
+### Errors
+
+| Status | Meaning |
+| --- | --- |
+| `404 Not Found` | No local release exists for `release_id`. |
+
 ---
 
 # 4. Collection Management
 
-Endpoints used by the Records Collection screen to import and sync the current Discogs collection. Discogs folder `0` is treated as the source of truth for active collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
+Endpoints used by the Records Collection screen to load local collection records, start manual Discogs metadata sync, and manage the collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich metadata but must not remove, deactivate, or re-add local collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
+
+## GET /collection/settings
+
+Returns the current collection source-of-truth setting. If no settings row exists yet, the backend creates the default `APP` setting.
+
+### Response
+
+```json
+{
+  "source_of_truth": "APP"
+}
+```
+
+Allowed values are `APP` and `DISCOGS`.
+
+## PUT /collection/settings
+
+Updates the collection source-of-truth setting.
+
+### Request
+
+```json
+{
+  "source_of_truth": "DISCOGS"
+}
+```
+
+### Response
+
+Same response shape as `GET /collection/settings`.
 
 ## POST /collection/sync
 
 Starts a manual background collection sync job and returns immediately.
+
+Sync behavior depends on `source_of_truth`:
+
+| Source | Behavior |
+| --- | --- |
+| `APP` | Preserve local `in_collection` state. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
+| `DISCOGS` | Reserved for explicit Discogs mirror behavior. The setting is persisted now; destructive-feeling reconciliation should remain isolated until the UX is ready. |
 
 ### Response
 
@@ -691,11 +748,14 @@ Logs a listening session.
 ```
 rating must be 1–5
 session_group_id optional; when present, it must reference an active timed session group
+release must still be active in the collection
 side must exist for the release when Discogs side metadata is known
 track_positions optional; when present, each track must exist on the selected side in cached full Discogs tracklist data
 notes optional
 played_at required
 ```
+
+Inactive collection releases return `400 Bad Request` with `release_not_in_collection`.
 
 ---
 

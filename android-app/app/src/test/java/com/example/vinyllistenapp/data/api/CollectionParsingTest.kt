@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.data.api
 
+import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -86,6 +87,22 @@ class CollectionParsingTest {
         assertEquals(4, state.updatedCount)
         assertEquals(2, state.removedCount)
         assertFalse(state.status.isTerminal)
+    }
+
+    @Test
+    fun parsesCollectionSourceOfTruthSettings() {
+        assertEquals(
+            CollectionSourceOfTruth.App,
+            JSONObject("""{"source_of_truth": "APP"}""").toCollectionSourceOfTruth(),
+        )
+        assertEquals(
+            CollectionSourceOfTruth.Discogs,
+            JSONObject("""{"source_of_truth": "DISCOGS"}""").toCollectionSourceOfTruth(),
+        )
+        assertEquals(
+            CollectionSourceOfTruth.App,
+            JSONObject("""{"source_of_truth": "unknown"}""").toCollectionSourceOfTruth(),
+        )
     }
 
     @Test

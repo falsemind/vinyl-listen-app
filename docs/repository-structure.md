@@ -103,6 +103,7 @@ backend/app/
 │   └── routes/
 │       ├── ai.py
 │       ├── analytics.py
+│       ├── collection.py
 │       ├── health.py
 │       ├── identify.py
 │       ├── releases.py
@@ -118,6 +119,8 @@ backend/app/
 │   └── session.py
 ├── models/
 │   ├── ai_chat.py
+│   ├── collection_settings.py
+│   ├── collection_sync_job.py
 │   ├── discogs_release_cache.py
 │   ├── identify_job.py
 │   ├── releases.py
@@ -129,6 +132,8 @@ backend/app/
 ├── repositories/
 │   ├── ai_chat_repository.py
 │   ├── analytics_repository.py
+│   ├── collection_settings_repository.py
+│   ├── collection_sync_job_repository.py
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
 │   ├── releases_repository.py
@@ -139,12 +144,15 @@ backend/app/
 ├── schemas/
 │   ├── ai.py
 │   ├── analytics.py
+│   ├── collection.py
 │   ├── identify.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
 │   ├── ai_insights_service.py
 │   ├── analytics_service.py
+│   ├── collection_sync_job_service.py
+│   ├── collection_sync_service.py
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
 │   ├── identify_service.py
@@ -165,10 +173,10 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for releases, collection settings, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, collection sync, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -182,7 +190,10 @@ All routes are nested under `/api/v1`.
 | `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard. |
 | `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService` with per-client admission control. |
 | `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
+| `GET /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
+| `PUT /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
+| `GET /collection/sync/active` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`. |
 | `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
@@ -191,6 +202,8 @@ All routes are nested under `/api/v1`.
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `POST /releases/{release_id}/refresh` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `POST /releases/{release_id}/collection/deactivate` | `api/routes/releases.py` | `ReleasesRepository`. |
+| `POST /releases/{release_id}/collection/reactivate` | `api/routes/releases.py` | `ReleasesRepository`. |
 | `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
@@ -258,7 +271,7 @@ backend/tests/
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
 | `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
-| `services/` | Analytics, Discogs client/service, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
+| `services/` | Analytics, Discogs client/service, collection settings, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
 | `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 

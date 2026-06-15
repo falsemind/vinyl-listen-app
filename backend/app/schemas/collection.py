@@ -4,6 +4,19 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 
+class CollectionSourceOfTruth(StrEnum):
+    APP = "APP"
+    DISCOGS = "DISCOGS"
+
+
+class CollectionSettingsRequest(BaseModel):
+    source_of_truth: CollectionSourceOfTruth
+
+
+class CollectionSettingsResponse(BaseModel):
+    source_of_truth: CollectionSourceOfTruth
+
+
 class CollectionSyncJobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

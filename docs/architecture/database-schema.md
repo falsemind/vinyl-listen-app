@@ -50,6 +50,7 @@ session_tracks
 session_moods
 discogs_release_cache
 identify_jobs
+collection_settings
 ai_chat_sessions
 ai_chat_messages
 spotify_listening_import_batches
@@ -87,7 +88,10 @@ identify_jobs
    └── stores short-lived identify progress, result, and error payloads
 
 collection_sync_jobs
-   └── stores short-lived Discogs collection sync progress and count summaries
+    └── stores short-lived Discogs collection sync progress and count summaries
+
+collection_settings
+    └── stores the app-wide collection source of truth
 
 ai_chat_sessions
    └── ai_chat_messages
@@ -120,10 +124,10 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
 | styles             | TEXT[]    | Discogs styles (e.g. Techno, Dub Techno) |
 | thumbnail_url      | TEXT      | Cached Discogs thumbnail image           |
 | cover_image_url    | TEXT      | Cached Discogs image                     |
-| in_collection      | BOOLEAN   | Current Discogs collection membership    |
-| collection_added_at | TIMESTAMP | Representative Discogs collection add time |
-| collection_removed_at | TIMESTAMP | Time sync detected removal from collection |
-| last_discogs_sync_at | TIMESTAMP | Last sync that observed or removed release |
+| in_collection      | BOOLEAN   | Current local collection membership      |
+| collection_added_at | TIMESTAMP | Representative time the release entered the local collection |
+| collection_removed_at | TIMESTAMP | Time the release was removed from the active local collection |
+| last_discogs_sync_at | TIMESTAMP | Last Discogs sync that touched metadata or membership |
 | discogs_instance_id | BIGINT   | Representative Discogs instance id       |
 | created_at         | TIMESTAMP | Record creation time                     |
 | updated_at         | TIMESTAMP | Last metadata update                     |
@@ -214,14 +218,14 @@ Stores short-lived progress state for manual Discogs collection sync jobs.
 | Column          | Type      | Notes                                       |
 | --------------- | --------- | ------------------------------------------- |
 | id              | UUID      | Primary key                                 |
-| status          | TEXT      | queued, running, succeeded, or failed       |
-| step            | TEXT      | fetching, importing, or loading             |
+| status          | TEXT      | queued, running, succeeded, failed, or expired |
+| step            | TEXT      | fetching, importing, loading, or finalizing |
 | message         | TEXT      | User-facing progress message                |
 | total_items     | INTEGER   | Discogs items returned by the sync          |
 | processed_items | INTEGER   | Unique releases processed                   |
 | added_count     | INTEGER   | Newly added releases                        |
 | updated_count   | INTEGER   | Existing releases refreshed                 |
-| removed_count   | INTEGER   | Releases marked removed from collection     |
+| removed_count   | INTEGER   | Releases marked removed from collection when membership mirroring is active |
 | error           | JSONB     | Stable error code, message, and failed step |
 | created_at      | TIMESTAMP | Job creation time                           |
 | updated_at      | TIMESTAMP | Last status update time                     |
@@ -234,6 +238,29 @@ INDEX (status)
 INDEX (status, updated_at)
 INDEX (expires_at)
 ```
+
+---
+
+# Table: collection_settings
+
+Stores the app-wide collection source-of-truth setting.
+
+## Columns
+
+| Column          | Type      | Notes                                      |
+| --------------- | --------- | ------------------------------------------ |
+| id              | INTEGER   | Primary key; current implementation uses row `1` |
+| source_of_truth | TEXT      | `APP` or `DISCOGS`; defaults to `APP`      |
+| created_at      | TIMESTAMP | Row creation time                          |
+| updated_at      | TIMESTAMP | Last settings update time                  |
+
+## Constraints
+
+```sql
+CHECK (source_of_truth IN ('APP', 'DISCOGS'))
+```
+
+`APP` means local collection membership is authoritative. Discogs sync may enrich metadata but must not remove, deactivate, or re-add local releases. `DISCOGS` is persisted for future explicit mirror behavior.
 
 ---
 
@@ -696,11 +723,31 @@ if release not exists
 
 ---
 
+### Collection Membership
+
+```
+deactivate release
+   → set releases.in_collection = false
+   → set releases.collection_removed_at
+   → keep release metadata, sessions, analytics, and cached Discogs payloads
+
+reactivate release
+   → set releases.in_collection = true
+   → clear releases.collection_removed_at
+   → reuse the existing release row
+```
+
+`collection_settings.source_of_truth = APP` makes local membership authoritative. In that mode, Discogs sync does not remove, deactivate, or re-add releases based on missing Discogs items.
+
+---
+
 ### Listening Session
 
 ```
 insert into sessions
 ```
+
+Session creation is allowed only for releases that are still active in the collection.
 
 ---
 
@@ -738,6 +785,7 @@ sessions
 session_moods
 discogs_release_cache
 identify_jobs
+collection_settings
 ```
 
 ---
@@ -784,6 +832,7 @@ discogs_release_id
 identify_jobs.status
 identify_jobs.status + identify_jobs.updated_at
 identify_jobs.expires_at
+releases.in_collection
 ```
 
 will ensure fast analytics queries.

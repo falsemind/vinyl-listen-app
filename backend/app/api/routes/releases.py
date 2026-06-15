@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -224,6 +225,50 @@ def update_release_favorite(
         )
 
     updated_release = repository.set_favorite(db, release, is_favorite=payload.is_favorite)
+    return _release_response(db, service, updated_release)
+
+
+@router.post("/{release_id}/collection/deactivate", response_model=ReleaseResponse)
+def deactivate_release_collection_membership(
+    release_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+):
+    release = service.get_release(db, release_id)
+    if release is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{release_id}' was not found.",
+        )
+
+    updated_release = repository.deactivate_collection_membership(
+        db,
+        release,
+        removed_at=datetime.now(UTC),
+    )
+    return _release_response(db, service, updated_release)
+
+
+@router.post("/{release_id}/collection/reactivate", response_model=ReleaseResponse)
+def reactivate_release_collection_membership(
+    release_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+):
+    release = service.get_release(db, release_id)
+    if release is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{release_id}' was not found.",
+        )
+
+    updated_release = repository.reactivate_collection_membership(
+        db,
+        release,
+        added_at=datetime.now(UTC),
+    )
     return _release_response(db, service, updated_release)
 
 

@@ -180,6 +180,29 @@ def test_create_session_rejects_invalid_side(build_sessions_service) -> None:
     assert exc_info.value.code == "invalid_side"
 
 
+def test_create_session_rejects_release_removed_from_collection(
+    build_release,
+    build_sessions_service,
+) -> None:
+    release = build_release()
+    release.in_collection = False
+    release.collection_removed_at = datetime(2026, 6, 15, tzinfo=UTC)
+    service = build_sessions_service(releases=[release])
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.create_session(
+            db=object(),
+            release_id="release-123",
+            rating=4,
+            mood=None,
+            notes=None,
+            played_at="2026-03-14T19:21:00Z",
+            side=None,
+        )
+
+    assert exc_info.value.code == "release_not_in_collection"
+
+
 def test_create_session_accepts_side_when_release_sides_are_unknown(
     sessions_repository_factory,
     build_sessions_service,

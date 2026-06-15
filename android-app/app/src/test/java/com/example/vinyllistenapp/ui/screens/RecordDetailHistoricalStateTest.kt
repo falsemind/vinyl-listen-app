@@ -50,7 +50,7 @@ class RecordDetailHistoricalStateTest {
 
         assertTrue(shouldShowCollectionRemovedMessage(removedRecord))
         assertEquals(
-            "This record was removed from your Discogs collection.",
+            "This record is not in your collection.",
             recordCollectionRemovedMessage(removedRecord),
         )
     }
