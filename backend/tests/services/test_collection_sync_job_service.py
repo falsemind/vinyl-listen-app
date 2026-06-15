@@ -1,11 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models.collection_sync_job import CollectionSyncJob
-from app.services.collection_sync_job_service import CollectionSyncJobService
+from app.schemas.collection import CollectionSourceOfTruth
+from app.schemas.integrations import DiscogsIntegrationStatusResponse
+from app.services.collection_sync_job_service import CollectionSyncConfigurationError, CollectionSyncJobService
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncResult
 
 
@@ -35,6 +38,46 @@ class FailingCollectionSyncService:
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
         raise CollectionSyncError("Collection item is missing metadata.")
+
+
+class FakeDiscogsIntegrationService:
+    def __init__(self, *, access_token_saved: bool) -> None:
+        self.access_token_saved = access_token_saved
+
+    def get_status(self, _db) -> DiscogsIntegrationStatusResponse:
+        return DiscogsIntegrationStatusResponse(
+            access_token_saved=self.access_token_saved,
+            source_of_truth=CollectionSourceOfTruth.APP,
+            backend_identify_enabled=self.access_token_saved,
+        )
+
+
+def test_collection_sync_job_service_rejects_job_without_saved_discogs_token() -> None:
+    SessionFactory = _build_session_factory()
+    service = CollectionSyncJobService(
+        sync_service=SuccessfulCollectionSyncService(),
+        session_factory=SessionFactory,
+        discogs_integration_service=FakeDiscogsIntegrationService(access_token_saved=False),
+    )
+
+    with SessionFactory() as db, pytest.raises(CollectionSyncConfigurationError):
+        service.create_job(db)
+
+
+def test_collection_sync_job_service_allows_job_with_saved_discogs_token() -> None:
+    SessionFactory = _build_session_factory()
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    service = CollectionSyncJobService(
+        sync_service=SuccessfulCollectionSyncService(),
+        session_factory=SessionFactory,
+        now_provider=lambda: now,
+        discogs_integration_service=FakeDiscogsIntegrationService(access_token_saved=True),
+    )
+
+    with SessionFactory() as db:
+        job = service.create_job(db)
+
+    assert job.status == "queued"
 
 
 def test_collection_sync_job_service_completes_job() -> None:

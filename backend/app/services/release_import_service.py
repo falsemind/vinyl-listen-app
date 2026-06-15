@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.releases import Releases
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
+from app.services.discogs_integration_service import DiscogsIntegrationService
 from app.services.discogs_service import DiscogsService
 from app.services.release_mapper import (
     InternalReleaseData,
@@ -36,10 +37,12 @@ class ReleaseImportService:
     def __init__(
         self,
         discogs_service: DiscogsService | None = None,
+        discogs_integration_service: DiscogsIntegrationService | None = None,
         repository: ReleasesRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
     ) -> None:
-        self._discogs_service = discogs_service or DiscogsService()
+        self._discogs_service = discogs_service
+        self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or ReleasesRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
 
@@ -55,7 +58,8 @@ class ReleaseImportService:
             discogs_release_id,
             force_refresh,
         )
-        raw_payload = self._discogs_service.fetch_release(
+        discogs_service = self._discogs_service or self._discogs_integration_service.build_discogs_service(db)
+        raw_payload = discogs_service.fetch_release(
             db,
             discogs_release_id,
             force_refresh=force_refresh,

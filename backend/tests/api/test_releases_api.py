@@ -1,21 +1,26 @@
 from datetime import UTC, datetime
 
+import pytest
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from app.api.routes.releases import get_releases_repository
 from app.main import app
-from app.services.discogs_service import DiscogsClientError
+from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
 
 
-def test_discogs_service_dependency_reuses_search_cache() -> None:
+def test_discogs_service_dependency_requires_saved_token() -> None:
     from app.api.routes.releases import get_discogs_service
 
-    get_discogs_service.cache_clear()
+    class MissingIntegrationService:
+        def build_discogs_service(self, _db: object) -> object:
+            raise DiscogsConfigurationError("Discogs token is not configured.")
 
-    try:
-        assert get_discogs_service() is get_discogs_service()
-    finally:
-        get_discogs_service.cache_clear()
+    with pytest.raises(HTTPException) as error:
+        get_discogs_service(db=object(), integration_service=MissingIntegrationService())
+
+    assert error.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert error.value.detail == "Discogs access token is required."
 
 
 def test_search_releases_endpoint_returns_discogs_results(

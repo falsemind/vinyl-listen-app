@@ -1,6 +1,5 @@
 import logging
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -20,7 +19,8 @@ from app.schemas.releases import (
     ReleaseSearchResponse,
 )
 from app.schemas.sessions import ErrorResponse, ReleaseSessionHistoryItem, ReleaseSessionsResponse, SessionTrackResponse
-from app.services.discogs_service import DiscogsClientError, DiscogsService
+from app.services.discogs_integration_service import DiscogsIntegrationService
+from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError, DiscogsService
 from app.services.release_import_service import ReleaseImportService
 from app.services.sessions_service import (
     RecordFlowInsights,
@@ -38,9 +38,21 @@ def get_release_import_service() -> ReleaseImportService:
     return ReleaseImportService()
 
 
-@lru_cache(maxsize=1)
-def get_discogs_service() -> DiscogsService:
-    return DiscogsService()
+def get_discogs_integration_service() -> DiscogsIntegrationService:
+    return DiscogsIntegrationService()
+
+
+def get_discogs_service(
+    db: Annotated[Session, Depends(get_db)],
+    integration_service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
+) -> DiscogsService:
+    try:
+        return integration_service.build_discogs_service(db)
+    except DiscogsConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discogs access token is required.",
+        ) from error
 
 
 def get_sessions_service() -> SessionsService:

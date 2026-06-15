@@ -5,20 +5,10 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from app.core.config import settings
 from app.services.discogs_service import (
-    DiscogsApiConfig,
     DiscogsClientError,
-    DiscogsConfigurationError,
     DiscogsService,
 )
-
-
-def test_discogs_api_config_requires_token(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "discogs_token", None)
-
-    with pytest.raises(DiscogsConfigurationError, match="Discogs token is not configured"):
-        DiscogsApiConfig.from_settings()
 
 
 def test_discogs_client_parses_http_error_message(build_discogs_client) -> None:

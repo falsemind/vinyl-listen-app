@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import CollectionSourceOfTruth
-from app.services.discogs_service import DiscogsService
+from app.services.discogs_integration_service import DiscogsIntegrationService
+from app.services.discogs_service import DiscogsApiConfig, DiscogsClient, DiscogsService
 from app.services.release_mapper import InternalReleaseData, map_discogs_to_internal
 
 logger = logging.getLogger(__name__)
@@ -45,11 +46,15 @@ class CollectionSyncService:
         self,
         *,
         discogs_service: DiscogsService | None = None,
+        discogs_service_factory: Callable[[str], DiscogsService] | None = None,
+        discogs_integration_service: DiscogsIntegrationService | None = None,
         repository: ReleasesRepository | None = None,
         settings_repository: CollectionSettingsRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
-        self._discogs_service = discogs_service or DiscogsService()
+        self._discogs_service = discogs_service
+        self._discogs_service_factory = discogs_service_factory or _build_discogs_service
+        self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or ReleasesRepository()
         self._settings_repository = settings_repository or CollectionSettingsRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
@@ -65,7 +70,7 @@ class CollectionSyncService:
         mirror_discogs_collection = source_of_truth == CollectionSourceOfTruth.DISCOGS
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         try:
-            raw_items = self._discogs_service.fetch_collection_releases()
+            raw_items = self._fetch_discogs_collection_releases(db)
             collection_items = collapse_collection_items(raw_items)
             _report_progress(
                 progress_reporter,
@@ -149,6 +154,14 @@ class CollectionSyncService:
             removed_count=removed_count,
         )
 
+    def _fetch_discogs_collection_releases(self, db: Session) -> list[dict[str, Any]]:
+        if self._discogs_service is not None:
+            return self._discogs_service.fetch_collection_releases()
+
+        credentials = self._discogs_integration_service.get_saved_credentials(db)
+        discogs_service = self._discogs_service_factory(credentials.access_token)
+        return discogs_service.fetch_collection_releases(username=credentials.username)
+
 
 def collapse_collection_items(items: Iterable[Mapping[str, Any]]) -> list[CollectionReleaseItem]:
     representatives: dict[int, CollectionReleaseItem] = {}
@@ -163,6 +176,12 @@ def collapse_collection_items(items: Iterable[Mapping[str, Any]]) -> list[Collec
         representatives.values(),
         key=lambda item: item.date_added or datetime.min.replace(tzinfo=UTC),
         reverse=True,
+    )
+
+
+def _build_discogs_service(access_token: str) -> DiscogsService:
+    return DiscogsService(
+        client=DiscogsClient(config=DiscogsApiConfig.from_token(access_token)),
     )
 
 
