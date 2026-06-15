@@ -12,6 +12,7 @@ import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.CollectionRecord
 import com.example.vinyllistenapp.domain.CollectionRecordsPage
 import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
+import com.example.vinyllistenapp.domain.DiscogsIntegrationStatus
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -155,6 +156,17 @@ class VinylApiClient(
         apiCall {
             val body = JSONObject().put("source_of_truth", sourceOfTruth.toWireValue())
             putJson("collection/settings", body).toCollectionSourceOfTruth()
+        }
+
+    suspend fun getDiscogsIntegrationStatus(): DiscogsIntegrationStatus =
+        apiCall {
+            getJson("integrations/discogs").toDiscogsIntegrationStatus()
+        }
+
+    suspend fun saveDiscogsAccessToken(accessToken: String): DiscogsIntegrationStatus =
+        apiCall {
+            val body = JSONObject().put("access_token", accessToken)
+            putJson("integrations/discogs/token", body).toDiscogsIntegrationStatus()
         }
 
     suspend fun importRelease(discogsReleaseId: Long): String =
@@ -951,6 +963,15 @@ internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage {
 
 internal fun JSONObject.toCollectionSourceOfTruth(): CollectionSourceOfTruth =
     CollectionSourceOfTruth.fromWireValue(optString("source_of_truth", "APP"))
+
+internal fun JSONObject.toDiscogsIntegrationStatus(): DiscogsIntegrationStatus =
+    DiscogsIntegrationStatus(
+        accessTokenSaved = optBoolean("access_token_saved", false),
+        externalUserId = optNullableString("external_user_id"),
+        externalUsername = optNullableString("external_username"),
+        sourceOfTruth = CollectionSourceOfTruth.fromWireValue(optString("source_of_truth", "APP")),
+        backendIdentifyEnabled = optBoolean("backend_identify_enabled", false),
+    )
 
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
     ReleaseSearchResult(

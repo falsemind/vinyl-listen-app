@@ -188,6 +188,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.CAPTURE_RECORD) {
                 CaptureRecordScreen(
+                    apiClient = apiClient,
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri)) },
                     onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
                     onBarcodeDetected = { barcode ->
@@ -215,7 +216,6 @@ fun VinylNavHost(
                 val barcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty()
                 BarcodeProcessingScreen(
                     barcode = barcode,
-                    apiClient = apiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
                         navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {

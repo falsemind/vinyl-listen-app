@@ -111,6 +111,7 @@ fun CollectionScreen(
     var isSyncing by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var discogsAccessTokenSaved by remember { mutableStateOf(false) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
     var isAddMenuExpanded by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
@@ -184,6 +185,9 @@ fun CollectionScreen(
     suspend fun loadCollectionState() {
         isLoadingInitial = true
         error = null
+        discogsAccessTokenSaved =
+            runCatching { apiClient.getDiscogsIntegrationStatus().accessTokenSaved }
+                .getOrDefault(false)
         runCatching { apiClient.getActiveCollectionSyncJob() }
             .getOrNull()
             ?.let { activeJob ->
@@ -250,7 +254,8 @@ fun CollectionScreen(
             favoriteFilter = favoriteFilter,
             filterResultCount = totalRecords,
             hasFavorites = hasFavorites,
-            showLoadDiscogsAction = records.isEmpty() && !hasActiveFilter,
+            showDiscogsSyncAction = discogsAccessTokenSaved,
+            showLoadDiscogsAction = discogsAccessTokenSaved && records.isEmpty() && !hasActiveFilter,
             scrollState = scrollState,
             onOpenRecord = onOpenRecord,
             onRetry = { scope.launch { followCollectionSync() } },
@@ -333,6 +338,7 @@ private fun CollectionListContent(
     filterResultCount: Int,
     hasFavorites: Boolean,
     showLoadDiscogsAction: Boolean,
+    showDiscogsSyncAction: Boolean,
     scrollState: ScrollState,
     onOpenRecord: (String) -> Unit,
     onRetry: () -> Unit,
@@ -453,16 +459,18 @@ private fun CollectionListContent(
                     label = "Collection settings",
                     onClick = onCollectionSettings,
                 )
-                ActionMenuAction(
-                    label =
-                        when {
-                            isSyncing -> "Syncing..."
-                            showLoadDiscogsAction -> "Load Discogs collection"
-                            else -> "Sync Items"
-                        },
-                    enabled = !isSyncing,
-                    onClick = onSync,
-                )
+                if (showDiscogsSyncAction) {
+                    ActionMenuAction(
+                        label =
+                            when {
+                                isSyncing -> "Syncing..."
+                                showLoadDiscogsAction -> "Load Discogs collection"
+                                else -> "Sync Items"
+                            },
+                        enabled = !isSyncing,
+                        onClick = onSync,
+                    )
+                }
                 if (hasFavorites && !favoriteFilter) {
                     ActionMenuAction(
                         label = "Personal favorites",

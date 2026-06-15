@@ -234,6 +234,14 @@ enum class CollectionSourceOfTruth {
     }
 }
 
+data class DiscogsIntegrationStatus(
+    val accessTokenSaved: Boolean,
+    val externalUserId: String?,
+    val externalUsername: String?,
+    val sourceOfTruth: CollectionSourceOfTruth,
+    val backendIdentifyEnabled: Boolean,
+)
+
 data class MatchCandidate(
     val releaseId: String?,
     val discogsReleaseId: Long,

@@ -106,6 +106,40 @@ class CollectionParsingTest {
     }
 
     @Test
+    fun parsesDiscogsIntegrationStatus() {
+        val status =
+            JSONObject(
+                """
+                {
+                  "provider": "DISCOGS",
+                  "access_token_saved": true,
+                  "external_user_id": "123",
+                  "external_username": "alex",
+                  "source_of_truth": "DISCOGS",
+                  "backend_identify_enabled": true
+                }
+                """.trimIndent(),
+            ).toDiscogsIntegrationStatus()
+
+        assertTrue(status.accessTokenSaved)
+        assertEquals("123", status.externalUserId)
+        assertEquals("alex", status.externalUsername)
+        assertEquals(CollectionSourceOfTruth.Discogs, status.sourceOfTruth)
+        assertTrue(status.backendIdentifyEnabled)
+    }
+
+    @Test
+    fun parsesMissingDiscogsIntegrationStatusFieldsAsUnsaved() {
+        val status = JSONObject("{}").toDiscogsIntegrationStatus()
+
+        assertFalse(status.accessTokenSaved)
+        assertEquals(null, status.externalUserId)
+        assertEquals(null, status.externalUsername)
+        assertEquals(CollectionSourceOfTruth.App, status.sourceOfTruth)
+        assertFalse(status.backendIdentifyEnabled)
+    }
+
+    @Test
     fun parsesExpiredCollectionSyncJobStateAsTerminal() {
         val state =
             JSONObject(

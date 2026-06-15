@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.ApiErrorKind
 import com.example.vinyllistenapp.data.api.ApiException
+import com.example.vinyllistenapp.data.api.DiscogsApiClient
 import com.example.vinyllistenapp.data.api.IdentifyJobState
 import com.example.vinyllistenapp.data.api.IdentifyJobStatus
 import com.example.vinyllistenapp.data.api.VinylApiClient
@@ -65,12 +66,13 @@ private const val BARCODE_SEARCH_TIMEOUT_MS = 10_000L
 @Composable
 fun BarcodeProcessingScreen(
     barcode: String?,
-    apiClient: VinylApiClient,
     onComplete: (List<MatchCandidate>) -> Unit,
     onRetryScan: () -> Unit,
     onManualSearch: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     var retryKey by rememberSaveable { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<BarcodeProcessingUiState>(BarcodeProcessingUiState.Loading) }
     val normalizedBarcode = barcode.orEmpty()
@@ -89,7 +91,7 @@ fun BarcodeProcessingScreen(
         val candidates =
             withTimeoutOrNull(BARCODE_SEARCH_TIMEOUT_MS) {
                 runCatching {
-                    apiClient
+                    discogsApiClient
                         .searchReleases(
                             artist = null,
                             title = null,

@@ -36,8 +36,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +70,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
+import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
@@ -90,6 +93,7 @@ import kotlin.math.max
 
 @Composable
 fun CaptureRecordScreen(
+    apiClient: VinylApiClient,
     onImageSelected: (Uri) -> Unit,
     onManualSearch: () -> Unit,
     onBarcodeDetected: (String) -> Unit,
@@ -100,6 +104,8 @@ fun CaptureRecordScreen(
     val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
+    var showDiscogsTokenInfo by rememberSaveable { mutableStateOf(false) }
+    var backendIdentifyEnabled by rememberSaveable { mutableStateOf(false) }
     var cameraPermissionGranted by remember { mutableStateOf(context.hasCameraPermission()) }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -115,6 +121,13 @@ fun CaptureRecordScreen(
     val barcodeCaptured = capturedBarcode != null
     val captureComplete = photoCaptured || barcodeCaptured
     val normalCaptureActionsEnabled = !isTakingPhoto && !captureComplete && !barcodeScanMode
+    val photoCaptureActionsEnabled = backendIdentifyEnabled && normalCaptureActionsEnabled
+    LaunchedEffect(Unit) {
+        runCatching { apiClient.getDiscogsIntegrationStatus() }
+            .onSuccess { status ->
+                backendIdentifyEnabled = status.backendIdentifyEnabled
+            }
+    }
     LaunchedEffect(capturedImageUri) {
         val uri = capturedImageUri ?: return@LaunchedEffect
         delay(SUCCESS_CONFIRMATION_DELAY_MS)
@@ -271,29 +284,41 @@ fun CaptureRecordScreen(
                         .fillMaxWidth()
                         .padding(vertical = VinylSpacing.SpaceLg),
             )
-            GlassPrimaryButton(
-                label =
-                    when {
-                        photoCaptured -> "Photo Captured"
-                        barcodeCaptured -> "Barcode Captured"
-                        isTakingPhoto -> "Taking Photo..."
-                        else -> "Take Photo"
-                    },
-                onClick = {
-                    if (normalCaptureActionsEnabled) {
-                        if (cameraPrivacyBlocked) {
-                            retryCameraPrivacyAccess()
-                        } else if (refreshCameraPermission(markDenied = false)) {
-                            takePhotoInApp()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassPrimaryButton(
+                    modifier = Modifier.weight(1f),
+                    label =
+                        when {
+                            photoCaptured -> "Photo Captured"
+                            barcodeCaptured -> "Barcode Captured"
+                            isTakingPhoto -> "Taking Photo..."
+                            else -> "Take Photo"
+                        },
+                    onClick = {
+                        if (photoCaptureActionsEnabled) {
+                            if (cameraPrivacyBlocked) {
+                                retryCameraPrivacyAccess()
+                            } else if (refreshCameraPermission(markDenied = false)) {
+                                takePhotoInApp()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        } else if (!backendIdentifyEnabled) {
+                            showDiscogsTokenInfo = true
+                        } else if (!barcodeScanMode) {
+                            refreshCameraPermission(markDenied = true)
                         }
-                    } else if (!barcodeScanMode) {
-                        refreshCameraPermission(markDenied = true)
-                    }
-                },
-                enabled = normalCaptureActionsEnabled,
-            )
+                    },
+                    enabled = photoCaptureActionsEnabled,
+                )
+                if (!backendIdentifyEnabled) {
+                    InfoCircleButton(onClick = { showDiscogsTokenInfo = true })
+                }
+            }
             if (permissionDenied) {
                 Spacer(Modifier.height(VinylSpacing.SpaceMd))
                 Text(
@@ -377,6 +402,20 @@ fun CaptureRecordScreen(
         }
         if (showCaptureInfo) {
             CaptureInfoPopup(onDismiss = { showCaptureInfo = false })
+        }
+        if (showDiscogsTokenInfo) {
+            AlertDialog(
+                onDismissRequest = { showDiscogsTokenInfo = false },
+                title = { Text("Discogs token required") },
+                text = {
+                    Text("To enable this feature, please provide your Discogs access token in the app's Integration Settings.")
+                },
+                confirmButton = {
+                    TextButton(onClick = { showDiscogsTokenInfo = false }) {
+                        Text("OK")
+                    }
+                },
+            )
         }
     }
 }
