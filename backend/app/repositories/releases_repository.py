@@ -166,6 +166,45 @@ class ReleasesRepository:
         return removed_count
 
     @staticmethod
+    def deactivate_collection_membership(
+        db: Session,
+        release: Releases,
+        *,
+        removed_at: datetime,
+        commit: bool = True,
+    ) -> Releases:
+        release.in_collection = False
+        release.collection_removed_at = removed_at
+
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    @staticmethod
+    def reactivate_collection_membership(
+        db: Session,
+        release: Releases,
+        *,
+        added_at: datetime,
+        commit: bool = True,
+    ) -> Releases:
+        release.in_collection = True
+        release.collection_added_at = added_at
+        release.collection_removed_at = None
+
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    @staticmethod
     def list_collection_releases(
         db: Session,
         *,

@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import get_db
+from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
     CollectionReleaseResponse,
     CollectionReleasesResponse,
+    CollectionSettingsRequest,
+    CollectionSettingsResponse,
     CollectionSyncJobStatusResponse,
 )
 from app.schemas.releases import ReleaseSearchResponse, ReleaseSearchResult
@@ -35,6 +38,29 @@ def get_collection_sync_job_service() -> CollectionSyncJobService:
 
 def get_releases_repository() -> ReleasesRepository:
     return ReleasesRepository()
+
+
+def get_collection_settings_repository() -> CollectionSettingsRepository:
+    return CollectionSettingsRepository()
+
+
+@router.get("/settings", response_model=CollectionSettingsResponse)
+def get_collection_settings(
+    db: Annotated[Session, Depends(get_db)],
+    repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
+) -> CollectionSettingsResponse:
+    settings_record = repository.get_or_create(db)
+    return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
+
+
+@router.put("/settings", response_model=CollectionSettingsResponse)
+def update_collection_settings(
+    payload: CollectionSettingsRequest,
+    db: Annotated[Session, Depends(get_db)],
+    repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
+) -> CollectionSettingsResponse:
+    settings_record = repository.set_source_of_truth(db, payload.source_of_truth)
+    return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 
 @router.post(

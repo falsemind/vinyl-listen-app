@@ -591,6 +591,12 @@ class SessionsService:
         if release is None:
             logger.info("Release not found during session create release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
+        if not release.in_collection and release.collection_removed_at is not None:
+            logger.info("Rejecting session create for inactive collection release_id=%s", release_id)
+            raise SessionValidationError(
+                "release_not_in_collection",
+                "Release must be added back to collection before logging a new session.",
+            )
 
         self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
         normalized_session_group_id = self._session_groups_service.validate_active_session_group(db, session_group_id)

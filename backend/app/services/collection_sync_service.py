@@ -6,7 +6,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.releases_repository import ReleasesRepository
+from app.schemas.collection import CollectionSourceOfTruth
 from app.services.discogs_service import DiscogsService
 from app.services.release_mapper import InternalReleaseData, map_discogs_to_internal
 
@@ -44,10 +46,12 @@ class CollectionSyncService:
         *,
         discogs_service: DiscogsService | None = None,
         repository: ReleasesRepository | None = None,
+        settings_repository: CollectionSettingsRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._discogs_service = discogs_service or DiscogsService()
         self._repository = repository or ReleasesRepository()
+        self._settings_repository = settings_repository or CollectionSettingsRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
     def sync_collection(
@@ -57,6 +61,8 @@ class CollectionSyncService:
         progress_reporter: CollectionProgressReporter | None = None,
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
+        source_of_truth = self._settings_repository.get_source_of_truth(db)
+        mirror_discogs_collection = source_of_truth == CollectionSourceOfTruth.DISCOGS
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         try:
             raw_items = self._discogs_service.fetch_collection_releases()
@@ -76,14 +82,15 @@ class CollectionSyncService:
             for processed_count, item in enumerate(collection_items, start=1):
                 release_data = _map_collection_item_to_release(item)
                 release, created = self._repository.save_or_update(db, release_data, commit=False)
-                self._repository.mark_in_collection(
-                    db,
-                    release,
-                    discogs_instance_id=item.instance_id,
-                    collection_added_at=item.date_added,
-                    synced_at=sync_started_at,
-                    commit=False,
-                )
+                if mirror_discogs_collection:
+                    self._repository.mark_in_collection(
+                        db,
+                        release,
+                        discogs_instance_id=item.instance_id,
+                        collection_added_at=item.date_added,
+                        synced_at=sync_started_at,
+                        commit=False,
+                    )
                 active_discogs_release_ids.add(item.discogs_release_id)
                 if created:
                     added_count += 1
@@ -99,12 +106,14 @@ class CollectionSyncService:
                     updated_count=updated_count,
                 )
 
-            removed_count = self._repository.mark_missing_collection_releases_removed(
-                db,
-                active_discogs_release_ids,
-                removed_at=sync_started_at,
-                commit=False,
-            )
+            removed_count = 0
+            if mirror_discogs_collection:
+                removed_count = self._repository.mark_missing_collection_releases_removed(
+                    db,
+                    active_discogs_release_ids,
+                    removed_at=sync_started_at,
+                    commit=False,
+                )
             db.commit()
             _report_progress(
                 progress_reporter,
@@ -121,7 +130,11 @@ class CollectionSyncService:
             raise
 
         logger.info(
-            "Discogs collection sync complete total_items=%s unique_releases=%s added=%s updated=%s removed=%s",
+            (
+                "Discogs collection sync complete source_of_truth=%s total_items=%s "
+                "unique_releases=%s added=%s updated=%s removed=%s"
+            ),
+            source_of_truth.value,
             len(raw_items),
             len(collection_items),
             added_count,

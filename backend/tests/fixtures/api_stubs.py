@@ -149,6 +149,13 @@ class ReleaseStub:
     cover_image_url: str | None
     created_at: datetime
     updated_at: datetime
+    format: str | None = None
+    thumbnail_url: str | None = None
+    in_collection: bool = False
+    collection_added_at: datetime | None = None
+    collection_removed_at: datetime | None = None
+    last_discogs_sync_at: datetime | None = None
+    discogs_instance_id: int | None = None
     is_favorite: bool = False
 
 
@@ -175,6 +182,8 @@ class StubReleaseImportService:
         self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
         self.favorite_calls: list[tuple[str, bool]] = []
+        self.deactivate_calls: list[str] = []
+        self.reactivate_calls: list[str] = []
         self.has_full_discogs_info_value = True
         self.available_sides = ["A", "AA"]
         self.available_side_options = [
@@ -234,6 +243,19 @@ class StubReleaseImportService:
     def set_favorite(self, _db, release: ReleaseStub, *, is_favorite: bool) -> ReleaseStub:
         self.favorite_calls.append((release.id, is_favorite))
         release.is_favorite = is_favorite
+        return release
+
+    def deactivate_collection_membership(self, _db, release: ReleaseStub, *, removed_at: datetime) -> ReleaseStub:
+        self.deactivate_calls.append(release.id)
+        release.in_collection = False
+        release.collection_removed_at = removed_at
+        return release
+
+    def reactivate_collection_membership(self, _db, release: ReleaseStub, *, added_at: datetime) -> ReleaseStub:
+        self.reactivate_calls.append(release.id)
+        release.in_collection = True
+        release.collection_added_at = added_at
+        release.collection_removed_at = None
         return release
 
 

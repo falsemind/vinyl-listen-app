@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from app.schemas.collection import CollectionSourceOfTruth
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncService, collapse_collection_items
 from app.services.release_mapper import InternalReleaseData
 
@@ -132,6 +133,14 @@ class FakeReleasesRepository:
         return removed_count
 
 
+class FakeCollectionSettingsRepository:
+    def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
+        self.source_of_truth = source_of_truth
+
+    def get_source_of_truth(self, _db: object) -> CollectionSourceOfTruth:
+        return self.source_of_truth
+
+
 class FailingReleasesRepository(FakeReleasesRepository):
     def save_or_update(
         self,
@@ -170,7 +179,7 @@ def test_collapse_collection_items_uses_lowest_instance_id_as_tie_breaker() -> N
     assert collapsed.basic_information["title"] == "Lower Instance"
 
 
-def test_sync_collection_adds_unique_releases_and_marks_them_active() -> None:
+def test_sync_collection_imports_metadata_without_membership_changes_in_app_mode() -> None:
     now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
     repository = FakeReleasesRepository()
     service = CollectionSyncService(
@@ -182,6 +191,41 @@ def test_sync_collection_adds_unique_releases_and_marks_them_active() -> None:
             ]
         ),
         repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
+
+    assert result.total_items == 3
+    assert result.unique_releases == 2
+    assert result.added_count == 2
+    assert result.updated_count == 0
+    assert result.removed_count == 0
+    assert repository.releases[116].title == "Newer Copy"
+    assert repository.releases[116].in_collection is False
+    assert repository.releases[116].discogs_instance_id is None
+    assert repository.releases[116].collection_removed_at is None
+    assert repository.commit_flags == [False, False]
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
+def test_sync_collection_adds_unique_releases_and_marks_them_active_in_discogs_mode() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    repository = FakeReleasesRepository()
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService(
+            [
+                _collection_item(116, 20, "2020-01-01T10:00:00-07:00", title="Older Copy"),
+                _collection_item(116, 10, "2021-01-01T10:00:00-07:00", title="Newer Copy"),
+                _collection_item(202, 30, "2022-01-01T10:00:00-07:00", title="Second Release"),
+            ]
+        ),
+        repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(CollectionSourceOfTruth.DISCOGS),
         now_provider=lambda: now,
     )
 
@@ -224,6 +268,7 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
     service = CollectionSyncService(
         discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
         repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(CollectionSourceOfTruth.DISCOGS),
         now_provider=lambda: now,
     )
 
@@ -240,6 +285,43 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
     assert db.rollback_count == 0
 
 
+def test_sync_collection_keeps_missing_active_releases_in_app_mode() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    existing_release = FakeRelease(
+        discogs_release_id=999,
+        artist="Local Artist",
+        title="Local Record",
+        year=1999,
+        format=None,
+        label=None,
+        catalog_number=None,
+        barcode=None,
+        genres=None,
+        styles=None,
+        thumbnail_url=None,
+        cover_image_url=None,
+        in_collection=True,
+    )
+    repository = FakeReleasesRepository([existing_release])
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService([]),
+        repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
+
+    assert result.added_count == 0
+    assert result.removed_count == 0
+    assert repository.releases[999].in_collection is True
+    assert repository.releases[999].collection_removed_at is None
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
 def test_sync_collection_rolls_back_when_later_item_fails() -> None:
     now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
     repository = FailingReleasesRepository()
@@ -251,6 +333,7 @@ def test_sync_collection_rolls_back_when_later_item_fails() -> None:
             ]
         ),
         repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
     db = FakeDb()
@@ -260,7 +343,7 @@ def test_sync_collection_rolls_back_when_later_item_fails() -> None:
 
     assert db.commit_count == 0
     assert db.rollback_count == 1
-    assert repository.commit_flags == [False, False]
+    assert repository.commit_flags == [False]
 
 
 def test_collapse_collection_items_rejects_missing_basic_information() -> None:

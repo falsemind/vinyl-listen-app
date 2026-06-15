@@ -3,10 +3,14 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.api.routes.collection import get_collection_sync_job_service, get_releases_repository
+from app.api.routes.collection import (
+    get_collection_settings_repository,
+    get_collection_sync_job_service,
+    get_releases_repository,
+)
 from app.database.session import get_db
 from app.main import app
-from app.schemas.collection import CollectionSyncJobStatusResponse
+from app.schemas.collection import CollectionSourceOfTruth, CollectionSyncJobStatusResponse
 from app.services.collection_sync_job_service import CollectionSyncConfigurationError, CollectionSyncJobNotFoundError
 
 
@@ -108,6 +112,63 @@ class StubReleasesRepository:
             }
         )
         return self.releases[offset : offset + limit]
+
+
+class StubCollectionSettingsRepository:
+    def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
+        self.source_of_truth = source_of_truth
+        self.update_calls: list[CollectionSourceOfTruth] = []
+
+    def get_or_create(self, _db):
+        return SimpleNamespace(source_of_truth=self.source_of_truth)
+
+    def set_source_of_truth(self, _db, source_of_truth: CollectionSourceOfTruth):
+        self.update_calls.append(source_of_truth)
+        self.source_of_truth = source_of_truth
+        return SimpleNamespace(source_of_truth=source_of_truth)
+
+
+def test_get_collection_settings_defaults_to_app_source_of_truth() -> None:
+    repository = StubCollectionSettingsRepository()
+    _override_db()
+    app.dependency_overrides[get_collection_settings_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/settings")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"source_of_truth": "APP"}
+
+
+def test_update_collection_settings_persists_discogs_source_of_truth() -> None:
+    repository = StubCollectionSettingsRepository()
+    _override_db()
+    app.dependency_overrides[get_collection_settings_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.put("/api/v1/collection/settings", json={"source_of_truth": "DISCOGS"})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"source_of_truth": "DISCOGS"}
+    assert repository.update_calls == [CollectionSourceOfTruth.DISCOGS]
+
+
+def test_update_collection_settings_rejects_unknown_source_of_truth() -> None:
+    repository = StubCollectionSettingsRepository()
+    _override_db()
+    app.dependency_overrides[get_collection_settings_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.put("/api/v1/collection/settings", json={"source_of_truth": "LOCAL"})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert repository.update_calls == []
 
 
 def test_create_collection_sync_job_returns_accepted_status() -> None:
