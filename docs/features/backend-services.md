@@ -192,9 +192,10 @@ collection sync.
 - `discogs_user_agent`
 - `discogs_request_timeout_seconds`
 
-Release import, image identify, and collection sync require a saved Discogs
-integration token. Missing saved credentials raise `DiscogsConfigurationError`
-and API routes map user-facing flows to token-required responses.
+Image identify and collection sync require a saved Discogs integration token.
+Release import uses saved credentials when available, then falls back to a
+single unauthenticated Discogs release fetch when no token is saved. Missing
+saved credentials still raise `DiscogsConfigurationError` for token-gated flows.
 
 `DiscogsIntegrationService` exposes:
 

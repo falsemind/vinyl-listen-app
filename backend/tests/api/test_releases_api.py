@@ -168,6 +168,24 @@ def test_import_release_endpoint_returns_404_for_missing_discogs_release(
     assert response.json() == {"detail": "Discogs API error (404): release not found"}
 
 
+def test_import_release_endpoint_maps_discogs_configuration_errors(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.import_error = DiscogsConfigurationError("Discogs token is not configured.")
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import",
+            json={"discogs_release_id": 555123},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Discogs access token is required."}
+
+
 def test_import_release_endpoint_sanitizes_request_validation_errors(
     build_stub_release_import_service,
     override_release_import_service,

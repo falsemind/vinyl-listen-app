@@ -190,6 +190,11 @@ def import_release(
             payload.discogs_release_id,
             force_refresh=payload.force_refresh,
         )
+    except DiscogsConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discogs access token is required.",
+        ) from error
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     except DiscogsClientError as error:

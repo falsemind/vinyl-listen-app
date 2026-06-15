@@ -44,7 +44,7 @@ class DiscogsRateLimitState:
 @dataclass(frozen=True)
 class DiscogsApiConfig:
     base_url: str
-    token: str
+    token: str | None
     user_agent: str
     timeout_seconds: float
 
@@ -60,12 +60,23 @@ class DiscogsApiConfig:
             timeout_seconds=settings.discogs_request_timeout_seconds,
         )
 
+    @classmethod
+    def unauthenticated(cls) -> "DiscogsApiConfig":
+        return cls(
+            base_url=settings.discogs_base_url.rstrip("/"),
+            token=None,
+            user_agent=settings.discogs_user_agent,
+            timeout_seconds=settings.discogs_request_timeout_seconds,
+        )
+
     def build_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Discogs token={self.token}",
+        headers = {
             "User-Agent": self.user_agent,
             "Accept": "application/json",
         }
+        if self.token:
+            headers["Authorization"] = f"Discogs token={self.token}"
+        return headers
 
 
 @dataclass(frozen=True)

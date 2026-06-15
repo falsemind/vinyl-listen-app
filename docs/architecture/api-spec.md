@@ -419,7 +419,9 @@ Collection sync imports only Discogs `basic_information` for each item. A detail
 
 Imports a Discogs release into the local database. This endpoint is used after manual Discogs search or identify flow selection.
 
-Requires a saved Discogs integration token. The backend fetches the full Discogs release payload with that token, maps it into the local release schema, and caches the raw payload.
+Uses the saved Discogs integration token when one exists. If no token is saved,
+the backend performs a single unauthenticated Discogs release fetch, maps it
+into the local release schema, and caches the raw payload.
 
 ### Request
 

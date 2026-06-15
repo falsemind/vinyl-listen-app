@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from app.services.discogs_service import (
+    DiscogsApiConfig,
     DiscogsClientError,
     DiscogsService,
 )
@@ -26,6 +27,16 @@ def test_discogs_client_parses_http_error_message(build_discogs_client) -> None:
 
     with pytest.raises(DiscogsClientError, match=r"Discogs API error \(401\): invalid token"):
         client.get("/database/search", params={"barcode": "123"})
+
+
+def test_discogs_api_config_unauthenticated_omits_authorization_header() -> None:
+    config = DiscogsApiConfig.unauthenticated()
+
+    headers = config.build_headers()
+
+    assert headers["User-Agent"]
+    assert headers["Accept"] == "application/json"
+    assert "Authorization" not in headers
 
 
 def test_discogs_client_wraps_network_errors(build_discogs_client) -> None:

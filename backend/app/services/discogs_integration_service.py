@@ -11,9 +11,12 @@ from app.services.discogs_service import (
     DiscogsClient,
     DiscogsClientError,
     DiscogsConfigurationError,
+    DiscogsRateLimiter,
     DiscogsService,
 )
 from app.services.token_cipher import TokenCipher, TokenCipherConfigurationError, TokenCipherError
+
+UNAUTHENTICATED_DISCOGS_RATE_LIMIT_PER_MINUTE = 25
 
 
 class DiscogsTokenValidationError(Exception):
@@ -134,6 +137,14 @@ class DiscogsIntegrationService:
         credentials = self.get_saved_credentials(db, user_id=user_id)
         return DiscogsService(
             client=DiscogsClient(config=DiscogsApiConfig.from_token(credentials.access_token)),
+        )
+
+    def build_unauthenticated_discogs_service(self) -> "DiscogsService":
+        return DiscogsService(
+            client=DiscogsClient(
+                config=DiscogsApiConfig.unauthenticated(),
+                rate_limiter=DiscogsRateLimiter(UNAUTHENTICATED_DISCOGS_RATE_LIMIT_PER_MINUTE),
+            ),
         )
 
     def _get_token_cipher(self) -> TokenCipher:

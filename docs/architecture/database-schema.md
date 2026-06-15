@@ -760,10 +760,10 @@ if release not exists
    → cache full payload
 ```
 
-Release import requires a saved active Discogs integration token in
-`provider_integrations`. The backend builds the Discogs client from decrypted
-token storage instead of reading a Discogs access token from backend
-configuration.
+Release import uses a saved active Discogs integration token from
+`provider_integrations` when available. If no token is saved, the backend can
+fetch one selected release through unauthenticated Discogs access. In both
+cases, the backend does not read a Discogs access token from configuration.
 
 ---
 
