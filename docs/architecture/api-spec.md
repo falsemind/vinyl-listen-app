@@ -11,7 +11,8 @@ Define the backend API endpoints, request/response structure, and operational co
 
 Backend responsibilities:
 
-* Record identification via Discogs API
+* Record identification via Discogs API when a saved Discogs integration token is available
+* Discogs integration status and token storage
 * Listening session logging
 * Record metadata retrieval
 * Analytics aggregation
@@ -88,10 +89,11 @@ Main API domains:
 /identify/jobs
 /releases
 /collection
+/integrations
 /sessions
 /analytics
 /ai
-/system
+/health
 ```
 
 ---
@@ -348,6 +350,12 @@ Missing jobs return the same `404` shape as `GET /identify/jobs/{job_id}`.
 
 Fallback when automatic identification fails.
 
+Android manual search and on-device barcode search call Discogs directly from
+the device with the app's local unauthenticated rate limiter. The backend route
+below remains available for token-backed server-side Discogs search, tests, and
+future clients that explicitly opt into the saved integration. It requires a
+saved Discogs integration token.
+
 ## GET /releases/search
 
 ### Query Parameters
@@ -391,6 +399,14 @@ GET /api/v1/releases/search?artist=boards+of+canada&title=music&limit=10&offset=
 
 The response contains Discogs results, not local records. When the user selects a result, the client imports it with `POST /api/v1/releases/import` and navigates with the returned internal `release_id`.
 
+### Errors
+
+| Status | Meaning |
+| ------ | ------- |
+| `400 Bad Request` | A saved Discogs access token is required for backend Discogs search. |
+| `422 Unprocessable Content` | No search field was provided, or a query parameter failed validation. |
+| `502 Bad Gateway` | Discogs returned an error or could not be reached. |
+
 ---
 
 # 3. Release Details
@@ -402,6 +418,8 @@ Collection sync imports only Discogs `basic_information` for each item. A detail
 ## POST /releases/import
 
 Imports a Discogs release into the local database. This endpoint is used after manual Discogs search or identify flow selection.
+
+Requires a saved Discogs integration token. The backend fetches the full Discogs release payload with that token, maps it into the local release schema, and caches the raw payload.
 
 ### Request
 
@@ -559,7 +577,9 @@ Allowed values are `APP` and `DISCOGS`.
 
 ## PUT /collection/settings
 
-Updates the collection source-of-truth setting.
+Updates the collection source-of-truth setting. Changing to `DISCOGS` requires
+a saved active Discogs access token because that mode makes Discogs eligible to
+drive collection membership.
 
 ### Request
 
@@ -573,16 +593,24 @@ Updates the collection source-of-truth setting.
 
 Same response shape as `GET /collection/settings`.
 
+### Errors
+
+| Status | Code | Meaning |
+| ------ | ---- | ------- |
+| `400 Bad Request` | `discogs_token_required` | `DISCOGS` source of truth was requested before a Discogs access token was saved. |
+
 ## POST /collection/sync
 
-Starts a manual background collection sync job and returns immediately.
+Starts a manual background collection sync job and returns immediately. Requires
+a saved Discogs integration token. The backend uses the username returned by
+Discogs identity validation, not a username from backend configuration.
 
 Sync behavior depends on `source_of_truth`:
 
 | Source | Behavior |
 | --- | --- |
 | `APP` | Preserve local `in_collection` state. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
-| `DISCOGS` | Reserved for explicit Discogs mirror behavior. The setting is persisted now; destructive-feeling reconciliation should remain isolated until the UX is ready. |
+| `DISCOGS` | Treat Discogs as the collection source of truth. Releases missing from the Discogs collection can be marked inactive locally while metadata, sessions, analytics, and cached payloads remain stored. |
 
 ### Response
 
@@ -705,7 +733,61 @@ Same response shape as `GET /releases/search`, with `release_id` populated for d
 
 ---
 
-# 5. Create Listening Session
+# 5. Integrations
+
+Endpoints used by Settings to manage optional provider integrations. The current
+implementation supports a single app-wide Discogs integration; `user_id` storage
+is nullable so the schema can evolve toward multi-user ownership later.
+
+## GET /integrations/discogs
+
+Returns sanitized Discogs integration state. The raw access token is never
+returned.
+
+### Response
+
+```json
+{
+  "provider": "DISCOGS",
+  "access_token_saved": true,
+  "external_user_id": "12345",
+  "external_username": "discogs_user",
+  "source_of_truth": "APP",
+  "backend_identify_enabled": true
+}
+```
+
+`backend_identify_enabled` is `true` only when a valid active token is saved.
+Android uses this flag to enable or disable backend image identification.
+
+## PUT /integrations/discogs/token
+
+Validates and saves a Discogs personal access token. Validation calls Discogs
+`/oauth/identity`, then stores the token encrypted and stores the returned
+Discogs user id and username.
+
+### Request
+
+```json
+{
+  "access_token": "discogs_personal_access_token"
+}
+```
+
+### Response
+
+Same response shape as `GET /integrations/discogs`.
+
+### Errors
+
+| Status | Code | Meaning |
+| ------ | ---- | ------- |
+| `400 Bad Request` | `discogs_token_invalid` | Discogs identity validation failed or the identity response was incomplete. |
+| `500 Internal Server Error` | `discogs_token_storage_not_configured` | `DISCOGS_TOKEN_ENCRYPTION_KEY` is missing or invalid. |
+
+---
+
+# 6. Create Listening Session
 
 Logs a listening session.
 
@@ -807,7 +889,7 @@ Expired edit windows return `403` with `session_edit_window_expired`.
 
 ---
 
-# 6. Timed Session Groups
+# 7. Timed Session Groups
 
 Used by Android to start an optional timed listening session. Individual record plays are still stored as normal `sessions` rows. When auto-add is enabled, the app passes the active group id as `session_group_id` while logging each record.
 
@@ -959,7 +1041,7 @@ Inactive groups return `409` with `session_group_inactive`. `ended_at` before `s
 
 ---
 
-# 7. Session Moods
+# 8. Session Moods
 
 Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
@@ -1030,7 +1112,7 @@ Response:
 
 ---
 
-# 8. Home Summary
+# 9. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -1110,7 +1192,7 @@ When `session_group_id` is non-null, `session_group` carries the timed-session m
 
 ---
 
-# 9. Get Record Details
+# 10. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -1165,7 +1247,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 10. Session History
+# 11. Session History
 
 Used for listening history.
 
@@ -1281,7 +1363,7 @@ history.
 
 ---
 
-# 11. Analytics
+# 12. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -1524,7 +1606,7 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 ---
 
-# 12. AI Insights
+# 13. AI Insights
 
 Used by the **Insights screen** chat shell.
 
@@ -1675,19 +1757,50 @@ The import stores only the filtered song-event fields defined in the AI Insights
 
 ---
 
-# 13. System Endpoint
+# 14. Health Endpoints
 
-Used by the **Settings screen**.
+Used by local development, runtime checks, and clients that need basic backend
+readiness.
 
-## GET /system/info
+## GET /health
 
 ### Response
 
 ```json
 {
-  "app_version": "0.1.0",
-  "build": "dev",
-  "api_version": "v1"
+  "status": "ok"
+}
+```
+
+## GET /health/runtime
+
+Returns optional runtime dependency status and operation readiness.
+
+### Response
+
+```json
+{
+  "status": "ok",
+  "ready": true,
+  "dependencies": [
+    {
+      "name": "tesseract",
+      "available": true,
+      "detail": "available",
+      "required": true
+    }
+  ],
+  "operations": {
+    "rate_limiter": {
+      "enabled": true,
+      "backend": "redis"
+    },
+    "identify": {
+      "max_concurrency": 2,
+      "active_jobs": 0,
+      "queued_jobs": null
+    }
+  }
 }
 ```
 

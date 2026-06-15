@@ -9,12 +9,14 @@ description: This document explains the backend service layer in `backend/app/se
 
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
-| `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsService`, `CandidateRanker`. |
+| `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
 | `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
-| `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | `DiscogsClient`, `DiscogsReleaseRepository`, settings. |
-| `collection_sync_service.py` | Sync Discogs collection metadata while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsService`, `ReleasesRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
+| `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
+| `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
+| `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
+| `collection_sync_service.py` | Sync Discogs collection metadata while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
-| `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
+| `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections, timed-session membership, and active collection membership checks. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
 | `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups. | `SessionGroupsRepository`, `SessionsRepository`. |
@@ -58,9 +60,10 @@ The service rejects invalid uploads before the pipeline runs.
 4. Search local releases by barcode, catalog number, and artist/title.
 5. If local candidates exist, rank and return them.
 6. Build an external Discogs search plan from identifiers.
-7. Execute Discogs search steps until enough strong candidates are found.
-8. Map Discogs search results to `IdentifyCandidate`.
-9. Rank candidates and return the top candidates.
+7. Build a token-backed `DiscogsService` from saved integration credentials.
+8. Execute Discogs search steps until enough strong candidates are found.
+9. Map Discogs search results to `IdentifyCandidate`.
+10. Rank candidates and return the top candidates.
 
 Local matches get `match_source="local"`. Discogs matches get `match_source="discogs"`.
 
@@ -178,15 +181,31 @@ Expired jobs raise `IdentifyJobExpiredError`; missing jobs raise `IdentifyJobNot
 
 ### Configuration
 
-`DiscogsApiConfig.from_settings` reads:
+Discogs API access is built from the saved Discogs integration token, not from a
+backend `.env` token. `DiscogsIntegrationService` validates the saved token via
+Discogs identity, stores it encrypted, and uses the returned username for
+collection sync.
+
+`DiscogsApiConfig.from_token` reads:
 
 - `discogs_base_url`
-- `discogs_username`
-- `discogs_token`
 - `discogs_user_agent`
 - `discogs_request_timeout_seconds`
 
-Manual release search and import require `discogs_token`. Collection sync also requires `discogs_username` so the backend can read folder `0` from `GET /users/{username}/collection/folders/0/releases`. Missing required Discogs settings raise `DiscogsConfigurationError`.
+Release import, image identify, and collection sync require a saved Discogs
+integration token. Missing saved credentials raise `DiscogsConfigurationError`
+and API routes map user-facing flows to token-required responses.
+
+`DiscogsIntegrationService` exposes:
+
+- `get_status`, which returns sanitized saved-token state, Discogs identity,
+  current collection source of truth, and whether backend image identify is enabled.
+- `save_access_token`, which validates `/oauth/identity`, encrypts the token,
+  and upserts the `provider_integrations` row.
+- `get_saved_credentials`, which decrypts the stored token and returns the
+  identity-derived username.
+- `build_discogs_service`, which creates a `DiscogsService` with an explicit
+  `DiscogsClient` built from the saved token.
 
 ### Client and rate limiting
 
@@ -216,14 +235,19 @@ Manual release search and import require `discogs_token`. Collection sync also r
 
 ### Manual release search API
 
-`GET /api/v1/releases/search` exposes Discogs release search for the Android Manual Search screen.
+`GET /api/v1/releases/search` exposes token-backed server Discogs release search.
+The current Android manual search and barcode processing flows use the Android
+`DiscogsApiClient` to search Discogs directly from the device with local
+unauthenticated rate limiting. The backend search route remains available for
+server-side callers that have a saved Discogs integration token.
 
 The route:
 
 1. Requires at least one search field.
-2. Calls `DiscogsService.search_releases`.
-3. Normalizes Discogs result payloads into compact candidate rows.
-4. Returns Discogs IDs only; clients must call `POST /api/v1/releases/import` after selection to get an internal `release_id`.
+2. Builds `DiscogsService` from saved integration credentials.
+3. Calls `DiscogsService.search_releases`.
+4. Normalizes Discogs result payloads into compact candidate rows.
+5. Returns Discogs IDs only; clients must call `POST /api/v1/releases/import` after selection to get an internal `release_id`.
 
 ### Release fetch behavior
 
@@ -243,10 +267,11 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 
 ### Import flow
 
-1. Fetch the raw Discogs release with `DiscogsService.fetch_release`.
-2. Map the raw payload to `InternalReleaseData`.
-3. Save or update the local release through `ReleasesRepository.save_or_update`.
-4. Return `ReleaseImportResult`.
+1. Use an injected `DiscogsService` in tests, or build one from saved integration credentials at runtime.
+2. Fetch the raw Discogs release with `DiscogsService.fetch_release`.
+3. Map the raw payload to `InternalReleaseData`.
+4. Save or update the local release through `ReleasesRepository.save_or_update`.
+5. Return `ReleaseImportResult`.
 
 `ReleaseImportResult.status` returns `created` or `updated`, based on whether the repository created a new row.
 
