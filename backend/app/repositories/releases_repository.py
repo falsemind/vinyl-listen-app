@@ -251,7 +251,6 @@ class ReleasesRepository:
             favorite=favorite,
         ).count()
 
-    @staticmethod
     def _collection_releases_query(
         db: Session,
         *,

@@ -62,8 +62,6 @@ class CollectionSyncService:
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
         source_of_truth = self._settings_repository.get_source_of_truth(db)
-        has_local_collection_records = self._repository.count_collection_releases(db, include_removed=True) > 0
-        should_activate_imports = source_of_truth == CollectionSourceOfTruth.DISCOGS or not has_local_collection_records
         mirror_discogs_collection = source_of_truth == CollectionSourceOfTruth.DISCOGS
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         try:
@@ -84,7 +82,7 @@ class CollectionSyncService:
             for processed_count, item in enumerate(collection_items, start=1):
                 release_data = _map_collection_item_to_release(item)
                 release, created = self._repository.save_or_update(db, release_data, commit=False)
-                if should_activate_imports:
+                if _should_activate_import(source_of_truth=source_of_truth, release=release, created=created):
                     self._repository.mark_in_collection(
                         db,
                         release,
@@ -193,6 +191,22 @@ def _map_collection_item_to_release(item: CollectionReleaseItem) -> InternalRele
         return map_discogs_to_internal(item.basic_information)
     except ValueError as exc:
         raise CollectionSyncError(f"Discogs collection release {item.discogs_release_id} cannot be mapped.") from exc
+
+
+def _should_activate_import(*, source_of_truth: CollectionSourceOfTruth, release: Any, created: bool) -> bool:
+    if source_of_truth == CollectionSourceOfTruth.DISCOGS:
+        return True
+    if created or release.in_collection:
+        return True
+    return not _has_collection_membership_history(release)
+
+
+def _has_collection_membership_history(release: Any) -> bool:
+    return (
+        release.collection_added_at is not None
+        or release.collection_removed_at is not None
+        or release.discogs_instance_id is not None
+    )
 
 
 def _is_better_representative(candidate: CollectionReleaseItem, current: CollectionReleaseItem) -> bool:

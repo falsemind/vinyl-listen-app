@@ -137,6 +137,15 @@ class FakeReleasesRepository:
             return len(self.releases)
         return sum(1 for release in self.releases.values() if release.in_collection)
 
+    def has_collection_membership_history(self, _db: object) -> bool:
+        return any(
+            release.in_collection
+            or release.collection_added_at is not None
+            or release.collection_removed_at is not None
+            or release.discogs_instance_id is not None
+            for release in self.releases.values()
+        )
+
 
 class FakeCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
@@ -214,6 +223,86 @@ def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None
     assert repository.releases[116].discogs_instance_id == 10
     assert repository.releases[116].collection_removed_at is None
     assert repository.commit_flags == [False, False, False, False]
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
+def test_sync_collection_initial_app_mode_ignores_non_collection_release_rows() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    existing_release = FakeRelease(
+        discogs_release_id=999,
+        artist="Logged Artist",
+        title="Logged Record",
+        year=1999,
+        format=None,
+        label=None,
+        catalog_number=None,
+        barcode=None,
+        genres=None,
+        styles=None,
+        thumbnail_url=None,
+        cover_image_url=None,
+        in_collection=False,
+    )
+    repository = FakeReleasesRepository([existing_release])
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
+        repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
+
+    assert result.added_count == 1
+    assert result.updated_count == 0
+    assert result.removed_count == 0
+    assert repository.releases[999].in_collection is False
+    assert repository.releases[116].in_collection is True
+    assert repository.releases[116].discogs_instance_id == 10
+    assert repository.commit_flags == [False, False]
+    assert db.commit_count == 1
+    assert db.rollback_count == 0
+
+
+def test_sync_collection_app_mode_adds_new_discogs_items_when_local_collection_exists() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    existing_release = FakeRelease(
+        discogs_release_id=999,
+        artist="Manual Artist",
+        title="Manual Record",
+        year=1999,
+        format=None,
+        label=None,
+        catalog_number=None,
+        barcode=None,
+        genres=None,
+        styles=None,
+        thumbnail_url=None,
+        cover_image_url=None,
+        in_collection=True,
+    )
+    repository = FakeReleasesRepository([existing_release])
+    service = CollectionSyncService(
+        discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
+        repository=repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    db = FakeDb()
+
+    result = service.sync_collection(db=db)
+
+    assert result.added_count == 1
+    assert result.updated_count == 0
+    assert result.removed_count == 0
+    assert repository.releases[999].in_collection is True
+    assert repository.releases[116].in_collection is True
+    assert repository.releases[116].discogs_instance_id == 10
+    assert repository.commit_flags == [False, False]
     assert db.commit_count == 1
     assert db.rollback_count == 0
 
