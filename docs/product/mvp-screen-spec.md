@@ -18,7 +18,7 @@ Scope includes:
 - basic analytics
     
 
-AI assistant, selling recommendations, and collection sync are **not included in MVP**.
+Selling recommendations are **not included in MVP**. AI Insights and collection management now exist as app features beyond the original MVP baseline.
 
 ---
 
@@ -653,9 +653,13 @@ Back → Analytics
 
 ## Purpose
 
-Show app information and leave room for future configuration.
+Show app information and collection configuration.
 
-Current MVP content is lightweight and informational.
+Current content includes collection source-of-truth selection:
+
+- `Collection source of truth: App` when local app membership is authoritative.
+- `Collection source of truth: Discogs` when the user selects Discogs as the future mirror source.
+- Toggle ON means App; toggle OFF means Discogs.
 
 ---
 

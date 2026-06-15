@@ -48,9 +48,13 @@ Home
  │      └── RecordDetail
  │
  └── Collection
+        ├── Settings
+        ├── CaptureRecord
+        ├── CollectionManualEntry
+        └── CollectionManualSearch
 ```
 
-Home, Analytics, Insights, and Collection are active bottom-navigation routes. Settings is reachable from the Home header icon and currently shows lightweight app information. Analytics loads the implemented dashboard endpoints, Insights shows the single-thread AI chat shell, and Collection loads the Discogs-backed records collection.
+Home, Analytics, Insights, and Collection are active bottom-navigation routes. Settings is reachable from the Home header icon and from the Collection action menu. Analytics loads the implemented dashboard endpoints, Insights shows the single-thread AI chat shell, and Collection loads active app collection records with optional Discogs metadata sync.
 
 ---
 
@@ -66,6 +70,7 @@ Home, Analytics, Insights, and Collection are active bottom-navigation routes. S
 |Match Confirmation|`match_confirmation`|
 |Manual Search|`manual_search?barcode={barcode}`|
 |Collection Manual Search|`collection_manual_search`|
+|Collection Manual Entry|`collection_manual_entry`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
 |Analytics|`analytics`|
@@ -94,7 +99,11 @@ Current backend endpoints used by these routes:
 |Barcode scan release search|`GET /api/v1/releases/search?barcode={barcode}`|
 |Import a Discogs release before logging|`POST /api/v1/releases/import`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
+|Deactivate release collection membership|`POST /api/v1/releases/{release_id}/collection/deactivate`|
+|Reactivate release collection membership|`POST /api/v1/releases/{release_id}/collection/reactivate`|
 |Load record listening history|`GET /api/v1/releases/{release_id}/sessions`|
+|Load collection settings|`GET /api/v1/collection/settings`|
+|Update collection settings|`PUT /api/v1/collection/settings`|
 |Start Discogs collection sync|`POST /api/v1/collection/sync`|
 |Resume active Discogs collection sync|`GET /api/v1/collection/sync/active`|
 |Poll Discogs collection sync|`GET /api/v1/collection/sync/{job_id}`|
@@ -436,7 +445,7 @@ collection
 
 ### Purpose
 
-Discogs-backed browser for current collection membership.
+Browser for active app collection membership with optional Discogs sync and add-entry shortcuts.
 
 ### Displays
 
@@ -446,12 +455,18 @@ Discogs-backed browser for current collection membership.
 - Latest 25 active collection records by Discogs added date
 - `Show More` pagination in 25-record pages
 - `Sync Items` action after collection records are loaded
+- First action menu item: `Collection settings`
+- Green add CTA above the search CTA. The plus expands left into camera and pencil options, and turns into an X while expanded.
+- Scroll-to-top CTA appears above the add CTA when the list is scrolled.
 
 ### Navigation
 
 |Action|Destination|
 |---|---|
 |Tap record|`record_detail/{releaseId}`|
+|Tap Collection settings action|`settings`|
+|Tap add camera option|`capture_record`|
+|Tap add pencil option|`collection_manual_entry`|
 |Tap search CTA|`collection_manual_search`|
 |Tap Home tab|`home`|
 |Tap Stats tab|`analytics`|
@@ -469,19 +484,21 @@ settings
 
 ### Purpose
 
-Screen for app configuration and basic application information.
+Screen for app configuration, including collection source-of-truth selection.
 
 ### Displays
 
 - App version  
 - Build number  
 - Basic application information
+- `Collection source of truth: App` or `Collection source of truth: Discogs`
+- Toggle ON for App-owned collection membership; toggle OFF for Discogs source selection
 
 ### Notes
 
-No functional settings are included in the MVP yet.
+The collection source toggle is functional. `App` mode preserves local collection membership during Discogs sync. `Discogs` mode persists the user's preference for future mirror behavior.
 
-This screen exists to support future configuration features such as:
+This screen can still support future configuration features such as:
 
 - preferences  
 - account management  
@@ -564,6 +581,10 @@ NavHost(
 
     composable("manual_search") {
         ManualSearchScreen()
+    }
+
+    composable("collection_manual_entry") {
+        ManualCollectionEntryScreen()
     }
 
     composable(
