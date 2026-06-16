@@ -186,6 +186,52 @@ def test_import_release_endpoint_maps_discogs_configuration_errors(
     assert response.json() == {"detail": "Discogs access token is required."}
 
 
+def test_import_client_discogs_release_endpoint_returns_created_release_id(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+    payload = {
+        "id": 555123,
+        "title": "Music Has The Right To Children",
+        "artists_sort": "Boards of Canada",
+    }
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import/client-discogs",
+            json={"discogs_release": payload},
+        )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "release_id": "release-123",
+        "discogs_release_id": 555123,
+        "status": "created",
+    }
+    assert service.client_import_calls == [payload]
+    assert service.import_calls == []
+
+
+def test_import_client_discogs_release_endpoint_maps_validation_errors(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.client_import_error = ValueError("Discogs payload is missing a release title.")
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import/client-discogs",
+            json={"discogs_release": {"id": 555123}},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Discogs payload is missing a release title."}
+
+
 def test_import_release_endpoint_sanitizes_request_validation_errors(
     build_stub_release_import_service,
     override_release_import_service,
@@ -246,8 +292,13 @@ def test_get_release_endpoint_returns_local_release_metadata(
             {"value": "AA", "label": "Side AA", "side": "AA", "disc_number": None},
         ],
         "tracklist": [
-            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17"},
-            {"position": "A2", "title": "An Eagle In Your Mind", "duration": None},
+            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17", "extra_artists": []},
+            {
+                "position": "A2",
+                "title": "An Eagle In Your Mind",
+                "duration": None,
+                "extra_artists": [{"name": "Plaid", "role": "Remix"}],
+            },
         ],
         "discogs_artists": [
             {"name": "Boards of Canada", "discogs_artist_id": 194},

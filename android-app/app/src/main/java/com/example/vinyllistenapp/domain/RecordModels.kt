@@ -35,6 +35,12 @@ data class ReleaseTrack(
     val position: String,
     val title: String,
     val duration: String? = null,
+    val extraArtists: List<ReleaseTrackCredit> = emptyList(),
+)
+
+data class ReleaseTrackCredit(
+    val name: String,
+    val role: String? = null,
 )
 
 data class ReleaseArtist(
@@ -218,6 +224,19 @@ data class CollectionRecordsPage(
     val total: Int,
     val hasMore: Boolean,
     val hasFavorites: Boolean = false,
+)
+
+data class CollectionFolder(
+    val id: Long,
+    val name: String,
+    val count: Int?,
+    val isDefault: Boolean,
+)
+
+data class CollectionFoldersPage(
+    val discogsConfigured: Boolean,
+    val folders: List<CollectionFolder>,
+    val hasExtraFolders: Boolean,
 )
 
 enum class CollectionSourceOfTruth {

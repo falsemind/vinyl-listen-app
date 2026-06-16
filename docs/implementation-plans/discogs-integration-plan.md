@@ -7,6 +7,7 @@ Discogs request ownership is explicit:
 
 - Backend owns authenticated Discogs requests made with a saved user token.
 - Android owns unauthenticated direct-to-Discogs requests when no token is saved.
+- Backend must not perform unauthenticated Discogs requests on behalf of no-token users, because all users would share the backend IP's unauthenticated quota.
 - Each caller applies its own Discogs rate limiter and respects Discogs response headers.
 
 ## Key Deliverables
@@ -15,8 +16,9 @@ Discogs request ownership is explicit:
 3. **Source of Truth Control:** Allow Discogs as collection source of truth only after a valid token is saved, with a destructive-impact confirmation dialog.
 4. **Feature Gating:** Hide or disable Discogs-only actions when no token or Discogs release ID is available.
 5. **Authenticated Backend Discogs Client:** Backend client, cache, mapper, and authenticated rate limiter for token-backed flows.
-6. **Unauthenticated Android Discogs Client:** Device-side Discogs client with unauthenticated rate limiting for barcode/manual search flows that do not require a token.
-7. **Capture Image Gate:** Disable "Take Photo" when no token is saved and explain that Integration Settings are required.
+6. **Client-Provided Discogs Import:** Backend endpoint/service path that persists normalized Discogs release data supplied by Android without calling Discogs.
+7. **Unauthenticated Android Discogs Client:** Device-side Discogs client with unauthenticated rate limiting for barcode/manual search and selected-release fetch flows that do not require a token.
+8. **Capture Image Gate:** Disable "Take Photo" when no token is saved and explain that Integration Settings are required.
 
 ## Implementation Phases & Tasks
 
@@ -52,16 +54,19 @@ Discogs request ownership is explicit:
 | **3.4** | `Release Cache` | Add or update `discogs_release_cache` for release metadata payloads and cache expiration. Cache must not expose private token data. | 3.1 | Migration/repository/service logic for cached release payloads. |
 | **3.5** | `Search and Fetch Methods` | Implement backend search/fetch methods needed by token-backed flows: barcode search, structured search where needed, and full release fetch by Discogs release ID. | 3.4 | Backend service methods returning normalized results. |
 | **3.6** | `Identify Pipeline Integration` | When token is saved, image capture can send to backend OCR/identify. Backend performs Discogs calls and returns candidates/results to Android. | 3.5 | Token-backed image identify flow; Android receives final candidates only. |
+| **3.7** | `Client-Provided Discogs Import` | Add a backend import path that accepts normalized Discogs release data from Android and persists it without performing any Discogs HTTP request. Use this path for no-token barcode/manual-search imports after Android has fetched the selected full release. | Existing release import service | API/service contract, validation, mapping, and tests proving no backend Discogs call occurs. |
 
 ### Phase 4: Android Unauthenticated Discogs Client
 *(Goal: Preserve limited Discogs functionality without requiring a token.)*
 
 | Task ID | Module/Component | Description | Dependencies | Deliverable |
 | :--- | :--- | :--- | :--- | :--- |
-| **4.1** | `Device Discogs Client` | Add/update Android API client for direct unauthenticated Discogs calls used by barcode/manual search when no token is saved. | Existing manual search/barcode flows | Device-side client separate from backend API client. |
+| **4.1** | `Device Discogs Client` | Add/update Android API client for direct unauthenticated Discogs calls used by barcode/manual search and selected-release fetch when no token is saved. | Existing manual search/barcode flows | Device-side client separate from backend API client. |
 | **4.2** | `Android Rate Limiter` | Apply unauthenticated local rate limiting on Android. Default to 25 requests/minute, use a moving 60-second window, and update from Discogs headers when present. | 4.1 | Device-side limiter with tests. |
 | **4.3** | `User-Agent` | Send a unique User-Agent containing app name/version and a stable per-install ID. Generate the install ID once and store locally; do not use hardware identifiers. | 4.1 | User-Agent provider and install ID storage. |
-| **4.4** | `Unauthenticated Error UX` | If rate limit or Discogs access fails, show a clear retry/limit message without suggesting backend token-backed flows are running. | 4.2 | User-facing error handling for direct Discogs calls. |
+| **4.4** | `Selected Release Fetch` | After a no-token user selects a barcode/manual-search candidate, fetch the full release directly from Discogs on Android. Do not call backend release import by Discogs ID unless a token-backed backend flow is being used. | 4.1, 4.2 | Full release payload available on device for import. |
+| **4.5** | `Client Import Mapping` | Map the device-fetched Discogs release into the backend's client-provided import payload and submit it to the backend persistence endpoint. Preserve the Discogs release ID so record details can show Discogs actions later. | 3.7, 4.4 | No-token candidate selection imports a single release without backend Discogs traffic. |
+| **4.6** | `Unauthenticated Error UX` | If rate limit or Discogs access fails during search or selected-release fetch, show a clear retry/limit message without suggesting backend token-backed flows are running. | 4.2, 4.4 | User-facing error handling for direct Discogs calls. |
 
 ### Phase 5: Feature Gating and Collection Actions
 *(Goal: Keep UI actions consistent with whether Discogs token/release data exists.)*
@@ -69,7 +74,7 @@ Discogs request ownership is explicit:
 | Task ID | Module/Component | Description | Dependencies | Deliverable |
 | :--- | :--- | :--- | :--- | :--- |
 | **5.1** | `Collection Actions Gate` | If no token is saved, hide or disable Load/Sync Discogs collection actions. | 1.4 | Collection screen action state tied to integration status. |
-| **5.2** | `Record Detail Import Gate` | If no token is saved, do not allow import-full-release for records created manually through the placeholder/manual-entry path. | 1.4 | Record detail action filtering. |
+| **5.2** | `Record Detail Import Gate` | If no token is saved, do not allow import-full-release for records created manually through the placeholder/manual-entry path. No-token imports are allowed only from Android barcode/manual Discogs flows that already have a selected Discogs release ID and device-fetched release payload. | 1.4, 4.5 | Record detail action filtering. |
 | **5.3** | `View on Discogs Gate` | Show "View on Discogs" only when a record has a known Discogs release ID, such as records imported from identify/barcode/manual Discogs search. Do not show for manual-entry records without release ID. | Existing record model fields | Action-menu rules based on release ID presence. |
 | **5.4** | `Capture Image Gate` | When no token is saved, keep `Take Photo` visible but disabled. Add an info icon near the capture action. On tap, show: "To enable this feature, please provide your Discogs access token in the app's Integration Settings." | 1.4 | Disabled button state and explanatory dialog. |
 
@@ -80,8 +85,9 @@ Discogs request ownership is explicit:
 | :--- | :--- | :--- | :--- | :--- |
 | **6.1** | `Backend Integration Tests` | Cover token validation success/failure, identity response parsing, sanitized status responses, source-of-truth updates, and token storage without raw-token reads. | Phases 1-3 | Focused backend API/service tests. |
 | **6.2** | `Backend Rate Tests` | Simulate authenticated Discogs responses with rate-limit headers and quota exhaustion. | 3.2, 3.3 | Header-aware limiter tests. |
-| **6.3** | `Android Parser/API Tests` | Cover integration status parsing, token saved/unsaved states, and unauthenticated rate-limit header handling. | Phases 2, 4 | Focused Android tests. |
-| **6.4** | `Android UI State Tests` | Cover Settings Discogs card states, source-of-truth confirmation, disabled Take Photo state, and record action visibility. | Phases 2, 5 | UI/state tests around gated actions. |
+| **6.3** | `Client-Provided Import Tests` | Cover backend validation and persistence of Android-supplied Discogs release payloads. Verify this path does not construct or call a backend Discogs client when no token is saved. | 3.7 | Focused backend API/service tests for tokenless single-release import. |
+| **6.4** | `Android Parser/API Tests` | Cover integration status parsing, token saved/unsaved states, unauthenticated rate-limit header handling, full-release parsing, and client import payload mapping. | Phases 2, 4 | Focused Android tests. |
+| **6.5** | `Android UI State Tests` | Cover Settings Discogs card states, source-of-truth confirmation, disabled Take Photo state, and record action visibility. | Phases 2, 5 | UI/state tests around gated actions. |
 
 ## Flow Summary
 
@@ -94,10 +100,13 @@ Discogs request ownership is explicit:
 6. Backend returns candidates/results to Android.
 
 ### No Token Saved
-1. Backend does not perform Discogs-backed image identify/import work.
+1. Backend does not perform Discogs HTTP requests.
 2. Capture image `Take Photo` is disabled with an info dialog pointing to Integration Settings.
 3. Barcode/manual Discogs search can call Discogs directly from Android.
 4. Android unauthenticated limiter applies 25/min default and respects Discogs headers.
+5. When the user selects a candidate, Android fetches the full release directly from Discogs.
+6. Android sends a normalized release payload to backend.
+7. Backend validates, maps, and persists the release without calling Discogs.
 
 ### Collection Source of Truth
 1. App remains the default source of truth.

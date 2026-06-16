@@ -582,6 +582,53 @@ Tap Top Records View All → Top Records Screen
 
 ---
 
+# Screen 8A — Records Collection
+
+## Purpose
+
+Show the active local collection and provide collection-specific actions.
+
+## Content
+
+The screen header shows `Records Collection` and the action-menu toggle even
+when the collection is empty. Records are loaded from:
+
+```http
+GET /collection/releases
+```
+
+Collection filters use green chips with a result counter. Supported filters:
+
+```text
+Artist
+Label
+Personal favorites
+Discogs collection folder
+```
+
+Discogs folder filters are available only after the backend has imported folder
+metadata and `GET /collection/folders` returns `discogs_configured=true` and
+`has_extra_folders=true`. Selecting a folder filters the app collection only; it
+does not change source of truth or sync scope.
+
+## Actions
+
+```text
+Collection settings → Settings
+Load Discogs collection / Sync Items → manual collection sync
+Collection folders → expand folder rows; tap row to filter Collection
+Personal favorites → filter Collection to favorite records
++ floating CTA → identify flow or manual entry placeholder
+Search floating CTA → Collection manual search
+Tap record → Record Detail Screen
+```
+
+Action-menu rows use green icons: settings gear for `Collection settings`,
+sync arrows for `Load Discogs collection` / `Sync Items`, and folder icons for
+folder rows.
+
+---
+
 # Screen 9 — Recent Sessions
 
 ## Purpose

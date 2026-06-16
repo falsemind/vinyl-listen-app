@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.releases import (
+    ClientDiscogsReleaseImportRequest,
     RecordFlowInsightsResponse,
     RecordFlowMoodTransitionResponse,
     RecordFlowReleaseSummaryResponse,
@@ -201,6 +202,28 @@ def import_release(
         error_message = str(error)
         status_code = status.HTTP_404_NOT_FOUND if "(404)" in error_message else status.HTTP_502_BAD_GATEWAY
         raise HTTPException(status_code=status_code, detail=error_message) from error
+
+    response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
+    return ReleaseImportResponse(
+        release_id=result.release.id,
+        discogs_release_id=result.release.discogs_release_id,
+        status=result.status,
+    )
+
+
+@router.post("/import/client-discogs", response_model=ReleaseImportResponse)
+def import_client_discogs_release(
+    payload: ClientDiscogsReleaseImportRequest,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+):
+    logger.info("Importing client-provided Discogs release")
+
+    try:
+        result = service.import_client_discogs_release(db, payload.discogs_release)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
 
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
     return ReleaseImportResponse(

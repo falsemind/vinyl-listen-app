@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,6 +9,10 @@ class ReleaseImportRequest(BaseModel):
     force_refresh: bool = False
 
 
+class ClientDiscogsReleaseImportRequest(BaseModel):
+    discogs_release: dict[str, Any]
+
+
 class ReleaseSideOptionResponse(BaseModel):
     value: str
     label: str
@@ -15,10 +20,16 @@ class ReleaseSideOptionResponse(BaseModel):
     disc_number: int | None = None
 
 
+class ReleaseTrackCreditResponse(BaseModel):
+    name: str
+    role: str | None = None
+
+
 class ReleaseTrackResponse(BaseModel):
     position: str
     title: str
     duration: str | None = None
+    extra_artists: list[ReleaseTrackCreditResponse] = Field(default_factory=list)
 
 
 class ReleaseArtistResponse(BaseModel):

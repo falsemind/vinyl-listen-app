@@ -58,6 +58,16 @@ class DiscogsApiClient(
             response.toDiscogsReleaseSearchResultsPage(limit = limit)
         }
 
+    suspend fun fetchRelease(discogsReleaseId: Long): JSONObject =
+        withContext(Dispatchers.IO) {
+            require(discogsReleaseId > 0) { "Discogs release ID must be positive." }
+            rateLimiter.waitForTurn()
+            getJson(
+                path = "releases/$discogsReleaseId",
+                params = emptyList(),
+            )
+        }
+
     private fun getJson(
         path: String,
         params: List<String>,

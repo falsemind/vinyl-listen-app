@@ -56,6 +56,30 @@ class MatchConfirmationScreenTest {
         assertEquals("Unknown format", matchDisplayFormat(candidate, fallbackRecord = null))
     }
 
+    @Test
+    fun barcodeCandidateImportsFromDeviceWhenNoLocalReleaseExists() {
+        val candidate =
+            matchCandidate(
+                releaseId = null,
+                discogsReleaseId = 999999,
+                matchSource = "Barcode scan",
+            )
+
+        assertEquals(true, candidate.shouldImportFromDevice())
+    }
+
+    @Test
+    fun backendDiscogsCandidateUsesBackendImport() {
+        val candidate =
+            matchCandidate(
+                releaseId = null,
+                discogsReleaseId = 999999,
+                matchSource = "discogs",
+            )
+
+        assertEquals(false, candidate.shouldImportFromDevice())
+    }
+
     private fun matchCandidate(
         releaseId: String?,
         discogsReleaseId: Long,

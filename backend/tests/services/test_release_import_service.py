@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from app.models.releases import Releases
 from app.services.discogs_service import DiscogsConfigurationError
 from app.services.release_import_service import ReleaseImportService
@@ -61,39 +63,43 @@ def test_import_release_updates_existing_release_when_present(
     assert discogs_service.calls == [(555123, True)]
 
 
-def test_import_release_falls_back_to_unauthenticated_discogs_when_token_missing(
-    discogs_release_payload,
-    release_import_discogs_service_factory,
-    release_import_repository_factory,
-) -> None:
-    unauthenticated_discogs_service = release_import_discogs_service_factory(discogs_release_payload)
-
+def test_import_release_requires_backend_discogs_token_when_token_missing() -> None:
     class MissingTokenIntegrationService:
         def __init__(self) -> None:
             self.authenticated_calls = 0
-            self.unauthenticated_calls = 0
 
         def build_discogs_service(self, _db):
             self.authenticated_calls += 1
             raise DiscogsConfigurationError("Discogs token is not configured.")
 
-        def build_unauthenticated_discogs_service(self):
-            self.unauthenticated_calls += 1
-            return unauthenticated_discogs_service
-
     integration_service = MissingTokenIntegrationService()
-    repository = release_import_repository_factory()
     service = ReleaseImportService(
         discogs_integration_service=integration_service,
-        repository=repository,
     )
 
-    result = service.import_release(db=object(), discogs_release_id=555123)
+    with pytest.raises(DiscogsConfigurationError):
+        service.import_release(db=object(), discogs_release_id=555123)
 
-    assert result.release.id == "release-123"
     assert integration_service.authenticated_calls == 1
-    assert integration_service.unauthenticated_calls == 1
-    assert unauthenticated_discogs_service.calls == [(555123, False)]
+
+
+def test_import_client_discogs_release_persists_payload_without_fetching_discogs(
+    discogs_release_payload,
+    release_import_repository_factory,
+    release_import_discogs_repository_factory,
+    build_release_import_service,
+) -> None:
+    repository = release_import_repository_factory()
+    discogs_repository = release_import_discogs_repository_factory()
+    service = build_release_import_service(repository=repository, discogs_repository=discogs_repository)
+
+    result = service.import_client_discogs_release(db=object(), raw_payload=discogs_release_payload)
+
+    assert result.created is True
+    assert result.release.id == "release-123"
+    assert result.release.discogs_release_id == 555123
+    assert repository.saved_payloads == [(555123, "Music Has The Right To Children")]
+    assert discogs_repository.upsert_calls == [(555123, discogs_release_payload)]
 
 
 def test_get_release_returns_repository_result(
@@ -209,7 +215,13 @@ def test_get_tracklist_returns_discogs_tracks(
         {
             "tracklist": [
                 {"position": "X1", "type_": "heading", "title": "Side X"},
-                {"position": "X2", "type_": "track", "title": "S.O.U.R", "duration": ""},
+                {
+                    "position": "X2",
+                    "type_": "track",
+                    "title": "S.O.U.R",
+                    "duration": "",
+                    "extraartists": [{"name": "Target Artist (2)", "role": "Remix"}],
+                },
                 {"position": "Y1", "type_": "track", "title": "Another Tune", "duration": "5:12"},
             ]
         }
@@ -222,6 +234,8 @@ def test_get_tracklist_returns_discogs_tracks(
         ("X2", "S.O.U.R", None),
         ("Y1", "Another Tune", "5:12"),
     ]
+    assert [(artist.name, artist.role) for artist in tracks[0].extra_artists] == [("Target Artist", "Remix")]
+    assert tracks[1].extra_artists == []
 
 
 def test_get_artists_returns_discogs_release_artists(

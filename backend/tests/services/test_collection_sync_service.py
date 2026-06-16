@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from app.repositories.collection_folders_repository import CollectionFolderData, ReleaseFolderMembershipData
 from app.schemas.collection import CollectionSourceOfTruth
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncService, collapse_collection_items
 from app.services.discogs_integration_service import SavedDiscogsCredentials
@@ -32,13 +33,28 @@ class FakeRelease:
 
 
 class FakeDiscogsService:
-    def __init__(self, items: list[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        folders: list[dict[str, Any]] | None = None,
+        folder_items: dict[int, list[dict[str, Any]]] | None = None,
+    ) -> None:
         self.items = items
+        self.folders = folders or [{"id": 0, "name": "All", "count": len(items)}]
+        self.folder_items = folder_items or {}
         self.usernames: list[str | None] = []
+        self.folder_usernames: list[str | None] = []
+        self.folder_ids: list[int] = []
 
-    def fetch_collection_releases(self, username: str | None = None) -> list[dict[str, Any]]:
+    def fetch_collection_releases(self, username: str | None = None, folder_id: int = 0) -> list[dict[str, Any]]:
         self.usernames.append(username)
-        return self.items
+        self.folder_ids.append(folder_id)
+        return self.folder_items.get(folder_id, self.items)
+
+    def fetch_collection_folders(self, username: str | None = None) -> list[dict[str, Any]]:
+        self.folder_usernames.append(username)
+        return self.folders
 
 
 class FakeDiscogsIntegrationService:
@@ -158,6 +174,53 @@ class FakeReleasesRepository:
         )
 
 
+class FakeCollectionFoldersRepository:
+    def __init__(self) -> None:
+        self.folders: dict[int, Any] = {}
+        self.memberships: dict[int, list[ReleaseFolderMembershipData]] = {}
+
+    def upsert_folders(
+        self,
+        _db: object,
+        folders: list[CollectionFolderData],
+        *,
+        synced_at: datetime,
+        commit: bool = True,
+    ) -> dict[int, Any]:
+        _ = synced_at, commit
+        for index, folder in enumerate(folders, start=1):
+            self.folders[folder.discogs_folder_id] = SimpleFolder(
+                id=index,
+                discogs_folder_id=folder.discogs_folder_id,
+                name=folder.name,
+                item_count=folder.item_count,
+                is_default=folder.is_default,
+            )
+        return self.folders
+
+    def replace_folder_memberships(
+        self,
+        _db: object,
+        *,
+        folder: Any,
+        memberships: list[ReleaseFolderMembershipData],
+        synced_at: datetime,
+        commit: bool = True,
+    ) -> int:
+        _ = synced_at, commit
+        self.memberships[folder.discogs_folder_id] = list(memberships)
+        return len(memberships)
+
+
+@dataclass
+class SimpleFolder:
+    id: int
+    discogs_folder_id: int
+    name: str
+    item_count: int | None
+    is_default: bool
+
+
 class FakeCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
         self.source_of_truth = source_of_truth
@@ -218,14 +281,16 @@ def test_sync_collection_uses_saved_discogs_credentials() -> None:
         ),
         discogs_service_factory=lambda access_token: access_tokens.append(access_token) or discogs_service,
         repository=FakeReleasesRepository(),
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
     )
 
     result = service.sync_collection(db)
 
-    assert access_tokens == ["stored-token"]
+    assert access_tokens == ["stored-token", "stored-token"]
     assert discogs_service.usernames == ["discogs-user"]
+    assert discogs_service.folder_usernames == ["discogs-user"]
     assert result.total_items == 1
 
 
@@ -241,6 +306,7 @@ def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None
             ]
         ),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
@@ -261,6 +327,38 @@ def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None
     assert repository.commit_flags == [False, False, False, False]
     assert db.commit_count == 1
     assert db.rollback_count == 0
+
+
+def test_sync_collection_persists_discogs_folder_memberships() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    folder_repository = FakeCollectionFoldersRepository()
+    discogs_service = FakeDiscogsService(
+        [
+            _collection_item(116, 10, "2021-01-01T10:00:00-07:00", title="Shelf A Record"),
+            _collection_item(202, 30, "2022-01-01T10:00:00-07:00", title="Second Release"),
+        ],
+        folders=[
+            {"id": 0, "name": "All", "count": 2},
+            {"id": 123, "name": "Shelf A", "count": 1},
+        ],
+        folder_items={123: [_collection_item(116, 10, "2021-01-01T10:00:00-07:00", title="Shelf A Record")]},
+    )
+    service = CollectionSyncService(
+        discogs_service=discogs_service,
+        repository=FakeReleasesRepository(),
+        folder_repository=folder_repository,
+        settings_repository=FakeCollectionSettingsRepository(),
+        now_provider=lambda: now,
+    )
+
+    result = service.sync_collection(db=FakeDb())
+
+    assert result.unique_releases == 2
+    assert set(folder_repository.folders) == {0, 123}
+    assert folder_repository.folders[123].name == "Shelf A"
+    assert [membership.discogs_release_id for membership in folder_repository.memberships[0]] == [202, 116]
+    assert [membership.discogs_release_id for membership in folder_repository.memberships[123]] == [116]
+    assert discogs_service.folder_ids == [0, 123]
 
 
 def test_sync_collection_initial_app_mode_ignores_non_collection_release_rows() -> None:
@@ -284,6 +382,7 @@ def test_sync_collection_initial_app_mode_ignores_non_collection_release_rows() 
     service = CollectionSyncService(
         discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
@@ -324,6 +423,7 @@ def test_sync_collection_app_mode_adds_new_discogs_items_when_local_collection_e
     service = CollectionSyncService(
         discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
@@ -371,6 +471,7 @@ def test_sync_collection_keeps_removed_releases_inactive_in_app_mode() -> None:
             [_collection_item(116, 10, "2021-01-01T10:00:00-07:00", title="Updated Removed Record")]
         ),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
@@ -402,6 +503,7 @@ def test_sync_collection_adds_unique_releases_and_marks_them_active_in_discogs_m
             ]
         ),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(CollectionSourceOfTruth.DISCOGS),
         now_provider=lambda: now,
     )
@@ -445,6 +547,7 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
     service = CollectionSyncService(
         discogs_service=FakeDiscogsService([_collection_item(116, 10, "2021-01-01T10:00:00-07:00")]),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(CollectionSourceOfTruth.DISCOGS),
         now_provider=lambda: now,
     )
@@ -483,6 +586,7 @@ def test_sync_collection_keeps_missing_active_releases_in_app_mode() -> None:
     service = CollectionSyncService(
         discogs_service=FakeDiscogsService([]),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )
@@ -510,6 +614,7 @@ def test_sync_collection_rolls_back_when_later_item_fails() -> None:
             ]
         ),
         repository=repository,
+        folder_repository=FakeCollectionFoldersRepository(),
         settings_repository=FakeCollectionSettingsRepository(),
         now_provider=lambda: now,
     )

@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.ui.screens
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.ReleaseTrackCredit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -122,6 +123,31 @@ class RecordDetailHistoricalStateTest {
         assertNull(releaseTotalPlayTimeText(fullRecord.copy(hasFullDiscogsInfo = false)))
         assertNull(releaseTotalPlayTimeText(fullRecord.copy(tracklist = fullRecord.tracklist + ReleaseTrack("B2", "Dub"))))
         assertNull(releaseTotalPlayTimeText(fullRecord.copy(tracklist = listOf(ReleaseTrack("A1", "Bad", "3:99")))))
+    }
+
+    @Test
+    fun trackCreditsDisplayRoleAndArtistNames() {
+        val track =
+            ReleaseTrack(
+                position = "B2",
+                title = "Ketel",
+                extraArtists =
+                    listOf(
+                        ReleaseTrackCredit(name = "TMSV", role = "Remix"),
+                        ReleaseTrackCredit(name = "Requake", role = " remix "),
+                        ReleaseTrackCredit(name = "TMSV", role = "Remix"),
+                        ReleaseTrackCredit(name = "Begum X", role = "Featuring"),
+                        ReleaseTrackCredit(name = "Delhi Sultanate", role = "Featuring"),
+                        ReleaseTrackCredit(name = "Dub Studio"),
+                    ),
+            )
+
+        assertEquals("B2: Ketel", displayReleaseTrack(track))
+        assertEquals(
+            "Remix: TMSV, Requake; Featuring: Begum X, Delhi Sultanate; Dub Studio",
+            displayReleaseTrackCredits(track),
+        )
+        assertNull(displayReleaseTrackCredits(track.copy(extraArtists = emptyList())))
     }
 
     private fun recordWithTracks(

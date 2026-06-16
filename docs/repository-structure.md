@@ -120,6 +120,7 @@ backend/app/
 │   └── session.py
 ├── models/
 │   ├── ai_chat.py
+│   ├── collection_folders.py
 │   ├── collection_settings.py
 │   ├── collection_sync_job.py
 │   ├── discogs_release_cache.py
@@ -134,6 +135,7 @@ backend/app/
 ├── repositories/
 │   ├── ai_chat_repository.py
 │   ├── analytics_repository.py
+│   ├── collection_folders_repository.py
 │   ├── collection_settings_repository.py
 │   ├── collection_sync_job_repository.py
 │   ├── discogs_release_repository.py
@@ -179,7 +181,7 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, collection settings, provider integrations, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for releases, collection settings, Discogs collection folders, release-folder membership, provider integrations, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
 | `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
@@ -201,13 +203,15 @@ All routes are nested under `/api/v1`.
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/active` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
-| `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`. |
+| `GET /collection/folders` | `api/routes/collection.py` | `CollectionFoldersRepository` plus Discogs integration state. |
+| `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`; supports artist, label, favorites, and Discogs folder filters. |
 | `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
 | `GET /releases/search` | `api/routes/releases.py` | Token-backed backend Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `POST /releases/import/client-discogs` | `api/routes/releases.py` | Client-provided Discogs payload import through `ReleaseImportService`. |
 | `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `POST /releases/{release_id}/refresh` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `POST /releases/{release_id}/collection/deactivate` | `api/routes/releases.py` | `ReleasesRepository`. |
@@ -441,8 +445,8 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP clients for backend API calls and direct Discogs search. `VinylApiClient` covers identify jobs, integration status/token save, release import/detail/refresh/history, collection APIs, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. `DiscogsApiClient` handles device-side manual/barcode Discogs search with local unauthenticated rate limiting. |
-| `domain/` | UI-facing domain models for records, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
+| `data/api/` | Lightweight HTTP clients for backend API calls and direct Discogs access. `VinylApiClient` covers identify jobs, integration status/token save, token-backed release import, client-provided Discogs payload import, detail/refresh/history, collection records/folders/settings/sync APIs, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. `DiscogsApiClient` handles device-side manual/barcode Discogs search and selected-release fetch with local unauthenticated rate limiting. |
+| `domain/` | UI-facing domain models for records, collection folders, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, image/barcode processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, active timed-session banner, and navigation chrome. |
 | `ui/screens/` | Home, analytics, AI insights, collection, capture, image/barcode processing, match confirmation, manual search, session logging, record detail, integration settings, View All lists, grouped timed-session history, and small screen-specific formatters. |
@@ -458,10 +462,10 @@ android-app/
 - View All Recent Sessions groups fetched rows with the same `session_group_id` into a green outlined timed-session container with metadata chips. Grouping applies to the loaded page window, so a very long timed session can continue on the next page if its rows cross a pagination boundary.
 - Settings calls `GET /api/v1/integrations/discogs` and `PUT /api/v1/integrations/discogs/token` for Discogs token state, identity validation, and source-of-truth controls.
 - The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`. Discogs sync actions are hidden until a saved token exists.
-- Manual search uses `DiscogsApiClient` for direct device-side Discogs search, paginates in 10-result pages, imports selected Discogs candidates through the backend, and displays the release format returned by Discogs.
+- Manual search uses `DiscogsApiClient` for direct device-side Discogs search, paginates in 10-result pages, fetches the selected full release on the device, imports that payload through the backend, and displays the release format returned by Discogs.
 - Capture can enter barcode scan mode on the existing CameraX preview. ML Kit bundled barcode scanning reads UPC/EAN frames locally, shows a short captured confirmation, then opens barcode processing.
 - Image Processing starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
-- Barcode processing uses `DiscogsApiClient` for direct device-side barcode search, shows the same green processing language, routes successful candidates to Match Confirmation, and offers Try Again, Manual Search with the barcode prefilled, or Cancel on no result, API failure, or timeout.
+- Barcode processing uses `DiscogsApiClient` for direct device-side barcode search, shows the same green processing language, routes successful candidates to Match Confirmation, fetches the confirmed full release on the device, and offers Try Again, Manual Search with the barcode prefilled, or Cancel on no result, API failure, or timeout.
 - Session logging uses release-provided side options so repeated side names across discs can display friendly labels while saving unique option values.
 - Session logging can optionally attach a listen to the active timed session when auto-add is enabled, sending the active `session_group_id` with the regular side/rating/mood payload.
 - `RelativeDateFormatter.kt` prefers backend `played_at` timestamps for device-timezone-aware compact labels such as `Today`, `1d`, `1w`, and `1m`; date strings remain a fallback.

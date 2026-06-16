@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +43,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil.compose.SubcomposeAsyncImage
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.DiscogsApiClient
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -63,6 +65,8 @@ fun MatchConfirmationScreen(
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     val scope = rememberCoroutineScope()
     var detailCandidate by remember { mutableStateOf<MatchCandidate?>(null) }
     var confirmingDiscogsId by remember { mutableStateOf<Long?>(null) }
@@ -78,8 +82,14 @@ fun MatchConfirmationScreen(
         confirmError = null
         failedConfirmCandidate = null
         scope.launch {
-            runCatching { apiClient.importRelease(candidate.discogsReleaseId) }
-                .onSuccess { releaseId -> onConfirm(releaseId) }
+            runCatching {
+                if (candidate.shouldImportFromDevice()) {
+                    val discogsRelease = discogsApiClient.fetchRelease(candidate.discogsReleaseId)
+                    apiClient.importClientDiscogsRelease(discogsRelease)
+                } else {
+                    apiClient.importRelease(candidate.discogsReleaseId)
+                }
+            }.onSuccess { releaseId -> onConfirm(releaseId) }
                 .onFailure { error ->
                     confirmError = error.toUserMessage("Could not prepare this release. Retry or use Manual Search.")
                     failedConfirmCandidate = candidate
@@ -168,6 +178,8 @@ fun MatchConfirmationScreen(
         }
     }
 }
+
+internal fun MatchCandidate.shouldImportFromDevice(): Boolean = releaseId == null && matchSource == "Barcode scan"
 
 @Composable
 private fun MatchConfirmationHeader(onDismiss: () -> Unit) {

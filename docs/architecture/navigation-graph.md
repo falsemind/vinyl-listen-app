@@ -449,13 +449,16 @@ Browser for active app collection membership with optional Discogs sync and add-
 
 ### Displays
 
-- Empty state with centered `Load Discogs Collection` action
+- Header and action-menu toggle remain visible when the collection is empty
 - Import/sync progress with centered status feedback
 - Error state with orange error text and centered `Retry Load`
 - Latest 25 active collection records by Discogs added date
 - `Show More` pagination in 25-record pages
-- `Sync Items` action after collection records are loaded
-- First action menu item: `Collection settings`
+- First action menu item: `Collection settings`, with green settings icon
+- `Load Discogs collection` action when Discogs credentials exist and the unfiltered collection is empty
+- `Sync Items` action after collection records are loaded, with green sync icon
+- Expandable `Collection folders` action when Discogs credentials exist and imported folders include non-default folders
+- Green filter chips with result counters for artist, label, favorites, and Discogs folder filters
 - Green add CTA above the search CTA. The plus expands left into camera and pencil options, and turns into an X while expanded.
 - Scroll-to-top CTA appears above the add CTA when the list is scrolled.
 
@@ -465,6 +468,10 @@ Browser for active app collection membership with optional Discogs sync and add-
 |---|---|
 |Tap record|`record_detail/{releaseId}`|
 |Tap Collection settings action|`settings`|
+|Tap Load Discogs collection / Sync Items|stays on `collection` and follows background sync status|
+|Tap Collection folders row|expands/collapses folder options|
+|Tap folder option|stays on `collection` with `folder_id` filter and green folder chip|
+|Clear folder chip|stays on `collection` and reloads unfiltered active records|
 |Tap add camera option|`capture_record`|
 |Tap add pencil option|`collection_manual_entry`|
 |Tap search CTA|`collection_manual_search`|

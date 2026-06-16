@@ -17,6 +17,19 @@ class CollectionSettingsResponse(BaseModel):
     source_of_truth: CollectionSourceOfTruth
 
 
+class CollectionFolderResponse(BaseModel):
+    id: int
+    name: str
+    count: int | None = None
+    is_default: bool
+
+
+class CollectionFoldersResponse(BaseModel):
+    discogs_configured: bool
+    folders: list[CollectionFolderResponse]
+    has_extra_folders: bool
+
+
 class CollectionSyncJobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

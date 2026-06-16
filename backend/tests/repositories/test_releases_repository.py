@@ -165,6 +165,51 @@ def test_list_collection_releases_filters_favorites() -> None:
     assert [release.title for release in releases] == ["Favorite"]
 
 
+def test_list_collection_releases_filters_by_discogs_folder_active_membership() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_release_search_tables(connection)
+        _insert_release(
+            connection,
+            discogs_release_id=1000,
+            artist="Basic Channel",
+            title="Shelf A",
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=2000,
+            artist="Basic Channel",
+            title="Shelf B",
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=3000,
+            artist="Basic Channel",
+            title="Removed Shelf A",
+            in_collection=False,
+        )
+        _insert_collection_folder(connection, folder_pk=1, discogs_folder_id=123, name="Shelf A")
+        _insert_collection_folder(connection, folder_pk=2, discogs_folder_id=456, name="Shelf B")
+        _insert_release_collection_folder(connection, release_id="release-1000", folder_pk=1)
+        _insert_release_collection_folder(connection, release_id="release-2000", folder_pk=2)
+        _insert_release_collection_folder(connection, release_id="release-3000", folder_pk=1)
+
+    with session_factory() as db:
+        releases = ReleasesRepository.list_collection_releases(
+            db,
+            folder_id=123,
+            include_removed=True,
+            limit=10,
+            offset=0,
+        )
+        total = ReleasesRepository.count_collection_releases(db, folder_id=123, include_removed=True)
+
+    assert [release.title for release in releases] == ["Shelf A"]
+    assert total == 1
+
+
 def _create_release_search_tables(connection: Connection) -> None:
     connection.exec_driver_sql("""
         CREATE TABLE releases (
@@ -199,6 +244,30 @@ def _create_release_search_tables(connection: Connection) -> None:
             last_accessed_at TIMESTAMP
         )
         """)
+    connection.exec_driver_sql("""
+        CREATE TABLE collection_folders (
+            id INTEGER PRIMARY KEY,
+            discogs_folder_id INTEGER NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            item_count INTEGER,
+            is_default BOOLEAN NOT NULL,
+            last_discogs_sync_at TIMESTAMP,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """)
+    connection.exec_driver_sql("""
+        CREATE TABLE release_collection_folders (
+            id INTEGER PRIMARY KEY,
+            release_id TEXT NOT NULL,
+            collection_folder_id INTEGER NOT NULL,
+            discogs_instance_id INTEGER,
+            date_added TIMESTAMP,
+            last_discogs_sync_at TIMESTAMP,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """)
 
 
 def _insert_release(
@@ -210,6 +279,7 @@ def _insert_release(
     raw_discogs_json: dict | None = None,
     label: str = "Label",
     is_favorite: bool = False,
+    in_collection: bool = True,
 ) -> None:
     connection.exec_driver_sql(
         """
@@ -230,7 +300,7 @@ def _insert_release(
             :artist,
             :title,
             :label,
-            1,
+            :in_collection,
             :is_favorite,
             '2026-06-05T10:00:00+00:00',
             '2026-06-05T10:00:00+00:00'
@@ -243,6 +313,7 @@ def _insert_release(
             "title": title,
             "label": label,
             "is_favorite": is_favorite,
+            "in_collection": in_collection,
         },
     )
     if raw_discogs_json is None:
@@ -264,5 +335,62 @@ def _insert_release(
         {
             "discogs_release_id": discogs_release_id,
             "raw_discogs_json": json.dumps(raw_discogs_json),
+        },
+    )
+
+
+def _insert_collection_folder(
+    connection: Connection,
+    *,
+    folder_pk: int,
+    discogs_folder_id: int,
+    name: str,
+) -> None:
+    connection.exec_driver_sql(
+        """
+        INSERT INTO collection_folders (
+            id,
+            discogs_folder_id,
+            name,
+            is_default,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            :id,
+            :discogs_folder_id,
+            :name,
+            0,
+            '2026-06-05T10:00:00+00:00',
+            '2026-06-05T10:00:00+00:00'
+        )
+        """,
+        {
+            "id": folder_pk,
+            "discogs_folder_id": discogs_folder_id,
+            "name": name,
+        },
+    )
+
+
+def _insert_release_collection_folder(connection: Connection, *, release_id: str, folder_pk: int) -> None:
+    connection.exec_driver_sql(
+        """
+        INSERT INTO release_collection_folders (
+            release_id,
+            collection_folder_id,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            :release_id,
+            :collection_folder_id,
+            '2026-06-05T10:00:00+00:00',
+            '2026-06-05T10:00:00+00:00'
+        )
+        """,
+        {
+            "release_id": release_id,
+            "collection_folder_id": folder_pk,
         },
     )

@@ -27,12 +27,21 @@ First backend and Android slices are implemented:
 - Android Collection add CTA above search, expanding left into camera and pencil options with the same floating CTA style as search.
 - Android manual-entry placeholder route.
 - Android Record Detail **Delete from collection** / **Add to collection** actions with confirmation and log-session CTA hiding for inactive records.
+- Backend Discogs collection folders endpoint, folder persistence, release-folder membership sync, and `folder_id` collection filtering.
+- Android Collection action-menu icons for settings/sync, expandable **Collection folders**, folder filter state, and green folder chip with counter.
 
 Still intentionally placeholder/future:
 
 - Full manual release entry form and save flow.
 - Full Discogs mirror reconciliation when `DISCOGS` is selected.
-- Scheduled sync and multi-folder Discogs selection.
+- Scheduled sync.
+
+Latest completed slice:
+
+- Added action-menu icons for **Collection settings** and **Sync Items** / **Load Discogs collection**.
+- Exposed Discogs collection folders when Discogs credentials are configured.
+- Added expandable **Collection folders** after Discogs folder metadata is imported, hidden when Discogs has no extra folders beyond the default folder.
+- Selecting a folder filters Records Collection to items in that Discogs folder, using the same green filter-chip and header counter pattern as artist/label filters opened from Record Details.
 
 ## Current Scope
 
@@ -49,13 +58,18 @@ Still intentionally placeholder/future:
 - Android Record Detail action for **Delete from collection** / **Add to collection**.
 - Confirmation dialog for collection removal.
 - Hide log-session CTA when a record is no longer in the collection.
+- Backend Discogs collection folders contract.
+- Backend folder membership persistence and collection filtering.
+- Android Collection action menu icon polish.
+- Android expandable **Collection folders** action-menu option with folder filters.
 
 ### Out of Scope
 
 - Full manual release entry form.
 - Full manual-entry persistence flow.
 - Scheduled sync.
-- Multi-folder Discogs selection.
+- Persisting a selected Discogs folder as collection source.
+- Treating folder filters as a source-of-truth or sync-scope setting.
 - Destructive delete of releases, sessions, ratings, notes, analytics, or insight context.
 - Fully implementing Discogs mirror reconciliation beyond preserving the backend setting and safe contract shape.
 
@@ -73,6 +87,12 @@ Still intentionally placeholder/future:
 - Removed releases do not appear in Records Collection.
 - Removed releases cannot log new listening sessions until re-added.
 - Re-adding a release reactivates the existing release record instead of creating a duplicate.
+- Collection action-menu icons should use the existing green action-menu icon treatment: settings gear for **Collection settings** and a sync/refresh arrows icon for **Sync Items** / **Load Discogs collection**.
+- **Collection folders** is visible only when Discogs credentials are configured and Discogs returns at least one non-default collection folder.
+- **Collection folders** is expandable in the action menu and lists folder names.
+- Tapping a folder name filters Records Collection to releases imported in that folder.
+- Folder filters should use a green chip with a result counter in the header, matching existing artist and label filter chips.
+- Clearing the folder chip returns to the unfiltered active collection.
 
 ## Backend Implementation
 
@@ -169,6 +189,59 @@ Record detail should include a compact state such as:
 
 `DISCOGS` mirror behavior should be implemented only when the UX is ready for explicit destructive-feeling reconciliation. Until then, the backend should persist the setting and keep the branch obvious.
 
+### Phase 4A: Discogs Folder Discovery
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add Discogs folder client method | 2-4h | Existing `DiscogsService` config/client | Backend can call Discogs collection folders endpoint with configured username/token. |
+| Add folder DTO/schema | 1-2h | Folder client method | API response includes stable folder id, name, item count if available, and default-folder flag. |
+| Add folder persistence | 4-6h | Folder DTO/schema | Backend stores Discogs folder id/name/count/default metadata. |
+| Add release-folder membership persistence | 4-8h | Folder persistence and collection sync | Backend stores which imported releases belong to which Discogs folders without duplicating releases. |
+| Sync folder memberships | 4-8h | Release-folder persistence | Collection sync imports folder membership for non-default folders after the main collection import. |
+| Add collection folders endpoint | 2-4h | Folder DTO/schema | Android can request folders from `/api/v1/collection/folders`. |
+| Add folder filter to collection list | 2-4h | Release-folder persistence | `GET /collection/releases` supports `folder_id` and returns active releases in that folder. |
+| Add folder filter count | 1-2h | Folder filter query | Filtered collection response `total` reflects folder item count for the green chip counter. |
+| Gate response by Discogs configuration | 2-4h | Existing Discogs settings handling | Missing Discogs token/username returns a safe empty/not-configured response instead of surfacing a menu option. |
+| Filter display eligibility | 1-2h | Folder response | Backend or Android can tell whether folders contain more than default folder `0`. |
+| Add focused tests | 4-8h | Endpoint/service/filtering | Configured, missing-token, default-only, extra-folder, membership persistence, and folder-filter paths are covered. |
+
+Draft contract:
+
+```http
+GET /api/v1/collection/folders
+```
+
+```json
+{
+  "discogs_configured": true,
+  "folders": [
+    {
+      "id": 0,
+      "name": "All",
+      "count": 120,
+      "is_default": true
+    },
+    {
+      "id": 123,
+      "name": "Shelf A",
+      "count": 42,
+      "is_default": false
+    }
+  ],
+  "has_extra_folders": true
+}
+```
+
+Folder-filtered collection list:
+
+```http
+GET /api/v1/collection/releases?folder_id=123&limit=25&offset=0
+```
+
+The response shape stays the same as the unfiltered collection list. `total` is the number of active collection records in the selected folder so Android can display the filter-chip counter.
+
+For this slice, folder rows filter the current collection only. Persisting a selected folder as the default sync scope remains out of scope.
+
 ## Android Implementation
 
 ### Phase 5: API Client and Models
@@ -211,6 +284,22 @@ Record detail should include a compact state such as:
 | Call reactivate endpoint | 2-4h | Backend Phase 3 | Re-added record can log sessions again and appears in Collection. |
 | Refresh collection list after membership changes | 1-2h | Deactivate/reactivate | Records disappear/reappear without duplicate rows. |
 
+### Phase 9: Collection Action Menu Polish and Folders
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add settings action icon | 1-2h | Existing Collection action menu | **Collection settings** shows a green settings gear icon on the right. |
+| Add sync/load action icon | 1-2h | Existing Collection action menu | **Sync Items**, **Syncing...**, and **Load Discogs collection** use a green sync/refresh arrows icon on the right. |
+| Add folders API client model | 2-4h | Backend Phase 4A | Android parses Discogs folder response and hides folders UI when not configured or default-only. |
+| Load folders after collection import/list load | 2-4h | Folders API client model | Collection screen fetches folders after a Discogs-backed collection is available without blocking the collection list. |
+| Add folder filter request support | 2-4h | Backend folder filter query | Collection list API client can request `folder_id` and parse filtered totals. |
+| Add expandable **Collection folders** action | 2-4h | Folder load state | Action behaves like Record Detail expandable action rows and shows folder names as selectable sub-options. |
+| Apply folder filter from menu | 2-4h | Expandable folders action | Tapping a folder reloads Records Collection with `folder_id`. |
+| Add folder filter chip | 2-4h | Folder filter state | Header shows green folder chip with folder name and filtered count, matching artist/label chips. |
+| Clear folder filter | 1-2h | Folder filter chip | Dismissing the chip reloads unfiltered active collection. |
+| Hide folders action when ineligible | 1-2h | Folder load state | No **Collection folders** row appears when Discogs is not configured, folders fail safely, or only default folder exists. |
+| Add focused UI/parser tests | 4-6h | Models, menu state, filter state | Parser, menu visibility, folder selection, chip copy/count, and clear behavior are covered. |
+
 ## Dependencies Map
 
 ```text
@@ -232,6 +321,14 @@ Existing identify flow
 
 Navigation shell
   -> Manual-entry placeholder screen
+
+Discogs credentials and folder endpoint
+  -> Android folder API client
+  -> Collection folders action visibility
+  -> Folder membership persistence
+  -> Folder-filtered collection API
+  -> Expandable folder names in action menu
+  -> Green folder filter chip and counter
 ```
 
 ## Validation Plan
@@ -256,6 +353,13 @@ Checklist:
 - Reactivate restores collection membership without duplicates.
 - Session creation fails or no-ops clearly for inactive records.
 - `Sync Items` in `APP` mode does not remove, deactivate, or re-add local records when Discogs is empty or missing items.
+- `GET /collection/folders` returns a safe not-configured/empty response when Discogs token or username is missing.
+- `GET /collection/folders` marks default folder `0` and reports `has_extra_folders=false` when Discogs has only the default folder.
+- `GET /collection/folders` reports `has_extra_folders=true` and folder names when Discogs returns additional folders.
+- Collection sync stores release-folder membership for Discogs folders without creating duplicate releases.
+- `GET /collection/releases?folder_id=...` returns only active collection records in that folder.
+- Folder-filtered `total` matches the folder-filtered active record count.
+- Folder filter ignores inactive/deleted collection records.
 
 ### Android
 
@@ -263,7 +367,8 @@ Current focused verification:
 
 - `./gradlew :app:compileDebugKotlin`
 - `./gradlew :app:ktlintCheck`
-- `./gradlew :app:testDebugUnitTest --tests ...` is currently blocked locally by the JDK 26 / Android SDK 36 `JdkImageTransform` `jlink` failure before tests execute.
+- `JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:testDebugUnitTest --tests com.example.vinyllistenapp.data.api.CollectionParsingTest --no-configuration-cache`
+- `JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:lintDebug --no-configuration-cache`
 
 Checklist:
 
@@ -278,6 +383,14 @@ Checklist:
 - Inactive Record Detail hides log-session CTA and shows **Add to collection**.
 - Re-adding restores active detail state.
 - Records Collection list excludes inactive records.
+- Collection actions menu shows green settings icon for **Collection settings**.
+- Collection actions menu shows green sync/refresh arrows icon for **Sync Items** / **Load Discogs collection**.
+- **Collection folders** action is hidden when Discogs is not configured or only the default folder exists.
+- **Collection folders** action expands and collapses like Record Detail expandable action groups.
+- Expanded **Collection folders** lists Discogs folder names as selectable filter options.
+- Tapping a folder reloads Records Collection with that folder filter.
+- Folder filter chip uses the same green chip style and counter behavior as artist/label chips.
+- Clearing the folder chip reloads the unfiltered active collection.
 
 ## Risks and Mitigations
 
@@ -288,6 +401,11 @@ Checklist:
 | Sync in `APP` mode mutates membership | Local collection becomes unreliable | Add explicit tests for empty/missing Discogs collection responses. |
 | Re-add creates duplicates | Collection and analytics become noisy | Reactivate by stable release identity before creating any new release. |
 | Manual-entry placeholder looks like complete functionality | User confusion | Keep copy minimal and route-only until the real form is planned. |
+| Folder list implies folder import or sync-scope selection | User may expect tapping a folder to change source-of-truth or future sync target | Treat folders as collection filters only in this slice; do not persist folder choice as sync scope. |
+| Missing Discogs credentials create noisy errors | Collection menu feels broken for app-only users | Backend returns safe not-configured state and Android hides the folders action. |
+| Default-only folders clutter the action menu | User sees a menu item with no useful options | Hide **Collection folders** unless `has_extra_folders=true`. |
+| Folder membership sync is expensive | Sync may slow down for large Discogs accounts with many folders | Fetch folder membership after the main import, reuse pagination/progress patterns, and keep folder filtering dependent on stored membership. |
+| Folder-filtered totals differ from Discogs folder counts | Deleted/inactive local records may be excluded from app collection filters | Use app active-membership count in the chip and document backend response semantics through tests. |
 
 ## Recommended Implementation Order
 
@@ -299,6 +417,13 @@ Checklist:
 6. Android Collection settings action and Settings toggle.
 7. Android add CTA and placeholder manual-entry route.
 8. Android Record Detail delete/reactivate behavior.
-9. Focused backend and Android verification.
+9. Backend Discogs folders service/API.
+10. Backend folder membership persistence and sync.
+11. Backend folder-filtered collection query.
+12. Android folders API model and parser.
+13. Android Collection action menu icon polish.
+14. Android expandable **Collection folders** row and visibility rules.
+15. Android folder filter state, green chip, counter, and clear behavior.
+16. Focused backend and Android verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.

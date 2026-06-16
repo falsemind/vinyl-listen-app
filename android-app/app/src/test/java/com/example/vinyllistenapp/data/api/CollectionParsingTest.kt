@@ -106,6 +106,63 @@ class CollectionParsingTest {
     }
 
     @Test
+    fun parsesCollectionFoldersPage() {
+        val page =
+            JSONObject(
+                """
+                {
+                  "discogs_configured": true,
+                  "folders": [
+                    {
+                      "id": 0,
+                      "name": "All",
+                      "count": 120,
+                      "is_default": true
+                    },
+                    {
+                      "id": 123,
+                      "name": "Shelf A",
+                      "count": 42,
+                      "is_default": false
+                    }
+                  ],
+                  "has_extra_folders": true
+                }
+                """.trimIndent(),
+            ).toCollectionFoldersPage()
+
+        assertTrue(page.discogsConfigured)
+        assertTrue(page.hasExtraFolders)
+        assertEquals(2, page.folders.size)
+        assertEquals(0L, page.folders[0].id)
+        assertEquals("All", page.folders[0].name)
+        assertEquals(120, page.folders[0].count)
+        assertTrue(page.folders[0].isDefault)
+        assertEquals(123L, page.folders[1].id)
+        assertEquals("Shelf A", page.folders[1].name)
+        assertEquals(42, page.folders[1].count)
+        assertFalse(page.folders[1].isDefault)
+    }
+
+    @Test
+    fun parsesCollectionFoldersPageAsUnavailableWhenDiscogsIsNotConfigured() {
+        val page =
+            JSONObject(
+                """
+                {
+                  "discogs_configured": false,
+                  "folders": [],
+                  "has_extra_folders": false
+                }
+                """.trimIndent(),
+            ).toCollectionFoldersPage()
+
+        assertFalse(page.discogsConfigured)
+        assertFalse(page.hasExtraFolders)
+        assertTrue(page.folders.isEmpty())
+    }
+
+    @Test
     fun parsesDiscogsIntegrationStatus() {
         val status =
             JSONObject(

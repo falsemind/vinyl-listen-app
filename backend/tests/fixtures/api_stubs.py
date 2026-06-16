@@ -10,7 +10,12 @@ from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.release_mapper import ReleaseArtistData, ReleaseSideOptionData, ReleaseTrackData
+from app.services.release_mapper import (
+    ReleaseArtistData,
+    ReleaseSideOptionData,
+    ReleaseTrackCreditData,
+    ReleaseTrackData,
+)
 from app.services.sessions_service import (
     CreateSessionResult,
     HomeSummary,
@@ -179,6 +184,8 @@ class StubReleaseImportService:
         self.import_result = ReleaseImportResult(release=self.release, created=True)
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
+        self.client_import_error: Exception | None = None
+        self.client_import_calls: list[dict] = []
         self.refresh_calls: list[str] = []
         self.lookup_calls: list[str] = []
         self.favorite_calls: list[tuple[str, bool]] = []
@@ -192,7 +199,11 @@ class StubReleaseImportService:
         ]
         self.tracklist = [
             ReleaseTrackData(position="A1", title="Wildlife Analysis", duration="1:17"),
-            ReleaseTrackData(position="A2", title="An Eagle In Your Mind"),
+            ReleaseTrackData(
+                position="A2",
+                title="An Eagle In Your Mind",
+                extra_artists=[ReleaseTrackCreditData(name="Plaid", role="Remix")],
+            ),
         ]
         self.artists = [
             ReleaseArtistData(name="Boards of Canada", discogs_artist_id=194),
@@ -202,6 +213,12 @@ class StubReleaseImportService:
         self.import_calls.append((discogs_release_id, force_refresh))
         if self.import_error is not None:
             raise self.import_error
+        return self.import_result
+
+    def import_client_discogs_release(self, _db, raw_payload: dict) -> ReleaseImportResult:
+        self.client_import_calls.append(raw_payload)
+        if self.client_import_error is not None:
+            raise self.client_import_error
         return self.import_result
 
     def get_release(self, _db, release_id: str) -> ReleaseStub | None:

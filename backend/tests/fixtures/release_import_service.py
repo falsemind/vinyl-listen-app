@@ -69,6 +69,7 @@ class InMemoryReleasesRepository:
 class InMemoryDiscogsReleaseRepository:
     def __init__(self, raw_discogs_json: dict | None = None) -> None:
         self.raw_discogs_json = raw_discogs_json
+        self.upsert_calls: list[tuple[int, dict]] = []
 
     def get_by_discogs_release_id(self, _db, _discogs_release_id: int):
         if self.raw_discogs_json is None:
@@ -79,6 +80,16 @@ class InMemoryDiscogsReleaseRepository:
                 self.raw_discogs_json = raw_discogs_json
 
         return CacheEntry(self.raw_discogs_json)
+
+    def upsert(self, _db, discogs_release_id: int, raw_discogs_json: dict):
+        self.raw_discogs_json = raw_discogs_json
+        self.upsert_calls.append((discogs_release_id, raw_discogs_json))
+
+        class CacheEntry:
+            def __init__(self, raw_discogs_json: dict) -> None:
+                self.raw_discogs_json = raw_discogs_json
+
+        return CacheEntry(raw_discogs_json)
 
 
 @pytest.fixture

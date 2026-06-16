@@ -9,6 +9,8 @@ import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountsPage
 import com.example.vinyllistenapp.domain.AnalyticsSessionsPage
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
+import com.example.vinyllistenapp.domain.CollectionFolder
+import com.example.vinyllistenapp.domain.CollectionFoldersPage
 import com.example.vinyllistenapp.domain.CollectionRecord
 import com.example.vinyllistenapp.domain.CollectionRecordsPage
 import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
@@ -27,6 +29,7 @@ import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.ReleaseTrackCredit
 import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.domain.TimedSessionGroup
@@ -134,6 +137,7 @@ class VinylApiClient(
         artist: String? = null,
         label: String? = null,
         favorite: Boolean = false,
+        folderId: Long? = null,
     ): CollectionRecordsPage =
         apiCall {
             val query =
@@ -143,8 +147,14 @@ class VinylApiClient(
                     addQueryParam("artist", artist)
                     addQueryParam("label", label)
                     if (favorite) addQueryParam("favorite", "true")
+                    folderId?.let { addQueryParam("folder_id", it.toString()) }
                 }.joinToString("&")
             getJson("collection/releases?$query").toCollectionRecordsPage()
+        }
+
+    suspend fun getCollectionFolders(): CollectionFoldersPage =
+        apiCall {
+            getJson("collection/folders").toCollectionFoldersPage()
         }
 
     suspend fun getCollectionSettings(): CollectionSourceOfTruth =
@@ -176,6 +186,13 @@ class VinylApiClient(
                     .put("discogs_release_id", discogsReleaseId)
                     .put("force_refresh", false)
             val response = postJson("releases/import", body)
+            response.getString("release_id")
+        }
+
+    suspend fun importClientDiscogsRelease(discogsRelease: JSONObject): String =
+        apiCall {
+            val body = JSONObject().put("discogs_release", discogsRelease)
+            val response = postJson("releases/import/client-discogs", body)
             response.getString("release_id")
         }
 
@@ -961,6 +978,18 @@ internal fun JSONObject.toCollectionRecordsPage(): CollectionRecordsPage {
     )
 }
 
+internal fun JSONObject.toCollectionFoldersPage(): CollectionFoldersPage {
+    val folders =
+        optJSONArray("folders")
+            .orEmpty()
+            .mapObjects { folder -> folder.toCollectionFolder() }
+    return CollectionFoldersPage(
+        discogsConfigured = optBoolean("discogs_configured", false),
+        folders = folders,
+        hasExtraFolders = optBoolean("has_extra_folders", folders.any { !it.isDefault }),
+    )
+}
+
 internal fun JSONObject.toCollectionSourceOfTruth(): CollectionSourceOfTruth =
     CollectionSourceOfTruth.fromWireValue(optString("source_of_truth", "APP"))
 
@@ -1018,6 +1047,14 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         collectionAddedAt = optNullableString("collection_added_at"),
         inCollection = optBoolean("in_collection", false),
         isFavorite = optBoolean("is_favorite", false),
+    )
+
+private fun JSONObject.toCollectionFolder(): CollectionFolder =
+    CollectionFolder(
+        id = optLong("id"),
+        name = optString("name", "Folder ${optLong("id")}"),
+        count = optNullableInt("count"),
+        isDefault = optBoolean("is_default", false),
     )
 
 private fun CollectionSourceOfTruth.toWireValue(): String =
@@ -1370,8 +1407,21 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
             position = item.optString("position"),
             title = item.optString("title"),
             duration = item.optNullableString("duration"),
+            extraArtists =
+                (
+                    item.optJSONArray("extra_artists")
+                        ?: item.optJSONArray("extraartists")
+                ).orEmpty().toReleaseTrackCredits(),
         )
     }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun JSONArray.toReleaseTrackCredits(): List<ReleaseTrackCredit> =
+    mapObjects { item ->
+        ReleaseTrackCredit(
+            name = item.optString("name"),
+            role = item.optNullableString("role"),
+        )
+    }.filter { it.name.isNotBlank() }
 
 private fun JSONArray.toReleaseArtists(): List<ReleaseArtist> =
     mapObjects { item ->

@@ -74,6 +74,10 @@ TRACK_SIDE_QUALIFIER_PATTERN = re.compile(r"^\(?\s*(?:there|here|this side|other
 TRACK_SIDE_WORD_PREFIX_PATTERN = re.compile(r"^side\b[.)]?\s*", re.IGNORECASE)
 TRACK_DURATION_SUFFIX_PATTERN = re.compile(r"\s+\d{1,2}:\d{2}(?::\d{2})?\s*$")
 TRACK_NUMBER_SUFFIX_PATTERN = re.compile(r"\s+(0?[1-9]|[12]\d|30)\s*$")
+TRACK_MIX_VERSION_QUALIFIER_PATTERN = re.compile(
+    r"\([^)]*\b(?:dubplate|version|cut|mix|remix)\b[^)]*\)",
+    re.IGNORECASE,
+)
 SEPARATOR_PATTERNS = (" - ", " / ", " + ", " – ", " — ", ": ")
 EDGE_JUNK_CHARACTERS = " \t\r\n'\"“”‘’`_-:#*/.,;|\\"
 MAX_TEXT_FRAGMENTS = 8
@@ -852,18 +856,30 @@ def _candidate_metadata_entries(cleaned_lines: list[str], *, blocked_values: set
     candidate_entries: list[tuple[str, bool]] = []
     seen: set[str] = set()
     previous_line_was_side_heading = False
+    previous_line_was_track_index_heading = False
 
-    for line in cleaned_lines:
+    for index, line in enumerate(cleaned_lines):
         lowered_line = line.lower()
         if lowered_line in blocked_values:
             previous_line_was_side_heading = False
+            previous_line_was_track_index_heading = False
             continue
 
-        is_track_listing = previous_line_was_side_heading or _extract_track_listing_title(line) is not None
-        candidate = _clean_candidate_line(line)
+        line_follows_track_heading = previous_line_was_side_heading or previous_line_was_track_index_heading
         previous_line_was_side_heading = _is_side_heading(line)
+        previous_line_was_track_index_heading = _is_track_index_heading(line)
+        if previous_line_was_side_heading or previous_line_was_track_index_heading:
+            continue
+
+        candidate = _clean_candidate_line(line)
         if candidate is None or candidate.lower() in blocked_values:
             continue
+        is_track_listing = (
+            line_follows_track_heading
+            or _extract_track_listing_title(line) is not None
+            or _looks_like_mix_version_title(candidate)
+            or _has_neighboring_mix_version_title(candidate, cleaned_lines, index)
+        )
         if candidate.lower() in seen or not _is_strict_metadata_line(candidate):
             continue
 
@@ -1531,6 +1547,10 @@ def _is_side_heading(value: str) -> bool:
     return value.strip().lower() in {"this side", "that side", "other side"}
 
 
+def _is_track_index_heading(value: str) -> bool:
+    return re.fullmatch(r"\s*[A-H]{1,2}\d{1,2}[.)]?\s*", value, re.IGNORECASE) is not None
+
+
 def _extract_track_listing_title(value: str) -> str | None:
     stripped_value = value.strip()
     match = TRACK_LISTING_PREFIX_PATTERN.match(stripped_value)
@@ -1566,6 +1586,40 @@ def _extract_numbered_track_listing_title(value: str) -> str | None:
     if stripped_title == title:
         return None
     return stripped_title
+
+
+def _looks_like_mix_version_title(value: str) -> bool:
+    return _mix_version_base_title(value) is not None
+
+
+def _has_neighboring_mix_version_title(value: str, cleaned_lines: list[str], index: int) -> bool:
+    normalized_value = _normalize_catalog_sort_token(value)
+    if not normalized_value:
+        return False
+
+    neighbors = (
+        cleaned_lines[index - 1] if index > 0 else None,
+        cleaned_lines[index + 1] if index + 1 < len(cleaned_lines) else None,
+    )
+    for neighbor in neighbors:
+        if neighbor is None:
+            continue
+        base_title = _mix_version_base_title(neighbor)
+        if base_title is None:
+            continue
+        if _normalize_catalog_sort_token(base_title) == normalized_value:
+            return True
+    return False
+
+
+def _mix_version_base_title(value: str) -> str | None:
+    if TRACK_MIX_VERSION_QUALIFIER_PATTERN.search(value) is None:
+        return None
+    base_title = TRACK_MIX_VERSION_QUALIFIER_PATTERN.sub("", value)
+    base_title = " ".join(base_title.strip(EDGE_JUNK_CHARACTERS).split())
+    if not base_title or not any(character.isalpha() for character in base_title):
+        return None
+    return base_title
 
 
 def _strip_numbered_track_suffix(value: str) -> str:
