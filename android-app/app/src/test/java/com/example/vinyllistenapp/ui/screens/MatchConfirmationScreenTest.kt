@@ -80,6 +80,18 @@ class MatchConfirmationScreenTest {
         assertEquals(false, candidate.shouldImportFromDevice())
     }
 
+    @Test
+    fun collectionAddModeUsesBackendCollectionImportForBarcodeCandidates() {
+        val candidate =
+            matchCandidate(
+                releaseId = null,
+                discogsReleaseId = 999999,
+                matchSource = "Barcode scan",
+            )
+
+        assertEquals(false, candidate.shouldImportFromDevice(MatchConfirmationMode.CollectionAdd))
+    }
+
     private fun matchCandidate(
         releaseId: String?,
         discogsReleaseId: Long,

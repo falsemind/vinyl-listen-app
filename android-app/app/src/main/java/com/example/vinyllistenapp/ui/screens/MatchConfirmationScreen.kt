@@ -57,10 +57,16 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
+enum class MatchConfirmationMode {
+    SessionLogging,
+    CollectionAdd,
+}
+
 @Composable
 fun MatchConfirmationScreen(
     candidates: List<MatchCandidate>,
     apiClient: VinylApiClient,
+    mode: MatchConfirmationMode = MatchConfirmationMode.SessionLogging,
     onConfirm: (String) -> Unit,
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
@@ -74,7 +80,7 @@ fun MatchConfirmationScreen(
     var failedConfirmCandidate by remember { mutableStateOf<MatchCandidate?>(null) }
 
     fun confirmCandidate(candidate: MatchCandidate) {
-        candidate.releaseId?.let {
+        candidate.releaseId?.takeIf { mode == MatchConfirmationMode.SessionLogging }?.let {
             onConfirm(it)
             return
         }
@@ -83,7 +89,15 @@ fun MatchConfirmationScreen(
         failedConfirmCandidate = null
         scope.launch {
             runCatching {
-                if (candidate.shouldImportFromDevice()) {
+                if (mode == MatchConfirmationMode.CollectionAdd) {
+                    candidate.releaseId?.let { releaseId ->
+                        apiClient.reactivateReleaseCollectionMembership(releaseId).releaseId
+                    } ?: run {
+                        val discogsRelease = discogsApiClient.fetchRelease(candidate.discogsReleaseId)
+                        val releaseId = apiClient.importClientDiscogsRelease(discogsRelease)
+                        apiClient.reactivateReleaseCollectionMembership(releaseId).releaseId
+                    }
+                } else if (candidate.shouldImportFromDevice(mode)) {
                     val discogsRelease = discogsApiClient.fetchRelease(candidate.discogsReleaseId)
                     apiClient.importClientDiscogsRelease(discogsRelease)
                 } else {
@@ -91,7 +105,14 @@ fun MatchConfirmationScreen(
                 }
             }.onSuccess { releaseId -> onConfirm(releaseId) }
                 .onFailure { error ->
-                    confirmError = error.toUserMessage("Could not prepare this release. Retry or use Manual Search.")
+                    confirmError =
+                        error.toUserMessage(
+                            if (mode == MatchConfirmationMode.CollectionAdd) {
+                                "Could not save this release to collection. Retry or use Manual Search."
+                            } else {
+                                "Could not prepare this release. Retry or use Manual Search."
+                            },
+                        )
                     failedConfirmCandidate = candidate
                     confirmingDiscogsId = null
                 }
@@ -139,10 +160,12 @@ fun MatchConfirmationScreen(
                     val record = matchFallbackRecord(candidate)
                     MatchCandidateCard(
                         candidate = candidate,
+                        imageUrl = candidate.coverImageUrl ?: record?.coverImageUrl,
                         year = matchDisplayYear(candidate, record),
                         catalogNumber = matchDisplayCatalogNumber(candidate, record, index),
                         format = matchDisplayFormat(candidate, record),
                         isConfirming = confirmingDiscogsId == candidate.discogsReleaseId,
+                        mode = mode,
                         onConfirm = { confirmCandidate(candidate) },
                         onDetails = { detailCandidate = candidate },
                     )
@@ -179,7 +202,8 @@ fun MatchConfirmationScreen(
     }
 }
 
-internal fun MatchCandidate.shouldImportFromDevice(): Boolean = releaseId == null && matchSource == "Barcode scan"
+internal fun MatchCandidate.shouldImportFromDevice(mode: MatchConfirmationMode = MatchConfirmationMode.SessionLogging): Boolean =
+    mode == MatchConfirmationMode.SessionLogging && releaseId == null && matchSource == "Barcode scan"
 
 @Composable
 private fun MatchConfirmationHeader(onDismiss: () -> Unit) {
@@ -204,10 +228,12 @@ private fun MatchConfirmationHeader(onDismiss: () -> Unit) {
 @Composable
 private fun MatchCandidateCard(
     candidate: MatchCandidate,
+    imageUrl: String?,
     year: Int?,
     catalogNumber: String,
     format: String,
     isConfirming: Boolean,
+    mode: MatchConfirmationMode,
     onConfirm: () -> Unit,
     onDetails: () -> Unit,
 ) {
@@ -229,7 +255,7 @@ private fun MatchCandidateCard(
             ) {
                 MatchAlbumArtBlock(
                     accentColor = accentColor,
-                    imageUrl = candidate.coverImageUrl,
+                    imageUrl = imageUrl,
                     contentDescription = "${candidate.title} cover art",
                 )
                 Spacer(Modifier.width(VinylSpacing.SpaceLg))
@@ -278,7 +304,7 @@ private fun MatchCandidateCard(
                 MatchConfirmButton(
                     onClick = onConfirm,
                     enabled = !isConfirming,
-                    label = if (isConfirming) "Importing" else "Confirm",
+                    label = matchConfirmButtonLabel(mode, isConfirming),
                     modifier = Modifier.weight(1f),
                 )
                 InfoCircleButton(onClick = onDetails)
@@ -286,6 +312,16 @@ private fun MatchCandidateCard(
         }
     }
 }
+
+private fun matchConfirmButtonLabel(
+    mode: MatchConfirmationMode,
+    isConfirming: Boolean,
+): String =
+    when {
+        isConfirming -> if (mode == MatchConfirmationMode.CollectionAdd) "Saving" else "Importing"
+        mode == MatchConfirmationMode.CollectionAdd -> "Save"
+        else -> "Confirm"
+    }
 
 @Composable
 private fun MatchDetailsPlaceholderPopup(
