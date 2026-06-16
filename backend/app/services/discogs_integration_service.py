@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.provider_integration_repository import ProviderIntegrationRepository
+from app.schemas.collection import CollectionSourceOfTruth
 from app.schemas.integrations import DiscogsIntegrationStatusResponse
 from app.services.discogs_service import (
     DiscogsApiConfig,
@@ -109,6 +110,16 @@ class DiscogsIntegrationService:
             external_username=identity.username,
             user_id=user_id,
         )
+        return self.get_status(db, user_id=user_id)
+
+    def delete_access_token(
+        self,
+        db: Session,
+        *,
+        user_id: str | None = None,
+    ) -> DiscogsIntegrationStatusResponse:
+        self._integration_repository.delete_discogs_token(db, user_id=user_id)
+        self._collection_settings_repository.set_source_of_truth(db, CollectionSourceOfTruth.APP)
         return self.get_status(db, user_id=user_id)
 
     def get_saved_credentials(self, db: Session, *, user_id: str | None = None) -> SavedDiscogsCredentials:

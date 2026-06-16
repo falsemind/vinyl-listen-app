@@ -179,6 +179,11 @@ class VinylApiClient(
             putJson("integrations/discogs/token", body).toDiscogsIntegrationStatus()
         }
 
+    suspend fun deleteDiscogsAccessToken(): DiscogsIntegrationStatus =
+        apiCall {
+            deleteJson("integrations/discogs/token").toDiscogsIntegrationStatus()
+        }
+
     suspend fun importRelease(discogsReleaseId: Long): String =
         apiCall {
             val body =

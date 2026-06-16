@@ -15,11 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -47,8 +48,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.api.VinylApiClient
@@ -63,7 +69,10 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private const val TOKEN_REVEAL_MILLIS = 1_000L
 
 @Composable
 fun SettingsScreen(
@@ -77,11 +86,14 @@ fun SettingsScreen(
     var integrationStatus by remember { mutableStateOf<DiscogsIntegrationStatus?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isSavingToken by remember { mutableStateOf(false) }
+    var isDeletingToken by remember { mutableStateOf(false) }
     var isUpdatingSource by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var tokenInput by rememberSaveable { mutableStateOf("") }
     var tokenEditMode by rememberSaveable { mutableStateOf(false) }
+    var tokenManageMode by rememberSaveable { mutableStateOf(false) }
     var showDiscogsConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showDeleteTokenConfirmation by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun loadIntegrationStatus() {
@@ -91,7 +103,8 @@ fun SettingsScreen(
             runCatching { apiClient.getDiscogsIntegrationStatus() }
                 .onSuccess { status ->
                     integrationStatus = status
-                    tokenEditMode = !status.accessTokenSaved
+                    tokenEditMode = false
+                    tokenManageMode = false
                 }.onFailure { error ->
                     errorMessage = error.toUserMessage("Could not load integration settings.")
                 }
@@ -114,10 +127,29 @@ fun SettingsScreen(
                     integrationStatus = status
                     tokenInput = ""
                     tokenEditMode = false
+                    tokenManageMode = false
                 }.onFailure { error ->
                     errorMessage = error.toUserMessage("Could not save Discogs access token.")
                 }
             isSavingToken = false
+        }
+    }
+
+    fun deleteToken() {
+        if (isDeletingToken) return
+        isDeletingToken = true
+        errorMessage = null
+        scope.launch {
+            runCatching { apiClient.deleteDiscogsAccessToken() }
+                .onSuccess { status ->
+                    integrationStatus = status
+                    tokenInput = ""
+                    tokenEditMode = false
+                    tokenManageMode = false
+                }.onFailure { error ->
+                    errorMessage = error.toUserMessage("Could not delete Discogs access token.")
+                }
+            isDeletingToken = false
         }
     }
 
@@ -162,13 +194,26 @@ fun SettingsScreen(
             integrationStatus = integrationStatus,
             isLoading = isLoading,
             isSavingToken = isSavingToken,
+            isDeletingToken = isDeletingToken,
             isUpdatingSource = isUpdatingSource,
             tokenInput = tokenInput,
             tokenEditMode = tokenEditMode,
+            tokenManageMode = tokenManageMode,
             errorMessage = errorMessage,
             onTokenInputChange = { tokenInput = it },
+            onTokenClear = { tokenInput = "" },
+            onTokenCancel = {
+                tokenInput = ""
+                tokenEditMode = false
+                tokenManageMode = false
+            },
             onTokenSubmit = ::saveToken,
-            onTokenUpdateClick = { tokenEditMode = true },
+            onTokenManageClick = { tokenManageMode = !tokenManageMode },
+            onTokenUpdateClick = {
+                tokenManageMode = false
+                tokenEditMode = true
+            },
+            onTokenDeleteClick = { showDeleteTokenConfirmation = true },
             onSourceOfTruthChanged = { nextSource ->
                 if (nextSource == CollectionSourceOfTruth.Discogs) {
                     showDiscogsConfirmation = true
@@ -208,6 +253,34 @@ fun SettingsScreen(
             },
         )
     }
+    if (showDeleteTokenConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteTokenConfirmation = false },
+            title = { Text("Delete Discogs token") },
+            text = {
+                Text(
+                    "Deleting the token disables Discogs features that require your account " +
+                        "and switches collection source of truth back to App.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeletingToken,
+                    onClick = {
+                        showDeleteTokenConfirmation = false
+                        deleteToken()
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteTokenConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -216,13 +289,19 @@ private fun SettingsContent(
     integrationStatus: DiscogsIntegrationStatus?,
     isLoading: Boolean,
     isSavingToken: Boolean,
+    isDeletingToken: Boolean,
     isUpdatingSource: Boolean,
     tokenInput: String,
     tokenEditMode: Boolean,
+    tokenManageMode: Boolean,
     errorMessage: String?,
     onTokenInputChange: (String) -> Unit,
+    onTokenClear: () -> Unit,
+    onTokenCancel: () -> Unit,
     onTokenSubmit: () -> Unit,
+    onTokenManageClick: () -> Unit,
     onTokenUpdateClick: () -> Unit,
+    onTokenDeleteClick: () -> Unit,
     onSourceOfTruthChanged: (CollectionSourceOfTruth) -> Unit,
     innerPadding: PaddingValues = PaddingValues(),
 ) {
@@ -232,13 +311,19 @@ private fun SettingsContent(
             status = integrationStatus,
             isLoading = isLoading,
             isSavingToken = isSavingToken,
+            isDeletingToken = isDeletingToken,
             isUpdatingSource = isUpdatingSource,
             tokenInput = tokenInput,
             tokenEditMode = tokenEditMode,
+            tokenManageMode = tokenManageMode,
             errorMessage = errorMessage,
             onTokenInputChange = onTokenInputChange,
+            onTokenClear = onTokenClear,
+            onTokenCancel = onTokenCancel,
             onTokenSubmit = onTokenSubmit,
+            onTokenManageClick = onTokenManageClick,
             onTokenUpdateClick = onTokenUpdateClick,
+            onTokenDeleteClick = onTokenDeleteClick,
             onSourceOfTruthChanged = onSourceOfTruthChanged,
         )
     }
@@ -249,16 +334,22 @@ private fun DiscogsIntegrationCard(
     status: DiscogsIntegrationStatus?,
     isLoading: Boolean,
     isSavingToken: Boolean,
+    isDeletingToken: Boolean,
     isUpdatingSource: Boolean,
     tokenInput: String,
     tokenEditMode: Boolean,
+    tokenManageMode: Boolean,
     errorMessage: String?,
     onTokenInputChange: (String) -> Unit,
+    onTokenClear: () -> Unit,
+    onTokenCancel: () -> Unit,
     onTokenSubmit: () -> Unit,
+    onTokenManageClick: () -> Unit,
     onTokenUpdateClick: () -> Unit,
+    onTokenDeleteClick: () -> Unit,
     onSourceOfTruthChanged: (CollectionSourceOfTruth) -> Unit,
 ) {
-    var isExpanded by rememberSaveable { mutableStateOf(true) }
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else -90f,
         animationSpec = tween(durationMillis = 180),
@@ -327,8 +418,12 @@ private fun DiscogsIntegrationCard(
                     status?.accessTokenSaved == true && !tokenEditMode ->
                         DiscogsTokenSavedState(
                             status = status,
+                            tokenManageMode = tokenManageMode,
                             isUpdatingSource = isUpdatingSource,
+                            isDeletingToken = isDeletingToken,
+                            onTokenManageClick = onTokenManageClick,
                             onTokenUpdateClick = onTokenUpdateClick,
+                            onTokenDeleteClick = onTokenDeleteClick,
                             onSourceOfTruthChanged = onSourceOfTruthChanged,
                         )
                     else ->
@@ -336,7 +431,10 @@ private fun DiscogsIntegrationCard(
                             tokenInput = tokenInput,
                             isSavingToken = isSavingToken,
                             onTokenInputChange = onTokenInputChange,
+                            onTokenClear = onTokenClear,
+                            onTokenCancel = onTokenCancel,
                             onTokenSubmit = onTokenSubmit,
+                            showCancel = status?.accessTokenSaved == true || tokenInput.isNotBlank(),
                         )
                 }
                 errorMessage?.let { message ->
@@ -376,8 +474,28 @@ private fun DiscogsTokenInputState(
     tokenInput: String,
     isSavingToken: Boolean,
     onTokenInputChange: (String) -> Unit,
+    onTokenClear: () -> Unit,
+    onTokenCancel: () -> Unit,
     onTokenSubmit: () -> Unit,
+    showCancel: Boolean,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var revealedIndex by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(tokenInput) {
+        revealedIndex =
+            if (tokenInput.isNotEmpty()) {
+                tokenInput.lastIndex
+            } else {
+                null
+            }
+        if (revealedIndex != null) {
+            delay(TOKEN_REVEAL_MILLIS)
+            revealedIndex = null
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
         OutlinedTextField(
             modifier = Modifier.fillMaxWidth(),
@@ -386,36 +504,99 @@ private fun DiscogsTokenInputState(
             enabled = !isSavingToken,
             singleLine = true,
             label = { Text("API token") },
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = TokenRevealVisualTransformation(revealedIndex = revealedIndex),
+            trailingIcon = {
+                if (tokenInput.isNotBlank()) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Clear token",
+                        tint = VinylColors.TextSecondary,
+                        modifier =
+                            Modifier
+                                .size(22.dp)
+                                .clip(VinylShapes.Chip)
+                                .clickable(
+                                    onClickLabel = "Clear token",
+                                    role = Role.Button,
+                                    onClick = onTokenClear,
+                                ).padding(VinylSpacing.SpaceXs),
+                    )
+                }
+            },
         )
-        Button(
-            modifier = Modifier.widthIn(min = 120.dp),
-            enabled = tokenInput.isNotBlank() && !isSavingToken,
-            colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = VinylColors.AccentGreen,
-                    contentColor = VinylColors.TextOnAccent,
-                ),
-            onClick = onTokenSubmit,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Add,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
-                text = if (isSavingToken) "Saving" else "Add",
-            )
+        if (showCancel || tokenInput.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSavingToken,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.SurfaceSecondary,
+                            contentColor = VinylColors.TextSecondary,
+                        ),
+                    onClick = {
+                        onTokenCancel()
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                    },
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = tokenInput.isNotBlank() && !isSavingToken,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.AccentGreen,
+                            contentColor = VinylColors.TextOnAccent,
+                        ),
+                    onClick = onTokenSubmit,
+                ) {
+                    Text(if (isSavingToken) "Saving" else "Upload Token")
+                }
+            }
         }
+    }
+}
+
+private class TokenRevealVisualTransformation(
+    private val revealedIndex: Int?,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val maskedText =
+            buildString {
+                text.text.forEachIndexed { index, character ->
+                    append(
+                        if (index == revealedIndex) {
+                            character
+                        } else {
+                            '\u2022'
+                        },
+                    )
+                }
+            }
+
+        return TransformedText(
+            text = AnnotatedString(maskedText),
+            offsetMapping = OffsetMapping.Identity,
+        )
     }
 }
 
 @Composable
 private fun DiscogsTokenSavedState(
     status: DiscogsIntegrationStatus,
+    tokenManageMode: Boolean,
     isUpdatingSource: Boolean,
+    isDeletingToken: Boolean,
+    onTokenManageClick: () -> Unit,
     onTokenUpdateClick: () -> Unit,
+    onTokenDeleteClick: () -> Unit,
     onSourceOfTruthChanged: (CollectionSourceOfTruth) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
@@ -430,14 +611,74 @@ private fun DiscogsTokenSavedState(
                 tint = VinylColors.AccentGreen,
                 modifier = Modifier.size(20.dp),
             )
-            Text(
+            AccessTokenSavedLabel(
                 modifier = Modifier.weight(1f),
-                text = accessTokenSavedMessage(status),
-                color = VinylColors.AccentGreen,
-                style = MaterialTheme.typography.bodyMedium,
+                username = status.externalUsername,
             )
-            TextButton(onClick = onTokenUpdateClick) {
-                Text("Update")
+            Icon(
+                imageVector = if (tokenManageMode) Icons.Filled.Close else Icons.Filled.Edit,
+                contentDescription =
+                    if (tokenManageMode) {
+                        "Close Discogs token actions"
+                    } else {
+                        "Manage Discogs token"
+                    },
+                tint = VinylColors.AccentGreen,
+                modifier =
+                    Modifier
+                        .size(32.dp)
+                        .clip(VinylShapes.Chip)
+                        .clickable(
+                            onClickLabel =
+                                if (tokenManageMode) {
+                                    "Close Discogs token actions"
+                                } else {
+                                    "Manage Discogs token"
+                                },
+                            role = Role.Button,
+                            onClick = onTokenManageClick,
+                        ).padding(VinylSpacing.SpaceXs),
+            )
+        }
+        if (tokenManageMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isDeletingToken,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.AccentGreen,
+                            contentColor = VinylColors.TextOnAccent,
+                        ),
+                    onClick = onTokenUpdateClick,
+                ) {
+                    Text("Update")
+                }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isDeletingToken,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.SurfaceSecondary,
+                            contentColor = VinylColors.AccentOrange,
+                        ),
+                    onClick = onTokenDeleteClick,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                        text = if (isDeletingToken) "Deleting" else "Delete",
+                    )
+                }
             }
         }
         Row(
@@ -455,17 +696,52 @@ private fun DiscogsTokenSavedState(
                 style = MaterialTheme.typography.bodyLarge,
             )
             Switch(
-                checked = status.sourceOfTruth == CollectionSourceOfTruth.Discogs,
+                checked = status.sourceOfTruth == CollectionSourceOfTruth.App,
                 enabled = !isUpdatingSource,
                 onCheckedChange = { checked ->
                     onSourceOfTruthChanged(
                         if (checked) {
-                            CollectionSourceOfTruth.Discogs
-                        } else {
                             CollectionSourceOfTruth.App
+                        } else {
+                            CollectionSourceOfTruth.Discogs
                         },
                     )
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccessTokenSavedLabel(
+    username: String?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Access token saved for",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        username?.takeIf { it.isNotBlank() }?.let { name ->
+            Text(
+                modifier =
+                    Modifier
+                        .clip(VinylShapes.Chip)
+                        .background(VinylColors.GreenTint20)
+                        .border(1.dp, VinylColors.AccentGreen, VinylShapes.Chip)
+                        .padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+                text = name,
+                color = VinylColors.AccentGreen,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -479,12 +755,6 @@ private fun defaultDiscogsIntegrationStatus(): DiscogsIntegrationStatus =
         sourceOfTruth = CollectionSourceOfTruth.App,
         backendIdentifyEnabled = false,
     )
-
-private fun accessTokenSavedMessage(status: DiscogsIntegrationStatus): String =
-    status.externalUsername
-        ?.takeIf { it.isNotBlank() }
-        ?.let { "Access token saved for $it" }
-        ?: "Access token saved"
 
 private fun CollectionSourceOfTruth.displayName(): String =
     when (this) {
