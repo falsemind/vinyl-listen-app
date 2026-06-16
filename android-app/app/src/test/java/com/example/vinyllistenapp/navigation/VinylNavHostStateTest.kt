@@ -67,6 +67,15 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun identifyRoutesCarryCollectionAddFlowMode() {
+        assertEquals("capture_record?flowMode=collection_add", VinylRoutes.captureRecord(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
+        assertEquals(
+            "match_confirmation?flowMode=collection_add",
+            VinylRoutes.matchConfirmation(VinylRoutes.FLOW_MODE_COLLECTION_ADD),
+        )
+    }
+
+    @Test
     fun editSessionRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.SESSION_EDIT_PATTERN.isPortraitLockedOverflowRoute())
     }

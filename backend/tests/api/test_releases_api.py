@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.api.routes.releases import get_releases_repository
 from app.main import app
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
+from app.services.release_import_service import ReleaseImportResult
 
 
 def test_discogs_service_dependency_requires_saved_token() -> None:
@@ -179,6 +180,84 @@ def test_import_release_endpoint_maps_discogs_configuration_errors(
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/releases/import",
+            json={"discogs_release_id": 555123},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Discogs access token is required."}
+
+
+def test_import_release_to_collection_endpoint_returns_created_release_id(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import-to-collection",
+            json={"discogs_release_id": 555123},
+        )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "release_id": "release-123",
+        "discogs_release_id": 555123,
+        "status": "created",
+    }
+    assert service.collection_import_calls == [(555123, False)]
+    assert service.release.in_collection is True
+
+
+def test_import_release_to_collection_endpoint_returns_200_for_existing_release(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.import_result = ReleaseImportResult(release=service.release, created=False)
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import-to-collection",
+            json={"discogs_release_id": 555123, "force_refresh": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "updated"
+    assert service.collection_import_calls == [(555123, True)]
+
+
+def test_import_release_to_collection_endpoint_maps_discogs_errors(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.collection_import_error = DiscogsClientError("Discogs API error (404): release not found")
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import-to-collection",
+            json={"discogs_release_id": 999999},
+        )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Discogs API error (404): release not found"}
+
+
+def test_import_release_to_collection_endpoint_maps_discogs_configuration_errors(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    service.collection_import_error = DiscogsConfigurationError("Discogs token is not configured.")
+    override_release_import_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/releases/import-to-collection",
             json={"discogs_release_id": 555123},
         )
 

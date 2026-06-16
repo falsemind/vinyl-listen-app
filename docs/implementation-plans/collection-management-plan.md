@@ -29,6 +29,8 @@ First backend and Android slices are implemented:
 - Android Record Detail **Delete from collection** / **Add to collection** actions with confirmation and log-session CTA hiding for inactive records.
 - Backend Discogs collection folders endpoint, folder persistence, release-folder membership sync, and `folder_id` collection filtering.
 - Android Collection action-menu icons for settings/sync, expandable **Collection folders**, folder filter state, and green folder chip with counter.
+- Backend token-backed import-to-collection endpoint for server-owned Discogs imports.
+- Android Collection camera add flow using identify candidates, client-provided Discogs payload import for no-token users, collection membership activation, Record Details navigation, and Collection refresh on return.
 
 Still intentionally placeholder/future:
 
@@ -38,10 +40,9 @@ Still intentionally placeholder/future:
 
 Latest completed slice:
 
-- Added action-menu icons for **Collection settings** and **Sync Items** / **Load Discogs collection**.
-- Exposed Discogs collection folders when Discogs credentials are configured.
-- Added expandable **Collection folders** after Discogs folder metadata is imported, hidden when Discogs has no extra folders beyond the default folder.
-- Selecting a folder filters Records Collection to items in that Discogs folder, using the same green filter-chip and header counter pattern as artist/label filters opened from Record Details.
+- Wire the green Collection add CTA camera option into the identify flow as a collection-add path.
+- After the user confirms an identify candidate, import the full Discogs release metadata, mark/reactivate the release active in the app collection, and open Record Details for that release.
+- Keep the collection-add identify path usable for app-only/no-token users by fetching the selected full Discogs release from Android and importing it with the client-provided Discogs payload endpoint.
 
 ## Current Scope
 
@@ -62,11 +63,15 @@ Latest completed slice:
 - Backend folder membership persistence and collection filtering.
 - Android Collection action menu icon polish.
 - Android expandable **Collection folders** action-menu option with folder filters.
+- Backend import-to-collection contract for a confirmed Discogs candidate.
+- Android identify camera option that imports the confirmed candidate into collection and opens Record Details.
 
 ### Out of Scope
 
 - Full manual release entry form.
 - Full manual-entry persistence flow.
+- Manual-entry save/persistence.
+- Bulk candidate import or multi-select.
 - Scheduled sync.
 - Persisting a selected Discogs folder as collection source.
 - Treating folder filters as a source-of-truth or sync-scope setting.
@@ -93,6 +98,12 @@ Latest completed slice:
 - Tapping a folder name filters Records Collection to releases imported in that folder.
 - Folder filters should use a green chip with a result counter in the header, matching existing artist and label filter chips.
 - Clearing the folder chip returns to the unfiltered active collection.
+- Collection add CTA camera starts identify in collection-add mode.
+- Confirming an identify candidate imports full Discogs metadata before saving it to collection.
+- Token-backed backend import-to-collection is idempotent: an existing active release is updated, and an inactive release is reactivated instead of duplicated.
+- Android collection-add confirmation must not require a saved backend Discogs token. Existing local candidates reactivate membership directly; Discogs-only candidates are fetched on-device, imported as a client-provided Discogs payload, then reactivated in collection.
+- Successful collection-add confirmation opens Record Details for the saved release and refreshes Records Collection when the user returns.
+- Failed candidate import keeps the user in the identify/confirmation flow with visible retry/error handling.
 
 ## Backend Implementation
 
@@ -242,6 +253,39 @@ The response shape stays the same as the unfiltered collection list. `total` is 
 
 For this slice, folder rows filter the current collection only. Persisting a selected folder as the default sync scope remains out of scope.
 
+### Phase 4B: Identify Candidate Import to Collection
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add import-to-collection service method | 2-4h | Existing release import service and membership repository | Backend can fetch full Discogs release data with saved credentials, save/update the release row, and mark it active in collection. |
+| Add import-to-collection endpoint | 2-4h | Service method | Token-backed callers can submit a confirmed `discogs_release_id` and receive the saved release id/status. |
+| Preserve import error mapping | 1-2h | Existing import endpoint | Missing Discogs token, invalid payload, 404, and Discogs upstream errors map to the same clear statuses as `/releases/import`. |
+| Add idempotency coverage | 2-4h | Service method | Existing active releases update without duplicates; inactive releases reactivate with `collection_removed_at=null`. |
+| Add focused API tests | 2-4h | Endpoint | Endpoint returns `201` for new releases, `200` for existing releases, and calls the collection activation path. |
+
+Draft contract:
+
+```http
+POST /api/v1/releases/import-to-collection
+```
+
+```json
+{
+  "discogs_release_id": 555123,
+  "force_refresh": false
+}
+```
+
+```json
+{
+  "release_id": "release-123",
+  "discogs_release_id": 555123,
+  "status": "created"
+}
+```
+
+This endpoint should reuse the full Discogs release import path rather than saving search-result/candidate summary data. It should set `in_collection=true`, clear `collection_removed_at`, set `collection_added_at` to the current time, and update `last_discogs_sync_at`. `discogs_instance_id` remains `null` for records added from identify/search rather than a Discogs collection item instance. It remains token-backed because the backend performs the Discogs fetch.
+
 ## Android Implementation
 
 ### Phase 5: API Client and Models
@@ -271,6 +315,16 @@ For this slice, folder rows filter the current collection only. Persisting a sel
 | Add camera option | 1-2h | Existing identify navigation | Camera icon opens existing identify camera flow. |
 | Add manual option | 2-4h | Navigation | Pencil icon opens new manual-entry placeholder screen. |
 | Add placeholder manual screen | 1-2h | Navigation | Screen has header text for manual release info entry and saving into collection. |
+
+### Phase 7A: Identify-to-Collection Confirmation
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add collection-add identify mode | 2-4h | Existing identify navigation | Camera CTA launches the existing identify flow with a mode flag or route argument that distinguishes collection add from session logging. |
+| Call collection save on candidate confirmation | 2-4h | Backend Phase 4B and existing client Discogs import | Confirming a local candidate reactivates membership; confirming a Discogs-only candidate fetches full metadata on-device, imports the client payload, and marks collection membership active. |
+| Navigate to Record Details after save | 1-2h | Import response | Successful import opens the saved release's Record Details screen. |
+| Refresh Collection on return | 1-2h | Collection refresh key | Returning from details shows the newly added record without manual sync/reload. |
+| Add focused ViewModel/navigation tests | 2-4h | Repository method and route mode | Confirmation path calls the correct repository method and handles success/error states. |
 
 ### Phase 8: Record Detail Remove/Restore
 
@@ -318,6 +372,9 @@ Collection source setting
 
 Existing identify flow
   -> Collection add CTA camera option
+  -> Identify collection-add mode
+  -> Import confirmed candidate to collection
+  -> Record Details for saved release
 
 Navigation shell
   -> Manual-entry placeholder screen
@@ -338,7 +395,8 @@ Discogs credentials and folder endpoint
 Current focused verification:
 
 - `poetry run pytest tests/api/test_collection_api.py tests/api/test_releases_api.py tests/services/test_collection_sync_service.py tests/services/test_sessions_service.py tests/migrations/test_schema_migration.py`
-- `poetry run ruff check app tests/api/test_collection_api.py tests/api/test_releases_api.py tests/services/test_collection_sync_service.py tests/services/test_sessions_service.py tests/migrations/test_schema_migration.py`
+- `poetry run pytest tests/services/test_release_import_service.py tests/api/test_releases_api.py`
+- `poetry run ruff check app tests/api/test_collection_api.py tests/api/test_releases_api.py tests/services/test_collection_sync_service.py tests/services/test_release_import_service.py tests/services/test_sessions_service.py tests/migrations/test_schema_migration.py`
 - `poetry run alembic heads`
 
 Checklist:
@@ -360,6 +418,10 @@ Checklist:
 - `GET /collection/releases?folder_id=...` returns only active collection records in that folder.
 - Folder-filtered `total` matches the folder-filtered active record count.
 - Folder filter ignores inactive/deleted collection records.
+- `POST /releases/import-to-collection` imports full Discogs metadata before saving membership.
+- Import-to-collection marks new releases active in collection.
+- Import-to-collection reactivates inactive releases without duplicate rows.
+- Import-to-collection preserves existing import error behavior for Discogs token/upstream failures.
 
 ### Android
 
@@ -377,7 +439,10 @@ Checklist:
 - Toggle ON displays `App`; toggle OFF displays `Discogs`.
 - Discogs sync actions show confirmation copy before starting a sync job.
 - Collection add CTA expands left and collapses back to plus.
-- Camera option opens identify camera flow.
+- Camera option opens identify camera flow in collection-add mode.
+- Confirming an identify candidate imports and saves the full release to collection.
+- Successful candidate import opens Record Details for the saved release.
+- Returning to Collection shows the added release without manual refresh.
 - Pencil option opens manual-entry placeholder.
 - Active Record Detail shows **Delete from collection** and log-session CTA.
 - Delete confirmation appears before backend mutation.
@@ -428,6 +493,8 @@ Checklist:
 14. Android expandable **Collection folders** row and visibility rules.
 15. Android folder filter state, green chip, counter, and clear behavior.
 16. Android folder overflow screen and sync confirmation.
-17. Focused backend and Android verification.
+17. Backend import-to-collection service/API for confirmed identify candidates.
+18. Android identify collection-add mode, import confirmation, detail navigation, and collection refresh.
+19. Focused backend and Android verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.

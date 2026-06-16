@@ -189,7 +189,7 @@ private fun JSONObject.toDiscogsReleaseSearchResult(): ReleaseSearchResult {
         year = optNullableInt("year"),
         label = optJSONArray("label").orEmpty().mapStrings().firstOrNull(),
         catalogNumber = optNullableString("catno"),
-        thumbnailUrl = optNullableString("thumb"),
+        thumbnailUrl = optNullableString("thumb") ?: optNullableString("cover_image"),
         format =
             optJSONArray("format")
                 .orEmpty()

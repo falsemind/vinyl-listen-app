@@ -49,7 +49,11 @@ Home
  │
  └── Collection
         ├── Settings
-        ├── CaptureRecord
+        ├── CaptureRecord (collection_add)
+        │     ├── Processing
+        │     ├── BarcodeProcessing
+        │     └── MatchConfirmation
+        │            └── RecordDetail
         ├── CollectionManualEntry
         └── CollectionManualSearch
 ```
@@ -64,10 +68,10 @@ Home, Analytics, Insights, and Collection are active bottom-navigation routes. S
 |---|---|
 |Home|`home`|
 |Recent Sessions|`recent_sessions`|
-|Capture Record|`capture_record`|
-|Processing|`processing?imageUri={imageUri}`|
-|Barcode Processing|`barcode_processing?barcode={barcode}`|
-|Match Confirmation|`match_confirmation`|
+|Capture Record|`capture_record?flowMode={flowMode}`|
+|Processing|`processing?imageUri={imageUri}&flowMode={flowMode}`|
+|Barcode Processing|`barcode_processing?barcode={barcode}&flowMode={flowMode}`|
+|Match Confirmation|`match_confirmation?flowMode={flowMode}`|
 |Manual Search|`manual_search?barcode={barcode}`|
 |Collection Manual Search|`collection_manual_search`|
 |Collection Manual Entry|`collection_manual_entry`|
@@ -97,7 +101,9 @@ Current backend endpoints used by these routes:
 |Identify uploaded/captured image synchronously|`POST /api/v1/identify`|
 |Manual Discogs search|`GET /api/v1/releases/search`|
 |Barcode scan release search|`GET /api/v1/releases/search?barcode={barcode}`|
-|Import a Discogs release before logging|`POST /api/v1/releases/import`|
+|Import a Discogs release before logging with backend token|`POST /api/v1/releases/import`|
+|Import a client-fetched Discogs release|`POST /api/v1/releases/import/client-discogs`|
+|Import and activate a Discogs release with backend token|`POST /api/v1/releases/import-to-collection`|
 |Load record detail metadata|`GET /api/v1/releases/{release_id}`|
 |Deactivate release collection membership|`POST /api/v1/releases/{release_id}/collection/deactivate`|
 |Reactivate release collection membership|`POST /api/v1/releases/{release_id}/collection/reactivate`|
@@ -123,6 +129,8 @@ The identify job flow returns candidates inside `result` when the job reaches `c
 
 Barcode scan starts from the existing `CaptureRecord` camera preview. After a stable on-device UPC/EAN read, the client shows a short captured state, opens `barcode_processing?barcode={barcode}`, searches releases by barcode, and routes to the same match confirmation candidates used by image identify. No-result, timeout, and API failure states can retry scanning, open manual search with the barcode prefilled, or cancel back out of the identify flow.
 
+`flowMode` is `session` by default and `collection_add` when the Records Collection add camera option starts the flow. Session mode confirms into Session Logging. Collection-add mode confirms into a collection save: existing local candidates reactivate membership directly, while Discogs-only candidates are fetched on-device, imported with `POST /api/v1/releases/import/client-discogs`, reactivated with `POST /api/v1/releases/{release_id}/collection/reactivate`, and then opened in Record Detail.
+
 Identify candidates include:
 
 ```
@@ -137,7 +145,7 @@ session_logging/{releaseId}
 record_detail/{releaseId}
 ```
 
-If only `discogs_release_id` is available, the app must import the release first:
+If only `discogs_release_id` is available in session mode, the app must import the release first. Token-backed callers can use:
 
 ```
 POST /api/v1/releases/import
@@ -147,7 +155,7 @@ then
 session_logging/{releaseId}
 ```
 
-Manual Search uses `GET /api/v1/releases/search` to list Discogs candidates. Search results do not have an internal `release_id`, so the app imports the selected `discogs_release_id` with `POST /api/v1/releases/import` before navigating to `session_logging/{releaseId}`.
+Android no-token manual search and barcode search use `DiscogsApiClient` directly on the device. Search results do not have an internal `release_id`, so the app fetches the selected full Discogs release, imports it with `POST /api/v1/releases/import/client-discogs`, then navigates to `session_logging/{releaseId}`.
 
 Collection Manual Search uses the same screen shell but calls `GET /api/v1/collection/search`. Results include internal `release_id`, so selecting one navigates directly to `record_detail/{releaseId}` without importing from Discogs.
 
@@ -472,7 +480,7 @@ Browser for active app collection membership with optional Discogs sync and add-
 |Tap Collection folders row|expands/collapses folder options|
 |Tap folder option|stays on `collection` with `folder_id` filter and green folder chip|
 |Clear folder chip|stays on `collection` and reloads unfiltered active records|
-|Tap add camera option|`capture_record`|
+|Tap add camera option|`capture_record?flowMode=collection_add`|
 |Tap add pencil option|`collection_manual_entry`|
 |Tap search CTA|`collection_manual_search`|
 |Tap Home tab|`home`|

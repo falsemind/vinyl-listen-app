@@ -21,6 +21,7 @@ class InMemoryReleasesRepository:
     def __init__(self, release: Releases | None = None) -> None:
         self.release = release
         self.saved_payloads: list[tuple[int, str]] = []
+        self.collection_mark_calls: list[tuple[str, int | None, datetime | None, datetime]] = []
 
     def get_by_id(self, _db, release_id: str) -> Releases | None:
         if self.release and self.release.id == release_id:
@@ -64,6 +65,23 @@ class InMemoryReleasesRepository:
 
         self.saved_payloads.append((data.discogs_release_id, data.title))
         return self.release, created
+
+    def mark_in_collection(
+        self,
+        _db,
+        release: Releases,
+        *,
+        discogs_instance_id: int | None,
+        collection_added_at: datetime | None,
+        synced_at: datetime,
+    ) -> Releases:
+        self.collection_mark_calls.append((release.id, discogs_instance_id, collection_added_at, synced_at))
+        release.in_collection = True
+        release.discogs_instance_id = discogs_instance_id
+        release.collection_added_at = collection_added_at
+        release.collection_removed_at = None
+        release.last_discogs_sync_at = synced_at
+        return release
 
 
 class InMemoryDiscogsReleaseRepository:

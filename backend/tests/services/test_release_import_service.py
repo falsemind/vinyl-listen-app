@@ -63,6 +63,71 @@ def test_import_release_updates_existing_release_when_present(
     assert discogs_service.calls == [(555123, True)]
 
 
+def test_import_release_to_collection_imports_full_release_and_marks_active(
+    discogs_release_payload,
+    release_import_discogs_service_factory,
+    release_import_repository_factory,
+    build_release_import_service,
+) -> None:
+    discogs_service = release_import_discogs_service_factory(discogs_release_payload)
+    repository = release_import_repository_factory()
+    service = build_release_import_service(discogs_service=discogs_service, repository=repository)
+
+    result = service.import_release_to_collection(db=object(), discogs_release_id=555123)
+
+    assert result.created is True
+    assert result.release.id == "release-123"
+    assert result.release.in_collection is True
+    assert result.release.collection_added_at is not None
+    assert result.release.collection_removed_at is None
+    assert result.release.discogs_instance_id is None
+    assert result.release.last_discogs_sync_at == result.release.collection_added_at
+    assert discogs_service.calls == [(555123, False)]
+    assert len(repository.collection_mark_calls) == 1
+    release_id, discogs_instance_id, collection_added_at, synced_at = repository.collection_mark_calls[0]
+    assert release_id == "release-123"
+    assert discogs_instance_id is None
+    assert collection_added_at == synced_at
+
+
+def test_import_release_to_collection_reactivates_existing_release(
+    discogs_release_payload,
+    release_import_discogs_service_factory,
+    release_import_repository_factory,
+    build_release_import_service,
+) -> None:
+    existing_release = Releases(
+        id="release-123",
+        discogs_release_id=555123,
+        artist="Old Artist",
+        title="Old Title",
+        year=1990,
+        label=None,
+        catalog_number=None,
+        barcode=None,
+        genres=None,
+        styles=None,
+        cover_image_url=None,
+        in_collection=False,
+        collection_removed_at=datetime(2026, 6, 1, tzinfo=UTC),
+        created_at=datetime(2026, 4, 18, tzinfo=UTC),
+        updated_at=datetime(2026, 4, 18, tzinfo=UTC),
+    )
+    discogs_service = release_import_discogs_service_factory(discogs_release_payload)
+    repository = release_import_repository_factory(existing_release)
+    service = build_release_import_service(discogs_service=discogs_service, repository=repository)
+
+    result = service.import_release_to_collection(db=object(), discogs_release_id=555123, force_refresh=True)
+
+    assert result.created is False
+    assert result.release is existing_release
+    assert result.release.in_collection is True
+    assert result.release.collection_removed_at is None
+    assert result.release.title == "Music Has The Right To Children"
+    assert discogs_service.calls == [(555123, True)]
+    assert len(repository.collection_mark_calls) == 1
+
+
 def test_import_release_requires_backend_discogs_token_when_token_missing() -> None:
     class MissingTokenIntegrationService:
         def __init__(self) -> None:

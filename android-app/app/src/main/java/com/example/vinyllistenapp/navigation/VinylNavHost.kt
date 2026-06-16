@@ -41,6 +41,7 @@ import com.example.vinyllistenapp.ui.screens.HomeScreen
 import com.example.vinyllistenapp.ui.screens.ManualCollectionEntryScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchMode
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
+import com.example.vinyllistenapp.ui.screens.MatchConfirmationMode
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
 import com.example.vinyllistenapp.ui.screens.MonthSessionsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.MoodDistributionScreen
@@ -85,6 +86,19 @@ fun VinylNavHost(
     suspend fun refreshTimedSession() {
         runCatching { apiClient.getActiveSessionGroup() }
             .onSuccess { activeTimedSession = it }
+    }
+
+    fun notifyCollectionMembershipChanged() {
+        val handle =
+            sequenceOf(VinylRoutes.COLLECTION_PATTERN, VinylRoutes.COLLECTION)
+                .mapNotNull { route ->
+                    runCatching { navController.getBackStackEntry(route).savedStateHandle }.getOrNull()
+                }.firstOrNull()
+                ?: return
+        handle.set(
+            COLLECTION_MEMBERSHIP_REFRESH_KEY,
+            (handle.get<Int>(COLLECTION_MEMBERSHIP_REFRESH_KEY) ?: 0) + 1,
+        )
     }
 
     fun startTimedSession(
@@ -163,7 +177,7 @@ fun VinylNavHost(
             composable(VinylRoutes.HOME) {
                 HomeScreen(
                     apiClient = apiClient,
-                    onLogSession = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
+                    onLogSession = { navController.navigate(VinylRoutes.captureRecord()) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onOpenInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
@@ -188,19 +202,33 @@ fun VinylNavHost(
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                 )
             }
-            composable(VinylRoutes.CAPTURE_RECORD) {
+            composable(
+                route = VinylRoutes.CAPTURE_RECORD_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.FLOW_MODE) {
+                            type = NavType.StringType
+                            defaultValue = VinylRoutes.FLOW_MODE_SESSION
+                        },
+                    ),
+            ) { backStackEntry ->
+                val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 CaptureRecordScreen(
                     apiClient = apiClient,
-                    onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri)) },
-                    onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                    onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
+                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onBarcodeDetected = { barcode ->
-                        navController.navigate(VinylRoutes.barcodeProcessing(barcode)) {
-                            popUpTo(VinylRoutes.CAPTURE_RECORD) { inclusive = true }
+                        navController.navigate(VinylRoutes.barcodeProcessing(barcode, flowMode)) {
+                            popUpTo(VinylRoutes.CAPTURE_RECORD_PATTERN) { inclusive = true }
                         }
                     },
                     onDismiss = {
-                        navController.navigate(VinylRoutes.HOME) {
-                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(VinylRoutes.HOME) {
+                                popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            }
                         }
                     },
                 )
@@ -216,27 +244,38 @@ fun VinylNavHost(
                     ),
             ) { backStackEntry ->
                 val barcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty()
+                val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 BarcodeProcessingScreen(
                     barcode = barcode,
                     onComplete = { candidates ->
                         latestCandidates = candidates
-                        navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {
+                        navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
                             popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
                         }
                     },
                     onRetryScan = {
-                        navController.navigate(VinylRoutes.CAPTURE_RECORD) {
+                        navController.navigate(VinylRoutes.captureRecord(flowMode)) {
                             popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
                         }
                     },
                     onManualSearch = { detectedBarcode ->
-                        navController.navigate(VinylRoutes.manualSearchBarcode(detectedBarcode)) {
-                            popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                        if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+                            navController.navigate(VinylRoutes.COLLECTION_MANUAL_SEARCH) {
+                                popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate(VinylRoutes.manualSearchBarcode(detectedBarcode)) {
+                                popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
+                            }
                         }
                     },
                     onDismiss = {
-                        navController.navigate(VinylRoutes.HOME) {
-                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(VinylRoutes.HOME) {
+                                popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            }
                         }
                     },
                 )
@@ -252,32 +291,69 @@ fun VinylNavHost(
                         },
                     ),
             ) { backStackEntry ->
+                val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 ProcessingScreen(
                     imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
                     apiClient = apiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
-                        navController.navigate(VinylRoutes.MATCH_CONFIRMATION) {
+                        navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
                     },
-                    onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onDismiss = {
-                        navController.navigate(VinylRoutes.HOME) {
-                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+                            if (!navController.popBackStack(VinylRoutes.COLLECTION_PATTERN, inclusive = false)) {
+                                navController.navigate(VinylRoutes.COLLECTION)
+                            }
+                        } else {
+                            navController.navigate(VinylRoutes.HOME) {
+                                popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            }
                         }
                     },
                 )
             }
-            composable(VinylRoutes.MATCH_CONFIRMATION) {
+            composable(
+                route = VinylRoutes.MATCH_CONFIRMATION_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.FLOW_MODE) {
+                            type = NavType.StringType
+                            defaultValue = VinylRoutes.FLOW_MODE_SESSION
+                        },
+                    ),
+            ) { backStackEntry ->
+                val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
+                val matchMode = flowMode.toMatchConfirmationMode()
                 MatchConfirmationScreen(
                     candidates = latestCandidates,
                     apiClient = apiClient,
-                    onConfirm = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
-                    onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                    mode = matchMode,
+                    onConfirm = { releaseId ->
+                        if (matchMode == MatchConfirmationMode.CollectionAdd) {
+                            notifyCollectionMembershipChanged()
+                            val hasCollectionBackStack =
+                                runCatching { navController.getBackStackEntry(VinylRoutes.COLLECTION_PATTERN) }.isSuccess ||
+                                    runCatching { navController.getBackStackEntry(VinylRoutes.COLLECTION) }.isSuccess
+                            navController.navigate(VinylRoutes.recordDetail(releaseId)) {
+                                if (hasCollectionBackStack) {
+                                    popUpTo(VinylRoutes.COLLECTION_PATTERN)
+                                }
+                            }
+                        } else {
+                            navController.navigate(VinylRoutes.sessionLogging(releaseId))
+                        }
+                    },
+                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onDismiss = {
-                        navController.navigate(VinylRoutes.HOME) {
-                            popUpTo(VinylRoutes.HOME) { inclusive = true }
+                        if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(VinylRoutes.HOME) {
+                                popUpTo(VinylRoutes.HOME) { inclusive = true }
+                            }
                         }
                     },
                 )
@@ -343,7 +419,7 @@ fun VinylNavHost(
                                     popUpTo(VinylRoutes.RECORD_DETAIL_PATTERN) { inclusive = true }
                                 }
 
-                                VinylRoutes.MATCH_CONFIRMATION,
+                                VinylRoutes.MATCH_CONFIRMATION_PATTERN,
                                 VinylRoutes.MANUAL_SEARCH,
                                 -> {
                                     popUpTo(VinylRoutes.HOME)
@@ -497,7 +573,9 @@ fun VinylNavHost(
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                     onCollectionSettings = { navController.navigate(VinylRoutes.SETTINGS) },
-                    onIdentifyRecord = { navController.navigate(VinylRoutes.CAPTURE_RECORD) },
+                    onIdentifyRecord = {
+                        navController.navigate(VinylRoutes.captureRecord(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
+                    },
                     onManualEntry = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_ENTRY) },
                     onManualSearch = { navController.navigate(VinylRoutes.COLLECTION_MANUAL_SEARCH) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
@@ -621,10 +699,10 @@ fun VinylNavHost(
 internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
     this in
         setOf(
-            VinylRoutes.CAPTURE_RECORD,
+            VinylRoutes.CAPTURE_RECORD_PATTERN,
             VinylRoutes.PROCESSING_PATTERN,
             VinylRoutes.BARCODE_PROCESSING_PATTERN,
-            VinylRoutes.MATCH_CONFIRMATION,
+            VinylRoutes.MATCH_CONFIRMATION_PATTERN,
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
@@ -638,11 +716,31 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
 private fun String?.isIdentifyFlowWithoutTimedSessionBanner(): Boolean =
     this in
         setOf(
-            VinylRoutes.CAPTURE_RECORD,
+            VinylRoutes.CAPTURE_RECORD_PATTERN,
             VinylRoutes.PROCESSING_PATTERN,
             VinylRoutes.BARCODE_PROCESSING_PATTERN,
-            VinylRoutes.MATCH_CONFIRMATION,
+            VinylRoutes.MATCH_CONFIRMATION_PATTERN,
         )
+
+private fun String?.asIdentifyFlowMode(): String =
+    when (this) {
+        VinylRoutes.FLOW_MODE_COLLECTION_ADD -> VinylRoutes.FLOW_MODE_COLLECTION_ADD
+        else -> VinylRoutes.FLOW_MODE_SESSION
+    }
+
+private fun String.manualSearchRoute(): String =
+    if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+        VinylRoutes.COLLECTION_MANUAL_SEARCH
+    } else {
+        VinylRoutes.MANUAL_SEARCH
+    }
+
+private fun String.toMatchConfirmationMode(): MatchConfirmationMode =
+    if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+        MatchConfirmationMode.CollectionAdd
+    } else {
+        MatchConfirmationMode.SessionLogging
+    }
 
 private fun collectionFolderFromArgs(
     id: String?,

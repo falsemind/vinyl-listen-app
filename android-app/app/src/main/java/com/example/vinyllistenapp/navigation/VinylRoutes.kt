@@ -6,12 +6,17 @@ import com.example.vinyllistenapp.domain.CollectionFolder
 object VinylRoutes {
     const val HOME = "home"
     const val CAPTURE_RECORD = "capture_record"
+    const val CAPTURE_RECORD_PATTERN = "$CAPTURE_RECORD?flowMode={flowMode}"
     const val PROCESSING = "processing"
-    const val PROCESSING_PATTERN = "processing?imageUri={imageUri}"
+    const val PROCESSING_PATTERN = "processing?imageUri={imageUri}&flowMode={flowMode}"
     const val IMAGE_URI = "imageUri"
     const val BARCODE_PROCESSING = "barcode_processing"
-    const val BARCODE_PROCESSING_PATTERN = "$BARCODE_PROCESSING?barcode={barcode}"
+    const val BARCODE_PROCESSING_PATTERN = "$BARCODE_PROCESSING?barcode={barcode}&flowMode={flowMode}"
     const val MATCH_CONFIRMATION = "match_confirmation"
+    const val MATCH_CONFIRMATION_PATTERN = "$MATCH_CONFIRMATION?flowMode={flowMode}"
+    const val FLOW_MODE = "flowMode"
+    const val FLOW_MODE_SESSION = "session"
+    const val FLOW_MODE_COLLECTION_ADD = "collection_add"
     const val MANUAL_SEARCH = "manual_search"
     const val MANUAL_SEARCH_PATTERN = "$MANUAL_SEARCH?barcode={barcode}"
     const val BARCODE = "barcode"
@@ -76,9 +81,19 @@ object VinylRoutes {
             "&$FOLDER_NAME=${Uri.encode(folder.name)}" +
             folder.count?.let { count -> "&$FOLDER_COUNT=$count" }.orEmpty()
 
-    fun processing(imageUri: Uri): String = "processing?imageUri=${Uri.encode(imageUri.toString())}"
+    fun captureRecord(flowMode: String = FLOW_MODE_SESSION): String = "$CAPTURE_RECORD?$FLOW_MODE=$flowMode"
 
-    fun barcodeProcessing(barcode: String): String = "$BARCODE_PROCESSING?$BARCODE=${Uri.encode(barcode)}"
+    fun processing(
+        imageUri: Uri,
+        flowMode: String = FLOW_MODE_SESSION,
+    ): String = "processing?imageUri=${Uri.encode(imageUri.toString())}&$FLOW_MODE=${Uri.encode(flowMode)}"
+
+    fun barcodeProcessing(
+        barcode: String,
+        flowMode: String = FLOW_MODE_SESSION,
+    ): String = "$BARCODE_PROCESSING?$BARCODE=${Uri.encode(barcode)}&$FLOW_MODE=${Uri.encode(flowMode)}"
+
+    fun matchConfirmation(flowMode: String = FLOW_MODE_SESSION): String = "$MATCH_CONFIRMATION?$FLOW_MODE=$flowMode"
 
     fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${Uri.encode(barcode)}"
 }
