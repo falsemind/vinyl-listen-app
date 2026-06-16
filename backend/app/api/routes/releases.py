@@ -211,6 +211,41 @@ def import_release(
     )
 
 
+@router.post("/import-to-collection", response_model=ReleaseImportResponse)
+def import_release_to_collection(
+    payload: ReleaseImportRequest,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+):
+    logger.info("Importing Discogs release %s to collection", payload.discogs_release_id)
+
+    try:
+        result = service.import_release_to_collection(
+            db,
+            payload.discogs_release_id,
+            force_refresh=payload.force_refresh,
+        )
+    except DiscogsConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discogs access token is required.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+    except DiscogsClientError as error:
+        error_message = str(error)
+        status_code = status.HTTP_404_NOT_FOUND if "(404)" in error_message else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=status_code, detail=error_message) from error
+
+    response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
+    return ReleaseImportResponse(
+        release_id=result.release.id,
+        discogs_release_id=result.release.discogs_release_id,
+        status=result.status,
+    )
+
+
 @router.post("/import/client-discogs", response_model=ReleaseImportResponse)
 def import_client_discogs_release(
     payload: ClientDiscogsReleaseImportRequest,

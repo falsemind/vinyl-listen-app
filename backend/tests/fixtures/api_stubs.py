@@ -184,6 +184,8 @@ class StubReleaseImportService:
         self.import_result = ReleaseImportResult(release=self.release, created=True)
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
+        self.collection_import_error: Exception | None = None
+        self.collection_import_calls: list[tuple[int, bool]] = []
         self.client_import_error: Exception | None = None
         self.client_import_calls: list[dict] = []
         self.refresh_calls: list[str] = []
@@ -213,6 +215,21 @@ class StubReleaseImportService:
         self.import_calls.append((discogs_release_id, force_refresh))
         if self.import_error is not None:
             raise self.import_error
+        return self.import_result
+
+    def import_release_to_collection(
+        self,
+        _db,
+        discogs_release_id: int,
+        *,
+        force_refresh: bool = False,
+    ) -> ReleaseImportResult:
+        self.collection_import_calls.append((discogs_release_id, force_refresh))
+        if self.collection_import_error is not None:
+            raise self.collection_import_error
+        self.release.in_collection = True
+        self.release.collection_added_at = datetime(2026, 6, 16, tzinfo=UTC)
+        self.release.collection_removed_at = None
         return self.import_result
 
     def import_client_discogs_release(self, _db, raw_payload: dict) -> ReleaseImportResult:

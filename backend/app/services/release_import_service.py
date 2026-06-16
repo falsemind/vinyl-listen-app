@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -73,6 +74,28 @@ class ReleaseImportService:
             created,
         )
         return ReleaseImportResult(release=release, created=created)
+
+    def import_release_to_collection(
+        self,
+        db: Session,
+        discogs_release_id: int,
+        *,
+        force_refresh: bool = False,
+    ) -> ReleaseImportResult:
+        result = self.import_release(
+            db,
+            discogs_release_id,
+            force_refresh=force_refresh,
+        )
+        synced_at = datetime.now(UTC)
+        release = self._repository.mark_in_collection(
+            db,
+            result.release,
+            discogs_instance_id=None,
+            collection_added_at=synced_at,
+            synced_at=synced_at,
+        )
+        return ReleaseImportResult(release=release, created=result.created)
 
     def _build_discogs_service_for_import(self, db: Session) -> DiscogsService:
         return self._discogs_integration_service.build_discogs_service(db)
