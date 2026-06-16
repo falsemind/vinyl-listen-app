@@ -95,6 +95,10 @@ collection_sync_jobs
 collection_settings
     └── stores the app-wide collection source of truth
 
+collection_folders
+    └── release_collection_folders
+        └── maps imported releases to Discogs collection folders
+
 provider_integrations
     └── stores encrypted provider tokens and external account identity
 
@@ -210,6 +214,66 @@ Example query:
 SELECT *
 FROM releases
 WHERE 'Techno' = ANY(styles);
+```
+
+---
+
+# Table: collection_folders
+
+Stores Discogs collection folder metadata imported during collection sync.
+Folder rows power Collection screen filters only; they do not change source of
+truth or sync scope.
+
+## Columns
+
+| Column              | Type      | Notes                                      |
+| ------------------- | --------- | ------------------------------------------ |
+| id                  | INTEGER   | Primary key                                |
+| discogs_folder_id   | BIGINT    | Stable Discogs folder id; unique           |
+| name                | TEXT      | Discogs folder display name                |
+| item_count          | INTEGER   | Raw Discogs folder count, if provided      |
+| is_default          | BOOLEAN   | `true` for Discogs default folder `0`      |
+| last_discogs_sync_at | TIMESTAMP | Last sync that refreshed this folder       |
+| created_at          | TIMESTAMP | Row creation time                          |
+| updated_at          | TIMESTAMP | Last folder metadata update                |
+
+## Indexes
+
+```sql
+UNIQUE (discogs_folder_id)
+INDEX (discogs_folder_id)
+INDEX (is_default)
+```
+
+---
+
+# Table: release_collection_folders
+
+Join table linking local releases to Discogs collection folders without
+duplicating release metadata. Sync replaces memberships for each imported folder.
+Collection folder filters always return active local collection records.
+
+## Columns
+
+| Column              | Type      | Notes                                      |
+| ------------------- | --------- | ------------------------------------------ |
+| id                  | INTEGER   | Primary key                                |
+| release_id          | UUID      | Foreign key to `releases.id`               |
+| collection_folder_id | INTEGER  | Foreign key to `collection_folders.id`     |
+| discogs_instance_id | BIGINT    | Discogs collection instance id for that folder membership |
+| date_added          | TIMESTAMP | Discogs date the release was added to that folder |
+| last_discogs_sync_at | TIMESTAMP | Last sync that refreshed this membership   |
+| created_at          | TIMESTAMP | Row creation time                          |
+| updated_at          | TIMESTAMP | Last membership update                     |
+
+## Constraints and Indexes
+
+```sql
+UNIQUE (release_id, collection_folder_id)
+FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
+FOREIGN KEY (collection_folder_id) REFERENCES collection_folders(id) ON DELETE CASCADE
+INDEX (release_id)
+INDEX (collection_folder_id)
 ```
 
 ---

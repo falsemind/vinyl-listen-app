@@ -493,7 +493,9 @@ AI Insights screen can answer collection-grounded questions from local listening
 
 Goal: add Discogs-backed collection management while preserving historical listening data.
 
-Status: planned.
+Status: in progress. Core collection membership, source-of-truth settings,
+manual sync jobs, active collection listing, add/remove membership controls, and
+Discogs folder filters are implemented.
 
 Source plan:
 
@@ -510,6 +512,8 @@ Backend collection sync job API
 Collection membership reconciliation
 Removed-record historical access
 Collection pagination and record detail states
+Collection source-of-truth settings
+Discogs collection folder filters
 ```
 
 Tasks:
@@ -517,12 +521,14 @@ Tasks:
 ```
 Add Collection bottom-navigation screen
 Move Settings access to the Home screen top-right icon
-Load Discogs username and token from backend environment variables
-Fetch all Discogs folder 0 collection pages
+Store Discogs token through provider integrations
+Fetch all Discogs default collection pages
+Fetch Discogs collection folders and folder memberships
 Collapse duplicate Discogs instances into one app record per release
 Mark records removed from collection without deleting listening history
 Expose background sync progress for Android polling
 Show latest 25 active collection records with Show More pagination
+Show green filter chips and counters for artist, label, favorites, and folders
 Preserve removed records in historical session and detail screens
 Show removed-from-collection messaging on record detail
 ```
@@ -537,6 +543,7 @@ Add Records Collection Android screen
 Move Settings from bottom nav to Home action
 Add removed-record detail state
 Document Discogs collection sync configuration
+Add collection folder filters
 ```
 
 Deliverable:

@@ -705,6 +705,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 | `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
 | `label` | string | Optional label-name filter, 1..255 characters. Matches the release label field and cached Discogs release data so multi-label releases can be shown from Record Details. |
 | `favorite` | boolean | Optional flag. When `true`, returns only records marked as personal favorites. |
+| `folder_id` | integer | Optional Discogs collection folder id. When present, returns active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
 
 ### Response
 
@@ -734,6 +735,42 @@ Returns active collection records ordered by Discogs collection add date, newest
   "has_favorites": true
 }
 ```
+
+---
+
+## GET /collection/folders
+
+Returns persisted Discogs collection folders for the Collection action menu.
+When Discogs credentials are missing or inactive, the endpoint returns a safe
+not-configured response so Android can hide folder controls without surfacing an
+error. Default-only Discogs collections return `has_extra_folders=false`; Android
+hides the folders action unless at least one non-default folder exists.
+
+### Response
+
+```json
+{
+  "discogs_configured": true,
+  "folders": [
+    {
+      "id": 0,
+      "name": "All",
+      "count": 120,
+      "is_default": true
+    },
+    {
+      "id": 123,
+      "name": "Shelf A",
+      "count": 42,
+      "is_default": false
+    }
+  ],
+  "has_extra_folders": true
+}
+```
+
+Folder rows are filters for the current app collection only. They do not change
+the collection source of truth and do not persist a folder-specific sync scope.
 
 ---
 

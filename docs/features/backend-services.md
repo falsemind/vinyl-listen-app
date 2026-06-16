@@ -13,8 +13,8 @@ description: This document explains the backend service layer in `backend/app/se
 | `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
 | `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
 | `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
-| `discogs_service.py` | Call Discogs search/release APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
-| `collection_sync_service.py` | Sync Discogs collection metadata while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
+| `discogs_service.py` | Call Discogs search/release/collection APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
+| `collection_sync_service.py` | Sync Discogs collection metadata and folder memberships while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `CollectionFoldersRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
 | `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
@@ -262,6 +262,32 @@ The route:
 5. Upserts the raw payload into `discogs_release_cache`.
 
 The release cache preserves raw Discogs JSON. Mapping into local release fields happens in `release_mapper.py`.
+
+## CollectionSyncService
+
+`CollectionSyncService` powers manual Discogs collection imports and keeps local
+collection membership compatible with the selected source of truth.
+
+### Sync flow
+
+1. Resolve the source of truth from `CollectionSettingsRepository`.
+2. Fetch the default Discogs collection folder through `DiscogsService`.
+3. Collapse duplicate Discogs instances to one representative release per
+   Discogs release id.
+4. Map each representative item with `release_mapper.py`.
+5. Upsert release metadata through `ReleasesRepository`.
+6. Activate imported releases when the source of truth is `DISCOGS`, when the
+   row is new, or when an app-owned first import has no prior collection
+   membership history.
+7. In `DISCOGS` mode only, mark missing active local releases as removed.
+8. Fetch Discogs folder metadata and persist folder memberships through
+   `CollectionFoldersRepository`.
+
+Folder memberships are stored separately from release metadata, so a release can
+belong to multiple Discogs folders without duplicate `releases` rows. Folder
+filters always query active local collection membership; removed records remain
+available to analytics/history but do not appear in folder-filtered Collection
+results.
 
 ## ReleaseImportService
 
