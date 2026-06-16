@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -82,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.DiscogsApiClient
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.ListeningSession
@@ -93,7 +95,6 @@ import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
 import com.example.vinyllistenapp.ui.components.ActionMenuAction
 import com.example.vinyllistenapp.ui.components.ActionMenuPopup
-import com.example.vinyllistenapp.ui.components.ActionMenuStatus
 import com.example.vinyllistenapp.ui.components.ActionMenuToggle
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
@@ -112,6 +113,10 @@ import java.util.Locale
 
 internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
 private const val RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT = 10
+private val RECORD_DETAIL_STAT_CARD_HEIGHT = 88.dp
+private const val FULL_RELEASE_IMPORT_RETRY_ERROR = "Failed to import full release data. Tap to try again"
+private const val FULL_RELEASE_IMPORT_LOCKED_ERROR = "Something went wrong. Please try again later"
+private const val FULL_RELEASE_MANUAL_ATTEMPT_LIMIT = 3
 private val discogsNameIdentifierSuffixRegex = Regex("""\s+\(\d+\)$""")
 
 @Composable
@@ -135,10 +140,14 @@ fun RecordDetailScreen(
     var flowInsightsError by remember(releaseId) { mutableStateOf<String?>(null) }
     var selectedFlowInsightsPeriod by remember(releaseId) { mutableStateOf(FlowInsightsPeriod.ThreeMonths) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var fullReleaseImportError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var manualFullReleaseImportAttempts by remember(releaseId) { mutableIntStateOf(0) }
+    var hasAttemptedAutoFullReleaseImport by remember(releaseId) { mutableStateOf(false) }
     var isFetchingFullRelease by remember(releaseId) { mutableStateOf(false) }
     var isUpdatingCollectionMembership by remember(releaseId) { mutableStateOf(false) }
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
+    var showSyncReleaseConfirmation by remember(releaseId) { mutableStateOf(false) }
     var showDeleteCollectionConfirmation by remember(releaseId) { mutableStateOf(false) }
     var isMoreInCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
     var isViewOnDiscogsExpanded by remember(releaseId) { mutableStateOf(false) }
@@ -146,6 +155,8 @@ fun RecordDetailScreen(
     var isInsightsExpanded by remember(releaseId) { mutableStateOf(false) }
     var selectedNote by remember(releaseId) { mutableStateOf<RecordHistoryEntry?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val density = LocalDensity.current
@@ -170,16 +181,39 @@ fun RecordDetailScreen(
             )
         }
 
-    suspend fun fetchFullRelease(): Boolean {
+    suspend fun importFullRelease(
+        sourceRecord: RecordSummary = record,
+        isManualAttempt: Boolean,
+    ): Boolean {
+        if (!canSyncRelease(sourceRecord)) {
+            return false
+        }
+        if (isManualAttempt && manualFullReleaseImportAttempts >= FULL_RELEASE_MANUAL_ATTEMPT_LIMIT) {
+            fullReleaseImportError = FULL_RELEASE_IMPORT_LOCKED_ERROR
+            return false
+        }
+        if (isManualAttempt) {
+            manualFullReleaseImportAttempts += 1
+        }
         isFetchingFullRelease = true
         val fetched =
-            runCatching { apiClient.refreshRelease(record.releaseId) }
-                .onSuccess { refreshedRecord ->
-                    record = refreshedRecord
-                    detailError = null
-                }.onFailure { error ->
-                    detailError = error.toUserMessage("Could not fetch full release info.")
-                }.isSuccess
+            runCatching {
+                val discogsRelease = discogsApiClient.fetchRelease(sourceRecord.discogsReleaseId)
+                val importedReleaseId = apiClient.importClientDiscogsRelease(discogsRelease)
+                apiClient.getRelease(importedReleaseId.ifBlank { sourceRecord.releaseId })
+            }.onSuccess { refreshedRecord ->
+                record = refreshedRecord
+                fullReleaseImportError = null
+                manualFullReleaseImportAttempts = 0
+                detailError = null
+            }.onFailure { error ->
+                fullReleaseImportError =
+                    if (manualFullReleaseImportAttempts >= FULL_RELEASE_MANUAL_ATTEMPT_LIMIT) {
+                        FULL_RELEASE_IMPORT_LOCKED_ERROR
+                    } else {
+                        error.toUserMessage(FULL_RELEASE_IMPORT_RETRY_ERROR)
+                    }
+            }.isSuccess
         isFetchingFullRelease = false
         return fetched
     }
@@ -241,11 +275,17 @@ fun RecordDetailScreen(
     LaunchedEffect(releaseId, retryKey) {
         releaseId?.let { id ->
             runCatching {
-                record = apiClient.getRelease(id)
+                val loadedRecord = apiClient.getRelease(id)
+                record = loadedRecord
                 sessions = apiClient.getReleaseSessions(id)
                 flowInsights = null
                 flowInsightsError = null
                 detailError = null
+                fullReleaseImportError = null
+                if (!hasAttemptedAutoFullReleaseImport && shouldAutoImportFullRelease(loadedRecord)) {
+                    hasAttemptedAutoFullReleaseImport = true
+                    importFullRelease(sourceRecord = loadedRecord, isManualAttempt = false)
+                }
             }.onFailure { error ->
                 detailError = error.toUserMessage("Could not load record details. Showing local prototype data.")
             }
@@ -328,12 +368,19 @@ fun RecordDetailScreen(
                 ) {
                     RecordDetailHeroCard(
                         record = record,
-                        isFetchingFullRelease = isFetchingFullRelease,
                         isTracklistExpanded = isTracklistExpanded,
                         onTracklistExpandedChange = { isTracklistExpanded = it },
-                        onGetFullRelease = {
+                    )
+                }
+                fullReleaseImportError?.let { message ->
+                    FullReleaseImportErrorCard(
+                        message = message,
+                        enabled =
+                            !isFetchingFullRelease &&
+                                manualFullReleaseImportAttempts < FULL_RELEASE_MANUAL_ATTEMPT_LIMIT,
+                        onRetry = {
                             scope.launch {
-                                fetchFullRelease()
+                                importFullRelease(isManualAttempt = true)
                             }
                         },
                     )
@@ -426,18 +473,17 @@ fun RecordDetailScreen(
             ) {
                 val collectionArtistNames = collectionArtistNames(record)
                 val collectionLabelNames = collectionLabelNames(record)
-                if (shouldShowGetFullReleaseAction(record)) {
+                if (canSyncRelease(record)) {
                     ActionMenuAction(
-                        label = if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release",
-                        enabled = !isFetchingFullRelease,
+                        label = if (isFetchingFullRelease) "Syncing release..." else "Sync release",
+                        enabled =
+                            !isFetchingFullRelease &&
+                                manualFullReleaseImportAttempts < FULL_RELEASE_MANUAL_ATTEMPT_LIMIT,
                         onClick = {
-                            scope.launch {
-                                fetchFullRelease()
-                            }
+                            isActionMenuOpen = false
+                            showSyncReleaseConfirmation = true
                         },
                     )
-                } else if (record.hasFullDiscogsInfo) {
-                    ActionMenuStatus(label = "Full Discogs release")
                 }
                 ActionMenuAction(
                     label = if (record.isFavorite) "Remove from favorites" else "Add to favorites",
@@ -600,6 +646,31 @@ fun RecordDetailScreen(
                 }
             }
         }
+        if (showSyncReleaseConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showSyncReleaseConfirmation = false },
+                title = { Text("Sync release") },
+                text = { Text("This will fetch the latest Discogs data and overwrite saved release metadata.") },
+                confirmButton = {
+                    TextButton(
+                        enabled =
+                            !isFetchingFullRelease &&
+                                manualFullReleaseImportAttempts < FULL_RELEASE_MANUAL_ATTEMPT_LIMIT,
+                        onClick = {
+                            showSyncReleaseConfirmation = false
+                            scope.launch { importFullRelease(isManualAttempt = true) }
+                        },
+                    ) {
+                        Text("Sync release")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSyncReleaseConfirmation = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
         if (showDeleteCollectionConfirmation) {
             AlertDialog(
                 onDismissRequest = { showDeleteCollectionConfirmation = false },
@@ -756,12 +827,41 @@ private fun NoRecordDetailDataText() {
 }
 
 @Composable
+private fun FullReleaseImportErrorCard(
+    message: String,
+    enabled: Boolean,
+    onRetry: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentOrange.copy(alpha = 0.35f), VinylShapes.Card)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = "Retry full release import",
+                    role = Role.Button,
+                    onClick = onRetry,
+                ).padding(VinylSpacing.SpaceLg),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = message,
+            color = VinylColors.AccentOrange,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 private fun RecordDetailHeroCard(
     record: RecordSummary,
-    isFetchingFullRelease: Boolean,
     isTracklistExpanded: Boolean,
     onTracklistExpandedChange: (Boolean) -> Unit,
-    onGetFullRelease: () -> Unit,
 ) {
     val tracklistActionLabel = if (isTracklistExpanded) "Close tracklist" else "Open tracklist"
     val arrowRotation by animateFloatAsState(
@@ -874,8 +974,6 @@ private fun RecordDetailHeroCard(
                 )
                 RecordTracklistContent(
                     record = record,
-                    isFetchingFullRelease = isFetchingFullRelease,
-                    onGetFullRelease = onGetFullRelease,
                     onClose = { onTracklistExpandedChange(false) },
                 )
             }
@@ -990,47 +1088,20 @@ private fun RecordStylesLine(
 @Composable
 private fun RecordTracklistContent(
     record: RecordSummary,
-    isFetchingFullRelease: Boolean,
-    onGetFullRelease: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val shouldShowRefresh = shouldShowGetFullReleaseAction(record)
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .then(
-                    if (shouldShowRefresh) {
-                        Modifier
-                    } else {
-                        Modifier.clickable(
-                            onClickLabel = "Close tracklist",
-                            role = Role.Button,
-                            onClick = onClose,
-                        )
-                    },
+                .clickable(
+                    onClickLabel = "Close tracklist",
+                    role = Role.Button,
+                    onClick = onClose,
                 ),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
     ) {
         when {
-            shouldShowRefresh ->
-                Text(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                enabled = !isFetchingFullRelease,
-                                onClickLabel = "Get Full Release",
-                                role = Role.Button,
-                                onClick = onGetFullRelease,
-                            ).padding(vertical = VinylSpacing.SpaceXs),
-                    text = if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release",
-                    color = VinylColors.AccentGreen,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
             record.tracklist.isEmpty() ->
                 Text(
                     text = "No tracklist available",
@@ -1181,7 +1252,7 @@ private fun RecordStatCard(
     Box(
         modifier =
             modifier
-                .height(108.dp)
+                .height(RECORD_DETAIL_STAT_CARD_HEIGHT)
                 .clip(VinylShapes.Card)
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, accentColor.copy(alpha = 0.35f), VinylShapes.Card)
@@ -2299,8 +2370,10 @@ internal fun hasRecordDetailSessionData(
 internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean =
     !record.inCollection && !record.collectionRemovedAt.isNullOrBlank()
 
-internal fun shouldShowGetFullReleaseAction(record: RecordSummary): Boolean =
-    record.inCollection && !record.hasFullDiscogsInfo && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
+internal fun canSyncRelease(record: RecordSummary): Boolean =
+    record.discogsReleaseId > 0 && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
+
+internal fun shouldAutoImportFullRelease(record: RecordSummary): Boolean = canSyncRelease(record) && !record.hasFullDiscogsInfo
 
 internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
     record.hasFullDiscogsInfo && record.discogsArtists.isNotEmpty()
@@ -2341,10 +2414,8 @@ private fun recordActionMenuLabels(
     isViewOnDiscogsExpanded: Boolean,
 ): List<String> =
     buildList {
-        if (shouldShowGetFullReleaseAction(record)) {
-            add(if (isFetchingFullRelease) "Getting Full Release..." else "Get Full Release")
-        } else if (record.hasFullDiscogsInfo) {
-            add("Full Discogs release")
+        if (canSyncRelease(record)) {
+            add(if (isFetchingFullRelease) "Syncing release..." else "Sync release")
         }
         add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
         add(

@@ -414,7 +414,7 @@ The response contains Discogs results, not local records. Android no-token flows
 
 Release detail endpoints read and update releases by internal `release_id`. Manual Discogs imports and identify flow matches create or update the local release row first, then Android navigates with the internal ID.
 
-Collection sync imports only Discogs `basic_information` for each item. A detail screen can call the refresh endpoint for one record when the user wants full Discogs metadata, including tracklist data cached for side options and richer collection search.
+Collection sync imports only Discogs `basic_information` for each item. When Record Details opens a Discogs-backed release that still has basic metadata, Android fetches the full release payload directly from Discogs without a saved backend token and imports it through `POST /releases/import/client-discogs`. The **Sync release** action uses the same no-token path after user confirmation and overwrites local release metadata from the latest Discogs payload.
 
 ## POST /releases/import
 
@@ -475,7 +475,7 @@ Same response shape as `POST /releases/import`.
 
 Imports a Discogs release from a full Discogs payload already fetched by Android.
 
-Use this endpoint for no-token barcode/manual-search imports and no-token collection-add imports. Android owns the unauthenticated Discogs request and local rate limiting, then sends the selected release payload to the backend for validation, mapping, caching, and persistence. Collection add then activates membership through `POST /releases/{release_id}/collection/reactivate`.
+Use this endpoint for no-token barcode/manual-search imports, no-token collection-add imports, Record Details automatic full-release imports, and confirmed **Sync release** actions. Android owns the unauthenticated Discogs request and local rate limiting, then sends the selected release payload to the backend for validation, mapping, caching, and persistence. Collection add then activates membership through `POST /releases/{release_id}/collection/reactivate`.
 
 ### Request
 
@@ -554,7 +554,7 @@ Returns stored release metadata for an internal release ID.
 }
 ```
 
-`has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for this release. Android uses `false` collection records to show "Get Full Release".
+`has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for this release. Android uses `false` Discogs-backed records to auto-import full release data on open, while **Sync release** stays available for confirmed manual refreshes.
 
 `available_sides`, `available_side_options`, and `tracklist` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached. `tracklist` contains Discogs track rows only; headings and other non-track rows are omitted. `duration` may be `null`.
 

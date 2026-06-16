@@ -858,6 +858,7 @@ private val TIMED_SESSION_MOOD_OPTIONS =
 
 private const val COMPACT_HOME_BREAKPOINT_DP = 430
 private const val HOME_EMPTY_SECTION_TEXT = "No data yet. Start your listening journey!"
+private val HOME_SNAPSHOT_CARD_HEIGHT = 104.dp
 
 private val VinylColorsChipShape = VinylShapes.Chip
 
@@ -883,7 +884,7 @@ private fun SnapshotCard(
     accentColor: androidx.compose.ui.graphics.Color = VinylColors.AccentGreen,
 ) {
     AccentCard(
-        modifier = modifier.height(128.dp),
+        modifier = modifier.height(HOME_SNAPSHOT_CARD_HEIGHT),
         borderColor = accentColor.copy(alpha = 0.35f),
     ) {
         CardTopAccentLine(accentColor = accentColor, alpha = 0.45f)

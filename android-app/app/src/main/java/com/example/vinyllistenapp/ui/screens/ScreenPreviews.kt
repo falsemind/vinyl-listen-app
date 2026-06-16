@@ -39,7 +39,7 @@ private fun SettingsScreenPreview() {
     VinylListenAppTheme {
         SettingsScreen(
             apiClient = VinylApiClient(),
-            message = "Collection management",
+            message = "Application settings",
             onHome = {},
             onStats = {},
             onInsights = {},
