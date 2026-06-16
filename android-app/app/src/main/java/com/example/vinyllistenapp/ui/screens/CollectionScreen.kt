@@ -36,15 +36,18 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +94,7 @@ import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
 private const val COLLECTION_PAGE_SIZE = 25
+private const val COLLECTION_FOLDER_MENU_LIMIT = 10
 
 @Composable
 fun CollectionScreen(
@@ -106,8 +110,11 @@ fun CollectionScreen(
     onOpenRecord: (String) -> Unit,
     onArtistFilterCleared: () -> Unit = {},
     onLabelFilterCleared: () -> Unit = {},
+    onFolderFilterCleared: () -> Unit = {},
+    onViewAllCollectionFolders: () -> Unit = {},
     initialArtistFilter: String? = null,
     initialLabelFilter: String? = null,
+    initialFolderFilter: CollectionFolder? = null,
 ) {
     var records by remember { mutableStateOf<List<CollectionRecord>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -127,7 +134,8 @@ fun CollectionScreen(
     var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
     var labelFilter by remember(initialLabelFilter) { mutableStateOf(initialLabelFilter?.takeIf { it.isNotBlank() }) }
     var favoriteFilter by remember { mutableStateOf(false) }
-    var folderFilter by remember { mutableStateOf<CollectionFolder?>(null) }
+    var folderFilter by remember(initialFolderFilter?.id) { mutableStateOf(initialFolderFilter) }
+    var showSyncConfirmation by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -316,6 +324,7 @@ fun CollectionScreen(
             },
             onClearFolderFilter = {
                 folderFilter = null
+                onFolderFilterCleared()
             },
             onShowFavorites = {
                 artistFilter = null
@@ -335,6 +344,11 @@ fun CollectionScreen(
                 isCollectionFoldersExpanded = false
                 isActionMenuOpen = false
             },
+            onViewAllCollectionFolders = {
+                isActionMenuOpen = false
+                isCollectionFoldersExpanded = false
+                onViewAllCollectionFolders()
+            },
             isActionMenuOpen = isActionMenuOpen,
             onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
             onActionMenuDismiss = {
@@ -343,7 +357,8 @@ fun CollectionScreen(
             },
             onCollectionSettings = onCollectionSettings,
             onSync = {
-                scope.launch { followCollectionSync() }
+                isActionMenuOpen = false
+                showSyncConfirmation = true
             },
             onShowMore = { count ->
                 scope.launch {
@@ -386,6 +401,29 @@ fun CollectionScreen(
                     .padding(innerPadding),
         )
     }
+    if (showSyncConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showSyncConfirmation = false },
+            title = { Text("Sync Discogs collection") },
+            text = { Text("This action may take some time depending on your collection size.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isSyncing,
+                    onClick = {
+                        showSyncConfirmation = false
+                        scope.launch { followCollectionSync() }
+                    },
+                ) {
+                    Text("Sync Items")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyncConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -417,6 +455,7 @@ private fun CollectionListContent(
     onShowFavorites: () -> Unit,
     onCollectionFoldersExpandedChange: (Boolean) -> Unit,
     onShowCollectionFolder: (CollectionFolder) -> Unit,
+    onViewAllCollectionFolders: () -> Unit,
     isActionMenuOpen: Boolean,
     onActionMenuToggle: () -> Unit,
     onActionMenuDismiss: () -> Unit,
@@ -560,12 +599,27 @@ private fun CollectionListContent(
                     )
                     if (isCollectionFoldersExpanded) {
                         CollectionActionMenuDelimiter()
-                        collectionFolders.forEach { folder ->
+                        val shouldLimitFolders = collectionFolders.size > COLLECTION_FOLDER_MENU_LIMIT
+                        val visibleFolders =
+                            if (shouldLimitFolders) {
+                                collectionFolders.take(COLLECTION_FOLDER_MENU_LIMIT)
+                            } else {
+                                collectionFolders
+                            }
+                        visibleFolders.forEach { folder ->
                             CollectionActionMenuSubOption(
                                 label = folder.name,
                                 icon = Icons.Filled.Folder,
                                 onClickLabel = "Filter collection by ${folder.name}",
                                 onClick = { onShowCollectionFolder(folder) },
+                            )
+                        }
+                        if (shouldLimitFolders) {
+                            CollectionActionMenuSubOption(
+                                label = "View all folders",
+                                icon = Icons.Filled.MoreHoriz,
+                                onClickLabel = "View all Discogs folders",
+                                onClick = onViewAllCollectionFolders,
                             )
                         }
                         CollectionActionMenuDelimiter()

@@ -111,6 +111,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
+private const val RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT = 10
 private val discogsNameIdentifierSuffixRegex = Regex("""\s+\(\d+\)$""")
 
 @Composable
@@ -122,6 +123,7 @@ fun RecordDetailScreen(
     onOpenRecord: (String) -> Unit,
     onOpenArtistCollection: (String) -> Unit,
     onOpenLabelCollection: (String) -> Unit,
+    onOpenCollection: () -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
     onCollectionMembershipChanged: () -> Unit = {},
@@ -390,7 +392,7 @@ fun RecordDetailScreen(
         }
         if (record.inCollection) {
             FloatingGlassButton(
-                label = "+ Add Session",
+                label = "+ Session",
                 onClick = { onAddSession(record.releaseId) },
                 modifier =
                     Modifier
@@ -472,26 +474,47 @@ fun RecordDetailScreen(
                     )
                     if (isMoreInCollectionExpanded) {
                         ActionMenuDelimiter()
-                        collectionArtistNames.forEach { artistName ->
-                            ActionMenuSubOption(
-                                label = artistName,
-                                icon = Icons.Filled.Person,
-                                onClickLabel = "Filter collection by $artistName",
-                                onClick = {
-                                    isActionMenuOpen = false
-                                    isMoreInCollectionExpanded = false
-                                    onOpenArtistCollection(artistName)
-                                },
+                        val collectionOptions =
+                            recordDetailCollectionMenuOptions(
+                                artistNames = collectionArtistNames,
+                                labelNames = collectionLabelNames,
                             )
+                        collectionOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
+                            when (option) {
+                                is RecordDetailCollectionMenuOption.Artist -> {
+                                    ActionMenuSubOption(
+                                        label = option.name,
+                                        icon = Icons.Filled.Person,
+                                        onClickLabel = "Filter collection by ${option.name}",
+                                        onClick = {
+                                            isActionMenuOpen = false
+                                            isMoreInCollectionExpanded = false
+                                            onOpenArtistCollection(option.name)
+                                        },
+                                    )
+                                }
+
+                                is RecordDetailCollectionMenuOption.Label -> {
+                                    ActionMenuSubOption(
+                                        label = option.name,
+                                        onClickLabel = "Filter collection by ${option.name}",
+                                        onClick = {
+                                            isActionMenuOpen = false
+                                            isMoreInCollectionExpanded = false
+                                            onOpenLabelCollection(option.name)
+                                        },
+                                    )
+                                }
+                            }
                         }
-                        collectionLabelNames.forEach { labelName ->
+                        if (collectionOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
                             ActionMenuSubOption(
-                                label = labelName,
-                                onClickLabel = "Filter collection by $labelName",
+                                label = "View all in collection",
+                                onClickLabel = "View all collection records",
                                 onClick = {
                                     isActionMenuOpen = false
                                     isMoreInCollectionExpanded = false
-                                    onOpenLabelCollection(labelName)
+                                    onOpenCollection()
                                 },
                             )
                         }
@@ -521,33 +544,55 @@ fun RecordDetailScreen(
                                 ReleaseArtist(name = artistName, discogsArtistId = 0)
                             }
                         }
-                    discogsArtistRows.forEach { artist ->
-                        val displayArtistName = cleanDiscogsDisplayName(artist.name)
-                        ActionMenuSubOption(
-                            label = displayArtistName,
-                            icon = Icons.Filled.Person,
-                            onClickLabel = "Open $displayArtistName on Discogs",
-                            onClick = {
-                                isActionMenuOpen = false
-                                isViewOnDiscogsExpanded = false
-                                uriHandler.openUri(
-                                    if (artist.discogsArtistId > 0) {
-                                        discogsArtistUrl(artist.discogsArtistId)
-                                    } else {
-                                        discogsArtistSearchUrl(displayArtistName)
+                    val discogsOptions =
+                        recordDetailDiscogsMenuOptions(
+                            artistRows = discogsArtistRows,
+                            labelNames = collectionLabelNames,
+                        )
+                    discogsOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
+                        when (option) {
+                            is RecordDetailDiscogsMenuOption.Artist -> {
+                                val displayArtistName = cleanDiscogsDisplayName(option.artist.name)
+                                ActionMenuSubOption(
+                                    label = displayArtistName,
+                                    icon = Icons.Filled.Person,
+                                    onClickLabel = "Open $displayArtistName on Discogs",
+                                    onClick = {
+                                        isActionMenuOpen = false
+                                        isViewOnDiscogsExpanded = false
+                                        uriHandler.openUri(
+                                            if (option.artist.discogsArtistId > 0) {
+                                                discogsArtistUrl(option.artist.discogsArtistId)
+                                            } else {
+                                                discogsArtistSearchUrl(displayArtistName)
+                                            },
+                                        )
                                     },
                                 )
-                            },
-                        )
+                            }
+
+                            is RecordDetailDiscogsMenuOption.Label -> {
+                                ActionMenuSubOption(
+                                    label = option.name,
+                                    onClickLabel = "Open ${option.name} on Discogs",
+                                    onClick = {
+                                        isActionMenuOpen = false
+                                        isViewOnDiscogsExpanded = false
+                                        uriHandler.openUri(discogsLabelSearchUrl(option.name))
+                                    },
+                                )
+                            }
+                        }
                     }
-                    collectionLabelNames.forEach { labelName ->
+                    if (discogsOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
                         ActionMenuSubOption(
-                            label = labelName,
-                            onClickLabel = "Open $labelName on Discogs",
+                            label = "View all on Discogs",
+                            icon = Icons.Filled.Album,
+                            onClickLabel = "View release page on Discogs",
                             onClick = {
                                 isActionMenuOpen = false
                                 isViewOnDiscogsExpanded = false
-                                uriHandler.openUri(discogsLabelSearchUrl(labelName))
+                                uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
                             },
                         )
                     }
@@ -2314,8 +2359,20 @@ private fun recordActionMenuLabels(
         if (collectionArtists.isNotEmpty() || collectionLabels.isNotEmpty()) {
             add("More in collection")
             if (isMoreInCollectionExpanded) {
-                collectionArtists.forEach { artistName -> add("• $artistName") }
-                collectionLabels.forEach { labelName -> add("• $labelName") }
+                val collectionOptions =
+                    recordDetailCollectionMenuOptions(
+                        artistNames = collectionArtists,
+                        labelNames = collectionLabels,
+                    )
+                collectionOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
+                    when (option) {
+                        is RecordDetailCollectionMenuOption.Artist -> add("• ${option.name}")
+                        is RecordDetailCollectionMenuOption.Label -> add("• ${option.name}")
+                    }
+                }
+                if (collectionOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                    add("• View all in collection")
+                }
             }
         }
         add("View on Discogs")
@@ -2325,9 +2382,65 @@ private fun recordActionMenuLabels(
                 record.discogsArtists
                     .map { artist -> cleanDiscogsDisplayName(artist.name) }
                     .ifEmpty { collectionArtists }
-            discogsArtistNames.forEach { artistName -> add("• $artistName") }
-            collectionLabels.forEach { labelName -> add("• $labelName") }
+            val discogsOptions =
+                recordDetailDiscogsMenuOptions(
+                    artistRows =
+                        discogsArtistNames.map { artistName ->
+                            ReleaseArtist(name = artistName, discogsArtistId = 0)
+                        },
+                    labelNames = collectionLabels,
+                )
+            discogsOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
+                when (option) {
+                    is RecordDetailDiscogsMenuOption.Artist -> {
+                        add("• ${cleanDiscogsDisplayName(option.artist.name)}")
+                    }
+
+                    is RecordDetailDiscogsMenuOption.Label -> add("• ${option.name}")
+                }
+            }
+            if (discogsOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                add("• View all on Discogs")
+            }
         }
+    }
+
+private sealed interface RecordDetailCollectionMenuOption {
+    data class Artist(
+        val name: String,
+    ) : RecordDetailCollectionMenuOption
+
+    data class Label(
+        val name: String,
+    ) : RecordDetailCollectionMenuOption
+}
+
+private fun recordDetailCollectionMenuOptions(
+    artistNames: List<String>,
+    labelNames: List<String>,
+): List<RecordDetailCollectionMenuOption> =
+    buildList {
+        artistNames.forEach { artistName -> add(RecordDetailCollectionMenuOption.Artist(artistName)) }
+        labelNames.forEach { labelName -> add(RecordDetailCollectionMenuOption.Label(labelName)) }
+    }
+
+private sealed interface RecordDetailDiscogsMenuOption {
+    data class Artist(
+        val artist: ReleaseArtist,
+    ) : RecordDetailDiscogsMenuOption
+
+    data class Label(
+        val name: String,
+    ) : RecordDetailDiscogsMenuOption
+}
+
+private fun recordDetailDiscogsMenuOptions(
+    artistRows: List<ReleaseArtist>,
+    labelNames: List<String>,
+): List<RecordDetailDiscogsMenuOption> =
+    buildList {
+        artistRows.forEach { artist -> add(RecordDetailDiscogsMenuOption.Artist(artist)) }
+        labelNames.forEach { labelName -> add(RecordDetailDiscogsMenuOption.Label(labelName)) }
     }
 
 internal fun cleanDiscogsDisplayName(name: String): String = name.trim().replace(discogsNameIdentifierSuffixRegex, "")
