@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,6 +98,7 @@ import com.example.vinyllistenapp.ui.components.timedSessionTypeLabel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -123,6 +125,8 @@ fun HomeScreen(
     var homeSummary by remember { mutableStateOf(mockHomeSummary()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
+    val screenScrollState = rememberScrollState()
+    val scrollShortcutScope = rememberCoroutineScope()
 
     LaunchedEffect(retryKey) {
         runCatching { apiClient.getHomeSummary(recentLimit = 5, topLimit = 25) }
@@ -140,7 +144,16 @@ fun HomeScreen(
             BottomNavBar(
                 items =
                     listOf(
-                        BottomNavItem("Home", Icons.Filled.Home, selected = true, onClick = {}),
+                        BottomNavItem(
+                            "Home",
+                            Icons.Filled.Home,
+                            selected = true,
+                            onClick = {
+                                scrollShortcutScope.launch {
+                                    screenScrollState.scrollTo(0)
+                                }
+                            },
+                        ),
                         BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onOpenInsights),
                         BottomNavItem(
@@ -169,6 +182,7 @@ fun HomeScreen(
             title = "Vinyl Listen",
             subtitle = "Your collection is ready for the next spin.",
             innerPadding = innerPadding,
+            scrollState = screenScrollState,
             titleEndContent = {
                 IconButton(onClick = onOpenSettings) {
                     Icon(
@@ -192,10 +206,11 @@ fun HomeScreen(
             loadError?.let { message ->
                 ErrorRetryCard(message = message, onRetry = { retryKey += 1 })
             }
-            SectionActionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
             if (homeSummary.recentSessions.isEmpty()) {
-                EmptyHomeState("No sessions logged yet.")
+                SectionTitle("Recent Sessions")
+                EmptyHomeState(HOME_EMPTY_SECTION_TEXT)
             } else {
+                SectionActionHeader("Recent Sessions", action = "View All", onActionClick = onViewAllSessions)
                 homeSummary.recentSessions.take(3).forEach { session ->
                     SessionRow(
                         session = session,
@@ -225,13 +240,18 @@ fun HomeScreen(
             }
 
             SectionTitle("Top Records")
-            homeTopRecordHighlights(homeSummary.topRecords).forEachIndexed { index, topRecord ->
-                TopRecordRow(
-                    topRecord = topRecord,
-                    badge = if (index == 0) "Most Played" else "Least Played",
-                    badgeColor = if (index == 0) VinylColors.AccentGreen else VinylColors.AccentOrange,
-                    onClick = { onOpenRecord(topRecord.record.releaseId) },
-                )
+            val topRecordHighlights = homeTopRecordHighlights(homeSummary.topRecords)
+            if (topRecordHighlights.isEmpty()) {
+                EmptyHomeState(HOME_EMPTY_SECTION_TEXT)
+            } else {
+                topRecordHighlights.forEachIndexed { index, topRecord ->
+                    TopRecordRow(
+                        topRecord = topRecord,
+                        badge = if (index == 0) "Most Played" else "Least Played",
+                        badgeColor = if (index == 0) VinylColors.AccentGreen else VinylColors.AccentOrange,
+                        onClick = { onOpenRecord(topRecord.record.releaseId) },
+                    )
+                }
             }
         }
     }
@@ -837,6 +857,7 @@ private val TIMED_SESSION_MOOD_OPTIONS =
     )
 
 private const val COMPACT_HOME_BREAKPOINT_DP = 430
+private const val HOME_EMPTY_SECTION_TEXT = "No data yet. Start your listening journey!"
 
 private val VinylColorsChipShape = VinylShapes.Chip
 
@@ -879,13 +900,12 @@ private fun SnapshotCard(
 
 @Composable
 private fun EmptyHomeState(message: String) {
-    AccentCard(borderColor = VinylColors.BorderDefault) {
-        Text(
-            text = message,
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+    Text(
+        modifier = Modifier.fillMaxWidth(),
+        text = message,
+        color = VinylColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable

@@ -617,6 +617,7 @@ does not change source of truth or sync scope.
 Collection settings → Settings
 Load Discogs collection / Sync Items → manual collection sync
 Collection folders → expand folder rows; tap row to filter Collection
+View all folders → open full Discogs folder list when more than 10 folders exist
 Personal favorites → filter Collection to favorite records
 + floating CTA → identify flow or manual entry placeholder
 Search floating CTA → Collection manual search
@@ -625,7 +626,7 @@ Tap record → Record Detail Screen
 
 Action-menu rows use green icons: settings gear for `Collection settings`,
 sync arrows for `Load Discogs collection` / `Sync Items`, and folder icons for
-folder rows.
+folder rows. The `View all folders` row uses a three-dot icon.
 
 ---
 
@@ -702,11 +703,22 @@ Back → Analytics
 
 Show app information and collection configuration.
 
+The Discogs integration card is collapsed by default. When expanded, it supports:
+
+- Uploading a Discogs personal access token.
+- Briefly revealing the newest typed token character before masking it.
+- Clearing token input with an inline `X`.
+- Canceling token entry, which clears input and dismisses keyboard focus.
+- Showing saved-token state as grey copy plus the Discogs username in a green chip.
+- Managing a saved token with a pencil icon that changes to `X` while actions are open.
+- Updating or deleting a saved token. Delete requires confirmation.
+
 Current content includes collection source-of-truth selection:
 
 - `Collection source of truth: App` when local app membership is authoritative.
 - `Collection source of truth: Discogs` when the user selects Discogs as the future mirror source.
 - Toggle ON means App; toggle OFF means Discogs.
+- Deleting the Discogs token disables token-backed Discogs features and resets source of truth to App.
 
 ---
 

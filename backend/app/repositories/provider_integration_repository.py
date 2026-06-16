@@ -52,3 +52,28 @@ class ProviderIntegrationRepository:
             db.flush()
 
         return integration
+
+    def delete_discogs_token(
+        self,
+        db: Session,
+        *,
+        user_id: str | None = None,
+        commit: bool = True,
+    ) -> ProviderIntegration | None:
+        integration = self.get_discogs(db, user_id=user_id)
+        if integration is None:
+            return None
+
+        integration.access_token_ciphertext = None
+        integration.external_user_id = None
+        integration.external_username = None
+        integration.is_active = False
+        db.add(integration)
+
+        if commit:
+            db.commit()
+            db.refresh(integration)
+        else:
+            db.flush()
+
+        return integration

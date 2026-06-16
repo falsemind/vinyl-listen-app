@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.navigation
 
 import android.net.Uri
+import com.example.vinyllistenapp.domain.CollectionFolder
 
 object VinylRoutes {
     const val HOME = "home"
@@ -32,6 +33,9 @@ object VinylRoutes {
     const val STYLE = "style"
     const val ARTIST = "artist"
     const val LABEL = "label"
+    const val FOLDER_ID = "folderId"
+    const val FOLDER_NAME = "folderName"
+    const val FOLDER_COUNT = "folderCount"
     const val SESSION_LOGGING_PATTERN = "session_logging/{$RELEASE_ID}"
     const val SESSION_EDIT = "session_edit"
     const val SESSION_EDIT_PATTERN = "$SESSION_EDIT/{$SESSION_ID}"
@@ -43,7 +47,10 @@ object VinylRoutes {
     const val ANALYTICS = "analytics"
     const val AI_INSIGHTS = "ai_insights"
     const val COLLECTION = "collection"
-    const val COLLECTION_PATTERN = "$COLLECTION?$ARTIST={$ARTIST}&$LABEL={$LABEL}"
+    const val COLLECTION_PATTERN =
+        "$COLLECTION?$ARTIST={$ARTIST}&$LABEL={$LABEL}&$FOLDER_ID={$FOLDER_ID}" +
+            "&$FOLDER_NAME={$FOLDER_NAME}&$FOLDER_COUNT={$FOLDER_COUNT}"
+    const val ALL_DISCOGS_FOLDERS = "all_discogs_folders"
     const val SETTINGS = "settings"
 
     fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"
@@ -63,6 +70,11 @@ object VinylRoutes {
     fun collectionArtist(artist: String): String = "$COLLECTION?$ARTIST=${Uri.encode(artist)}"
 
     fun collectionLabel(label: String): String = "$COLLECTION?$LABEL=${Uri.encode(label)}"
+
+    fun collectionFolder(folder: CollectionFolder): String =
+        "$COLLECTION?$FOLDER_ID=${folder.id}" +
+            "&$FOLDER_NAME=${Uri.encode(folder.name)}" +
+            folder.count?.let { count -> "&$FOLDER_COUNT=$count" }.orEmpty()
 
     fun processing(imageUri: Uri): String = "processing?imageUri=${Uri.encode(imageUri.toString())}"
 

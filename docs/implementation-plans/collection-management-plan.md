@@ -375,6 +375,7 @@ Checklist:
 - Collection actions menu shows **Collection settings** first.
 - Settings screen shows the correct source text and toggle state.
 - Toggle ON displays `App`; toggle OFF displays `Discogs`.
+- Discogs sync actions show confirmation copy before starting a sync job.
 - Collection add CTA expands left and collapses back to plus.
 - Camera option opens identify camera flow.
 - Pencil option opens manual-entry placeholder.
@@ -388,6 +389,8 @@ Checklist:
 - **Collection folders** action is hidden when Discogs is not configured or only the default folder exists.
 - **Collection folders** action expands and collapses like Record Detail expandable action groups.
 - Expanded **Collection folders** lists Discogs folder names as selectable filter options.
+- Expanded **Collection folders** shows at most 10 folders, then a **View all folders** overflow row when more folders exist.
+- **View all folders** opens a full Discogs folder list, and folder rows navigate back to a filtered Collection view.
 - Tapping a folder reloads Records Collection with that folder filter.
 - Folder filter chip uses the same green chip style and counter behavior as artist/label chips.
 - Clearing the folder chip reloads the unfiltered active collection.
@@ -424,6 +427,7 @@ Checklist:
 13. Android Collection action menu icon polish.
 14. Android expandable **Collection folders** row and visibility rules.
 15. Android folder filter state, green chip, counter, and clear behavior.
-16. Focused backend and Android verification.
+16. Android folder overflow screen and sync confirmation.
+17. Focused backend and Android verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.

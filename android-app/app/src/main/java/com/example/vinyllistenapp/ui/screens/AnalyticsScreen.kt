@@ -213,7 +213,7 @@ fun AnalyticsScreen(
 
 private const val MOOD_DISTRIBUTION_PREVIEW_LIMIT = 10
 private const val STYLE_DISTRIBUTION_PREVIEW_LIMIT = 10
-private const val ANALYTICS_EMPTY_SECTION_TEXT = "No data yet. Start you listening journey!"
+private const val ANALYTICS_EMPTY_SECTION_TEXT = "No data yet. Start your listening journey!"
 private val MONTHLY_PLAY_BAR_WIDTH = 48.dp
 
 @Composable

@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.TimedSessionGroup
 import com.example.vinyllistenapp.ui.components.LocalActiveTimedSessionId
@@ -30,6 +31,7 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.components.TimedSessionBanner
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
+import com.example.vinyllistenapp.ui.screens.AllDiscogsFoldersScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.BarcodeProcessingScreen
 import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
@@ -389,6 +391,7 @@ fun VinylNavHost(
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
                     onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
+                    onOpenCollection = { navController.navigate(VinylRoutes.COLLECTION) },
                     onCollectionMembershipChanged = {
                         val handle = navController.previousBackStackEntry?.savedStateHandle
                         handle?.set(
@@ -457,11 +460,32 @@ fun VinylNavHost(
                             nullable = true
                             defaultValue = null
                         },
+                        navArgument(VinylRoutes.FOLDER_ID) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                        navArgument(VinylRoutes.FOLDER_NAME) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                        navArgument(VinylRoutes.FOLDER_COUNT) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 val collectionRefreshKey by backStackEntry.savedStateHandle
                     .getStateFlow(COLLECTION_MEMBERSHIP_REFRESH_KEY, 0)
                     .collectAsState()
+                val initialFolderFilter =
+                    collectionFolderFromArgs(
+                        id = backStackEntry.arguments?.getString(VinylRoutes.FOLDER_ID),
+                        name = backStackEntry.arguments?.getString(VinylRoutes.FOLDER_NAME),
+                        count = backStackEntry.arguments?.getString(VinylRoutes.FOLDER_COUNT),
+                    )
                 CollectionScreen(
                     apiClient = apiClient,
                     refreshKey = collectionRefreshKey,
@@ -487,8 +511,28 @@ fun VinylNavHost(
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
                     },
+                    onFolderFilterCleared = {
+                        navController.navigate(VinylRoutes.COLLECTION) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
+                    onViewAllCollectionFolders = {
+                        navController.navigate(VinylRoutes.ALL_DISCOGS_FOLDERS)
+                    },
                     initialArtistFilter = backStackEntry.arguments?.getString(VinylRoutes.ARTIST),
                     initialLabelFilter = backStackEntry.arguments?.getString(VinylRoutes.LABEL),
+                    initialFolderFilter = initialFolderFilter,
+                )
+            }
+            composable(VinylRoutes.ALL_DISCOGS_FOLDERS) {
+                AllDiscogsFoldersScreen(
+                    apiClient = apiClient,
+                    onBack = { navController.popBackStack() },
+                    onOpenFolder = { folder ->
+                        navController.navigate(VinylRoutes.collectionFolder(folder)) {
+                            popUpTo(VinylRoutes.ALL_DISCOGS_FOLDERS) { inclusive = true }
+                        }
+                    },
                 )
             }
             composable(VinylRoutes.TOP_RECORDS) {
@@ -559,7 +603,7 @@ fun VinylNavHost(
             composable(VinylRoutes.SETTINGS) {
                 SettingsScreen(
                     apiClient = apiClient,
-                    message = "Collection management",
+                    message = "Application settings",
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -599,6 +643,21 @@ private fun String?.isIdentifyFlowWithoutTimedSessionBanner(): Boolean =
             VinylRoutes.BARCODE_PROCESSING_PATTERN,
             VinylRoutes.MATCH_CONFIRMATION,
         )
+
+private fun collectionFolderFromArgs(
+    id: String?,
+    name: String?,
+    count: String?,
+): CollectionFolder? {
+    val folderId = id?.toLongOrNull() ?: return null
+    val folderName = name?.takeIf { it.isNotBlank() } ?: return null
+    return CollectionFolder(
+        id = folderId,
+        name = folderName,
+        count = count?.toIntOrNull(),
+        isDefault = false,
+    )
+}
 
 private const val MATCHED_ON_SEPARATOR = "\u001F"
 

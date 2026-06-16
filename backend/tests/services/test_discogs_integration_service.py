@@ -14,6 +14,7 @@ class FakeIntegrationRepository:
     def __init__(self, integration=None) -> None:
         self.integration = integration
         self.saved_tokens: list[dict] = []
+        self.deleted_users: list[str | None] = []
 
     def get_discogs(self, _db, *, user_id: str | None = None):
         _ = user_id
@@ -44,6 +45,15 @@ class FakeIntegrationRepository:
         )
         return self.integration
 
+    def delete_discogs_token(self, _db, *, user_id: str | None = None):
+        self.deleted_users.append(user_id)
+        if self.integration is not None:
+            self.integration.is_active = False
+            self.integration.access_token_ciphertext = None
+            self.integration.external_user_id = None
+            self.integration.external_username = None
+        return self.integration
+
 
 class FakeCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
@@ -51,6 +61,10 @@ class FakeCollectionSettingsRepository:
 
     def get_source_of_truth(self, _db) -> CollectionSourceOfTruth:
         return self.source_of_truth
+
+    def set_source_of_truth(self, _db, source_of_truth: CollectionSourceOfTruth):
+        self.source_of_truth = source_of_truth
+        return SimpleNamespace(source_of_truth=source_of_truth)
 
 
 class FakeIdentityClient:
@@ -133,6 +147,33 @@ def test_save_access_token_does_not_store_invalid_token() -> None:
         service.save_access_token(object(), access_token="bad-token")
 
     assert repository.saved_tokens == []
+
+
+def test_delete_access_token_clears_token_and_resets_source_of_truth() -> None:
+    repository = FakeIntegrationRepository(
+        integration=SimpleNamespace(
+            is_active=True,
+            access_token_ciphertext="encrypted:nekot-terces",
+            external_user_id="456",
+            external_username="discogs-user",
+        )
+    )
+    settings_repository = FakeCollectionSettingsRepository(CollectionSourceOfTruth.DISCOGS)
+    service = DiscogsIntegrationService(
+        integration_repository=repository,
+        collection_settings_repository=settings_repository,
+        identity_client=FakeIdentityClient(),
+        token_cipher=FakeTokenCipher(),
+    )
+
+    status = service.delete_access_token(object())
+
+    assert repository.deleted_users == [None]
+    assert status.access_token_saved is False
+    assert status.external_user_id is None
+    assert status.external_username is None
+    assert status.source_of_truth == CollectionSourceOfTruth.APP
+    assert status.backend_identify_enabled is False
 
 
 def test_get_saved_credentials_decrypts_saved_token() -> None:

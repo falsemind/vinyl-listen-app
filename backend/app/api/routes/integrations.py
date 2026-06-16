@@ -62,6 +62,14 @@ def save_discogs_access_token(
         )
 
 
+@router.delete("/discogs/token", response_model=DiscogsIntegrationStatusResponse)
+def delete_discogs_access_token(
+    db: Annotated[Session, Depends(get_db)],
+    service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
+) -> DiscogsIntegrationStatusResponse:
+    return service.delete_access_token(db)
+
+
 def _error_response(*, status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
