@@ -292,8 +292,13 @@ def test_get_release_endpoint_returns_local_release_metadata(
             {"value": "AA", "label": "Side AA", "side": "AA", "disc_number": None},
         ],
         "tracklist": [
-            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17"},
-            {"position": "A2", "title": "An Eagle In Your Mind", "duration": None},
+            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17", "extra_artists": []},
+            {
+                "position": "A2",
+                "title": "An Eagle In Your Mind",
+                "duration": None,
+                "extra_artists": [{"name": "Plaid", "role": "Remix"}],
+            },
         ],
         "discogs_artists": [
             {"name": "Boards of Canada", "discogs_artist_id": 194},

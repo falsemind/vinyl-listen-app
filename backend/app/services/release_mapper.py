@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
@@ -29,10 +29,17 @@ class ReleaseSideOptionData:
 
 
 @dataclass(frozen=True)
+class ReleaseTrackCreditData:
+    name: str
+    role: str | None = None
+
+
+@dataclass(frozen=True)
 class ReleaseTrackData:
     position: str
     title: str
     duration: str | None = None
+    extra_artists: list[ReleaseTrackCreditData] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -152,10 +159,34 @@ def extract_release_tracklist(raw_discogs_json: dict[str, Any] | None) -> list[R
                 position=position,
                 title=title,
                 duration=_clean_string(track.get("duration")),
+                extra_artists=_extract_track_extra_artists(track),
             )
         )
 
     return tracks
+
+
+def _extract_track_extra_artists(track: dict[str, Any]) -> list[ReleaseTrackCreditData]:
+    extra_artists = track.get("extraartists")
+    if not isinstance(extra_artists, list):
+        return []
+
+    credits: list[ReleaseTrackCreditData] = []
+    for artist in extra_artists:
+        if not isinstance(artist, dict):
+            continue
+
+        name = clean_discogs_artist_name(_clean_string(artist.get("anv")) or _clean_string(artist.get("name")))
+        if not name:
+            continue
+
+        credits.append(
+            ReleaseTrackCreditData(
+                name=name,
+                role=_clean_string(artist.get("role")),
+            )
+        )
+    return credits
 
 
 def extract_release_artists(raw_discogs_json: dict[str, Any] | None) -> list[ReleaseArtistData]:

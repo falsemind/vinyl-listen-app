@@ -10,7 +10,12 @@ from app.schemas.identify import IdentifyJobStatus, IdentifyJobStatusResponse
 from app.services.identify_job_service import IdentifyCapacityExceededError
 from app.services.identify_service import IdentifyResult, IdentifyValidationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.release_mapper import ReleaseArtistData, ReleaseSideOptionData, ReleaseTrackData
+from app.services.release_mapper import (
+    ReleaseArtistData,
+    ReleaseSideOptionData,
+    ReleaseTrackCreditData,
+    ReleaseTrackData,
+)
 from app.services.sessions_service import (
     CreateSessionResult,
     HomeSummary,
@@ -194,7 +199,11 @@ class StubReleaseImportService:
         ]
         self.tracklist = [
             ReleaseTrackData(position="A1", title="Wildlife Analysis", duration="1:17"),
-            ReleaseTrackData(position="A2", title="An Eagle In Your Mind"),
+            ReleaseTrackData(
+                position="A2",
+                title="An Eagle In Your Mind",
+                extra_artists=[ReleaseTrackCreditData(name="Plaid", role="Remix")],
+            ),
         ]
         self.artists = [
             ReleaseArtistData(name="Boards of Canada", discogs_artist_id=194),

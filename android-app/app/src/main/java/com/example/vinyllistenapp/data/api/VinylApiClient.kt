@@ -27,6 +27,7 @@ import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.ReleaseTrackCredit
 import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
 import com.example.vinyllistenapp.domain.TimedSessionGroup
@@ -1377,8 +1378,21 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
             position = item.optString("position"),
             title = item.optString("title"),
             duration = item.optNullableString("duration"),
+            extraArtists =
+                (
+                    item.optJSONArray("extra_artists")
+                        ?: item.optJSONArray("extraartists")
+                ).orEmpty().toReleaseTrackCredits(),
         )
     }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun JSONArray.toReleaseTrackCredits(): List<ReleaseTrackCredit> =
+    mapObjects { item ->
+        ReleaseTrackCredit(
+            name = item.optString("name"),
+            role = item.optNullableString("role"),
+        )
+    }.filter { it.name.isNotBlank() }
 
 private fun JSONArray.toReleaseArtists(): List<ReleaseArtist> =
     mapObjects { item ->

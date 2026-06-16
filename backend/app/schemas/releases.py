@@ -20,10 +20,16 @@ class ReleaseSideOptionResponse(BaseModel):
     disc_number: int | None = None
 
 
+class ReleaseTrackCreditResponse(BaseModel):
+    name: str
+    role: str | None = None
+
+
 class ReleaseTrackResponse(BaseModel):
     position: str
     title: str
     duration: str | None = None
+    extra_artists: list[ReleaseTrackCreditResponse] = Field(default_factory=list)
 
 
 class ReleaseArtistResponse(BaseModel):

@@ -995,11 +995,21 @@ private fun RecordTracklistContent(
 
             else -> {
                 record.tracklist.forEach { track ->
-                    Text(
-                        text = displayReleaseTrack(track),
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    val trackCredits = displayReleaseTrackCredits(track)
+                    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs)) {
+                        Text(
+                            text = displayReleaseTrack(track),
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        trackCredits?.let { credits ->
+                            Text(
+                                text = credits,
+                                color = VinylColors.TextSecondary.copy(alpha = 0.78f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1014,13 +1024,35 @@ private fun discogsArtistSearchUrl(artistName: String): String = "https://www.di
 
 private fun discogsLabelSearchUrl(labelName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(labelName)}&type=label"
 
-private fun displayReleaseTrack(track: ReleaseTrack): String {
+internal fun displayReleaseTrack(track: ReleaseTrack): String {
     val duration =
         track.duration
             ?.takeIf { it.isNotBlank() }
             ?.let { " $it" }
             .orEmpty()
     return "${track.position}: ${track.title}$duration"
+}
+
+internal fun displayReleaseTrackCredits(track: ReleaseTrack): String? {
+    val groupedCredits = linkedMapOf<String?, Pair<String?, LinkedHashSet<String>>>()
+    track.extraArtists.forEach { artist ->
+        val name = artist.name.takeIf { it.isNotBlank() } ?: return@forEach
+        val role = artist.role?.trim()?.takeIf { it.isNotBlank() }
+        val roleKey = role?.lowercase()
+        val existing = groupedCredits[roleKey]
+        if (existing == null) {
+            groupedCredits[roleKey] = role to linkedSetOf(name)
+        } else {
+            existing.second.add(name)
+        }
+    }
+    return groupedCredits.values
+        .mapNotNull { (role, names) ->
+            names.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { artistNames ->
+                role?.let { "$it: $artistNames" } ?: artistNames
+            }
+        }.takeIf { it.isNotEmpty() }
+        ?.joinToString("; ")
 }
 
 internal fun releaseTotalPlayTimeText(record: RecordSummary): String? {

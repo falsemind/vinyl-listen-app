@@ -35,6 +35,12 @@ data class ReleaseTrack(
     val position: String,
     val title: String,
     val duration: String? = null,
+    val extraArtists: List<ReleaseTrackCredit> = emptyList(),
+)
+
+data class ReleaseTrackCredit(
+    val name: String,
+    val role: String? = null,
 )
 
 data class ReleaseArtist(

@@ -215,7 +215,13 @@ def test_get_tracklist_returns_discogs_tracks(
         {
             "tracklist": [
                 {"position": "X1", "type_": "heading", "title": "Side X"},
-                {"position": "X2", "type_": "track", "title": "S.O.U.R", "duration": ""},
+                {
+                    "position": "X2",
+                    "type_": "track",
+                    "title": "S.O.U.R",
+                    "duration": "",
+                    "extraartists": [{"name": "Target Artist (2)", "role": "Remix"}],
+                },
                 {"position": "Y1", "type_": "track", "title": "Another Tune", "duration": "5:12"},
             ]
         }
@@ -228,6 +234,8 @@ def test_get_tracklist_returns_discogs_tracks(
         ("X2", "S.O.U.R", None),
         ("Y1", "Another Tune", "5:12"),
     ]
+    assert [(artist.name, artist.role) for artist in tracks[0].extra_artists] == [("Target Artist", "Remix")]
+    assert tracks[1].extra_artists == []
 
 
 def test_get_artists_returns_discogs_release_artists(
