@@ -352,6 +352,55 @@ def test_identifier_parser_does_not_promote_fragmented_band_ocr_to_identity() ->
     assert "NDERGROUND DUB]" not in identifiers.text_fragments
 
 
+def test_identifier_parser_does_not_promote_mix_versions_to_artist() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "XOPSTOOT",
+                "XOPSTOOT (HEBBE REMIX)",
+                "KETEL",
+                "KETEL (TMSV REMIX)",
+            ]
+        )
+    )
+    split_marker_identifiers = parser.parse(
+        "\n".join(
+            [
+                "A1",
+                "KOPSTOOT",
+                "A2",
+                "KOPSTOOT (HEBBE REMIX)",
+                "B1",
+                "KETEL",
+                "B2",
+                "KETEL (TMSV REMIX)",
+                "B3",
+                "KETEL (REOUAKE REMIX)",
+            ]
+        )
+    )
+
+    assert identifiers.artist is None
+    assert identifiers.title is None
+    assert identifiers.text_fragments == (
+        "XOPSTOOT",
+        "XOPSTOOT (HEBBE REMIX)",
+        "KETEL",
+        "KETEL (TMSV REMIX)",
+    )
+    assert split_marker_identifiers.artist is None
+    assert split_marker_identifiers.title is None
+    assert split_marker_identifiers.text_fragments == (
+        "KOPSTOOT",
+        "KOPSTOOT (HEBBE REMIX)",
+        "KETEL",
+        "KETEL (TMSV REMIX)",
+        "KETEL (REOUAKE REMIX)",
+    )
+
+
 def test_identifier_parser_reads_top_stacked_artist_title_before_side_tracks() -> None:
     parser = IdentifierParser()
 
