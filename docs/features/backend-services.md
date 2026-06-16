@@ -204,6 +204,8 @@ saved credentials raise `DiscogsConfigurationError` for token-gated flows.
   current collection source of truth, and whether backend image identify is enabled.
 - `save_access_token`, which validates `/oauth/identity`, encrypts the token,
   and upserts the `provider_integrations` row.
+- `delete_access_token`, which clears the stored token, marks the integration
+  inactive, and resets collection source of truth to `APP`.
 - `get_saved_credentials`, which decrypts the stored token and returns the
   identity-derived username.
 - `build_discogs_service`, which creates a `DiscogsService` with an explicit

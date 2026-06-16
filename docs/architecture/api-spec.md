@@ -771,6 +771,8 @@ hides the folders action unless at least one non-default folder exists.
 
 Folder rows are filters for the current app collection only. They do not change
 the collection source of truth and do not persist a folder-specific sync scope.
+Android shows up to 10 folders in the Collection action menu. If more folders
+exist, the menu shows a `View all folders` row that opens a full folder list.
 
 ---
 
@@ -849,6 +851,16 @@ Same response shape as `GET /integrations/discogs`.
 | ------ | ---- | ------- |
 | `400 Bad Request` | `discogs_token_invalid` | Discogs identity validation failed or the identity response was incomplete. |
 | `500 Internal Server Error` | `discogs_token_storage_not_configured` | `DISCOGS_TOKEN_ENCRYPTION_KEY` is missing or invalid. |
+
+## DELETE /integrations/discogs/token
+
+Deletes the saved Discogs personal access token. This disables token-backed
+Discogs features and resets collection source of truth to `APP`, because
+`DISCOGS` source of truth requires active saved credentials.
+
+### Response
+
+Same response shape as `GET /integrations/discogs`.
 
 ---
 

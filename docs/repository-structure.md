@@ -208,6 +208,7 @@ All routes are nested under `/api/v1`.
 | `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
+| `DELETE /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `GET /releases` | `api/routes/releases.py` | Release listing placeholder/current route behavior. |
 | `GET /releases/search` | `api/routes/releases.py` | Token-backed backend Discogs release search. |
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
@@ -445,7 +446,7 @@ android-app/
 | Package | Responsibility |
 | --- | --- |
 | `data/` | Prototype fallback data and backend API client code. |
-| `data/api/` | Lightweight HTTP clients for backend API calls and direct Discogs access. `VinylApiClient` covers identify jobs, integration status/token save, token-backed release import, client-provided Discogs payload import, detail/refresh/history, collection records/folders/settings/sync APIs, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. `DiscogsApiClient` handles device-side manual/barcode Discogs search and selected-release fetch with local unauthenticated rate limiting. |
+| `data/api/` | Lightweight HTTP clients for backend API calls and direct Discogs access. `VinylApiClient` covers identify jobs, integration status/token save/delete, token-backed release import, client-provided Discogs payload import, detail/refresh/history, collection records/folders/settings/sync APIs, session create, timed session groups, Home summary, analytics calls, and safe GET retry/backoff behavior. `DiscogsApiClient` handles device-side manual/barcode Discogs search and selected-release fetch with local unauthenticated rate limiting. |
 | `domain/` | UI-facing domain models for records, collection folders, release side options, sessions, timed session groups, candidates, Home summaries, and analytics dashboard data. |
 | `navigation/` | Compose navigation host, active timed-session state, and route helpers for Home, capture, image/barcode processing, match confirmation, manual search, logging, detail, analytics, AI insights, collection, settings, and View All screens. |
 | `ui/components/` | Shared Compose components, buttons, cards, rating controls, active timed-session banner, and navigation chrome. |
@@ -460,8 +461,8 @@ android-app/
 - The Analytics screen loads the `/api/v1/analytics/*` chart endpoints and falls back to local mock dashboard data when the backend is unavailable.
 - The Recent Sessions, Top Records, Mood Distribution, and Style Distribution expanded screens live in `ViewAllScreens.kt`; list-style screens show up to 25 sessions or records, while distribution screens show the full loaded distribution.
 - View All Recent Sessions groups fetched rows with the same `session_group_id` into a green outlined timed-session container with metadata chips. Grouping applies to the loaded page window, so a very long timed session can continue on the next page if its rows cross a pagination boundary.
-- Settings calls `GET /api/v1/integrations/discogs` and `PUT /api/v1/integrations/discogs/token` for Discogs token state, identity validation, and source-of-truth controls.
-- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`. Discogs sync actions are hidden until a saved token exists.
+- Settings calls `GET /api/v1/integrations/discogs`, `PUT /api/v1/integrations/discogs/token`, and `DELETE /api/v1/integrations/discogs/token` for Discogs token state, identity validation, token removal, and source-of-truth controls.
+- The Records Collection screen starts `POST /api/v1/collection/sync`, polls `GET /api/v1/collection/sync/{job_id}`, loads active records with `GET /api/v1/collection/releases?limit=25&offset=0`, and searches only active local collection records with `GET /api/v1/collection/search`. Discogs sync actions are hidden until a saved token exists. Discogs folder filters come from `GET /api/v1/collection/folders`; the action menu shows 10 folders plus a `View all folders` route when more folders exist.
 - Manual search uses `DiscogsApiClient` for direct device-side Discogs search, paginates in 10-result pages, fetches the selected full release on the device, imports that payload through the backend, and displays the release format returned by Discogs.
 - Capture can enter barcode scan mode on the existing CameraX preview. ML Kit bundled barcode scanning reads UPC/EAN frames locally, shows a short captured confirmation, then opens barcode processing.
 - Image Processing starts `POST /api/v1/identify/jobs`, polls `GET /api/v1/identify/jobs/{job_id}`, blocks normal back navigation while active, and sends `POST /api/v1/identify/jobs/{job_id}/cancel` from the top-left cancel action.
