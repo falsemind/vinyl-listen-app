@@ -175,6 +175,7 @@ Notes:
 * Candidates include `release_id` when the candidate already exists in the local database.
 * Candidates from Discogs may have `release_id: null`.
 * If `release_id` is null, the client imports the selected Discogs release before logging a session.
+* Collection add uses the same candidate shape. Android no-token collection add fetches the selected full Discogs release from the device, imports it through `POST /releases/import/client-discogs`, then calls `POST /releases/{release_id}/collection/reactivate` before opening Record Details.
 
 ## POST /identify/jobs
 
@@ -442,11 +443,39 @@ Requires a saved Discogs integration token. The backend must not use this endpoi
 
 `status` is `created` or `updated`.
 
+## POST /releases/import-to-collection
+
+Imports a full Discogs release through the backend's saved Discogs integration token and marks the saved release active in the app collection. This is a token-backed server-owned flow for callers that can use backend Discogs credentials.
+
+Android collection add does not require a saved backend Discogs token. In no-token collection-add mode, Android fetches the full Discogs release payload on-device, calls `POST /releases/import/client-discogs`, then calls `POST /releases/{release_id}/collection/reactivate`.
+
+### Request
+
+```json
+{
+  "discogs_release_id": 555123,
+  "force_refresh": false
+}
+```
+
+### Response
+
+Same response shape as `POST /releases/import`.
+
+### Errors
+
+| Status | Meaning |
+| ------ | ------- |
+| `400 Bad Request` | A saved Discogs access token is required. |
+| `404 Not Found` | Discogs returned 404 for the requested release. |
+| `422 Unprocessable Content` | The Discogs payload cannot be mapped into local release metadata. |
+| `502 Bad Gateway` | Discogs returned a non-404 client error. |
+
 ## POST /releases/import/client-discogs
 
 Imports a Discogs release from a full Discogs payload already fetched by Android.
 
-Use this endpoint for no-token barcode/manual-search imports. Android owns the unauthenticated Discogs request and local rate limiting, then sends the selected release payload to the backend for validation, mapping, caching, and persistence.
+Use this endpoint for no-token barcode/manual-search imports and no-token collection-add imports. Android owns the unauthenticated Discogs request and local rate limiting, then sends the selected release payload to the backend for validation, mapping, caching, and persistence. Collection add then activates membership through `POST /releases/{release_id}/collection/reactivate`.
 
 ### Request
 

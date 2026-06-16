@@ -251,7 +251,9 @@ The route:
 2. Builds `DiscogsService` from saved integration credentials.
 3. Calls `DiscogsService.search_releases`.
 4. Normalizes Discogs result payloads into compact candidate rows.
-5. Returns Discogs IDs only; clients must call `POST /api/v1/releases/import` after selection to get an internal `release_id`.
+5. Returns Discogs IDs only; token-backed clients can call `POST /api/v1/releases/import` after selection to get an internal `release_id`.
+
+Android no-token manual search, barcode search, and collection-add candidate confirmation fetch the selected full Discogs release directly on-device, then call `POST /api/v1/releases/import/client-discogs`.
 
 ### Release fetch behavior
 
@@ -305,13 +307,25 @@ results.
 
 `ReleaseImportResult.status` returns `created` or `updated`, based on whether the repository created a new row.
 
+### Import-to-collection flow
+
+`import_release_to_collection` reuses the token-backed import flow, then calls
+`ReleasesRepository.mark_in_collection` with no Discogs collection instance id.
+It activates or reactivates the release, clears `collection_removed_at`, and
+updates the collection sync timestamp. This route is for server-owned Discogs
+fetches that can use a saved backend token.
+
 ### Client-provided import flow
 
-1. Android fetches the selected Discogs release directly for no-token barcode/manual-search flows.
+1. Android fetches the selected Discogs release directly for no-token barcode/manual-search and collection-add flows.
 2. Backend accepts the full Discogs payload without creating a Discogs client.
 3. Backend maps the payload to `InternalReleaseData`.
 4. Backend upserts the raw payload into `discogs_release_cache`.
 5. Backend saves or updates the local release and returns `ReleaseImportResult`.
+
+When client-provided import is used from Collection add, Android follows the
+import with `reactivateReleaseCollectionMembership` so the saved release appears
+in Records Collection and Record Details can log future sessions.
 
 ### Refresh flow
 

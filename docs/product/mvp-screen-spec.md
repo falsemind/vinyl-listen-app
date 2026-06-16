@@ -261,11 +261,12 @@ MatchConfirmation
      ↓
 User selects candidate
      ↓
-POST /sessions OR GET /releases/{discogs_release_id}
+Session mode: import selected Discogs candidate if needed, then Session Logging
+Collection-add mode: import selected Discogs candidate if needed, activate collection membership
      ↓
-backend creates internal record
+backend returns internal release_id
      ↓
-release_id returned
+session_logging/{releaseId} or record_detail/{releaseId}
 ```
 
 ---
@@ -627,6 +628,12 @@ Tap record → Record Detail Screen
 Action-menu rows use green icons: settings gear for `Collection settings`,
 sync arrows for `Load Discogs collection` / `Sync Items`, and folder icons for
 folder rows. The `View all folders` row uses a three-dot icon.
+
+The add camera option starts the existing identify camera flow in collection-add
+mode. Confirming a candidate saves the full release metadata into the backend,
+activates collection membership, opens Record Detail, and refreshes Collection
+when the user returns. This path works without a saved backend Discogs token by
+fetching the selected full Discogs release from the device before import.
 
 ---
 
