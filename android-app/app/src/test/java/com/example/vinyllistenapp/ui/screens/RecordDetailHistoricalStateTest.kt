@@ -57,8 +57,8 @@ class RecordDetailHistoricalStateTest {
     }
 
     @Test
-    fun fullReleaseActionOnlyShowsForBasicCollectionRecords() {
-        val basicCollectionRecord =
+    fun releaseSyncOnlyShowsForDiscogsBackedRecords() {
+        val discogsBackedRecord =
             RecordSummary(
                 releaseId = "release-basic",
                 discogsReleaseId = 11646493,
@@ -73,10 +73,13 @@ class RecordDetailHistoricalStateTest {
                 hasFullDiscogsInfo = false,
             )
 
-        assertTrue(shouldShowGetFullReleaseAction(basicCollectionRecord))
-        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(hasFullDiscogsInfo = true)))
-        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(inCollection = false)))
-        assertFalse(shouldShowGetFullReleaseAction(basicCollectionRecord.copy(releaseId = "release-001")))
+        assertTrue(canSyncRelease(discogsBackedRecord))
+        assertTrue(shouldAutoImportFullRelease(discogsBackedRecord))
+        assertTrue(canSyncRelease(discogsBackedRecord.copy(hasFullDiscogsInfo = true)))
+        assertFalse(shouldAutoImportFullRelease(discogsBackedRecord.copy(hasFullDiscogsInfo = true)))
+        assertTrue(canSyncRelease(discogsBackedRecord.copy(inCollection = false)))
+        assertFalse(canSyncRelease(discogsBackedRecord.copy(discogsReleaseId = 0)))
+        assertFalse(canSyncRelease(discogsBackedRecord.copy(releaseId = "release-001")))
     }
 
     @Test
