@@ -226,6 +226,19 @@ data class CollectionRecordsPage(
     val hasFavorites: Boolean = false,
 )
 
+data class CollectionFolder(
+    val id: Long,
+    val name: String,
+    val count: Int?,
+    val isDefault: Boolean,
+)
+
+data class CollectionFoldersPage(
+    val discogsConfigured: Boolean,
+    val folders: List<CollectionFolder>,
+    val hasExtraFolders: Boolean,
+)
+
 enum class CollectionSourceOfTruth {
     App,
     Discogs,

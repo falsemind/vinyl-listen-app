@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.ui.screens
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -31,11 +32,14 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +59,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import com.example.vinyllistenapp.data.api.CollectionSyncJobState
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.CollectionRecord
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.ActionMenuAction
@@ -112,12 +119,15 @@ fun CollectionScreen(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var discogsAccessTokenSaved by remember { mutableStateOf(false) }
+    var collectionFolders by remember { mutableStateOf<List<CollectionFolder>>(emptyList()) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
     var isAddMenuExpanded by remember { mutableStateOf(false) }
+    var isCollectionFoldersExpanded by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
     var artistFilter by remember(initialArtistFilter) { mutableStateOf(initialArtistFilter?.takeIf { it.isNotBlank() }) }
     var labelFilter by remember(initialLabelFilter) { mutableStateOf(initialLabelFilter?.takeIf { it.isNotBlank() }) }
     var favoriteFilter by remember { mutableStateOf(false) }
+    var folderFilter by remember { mutableStateOf<CollectionFolder?>(null) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -125,6 +135,7 @@ fun CollectionScreen(
         val requestedArtistFilter = artistFilter
         val requestedLabelFilter = labelFilter
         val requestedFavoriteFilter = favoriteFilter
+        val requestedFolderFilter = folderFilter
         isLoadingInitial = true
         records = emptyList()
         hasMore = false
@@ -136,11 +147,13 @@ fun CollectionScreen(
                 artist = requestedArtistFilter,
                 label = requestedLabelFilter,
                 favorite = requestedFavoriteFilter,
+                folderId = requestedFolderFilter?.id,
             )
         }.onSuccess { page ->
             if (requestedArtistFilter != artistFilter ||
                 requestedLabelFilter != labelFilter ||
-                requestedFavoriteFilter != favoriteFilter
+                requestedFavoriteFilter != favoriteFilter ||
+                requestedFolderFilter?.id != folderFilter?.id
             ) {
                 return@onSuccess
             }
@@ -156,6 +169,32 @@ fun CollectionScreen(
             error = failure.toUserMessage("Could not load collection records.")
         }
         isLoadingInitial = false
+    }
+
+    suspend fun loadCollectionFolders() {
+        if (!discogsAccessTokenSaved) {
+            collectionFolders = emptyList()
+            folderFilter = null
+            isCollectionFoldersExpanded = false
+            return
+        }
+        val foldersPage =
+            runCatching { apiClient.getCollectionFolders() }
+                .getOrNull()
+        val selectableFolders =
+            if (foldersPage?.discogsConfigured == true && foldersPage.hasExtraFolders) {
+                foldersPage.folders.filterNot { it.isDefault }
+            } else {
+                emptyList()
+            }
+        collectionFolders = selectableFolders
+        val selectedFolderId = folderFilter?.id
+        if (selectedFolderId != null && selectedFolderId !in selectableFolders.map { it.id }.toSet()) {
+            folderFilter = null
+        }
+        if (selectableFolders.isEmpty()) {
+            isCollectionFoldersExpanded = false
+        }
     }
 
     suspend fun followCollectionSync(activeJob: CollectionSyncJobState? = null) {
@@ -174,6 +213,7 @@ fun CollectionScreen(
                 }
             }
             syncMessage = null
+            loadCollectionFolders()
             loadFirstPage()
         }.onFailure { failure ->
             error = failure.toUserMessage("Could not sync Discogs collection.")
@@ -188,6 +228,7 @@ fun CollectionScreen(
         discogsAccessTokenSaved =
             runCatching { apiClient.getDiscogsIntegrationStatus().accessTokenSaved }
                 .getOrDefault(false)
+        loadCollectionFolders()
         runCatching { apiClient.getActiveCollectionSyncJob() }
             .getOrNull()
             ?.let { activeJob ->
@@ -197,11 +238,11 @@ fun CollectionScreen(
         loadFirstPage()
     }
 
-    LaunchedEffect(retryKey, refreshKey, artistFilter, labelFilter, favoriteFilter) {
+    LaunchedEffect(retryKey, refreshKey, artistFilter, labelFilter, favoriteFilter, folderFilter?.id) {
         loadCollectionState()
     }
 
-    val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter
+    val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter || folderFilter != null
 
     Scaffold(
         containerColor = VinylColors.AppBackground,
@@ -252,8 +293,11 @@ fun CollectionScreen(
             artistFilter = artistFilter,
             labelFilter = labelFilter,
             favoriteFilter = favoriteFilter,
+            folderFilter = folderFilter,
             filterResultCount = totalRecords,
             hasFavorites = hasFavorites,
+            collectionFolders = collectionFolders,
+            isCollectionFoldersExpanded = isCollectionFoldersExpanded,
             showDiscogsSyncAction = discogsAccessTokenSaved,
             showLoadDiscogsAction = discogsAccessTokenSaved && records.isEmpty() && !hasActiveFilter,
             scrollState = scrollState,
@@ -270,15 +314,33 @@ fun CollectionScreen(
             onClearFavoriteFilter = {
                 favoriteFilter = false
             },
+            onClearFolderFilter = {
+                folderFilter = null
+            },
             onShowFavorites = {
                 artistFilter = null
                 labelFilter = null
+                folderFilter = null
                 favoriteFilter = true
+                isActionMenuOpen = false
+            },
+            onCollectionFoldersExpandedChange = { expanded ->
+                isCollectionFoldersExpanded = expanded
+            },
+            onShowCollectionFolder = { folder ->
+                artistFilter = null
+                labelFilter = null
+                favoriteFilter = false
+                folderFilter = folder
+                isCollectionFoldersExpanded = false
                 isActionMenuOpen = false
             },
             isActionMenuOpen = isActionMenuOpen,
             onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
-            onActionMenuDismiss = { isActionMenuOpen = false },
+            onActionMenuDismiss = {
+                isActionMenuOpen = false
+                isCollectionFoldersExpanded = false
+            },
             onCollectionSettings = onCollectionSettings,
             onSync = {
                 scope.launch { followCollectionSync() }
@@ -288,6 +350,7 @@ fun CollectionScreen(
                     val requestedArtistFilter = artistFilter
                     val requestedLabelFilter = labelFilter
                     val requestedFavoriteFilter = favoriteFilter
+                    val requestedFolderFilter = folderFilter
                     isLoadingMore = true
                     runCatching {
                         apiClient.getCollectionReleases(
@@ -296,11 +359,13 @@ fun CollectionScreen(
                             artist = requestedArtistFilter,
                             label = requestedLabelFilter,
                             favorite = requestedFavoriteFilter,
+                            folderId = requestedFolderFilter?.id,
                         )
                     }.onSuccess { page ->
                         if (requestedArtistFilter != artistFilter ||
                             requestedLabelFilter != labelFilter ||
-                            requestedFavoriteFilter != favoriteFilter
+                            requestedFavoriteFilter != favoriteFilter ||
+                            requestedFolderFilter?.id != folderFilter?.id
                         ) {
                             return@onSuccess
                         }
@@ -335,8 +400,11 @@ private fun CollectionListContent(
     artistFilter: String?,
     labelFilter: String?,
     favoriteFilter: Boolean,
+    folderFilter: CollectionFolder?,
     filterResultCount: Int,
     hasFavorites: Boolean,
+    collectionFolders: List<CollectionFolder>,
+    isCollectionFoldersExpanded: Boolean,
     showLoadDiscogsAction: Boolean,
     showDiscogsSyncAction: Boolean,
     scrollState: ScrollState,
@@ -345,7 +413,10 @@ private fun CollectionListContent(
     onClearArtistFilter: () -> Unit,
     onClearLabelFilter: () -> Unit,
     onClearFavoriteFilter: () -> Unit,
+    onClearFolderFilter: () -> Unit,
     onShowFavorites: () -> Unit,
+    onCollectionFoldersExpandedChange: (Boolean) -> Unit,
+    onShowCollectionFolder: (CollectionFolder) -> Unit,
     isActionMenuOpen: Boolean,
     onActionMenuToggle: () -> Unit,
     onActionMenuDismiss: () -> Unit,
@@ -415,6 +486,13 @@ private fun CollectionListContent(
                     onDismiss = onClearFavoriteFilter,
                 )
             }
+            folderFilter?.let { folder ->
+                FolderCollectionFilterChip(
+                    folder = folder,
+                    resultCount = filterResultCount,
+                    onDismiss = onClearFolderFilter,
+                )
+            }
             syncMessage?.let { message -> CollectionStatusText(message) }
             error?.let {
                 CollectionStatusText(message = it, isError = true)
@@ -431,6 +509,7 @@ private fun CollectionListContent(
                 CollectionStatusText(
                     when {
                         favoriteFilter -> "No favorite records."
+                        folderFilter != null -> "No collection records in ${folderFilter.name}."
                         labelFilter != null -> "No collection records for $labelFilter."
                         artistFilter != null -> "No collection records for $artistFilter."
                         else -> "No records in collection."
@@ -457,6 +536,7 @@ private fun CollectionListContent(
             ) {
                 ActionMenuAction(
                     label = "Collection settings",
+                    icon = Icons.Filled.Settings,
                     onClick = onCollectionSettings,
                 )
                 if (showDiscogsSyncAction) {
@@ -468,8 +548,28 @@ private fun CollectionListContent(
                                 else -> "Sync Items"
                             },
                         enabled = !isSyncing,
+                        icon = Icons.Filled.Sync,
                         onClick = onSync,
                     )
+                }
+                if (collectionFolders.isNotEmpty()) {
+                    CollectionActionMenuGroupAction(
+                        label = "Collection folders",
+                        expanded = isCollectionFoldersExpanded,
+                        onClick = { onCollectionFoldersExpandedChange(!isCollectionFoldersExpanded) },
+                    )
+                    if (isCollectionFoldersExpanded) {
+                        CollectionActionMenuDelimiter()
+                        collectionFolders.forEach { folder ->
+                            CollectionActionMenuSubOption(
+                                label = folder.name,
+                                icon = Icons.Filled.Folder,
+                                onClickLabel = "Filter collection by ${folder.name}",
+                                onClick = { onShowCollectionFolder(folder) },
+                            )
+                        }
+                        CollectionActionMenuDelimiter()
+                    }
                 }
                 if (hasFavorites && !favoriteFilter) {
                     ActionMenuAction(
@@ -481,6 +581,106 @@ private fun CollectionListContent(
             }
         }
     }
+}
+
+@Composable
+private fun CollectionActionMenuGroupAction(
+    label: String,
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "$label arrow rotation",
+    )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (expanded) "Close $label" else "Open $label",
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = label,
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            modifier =
+                Modifier
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.AccentGreen,
+        )
+    }
+}
+
+@Composable
+private fun CollectionActionMenuSubOption(
+    label: String,
+    icon: ImageVector? = null,
+    onClickLabel: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = onClickLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(vertical = VinylSpacing.SpaceXs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(end = VinylSpacing.SpaceSm),
+            text = "• $label",
+            color = VinylColors.AccentGreen,
+            textAlign = TextAlign.Start,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        icon?.let {
+            Icon(
+                modifier = Modifier.size(16.dp),
+                imageVector = it,
+                contentDescription = null,
+                tint = VinylColors.AccentGreen,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CollectionActionMenuDelimiter() {
+    Spacer(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(VinylColors.BorderDefault),
+    )
 }
 
 @Composable
@@ -745,6 +945,48 @@ private fun FavoriteCollectionFilterChip(
         ) {
             Text(
                 text = "Favorites",
+                color = VinylColors.AppBackground,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = null,
+                tint = VinylColors.AppBackground,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        FilterResultCountSuffix(resultCount)
+    }
+}
+
+@Composable
+private fun FolderCollectionFilterChip(
+    folder: CollectionFolder,
+    resultCount: Int,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .clip(VinylShapes.Chip)
+                    .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                    .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.75f), VinylShapes.Chip)
+                    .clickable(
+                        onClickLabel = "Clear folder filter",
+                        role = Role.Button,
+                        onClick = onDismiss,
+                    ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = folder.name,
                 color = VinylColors.AppBackground,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
