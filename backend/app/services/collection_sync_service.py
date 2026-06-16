@@ -6,6 +6,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.repositories.collection_folders_repository import (
+    CollectionFolderData,
+    CollectionFoldersRepository,
+    ReleaseFolderMembershipData,
+)
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import CollectionSourceOfTruth
@@ -31,6 +36,14 @@ class CollectionReleaseItem:
 
 
 @dataclass(frozen=True)
+class CollectionFolderItem:
+    discogs_folder_id: int
+    name: str
+    item_count: int | None
+    is_default: bool
+
+
+@dataclass(frozen=True)
 class CollectionSyncResult:
     total_items: int
     unique_releases: int
@@ -49,6 +62,7 @@ class CollectionSyncService:
         discogs_service_factory: Callable[[str], DiscogsService] | None = None,
         discogs_integration_service: DiscogsIntegrationService | None = None,
         repository: ReleasesRepository | None = None,
+        folder_repository: CollectionFoldersRepository | None = None,
         settings_repository: CollectionSettingsRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
@@ -56,6 +70,7 @@ class CollectionSyncService:
         self._discogs_service_factory = discogs_service_factory or _build_discogs_service
         self._discogs_integration_service = discogs_integration_service or DiscogsIntegrationService()
         self._repository = repository or ReleasesRepository()
+        self._folder_repository = folder_repository or CollectionFoldersRepository()
         self._settings_repository = settings_repository or CollectionSettingsRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
@@ -119,6 +134,7 @@ class CollectionSyncService:
                     removed_at=sync_started_at,
                     commit=False,
                 )
+            self._sync_collection_folders(db, raw_items=raw_items, synced_at=sync_started_at)
             db.commit()
             _report_progress(
                 progress_reporter,
@@ -154,13 +170,59 @@ class CollectionSyncService:
             removed_count=removed_count,
         )
 
-    def _fetch_discogs_collection_releases(self, db: Session) -> list[dict[str, Any]]:
+    def _sync_collection_folders(
+        self,
+        db: Session,
+        *,
+        raw_items: list[dict[str, Any]],
+        synced_at: datetime,
+    ) -> None:
+        folder_items = [_parse_collection_folder(folder) for folder in self._fetch_discogs_collection_folders(db)]
+        folder_records = self._folder_repository.upsert_folders(
+            db,
+            [
+                CollectionFolderData(
+                    discogs_folder_id=folder.discogs_folder_id,
+                    name=folder.name,
+                    item_count=folder.item_count,
+                    is_default=folder.is_default,
+                )
+                for folder in folder_items
+            ],
+            synced_at=synced_at,
+            commit=False,
+        )
+
+        for folder in folder_items:
+            folder_record = folder_records[folder.discogs_folder_id]
+            folder_raw_items = (
+                raw_items
+                if folder.is_default
+                else self._fetch_discogs_collection_releases(db, folder_id=folder.discogs_folder_id)
+            )
+            self._folder_repository.replace_folder_memberships(
+                db,
+                folder=folder_record,
+                memberships=_folder_memberships_from_items(folder_raw_items),
+                synced_at=synced_at,
+                commit=False,
+            )
+
+    def _fetch_discogs_collection_releases(self, db: Session, *, folder_id: int = 0) -> list[dict[str, Any]]:
         if self._discogs_service is not None:
-            return self._discogs_service.fetch_collection_releases()
+            return self._discogs_service.fetch_collection_releases(folder_id=folder_id)
 
         credentials = self._discogs_integration_service.get_saved_credentials(db)
         discogs_service = self._discogs_service_factory(credentials.access_token)
-        return discogs_service.fetch_collection_releases(username=credentials.username)
+        return discogs_service.fetch_collection_releases(username=credentials.username, folder_id=folder_id)
+
+    def _fetch_discogs_collection_folders(self, db: Session) -> list[dict[str, Any]]:
+        if self._discogs_service is not None:
+            return self._discogs_service.fetch_collection_folders()
+
+        credentials = self._discogs_integration_service.get_saved_credentials(db)
+        discogs_service = self._discogs_service_factory(credentials.access_token)
+        return discogs_service.fetch_collection_folders(username=credentials.username)
 
 
 def collapse_collection_items(items: Iterable[Mapping[str, Any]]) -> list[CollectionReleaseItem]:
@@ -203,6 +265,34 @@ def _parse_collection_item(item: Mapping[str, Any]) -> CollectionReleaseItem:
         date_added=_parse_discogs_datetime(item.get("date_added")),
         basic_information=release_payload,
     )
+
+
+def _parse_collection_folder(folder: Mapping[str, Any]) -> CollectionFolderItem:
+    folder_id = _coerce_int(folder.get("id"))
+    if folder_id is None:
+        raise CollectionSyncError("Discogs collection folder is missing an id.")
+
+    name = folder.get("name")
+    if not isinstance(name, str) or not name.strip():
+        name = f"Folder {folder_id}"
+
+    return CollectionFolderItem(
+        discogs_folder_id=folder_id,
+        name=name.strip(),
+        item_count=_coerce_int(folder.get("count")),
+        is_default=folder_id == 0,
+    )
+
+
+def _folder_memberships_from_items(items: Iterable[Mapping[str, Any]]) -> list[ReleaseFolderMembershipData]:
+    return [
+        ReleaseFolderMembershipData(
+            discogs_release_id=item.discogs_release_id,
+            discogs_instance_id=item.instance_id,
+            date_added=item.date_added,
+        )
+        for item in collapse_collection_items(items)
+    ]
 
 
 def _map_collection_item_to_release(item: CollectionReleaseItem) -> InternalReleaseData:

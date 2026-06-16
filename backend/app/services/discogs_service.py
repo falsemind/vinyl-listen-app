@@ -405,6 +405,19 @@ class DiscogsService:
 
         return releases
 
+    def fetch_collection_folders(self, *, username: str | None = None) -> list[dict[str, Any]]:
+        resolved_username = (username or "").strip()
+        if not resolved_username:
+            raise DiscogsConfigurationError("Discogs username is not configured.")
+
+        safe_username = quote(resolved_username, safe="")
+        payload = self._client.get(f"/users/{safe_username}/collection/folders")
+        folders = payload.get("folders")
+        if not isinstance(folders, list):
+            raise DiscogsClientError("Discogs collection folders response is missing folders.")
+
+        return [folder for folder in folders if isinstance(folder, dict)]
+
     def fetch_collection_page(
         self,
         *,

@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
+from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder
 from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.models.releases import Releases
 from app.services.release_mapper import InternalReleaseData
@@ -214,6 +215,7 @@ class ReleasesRepository:
         artist: str | None = None,
         label: str | None = None,
         favorite: bool = False,
+        folder_id: int | None = None,
     ) -> Sequence[Releases]:
         query = ReleasesRepository._collection_releases_query(
             db,
@@ -221,6 +223,7 @@ class ReleasesRepository:
             artist=artist,
             label=label,
             favorite=favorite,
+            folder_id=folder_id,
         )
 
         return (
@@ -242,6 +245,7 @@ class ReleasesRepository:
         artist: str | None = None,
         label: str | None = None,
         favorite: bool = False,
+        folder_id: int | None = None,
     ) -> int:
         return ReleasesRepository._collection_releases_query(
             db,
@@ -249,6 +253,7 @@ class ReleasesRepository:
             artist=artist,
             label=label,
             favorite=favorite,
+            folder_id=folder_id,
         ).count()
 
     def _collection_releases_query(
@@ -258,10 +263,18 @@ class ReleasesRepository:
         artist: str | None = None,
         label: str | None = None,
         favorite: bool = False,
+        folder_id: int | None = None,
     ):
         query = db.query(Releases)
         if not include_removed:
             query = query.filter(Releases.in_collection.is_(True))
+        if folder_id is not None:
+            query = (
+                query.join(ReleaseCollectionFolder, ReleaseCollectionFolder.release_id == Releases.id)
+                .join(CollectionFolder, CollectionFolder.id == ReleaseCollectionFolder.collection_folder_id)
+                .filter(CollectionFolder.discogs_folder_id == folder_id)
+                .filter(Releases.in_collection.is_(True))
+            )
         if favorite:
             query = query.filter(Releases.is_favorite.is_(True))
         if (artist and artist.strip()) or (label and label.strip()):

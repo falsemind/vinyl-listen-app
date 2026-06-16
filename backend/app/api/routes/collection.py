@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import get_db
+from app.repositories.collection_folders_repository import CollectionFoldersRepository
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
 from app.repositories.provider_integration_repository import ProviderIntegrationRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
+    CollectionFolderResponse,
+    CollectionFoldersResponse,
     CollectionReleaseResponse,
     CollectionReleasesResponse,
     CollectionSettingsRequest,
@@ -46,6 +49,10 @@ def get_collection_settings_repository() -> CollectionSettingsRepository:
     return CollectionSettingsRepository()
 
 
+def get_collection_folders_repository() -> CollectionFoldersRepository:
+    return CollectionFoldersRepository()
+
+
 def get_provider_integration_repository() -> ProviderIntegrationRepository:
     return ProviderIntegrationRepository()
 
@@ -59,6 +66,32 @@ def get_collection_settings(
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 
+@router.get("/folders", response_model=CollectionFoldersResponse)
+def list_collection_folders(
+    db: Annotated[Session, Depends(get_db)],
+    folder_repository: Annotated[CollectionFoldersRepository, Depends(get_collection_folders_repository)],
+    integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
+) -> CollectionFoldersResponse:
+    integration = integration_repository.get_discogs(db)
+    if not _has_configured_discogs_collection(integration):
+        return CollectionFoldersResponse(discogs_configured=False, folders=[], has_extra_folders=False)
+
+    folders = [
+        CollectionFolderResponse(
+            id=folder.discogs_folder_id,
+            name=folder.name,
+            count=folder.item_count,
+            is_default=folder.is_default,
+        )
+        for folder in folder_repository.list_folders(db)
+    ]
+    return CollectionFoldersResponse(
+        discogs_configured=True,
+        folders=folders,
+        has_extra_folders=any(not folder.is_default for folder in folders),
+    )
+
+
 @router.put("/settings", response_model=CollectionSettingsResponse)
 def update_collection_settings(
     payload: CollectionSettingsRequest,
@@ -68,13 +101,7 @@ def update_collection_settings(
 ) -> CollectionSettingsResponse | JSONResponse:
     if payload.source_of_truth == CollectionSourceOfTruth.DISCOGS:
         integration = integration_repository.get_discogs(db)
-        if not (
-            integration
-            and integration.is_active
-            and integration.access_token_ciphertext
-            and integration.external_user_id
-            and integration.external_username
-        ):
+        if not _has_configured_discogs_collection(integration):
             return _error_response(
                 status_code=400,
                 code="discogs_token_required",
@@ -150,6 +177,7 @@ def list_collection_releases(
     label: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     favorite: bool = False,
     include_removed: bool = False,
+    folder_id: Annotated[int | None, Query(ge=0)] = None,
 ) -> CollectionReleasesResponse:
     total = repository.count_collection_releases(
         db,
@@ -157,6 +185,7 @@ def list_collection_releases(
         artist=artist,
         label=label,
         favorite=favorite,
+        folder_id=folder_id,
     )
     releases = repository.list_collection_releases(
         db,
@@ -166,6 +195,7 @@ def list_collection_releases(
         artist=artist,
         label=label,
         favorite=favorite,
+        folder_id=folder_id,
     )
     visible_releases = releases[:limit]
     return CollectionReleasesResponse(
@@ -237,6 +267,16 @@ def _to_collection_release_response(release) -> CollectionReleaseResponse:
         collection_added_at=release.collection_added_at,
         in_collection=release.in_collection,
         is_favorite=release.is_favorite,
+    )
+
+
+def _has_configured_discogs_collection(integration) -> bool:
+    return bool(
+        integration
+        and integration.is_active
+        and integration.access_token_ciphertext
+        and integration.external_user_id
+        and integration.external_username
     )
 
 
