@@ -1,5 +1,8 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -49,11 +52,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -67,6 +72,7 @@ import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
 import com.example.vinyllistenapp.domain.AnalyticsTopRecordSummary
 import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.TimedSessionGroup
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
@@ -736,6 +742,7 @@ private fun TimedSessionGroupListItem(
     val isActiveTimedSession = item.sessionGroupId == activeTimedSessionId
     val sessionGroup = item.sessionGroup
     val editableSessionGroup = sessionGroup?.takeIf { it.status == "completed" && it.canEdit }
+    val headerDate = remember(sessionGroup, item.sessions) { timedSessionHeaderDateLabel(sessionGroup, item.sessions) }
 
     Column(
         modifier =
@@ -746,20 +753,39 @@ private fun TimedSessionGroupListItem(
                 .padding(VinylSpacing.SpaceMd),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            TimedSessionMetadataChips(
-                sessionGroup = sessionGroup,
-                sessions = item.sessions,
-                isActive = isActiveTimedSession,
-                modifier = Modifier.padding(end = if (editableSessionGroup != null) 42.dp else 0.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = timedSessionHeaderTypeLabel(sessionGroup?.sessionType),
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = headerDate,
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (editableSessionGroup != null && onEditSessionGroup != null) {
                 TimedSessionGroupEditButton(
                     onClick = { onEditSessionGroup(editableSessionGroup) },
-                    modifier = Modifier.align(Alignment.TopEnd),
                 )
             }
         }
+        TimedSessionDivider()
+        TimedSessionMetadataChips(
+            sessionGroup = sessionGroup,
+            sessions = item.sessions,
+            isActive = isActiveTimedSession,
+        )
         if (editingSessionGroup?.id == item.sessionGroupId && sessionGroup != null && onSaveSessionGroup != null) {
             TimedSessionGroupEditPanel(
                 sessionGroup = editingSessionGroup,
@@ -808,6 +834,11 @@ private fun TimedSessionGroupEditButton(
             modifier = Modifier.size(17.dp),
         )
     }
+}
+
+@Composable
+private fun TimedSessionDivider() {
+    Box(modifier = Modifier.timedSessionDivider())
 }
 
 @Composable
@@ -1116,11 +1147,12 @@ private fun TimedSessionMetadataChips(
     modifier: Modifier = Modifier,
 ) {
     val sessionNotes = sessionGroup?.notes?.trim()?.takeIf { it.isNotBlank() }
+    val tracklistText = remember(sessions) { timedSessionTracklistText(sessions) }
     var isNotesPopupOpen by remember(sessionGroup?.id, sessionNotes) { mutableStateOf(false) }
+    var isTracklistPopupOpen by remember(sessionGroup?.id, tracklistText) { mutableStateOf(false) }
     val averageRating = timedSessionAverageRating(sessions)
     val topMood = timedSessionTopMood(sessions)
     val recordCount = sessions.distinctBy { it.releaseId }.size
-    val trackCount = sessions.sumOf { it.tracks.size }
     val timeLabel = if (isActive) "Playing..." else timedSessionDurationLabel(sessions)
 
     Column(
@@ -1132,19 +1164,29 @@ private fun TimedSessionMetadataChips(
             verticalSpacing = VinylSpacing.SpaceSm,
         ) {
             sessionGroup?.let {
-                TimedSessionMetadataChip(text = timedSessionTypeLabel(it.sessionType))
                 TimedSessionMetadataChip(text = timedSessionStyleFocusLabel(it.styleFocus))
                 TimedSessionMetadataChip(text = timedSessionMoodDirectionLabel(it.moodDirection))
                 if (sessionNotes != null) {
-                    TimedSessionNotesMetadataChip(
+                    TimedSessionFilledMetadataChip(
+                        text = "Notes",
                         expanded = isNotesPopupOpen,
+                        expandedLabel = "Hide timed session notes",
+                        collapsedLabel = "Show timed session notes",
                         onClick = { isNotesPopupOpen = !isNotesPopupOpen },
                     )
                 }
             }
+            if (tracklistText.isNotBlank()) {
+                TimedSessionFilledMetadataChip(
+                    text = "Tracklist",
+                    expanded = isTracklistPopupOpen,
+                    expandedLabel = "Hide timed session tracklist",
+                    collapsedLabel = "Show timed session tracklist",
+                    onClick = { isTracklistPopupOpen = !isTracklistPopupOpen },
+                )
+            }
             TimedSessionMetadataChip(text = "Time: $timeLabel")
             TimedSessionMetadataChip(text = "$recordCount x ${if (recordCount == 1) "Record" else "Records"}")
-            TimedSessionMetadataChip(text = "$trackCount x ${if (trackCount == 1) "Track" else "Tracks"}")
             TimedSessionMetadataChip(text = "Rating: $averageRating")
             TimedSessionMetadataChip(text = "Mood: $topMood")
         }
@@ -1154,12 +1196,21 @@ private fun TimedSessionMetadataChips(
                 onClose = { isNotesPopupOpen = false },
             )
         }
+        if (isTracklistPopupOpen && tracklistText.isNotBlank()) {
+            TimedSessionTracklistPopup(
+                tracklistText = tracklistText,
+                onClose = { isTracklistPopupOpen = false },
+            )
+        }
     }
 }
 
 @Composable
-private fun TimedSessionNotesMetadataChip(
+private fun TimedSessionFilledMetadataChip(
+    text: String,
     expanded: Boolean,
+    expandedLabel: String,
+    collapsedLabel: String,
     onClick: () -> Unit,
 ) {
     Row(
@@ -1168,7 +1219,7 @@ private fun TimedSessionNotesMetadataChip(
                 .clip(VinylShapes.Chip)
                 .background(VinylColors.AccentGreen, VinylShapes.Chip)
                 .clickable(
-                    onClickLabel = if (expanded) "Hide timed session notes" else "Show timed session notes",
+                    onClickLabel = if (expanded) expandedLabel else collapsedLabel,
                     role = Role.Button,
                     onClick = onClick,
                 ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
@@ -1176,7 +1227,7 @@ private fun TimedSessionNotesMetadataChip(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Notes",
+            text = text,
             color = VinylColors.TextOnSolidAccent,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
@@ -1192,11 +1243,13 @@ private fun TimedSessionNotesMetadataChip(
 }
 
 @Composable
-private fun TimedSessionNotesPopup(
-    notes: String,
+private fun TimedSessionTracklistPopup(
+    tracklistText: String,
     onClose: () -> Unit,
 ) {
-    Box(
+    val context = LocalContext.current
+
+    Column(
         modifier =
             Modifier
                 .fillMaxWidth()
@@ -1205,23 +1258,122 @@ private fun TimedSessionNotesPopup(
                 .background(VinylColors.SurfacePrimary)
                 .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
                 .padding(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        Text(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(end = 42.dp),
-            text = notes,
-            color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.bodyMedium,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Tracklist",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TimedSessionCopyChip(
+                onClickLabel = "Copy timed session tracklist",
+                onClick = { context.copyTimedSessionText("Timed session tracklist", tracklistText) },
+            )
+            TimedSessionEditIconAction(
+                icon = Icons.Filled.Close,
+                selected = false,
+                enabled = true,
+                label = "Close timed session tracklist",
+                onClick = onClose,
+            )
+        }
+        Box(
+            modifier = Modifier.timedSessionDivider(),
         )
-        TimedSessionEditIconAction(
-            icon = Icons.Filled.Close,
-            selected = false,
-            enabled = true,
-            label = "Close timed session notes",
-            onClick = onClose,
-            modifier = Modifier.align(Alignment.TopEnd),
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = tracklistText,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun TimedSessionCopyChip(
+    onClickLabel: String,
+    onClick: () -> Unit,
+) {
+    Text(
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.AccentGreen, VinylShapes.Chip)
+                .clickable(
+                    onClickLabel = onClickLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        text = "Copy",
+        color = VinylColors.TextOnSolidAccent,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun TimedSessionNotesPopup(
+    notes: String,
+    onClose: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, VinylShapes.Card)
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.AccentGreen.copy(alpha = 0.76f), VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Session notes",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TimedSessionCopyChip(
+                onClickLabel = "Copy timed session notes",
+                onClick = { context.copyTimedSessionText("Timed session notes", notes) },
+            )
+            TimedSessionEditIconAction(
+                icon = Icons.Filled.Close,
+                selected = false,
+                enabled = true,
+                label = "Close timed session notes",
+                onClick = onClose,
+            )
+        }
+        Box(
+            modifier = Modifier.timedSessionDivider(),
+        )
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = notes,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
         )
     }
 }
@@ -1235,11 +1387,13 @@ private fun TimedSessionMetadataChip(
         modifier =
             modifier
                 .clip(VinylShapes.Chip)
-                .background(VinylColors.AccentGreen, VinylShapes.Chip)
-                .padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+                .background(VinylColors.GreenTint20, VinylShapes.Chip)
+                .border(1.dp, VinylColors.AccentGreen, VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceSm),
         text = text,
-        color = VinylColors.TextOnSolidAccent,
+        color = VinylColors.AccentGreen,
         style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -1389,6 +1543,100 @@ private fun SidePlayedChip(side: String?) {
         color = VinylColors.TextOnSolidAccent,
         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
     )
+}
+
+private fun timedSessionTracklistText(sessions: List<ListeningSession>): String =
+    timedSessionTracklistEntries(sessions)
+        .mapIndexed { index, entry -> "${index + 1}. $entry" }
+        .joinToString(separator = "\n")
+
+private fun timedSessionHeaderTypeLabel(sessionType: String?): String =
+    when (sessionType) {
+        "casual_listening" -> "Casual"
+        "dj_set" -> "DJ"
+        "rediscovery" -> "Rediscover"
+        "testing_records" -> "Testing"
+        "background" -> "Background"
+        else -> "Timed session"
+    }
+
+private fun timedSessionHeaderDateLabel(
+    sessionGroup: TimedSessionGroup?,
+    sessions: List<ListeningSession>,
+): String =
+    sessionGroup?.updatedAt?.toDateLabel()
+        ?: sessionGroup?.endedAt?.toDateLabel()
+        ?: sessions
+            .mapNotNull { session -> session.createdAt ?: session.playedAt }
+            .maxByOrNull { timestamp -> parseSessionInstant(timestamp) ?: Instant.MIN }
+            ?.toDateLabel()
+        ?: "n/a"
+
+private fun timedSessionTracklistEntries(sessions: List<ListeningSession>): List<String> =
+    sessions.flatMap { session ->
+        val releaseDetails = session.timedSessionReleaseDetails()
+        val sortedTracks =
+            session.tracks.sortedWith(
+                compareBy<SessionTrack> { it.sequence ?: Int.MAX_VALUE }
+                    .thenBy { it.position },
+            )
+
+        when {
+            sortedTracks.isNotEmpty() ->
+                sortedTracks.map { track ->
+                    "${session.artist.cleanTracklistValue()} - ${track.title.cleanTracklistValue()} / $releaseDetails"
+                }
+
+            !session.side.isNullOrBlank() ->
+                listOf(
+                    "${session.title.cleanTracklistValue()} - ${timedSessionSideLabel(session.side)} / $releaseDetails",
+                )
+
+            else -> emptyList()
+        }
+    }
+
+private fun ListeningSession.timedSessionReleaseDetails(): String =
+    listOf(
+        year?.toString(),
+        label,
+        catalogNumber,
+    ).joinToString(separator = " / ") { value -> value.cleanTracklistValue(fallback = "n/a") }
+
+private fun timedSessionSideLabel(side: String): String {
+    val cleanSide = side.cleanTracklistValue()
+    return if (cleanSide.startsWith("Side ", ignoreCase = true)) cleanSide else "Side $cleanSide"
+}
+
+private fun String?.cleanTracklistValue(fallback: String = "Unknown"): String =
+    this
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: fallback
+
+private fun String?.toDateLabel(): String? {
+    val value = this?.trim()?.takeIf { it.length >= 10 } ?: return null
+    val date = value.take(10)
+    return date.takeIf { candidate ->
+        candidate[4] == '-' &&
+            candidate[7] == '-' &&
+            candidate.take(4).all { it.isDigit() } &&
+            candidate.substring(5, 7).all { it.isDigit() } &&
+            candidate.substring(8, 10).all { it.isDigit() }
+    }
+}
+
+private fun Modifier.timedSessionDivider(): Modifier =
+    fillMaxWidth()
+        .height(1.dp)
+        .background(VinylColors.BorderDefault)
+
+private fun Context.copyTimedSessionText(
+    clipLabel: String,
+    text: String,
+) {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(clipLabel, text))
 }
 
 private fun timedSessionAverageRating(sessions: List<ListeningSession>): String {
