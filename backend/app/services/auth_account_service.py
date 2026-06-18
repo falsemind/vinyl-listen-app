@@ -199,10 +199,12 @@ class AuthAccountService:
 
         now = self._now_provider()
         latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
-        if latest_code is not None and latest_code.consumed_at is None:
-            latest_issued_at = _ensure_utc(latest_code.expires_at) - self._password_reset_code_ttl
-            if latest_issued_at + self._resend_cooldown > now:
-                raise PasswordResetRequestRateLimitedError("password reset request is rate limited.")
+        if (
+            latest_code is not None
+            and latest_code.consumed_at is None
+            and _ensure_utc(latest_code.created_at) + self._resend_cooldown > now
+        ):
+            raise PasswordResetRequestRateLimitedError("password reset request is rate limited.")
 
         self._repository.consume_unconsumed_password_reset_codes(
             db,
@@ -273,6 +275,7 @@ class AuthAccountService:
             expires_at=now + self._verification_code_ttl,
             resend_count=resend_count,
             rate_limited_until=now + self._resend_cooldown,
+            created_at=now,
             commit=False,
         )
         return code, verification_code
@@ -286,6 +289,7 @@ class AuthAccountService:
             code_hash=self._hash_code(PASSWORD_RESET_PURPOSE, user.email, code),
             sent_to_email=user.email,
             expires_at=now + self._password_reset_code_ttl,
+            created_at=now,
             commit=False,
         )
         return code, reset_code

@@ -207,6 +207,7 @@ class AuthRepository:
         expires_at: datetime,
         resend_count: int = 0,
         rate_limited_until: datetime | None = None,
+        created_at: datetime | None = None,
         code_id: str | None = None,
         commit: bool = True,
     ) -> EmailVerificationCode:
@@ -219,6 +220,8 @@ class AuthRepository:
             resend_count=resend_count,
             rate_limited_until=rate_limited_until,
         )
+        if created_at is not None:
+            code.created_at = created_at
         return _persist(db, code, commit=commit)
 
     def get_latest_email_verification_code(
@@ -230,7 +233,7 @@ class AuthRepository:
         return (
             db.query(EmailVerificationCode)
             .filter(EmailVerificationCode.user_id == user_id)
-            .order_by(EmailVerificationCode.expires_at.desc(), EmailVerificationCode.id.desc())
+            .order_by(EmailVerificationCode.created_at.desc(), EmailVerificationCode.id.desc())
             .first()
         )
 
@@ -260,6 +263,7 @@ class AuthRepository:
         code_hash: str,
         sent_to_email: str,
         expires_at: datetime,
+        created_at: datetime | None = None,
         code_id: str | None = None,
         commit: bool = True,
     ) -> PasswordResetCode:
@@ -270,6 +274,8 @@ class AuthRepository:
             sent_to_email=sent_to_email,
             expires_at=expires_at,
         )
+        if created_at is not None:
+            code.created_at = created_at
         return _persist(db, code, commit=commit)
 
     def get_password_reset_code_by_hash(
@@ -288,7 +294,7 @@ class AuthRepository:
         return (
             db.query(PasswordResetCode)
             .filter(PasswordResetCode.user_id == user_id)
-            .order_by(PasswordResetCode.expires_at.desc(), PasswordResetCode.id.desc())
+            .order_by(PasswordResetCode.created_at.desc(), PasswordResetCode.id.desc())
             .first()
         )
 

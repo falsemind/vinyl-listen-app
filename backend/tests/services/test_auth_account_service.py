@@ -285,6 +285,57 @@ def test_password_reset_confirm_updates_password_and_revokes_sessions(
     assert auth_session.revoke_reason == "password_reset"
 
 
+def test_password_reset_confirm_accepts_newest_code_when_older_code_expires_later(
+    db_session: Session,
+    repository: AuthRepository,
+    email_sender: RecordingEmailSender,
+    clock: AuthTestClock,
+) -> None:
+    long_ttl_service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        password_reset_code_ttl=timedelta(hours=1),
+    )
+    short_ttl_service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        password_reset_code_ttl=timedelta(minutes=5),
+    )
+    long_ttl_service.register_account(db_session, email="alex@example.com", password="old-password")
+    long_ttl_service.request_password_reset(db_session, email="alex@example.com")
+    older_reset_code = email_sender.messages[1].code
+    clock.advance(timedelta(minutes=1))
+    long_ttl_service.confirm_password_reset(
+        db_session,
+        email="alex@example.com",
+        code=older_reset_code,
+        new_password="intermediate-password",
+    )
+
+    clock.advance(timedelta(seconds=61))
+    short_ttl_service.request_password_reset(db_session, email="alex@example.com")
+    newer_reset_code = email_sender.messages[2].code
+    clock.advance(timedelta(minutes=1))
+
+    account = short_ttl_service.confirm_password_reset(
+        db_session,
+        email="alex@example.com",
+        code=newer_reset_code,
+        new_password="new-password",
+    )
+
+    verification = Argon2idPasswordHasher(FAST_HASH_CONFIG).verify_password(
+        password="new-password",
+        password_hash=account.password_hash,
+        algorithm=account.password_hash_algorithm,
+        version=account.password_hash_version,
+        params=account.password_hash_params,
+    )
+    assert verification.is_valid is True
+
+
 def test_local_dev_email_sender_writes_jsonl_outbox(tmp_path) -> None:
     outbox_path = tmp_path / "auth-outbox.jsonl"
     sender = LocalDevEmailSender(outbox_path)
@@ -317,6 +368,7 @@ def _service(
     repository: AuthRepository,
     clock: AuthTestClock,
     email_sender: RecordingEmailSender,
+    password_reset_code_ttl: timedelta = timedelta(minutes=15),
 ) -> AuthAccountService:
     return AuthAccountService(
         repository=repository,
@@ -325,6 +377,6 @@ def _service(
         code_hash_secret="test-code-secret",
         now_provider=clock.now,
         verification_code_ttl=timedelta(minutes=15),
-        password_reset_code_ttl=timedelta(minutes=15),
+        password_reset_code_ttl=password_reset_code_ttl,
         resend_cooldown=timedelta(seconds=60),
     )

@@ -163,6 +163,39 @@ def test_create_and_consume_email_verification_code(db_session: Session) -> None
     assert code.consumed_at == consumed_at
 
 
+def test_get_latest_email_verification_code_orders_by_issue_time(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+
+    older_code = repository.create_email_verification_code(
+        db_session,
+        code_id="email-code-1",
+        user_id="user-1",
+        code_hash="email-code-hash-1",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 13),
+    )
+    newer_code = repository.create_email_verification_code(
+        db_session,
+        code_id="email-code-2",
+        user_id="user-1",
+        code_hash="email-code-hash-2",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 12, 10),
+    )
+    older_code.created_at = datetime(2026, 6, 17, 12)
+    newer_code.created_at = datetime(2026, 6, 17, 12, 1)
+    db_session.commit()
+
+    assert repository.get_latest_email_verification_code(db_session, user_id="user-1") == newer_code
+
+
 def test_create_and_consume_password_reset_code(db_session: Session) -> None:
     repository = AuthRepository()
     repository.create_user_account(
@@ -189,6 +222,39 @@ def test_create_and_consume_password_reset_code(db_session: Session) -> None:
     repository.consume_password_reset_code(db_session, code=code, consumed_at=consumed_at)
 
     assert code.consumed_at == consumed_at
+
+
+def test_get_latest_password_reset_code_orders_by_issue_time(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+
+    older_code = repository.create_password_reset_code(
+        db_session,
+        code_id="reset-code-1",
+        user_id="user-1",
+        code_hash="reset-code-hash-1",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 13),
+    )
+    newer_code = repository.create_password_reset_code(
+        db_session,
+        code_id="reset-code-2",
+        user_id="user-1",
+        code_hash="reset-code-hash-2",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 12, 10),
+    )
+    older_code.created_at = datetime(2026, 6, 17, 12)
+    newer_code.created_at = datetime(2026, 6, 17, 12, 1)
+    db_session.commit()
+
+    assert repository.get_latest_password_reset_code(db_session, user_id="user-1") == newer_code
 
 
 def test_ensure_entitlement_upserts_plan_and_record_usage_event(db_session: Session) -> None:
