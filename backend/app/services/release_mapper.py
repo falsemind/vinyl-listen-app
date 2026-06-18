@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
+from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_label_name
 
 
 @dataclass(frozen=True)
@@ -290,7 +290,7 @@ def _extract_label_name(labels: Any) -> str | None:
             continue
         name = _clean_string(label.get("name"))
         if name:
-            return clean_discogs_self_released_label(name)
+            return clean_discogs_label_name(name)
 
     return None
 

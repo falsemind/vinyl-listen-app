@@ -33,7 +33,7 @@ class StubAnalyticsService:
             artist="Boards of Canada",
             title="Music Has The Right To Children",
             year=1998,
-            label="Warp Records",
+            label="System Music (2)",
             catalog_number="WARPLP55",
             cover_image_url="https://img.discogs.com/cover.jpg",
         )
@@ -285,7 +285,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
                 "year": 1998,
-                "label": "Warp Records",
+                "label": "System Music",
                 "catalog_number": "WARPLP55",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "date": "2026-05-12",

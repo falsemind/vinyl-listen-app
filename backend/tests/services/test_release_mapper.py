@@ -62,6 +62,19 @@ def test_map_discogs_to_internal_trims_discogs_artist_number_suffix() -> None:
     assert result.artist == "Karma, Mutt"
 
 
+def test_map_discogs_to_internal_trims_discogs_label_number_suffix() -> None:
+    payload = {
+        "id": 1358,
+        "artists_sort": "Unknown Artist",
+        "title": "Clean Label",
+        "labels": [{"name": "System Music (2)", "catno": "SM001"}],
+    }
+
+    result = map_discogs_to_internal(payload)
+
+    assert result.label == "System Music"
+
+
 def test_map_discogs_to_internal_keeps_numbers_inside_artist_names() -> None:
     payload = {
         "id": 24680,

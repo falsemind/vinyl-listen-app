@@ -27,6 +27,7 @@ from app.services.collection_sync_job_service import (
     CollectionSyncJobNotFoundError,
     CollectionSyncJobService,
 )
+from app.utils.discogs_display import clean_discogs_label_name
 
 router = APIRouter()
 COLLECTION_ARTIST_QUERY_MAX_LENGTH = 255
@@ -239,7 +240,7 @@ def search_collection_releases(
                 artist=release.artist,
                 title=release.title,
                 year=release.year,
-                label=release.label,
+                label=clean_discogs_label_name(release.label),
                 catalog_number=release.catalog_number,
                 thumbnail_url=release.cover_image_url,
                 format=release.format,
@@ -260,7 +261,7 @@ def _to_collection_release_response(release) -> CollectionReleaseResponse:
         artist=release.artist,
         year=release.year,
         format=release.format,
-        label=release.label,
+        label=clean_discogs_label_name(release.label),
         catalog_number=release.catalog_number,
         styles=release.styles,
         thumb_url=release.thumbnail_url or release.cover_image_url,

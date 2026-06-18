@@ -1,4 +1,8 @@
-from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
+from app.utils.discogs_display import (
+    clean_discogs_artist_name,
+    clean_discogs_label_name,
+    clean_discogs_self_released_label,
+)
 
 
 def test_clean_discogs_artist_name_trims_suffix_per_artist() -> None:
@@ -19,3 +23,11 @@ def test_clean_discogs_self_released_label_keeps_clean_label() -> None:
     assert clean_discogs_self_released_label("Not On Label (Om Unit Self-Released)") == (
         "Not On Label (Om Unit Self-Released)"
     )
+
+
+def test_clean_discogs_label_name_trims_discogs_suffix() -> None:
+    assert clean_discogs_label_name("System Music (2)") == "System Music"
+
+
+def test_clean_discogs_label_name_trims_self_released_nested_suffix() -> None:
+    assert clean_discogs_label_name("Not On Label (Karma (54) Self-Released)") == ("Not On Label (Karma Self-Released)")

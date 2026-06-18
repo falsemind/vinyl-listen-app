@@ -24,6 +24,7 @@ from app.schemas.sessions import ErrorResponse, SessionTrackResponse
 from app.services.analytics_service import AnalyticsService, AnalyticsValidationError
 from app.services.session_groups_service import SessionGroupsService
 from app.services.sessions_service import SessionsService
+from app.utils.discogs_display import clean_discogs_label_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -267,7 +268,7 @@ def _map_analytics_session(
         artist=release.artist,
         title=release.title,
         year=release.year,
-        label=release.label,
+        label=clean_discogs_label_name(release.label),
         catalog_number=release.catalog_number,
         thumbnail_url=release.cover_image_url,
         date=session.played_at.date().isoformat() if session.played_at is not None else None,

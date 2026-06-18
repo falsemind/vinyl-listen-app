@@ -43,6 +43,7 @@ from app.services.sessions_service import (
     SessionsService,
     SessionValidationError,
 )
+from app.utils.discogs_display import clean_discogs_label_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -307,7 +308,7 @@ def get_home_summary(
                 artist=item.release.artist,
                 title=item.release.title,
                 year=item.release.year,
-                label=item.release.label,
+                label=clean_discogs_label_name(item.release.label),
                 catalog_number=item.release.catalog_number,
                 thumbnail_url=item.release.cover_image_url,
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,

@@ -29,7 +29,7 @@ from app.services.sessions_service import (
     SessionsService,
     SessionValidationError,
 )
-from app.utils.discogs_display import clean_discogs_artist_name
+from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_label_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -136,7 +136,7 @@ def _map_discogs_search_result(
         "artist": clean_discogs_artist_name(artist or fallback_artist) or "Unknown Artist",
         "title": title or fallback_title or str(item.get("title") or "Untitled Release"),
         "year": _coerce_int(item.get("year")),
-        "label": _first_string(item.get("label")),
+        "label": clean_discogs_label_name(_first_string(item.get("label"))),
         "catalog_number": _first_string(item.get("catno")),
         "thumbnail_url": item.get("thumb") or item.get("cover_image"),
         "format": _format_release_format(item.get("format")),
@@ -381,6 +381,7 @@ def _release_response(db: Session, service: ReleaseImportService, release) -> Re
     return ReleaseResponse.model_validate(release).model_copy(
         update={
             "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
+            "label": clean_discogs_label_name(release.label),
             "available_sides": available_sides,
             "available_side_options": available_side_options,
             "tracklist": service.get_tracklist(db, release.discogs_release_id),
