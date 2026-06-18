@@ -180,6 +180,36 @@ def test_reusing_consumed_refresh_token_revokes_session(
     assert auth_session.revoke_reason == "refresh_token_reuse"
 
 
+def test_duplicate_consumed_hash_during_refresh_is_treated_as_reuse(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+) -> None:
+    _create_user(db_session, repository)
+    lifecycle = _lifecycle(repository=repository, clock=clock)
+    token_pair = lifecycle.create_session(db_session, user_id="user-1")
+    refresh_token_hash = hash_refresh_token(token_pair.refresh_token)
+    auth_session = repository.get_auth_session_by_refresh_token_hash(db_session, refresh_token_hash)
+    assert auth_session is not None
+    repository.create_consumed_refresh_token(
+        db_session,
+        session_id=auth_session.id,
+        user_id=auth_session.user_id,
+        refresh_token_hash=refresh_token_hash,
+        consumed_at=clock.now(),
+        expires_at=auth_session.expires_at,
+    )
+    clock.advance(timedelta(minutes=1))
+
+    with pytest.raises(RefreshTokenReuseDetectedError):
+        lifecycle.refresh_session(db_session, refresh_token=token_pair.refresh_token)
+
+    revoked_session = repository.get_auth_session_by_refresh_token_hash(db_session, refresh_token_hash)
+    assert revoked_session is not None
+    assert revoked_session.revoked_at == _sqlite_datetime(clock.now())
+    assert revoked_session.revoke_reason == "refresh_token_reuse"
+
+
 def test_refresh_requires_reauth_after_inactivity(
     db_session: Session,
     repository: AuthRepository,

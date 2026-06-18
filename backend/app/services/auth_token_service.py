@@ -6,8 +6,9 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NoReturn
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -216,25 +217,29 @@ class AuthTokenLifecycleService:
 
         next_refresh_token = generate_refresh_token()
         next_refresh_expires_at = now + self._refresh_token_lifetime
-        self._repository.create_consumed_refresh_token(
-            db,
-            session_id=auth_session.id,
-            user_id=auth_session.user_id,
-            refresh_token_hash=refresh_token_hash,
-            consumed_at=now,
-            expires_at=auth_session.expires_at,
-            commit=False,
-        )
-        self._repository.touch_auth_session(
-            db,
-            auth_session=auth_session,
-            last_activity_at=now,
-            refresh_token_hash=hash_refresh_token(next_refresh_token),
-            expires_at=next_refresh_expires_at,
-            commit=False,
-        )
-        db.commit()
-        db.refresh(auth_session)
+        try:
+            self._repository.create_consumed_refresh_token(
+                db,
+                session_id=auth_session.id,
+                user_id=auth_session.user_id,
+                refresh_token_hash=refresh_token_hash,
+                consumed_at=now,
+                expires_at=auth_session.expires_at,
+                commit=False,
+            )
+            self._repository.touch_auth_session(
+                db,
+                auth_session=auth_session,
+                last_activity_at=now,
+                refresh_token_hash=hash_refresh_token(next_refresh_token),
+                expires_at=next_refresh_expires_at,
+                commit=False,
+            )
+            db.commit()
+            db.refresh(auth_session)
+        except IntegrityError:
+            db.rollback()
+            self._handle_missing_refresh_token(db, refresh_token_hash=refresh_token_hash, now=now)
 
         access_token, access_expires_at = self._access_token_service.issue(
             user_id=auth_session.user_id,
@@ -249,7 +254,7 @@ class AuthTokenLifecycleService:
             session_id=auth_session.id,
         )
 
-    def _handle_missing_refresh_token(self, db: Session, *, refresh_token_hash: str, now: datetime) -> None:
+    def _handle_missing_refresh_token(self, db: Session, *, refresh_token_hash: str, now: datetime) -> NoReturn:
         consumed_token = self._repository.get_consumed_refresh_token_by_hash(db, refresh_token_hash)
         if consumed_token is None:
             raise RefreshTokenInvalidError("refresh token is invalid.")
