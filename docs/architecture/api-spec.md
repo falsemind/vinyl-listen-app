@@ -11,6 +11,7 @@ Define the backend API endpoints, request/response structure, and operational co
 
 Backend responsibilities:
 
+* Account registration, email verification, sign-in, token refresh, and password reset flows
 * Record identification via Discogs API when a saved Discogs integration token is available
 * Discogs integration status and token storage
 * Listening session logging
@@ -93,12 +94,144 @@ Main API domains:
 /sessions
 /analytics
 /ai
+/auth
 /health
+```
+
+All application endpoints require bearer authentication unless explicitly public. The public allowlist is:
+
+* `/auth/register`
+* `/auth/verify-email`
+* `/auth/resend-verification`
+* `/auth/login`
+* `/auth/refresh`
+* `/auth/password-reset/request`
+* `/auth/password-reset/confirm`
+* `/health` and `/health/runtime`
+
+Protected endpoints require:
+
+```http
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Auth failures use the standard error shape:
+
+```json
+{
+  "error": {
+    "code": "auth_required",
+    "message": "Authentication is required."
+  }
+}
 ```
 
 ---
 
-# 1. Record Identification
+# 1. Auth And Account Access
+
+Auth endpoints live under `/api/v1/auth`. Local development uses the local email delivery backend by default, so verification and reset codes are written to the configured JSONL outbox instead of being sent through Mailgun.
+
+## POST /auth/register
+
+Creates an unverified account and sends a verification code through the configured auth email sender.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "password": "correct-horse-battery-staple"
+}
+```
+
+### Response
+
+```
+201 Created
+```
+
+```json
+{
+  "user_id": "6e3e1c1c-b5c5-4c0e-bbc8-2b5bdb5c4e21",
+  "email": "alex@example.com",
+  "verification_expires_at": "2026-06-18T20:15:00Z"
+}
+```
+
+Duplicate emails return `409 email_already_registered`.
+
+## POST /auth/verify-email
+
+Consumes a single-use verification code and marks the account email as verified.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "code": "123456"
+}
+```
+
+Wrong codes return `400 email_code_invalid`, reused codes return `400 email_code_consumed`, and expired codes return `410 email_code_expired`.
+
+## POST /auth/resend-verification
+
+Sends a new verification code for an unverified account. Rate-limited requests return `429 email_verification_rate_limited`.
+
+## POST /auth/login
+
+Verifies email/password credentials and returns an access token plus refresh token. The account must already be email verified.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "password": "correct-horse-battery-staple",
+  "device_label": "Pixel"
+}
+```
+
+### Response
+
+```json
+{
+  "access_token": "eyJ...",
+  "access_expires_at": "2026-06-18T20:15:00Z",
+  "refresh_token": "opaque-refresh-token",
+  "refresh_expires_at": "2026-07-18T20:00:00Z",
+  "token_type": "Bearer",
+  "session_id": "0f65cf9d-d1bb-4680-85d8-35d9d20787c5"
+}
+```
+
+Invalid credentials return `401 invalid_credentials`. Unverified accounts return `403 email_not_verified`.
+
+## POST /auth/refresh
+
+Rotates a valid refresh token and returns a new access/refresh token pair. Reused, expired, revoked, and invalid refresh tokens return structured `401` errors. If the session has been inactive for more than the configured inactivity window, the backend returns `401 inactivity_reauth_required` and the client should ask for the password again.
+
+## POST /auth/logout
+
+Protected endpoint. Revokes the current auth session.
+
+## GET /auth/me
+
+Protected endpoint. Returns the current authenticated account summary.
+
+## POST /auth/password-reset/request
+
+Accepts an email address and sends a reset code when the account exists. Unknown emails still return a generic accepted response.
+
+## POST /auth/password-reset/confirm
+
+Consumes a reset code, updates the password hash, and revokes existing sessions for that account.
+
+---
+
+# 2. Record Identification
 
 Endpoints used after the user captures or uploads a photo.
 
@@ -347,7 +480,7 @@ Missing jobs return the same `404` shape as `GET /identify/jobs/{job_id}`.
 
 ---
 
-# 2. Manual Release Search
+# 3. Manual Release Search
 
 Fallback when automatic identification fails.
 
@@ -410,7 +543,7 @@ The response contains Discogs results, not local records. Android no-token flows
 
 ---
 
-# 3. Release Details
+# 4. Release Details
 
 Release detail endpoints read and update releases by internal `release_id`. Manual Discogs imports and identify flow matches create or update the local release row first, then Android navigates with the internal ID.
 
@@ -614,7 +747,7 @@ Restores an existing release to the active collection without creating a duplica
 
 ---
 
-# 4. Collection Management
+# 5. Collection Management
 
 Endpoints used by the Records Collection screen to load local collection records, start manual Discogs metadata sync, and manage the collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich metadata but must not remove, deactivate, or re-add local collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
 
@@ -829,7 +962,7 @@ Same response shape as `GET /releases/search`, with `release_id` populated for d
 
 ---
 
-# 5. Integrations
+# 6. Integrations
 
 Endpoints used by Settings to manage optional provider integrations. The current
 implementation supports a single app-wide Discogs integration; `user_id` storage
@@ -893,7 +1026,7 @@ Same response shape as `GET /integrations/discogs`.
 
 ---
 
-# 6. Create Listening Session
+# 7. Create Listening Session
 
 Logs a listening session.
 
@@ -996,7 +1129,7 @@ Expired edit windows return `403` with `session_edit_window_expired`.
 
 ---
 
-# 7. Timed Session Groups
+# 8. Timed Session Groups
 
 Used by Android to start an optional timed listening session. Individual record plays are still stored as normal `sessions` rows. When auto-add is enabled, the app passes the active group id as `session_group_id` while logging each record.
 
@@ -1148,7 +1281,7 @@ Inactive groups return `409` with `session_group_inactive`. `ended_at` before `s
 
 ---
 
-# 8. Session Moods
+# 9. Session Moods
 
 Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
@@ -1219,7 +1352,7 @@ Response:
 
 ---
 
-# 9. Home Summary
+# 10. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -1303,7 +1436,7 @@ When `session_group_id` is non-null, `session_group` carries the timed-session m
 
 ---
 
-# 10. Get Record Details
+# 11. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -1358,7 +1491,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 11. Session History
+# 12. Session History
 
 Used for listening history.
 
@@ -1475,7 +1608,7 @@ history.
 
 ---
 
-# 12. Analytics
+# 13. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -1730,7 +1863,7 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 ---
 
-# 13. AI Insights
+# 14. AI Insights
 
 Used by the **Insights screen** chat shell.
 
@@ -1881,7 +2014,7 @@ The import stores only the filtered song-event fields defined in the AI Insights
 
 ---
 
-# 14. Health Endpoints
+# 15. Health Endpoints
 
 Used by local development, runtime checks, and clients that need basic backend
 readiness.

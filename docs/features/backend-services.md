@@ -9,6 +9,10 @@ description: This document explains the backend service layer in `backend/app/se
 
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
+| `auth_account_service.py` | Register accounts, verify email codes, sign in with password, resend verification, and run password reset flows. | `AuthRepository`, `Argon2idPasswordHasher`, auth email sender. |
+| `auth_token_service.py` | Issue access tokens, rotate refresh tokens, detect refresh-token reuse, and enforce inactivity re-auth. | `AuthRepository`, `AccessTokenService`, `consumed_refresh_tokens`. |
+| `auth_email_delivery.py` | Send auth verification/reset messages through local JSONL outbox or Mailgun Provider API. | Auth account service, Mailgun configuration, local outbox path. |
+| `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
 | `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
 | `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
@@ -23,6 +27,27 @@ description: This document explains the backend service layer in `backend/app/se
 | `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
 | `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
 | `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, and read-only tool context. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository. |
+
+## Auth Services
+
+Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependencies.py`. The route layer maps service errors to structured API errors such as `auth_required`, `invalid_access_token`, `email_code_expired`, `refresh_token_reuse_detected`, and `inactivity_reauth_required`.
+
+`AuthAccountService` owns account bootstrap and password flows:
+
+1. `register_account` creates an unverified `user_accounts` row, hashes the password with Argon2id, stores a hashed verification code, and sends the plaintext code through the configured email sender.
+2. `verify_email` consumes the latest matching single-use code and marks the account verified.
+3. `resend_email_verification` issues a new code after the configured cooldown.
+4. `sign_in_with_password` verifies the stored password hash and blocks sign-in until email verification is complete.
+5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions.
+
+`AuthTokenLifecycleService` owns session tokens:
+
+- Access tokens are short-lived HMAC-signed bearer tokens with minimal `sub`, `sid`, `iat`, and `exp` claims.
+- Refresh tokens are opaque, stored as hashes, and rotated on every refresh.
+- Consumed refresh token hashes are kept so token reuse can be detected and the owning session revoked.
+- Sessions that exceed the inactivity window return `inactivity_reauth_required`; clients should ask for the password again.
+
+Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, codes are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
 
 ## AI Insights and Spotify Tools
 

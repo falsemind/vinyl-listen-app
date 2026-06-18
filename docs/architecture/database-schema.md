@@ -11,6 +11,7 @@ Define the relational database schema used by the backend service.
 
 The schema supports:
 
+- account registration and auth sessions
 - record identification
     
 - listening session logging
@@ -45,6 +46,13 @@ Core entities:
 
 ```
 releases
+user_accounts
+auth_sessions
+consumed_refresh_tokens
+email_verification_codes
+password_reset_codes
+user_entitlements
+usage_events
 sessions
 session_groups
 session_tracks
@@ -102,6 +110,16 @@ collection_folders
 provider_integrations
     └── stores encrypted provider tokens and external account identity
 
+user_accounts
+   ├── auth_sessions
+   ├── email_verification_codes
+   ├── password_reset_codes
+   ├── user_entitlements
+   └── usage_events
+
+auth_sessions
+   └── consumed_refresh_tokens
+
 ai_chat_sessions
    └── ai_chat_messages
 
@@ -109,6 +127,127 @@ spotify_listening_import_batches
    └── spotify_listening_events
              └── summary rollups and exact collection-match tables
 ```
+
+---
+
+# Auth Tables
+
+Auth tables support account bootstrap, email verification, password reset, token-backed sessions, and future entitlement/usage gates. User-owned collection/session data is still split in a later multi-user phase; these tables establish the account and session foundation.
+
+## Table: user_accounts
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| email | VARCHAR | Original email casing for display |
+| normalized_email | VARCHAR | Unique lookup key |
+| password_hash | TEXT | Argon2id hash |
+| password_hash_algorithm | VARCHAR | Current default is `argon2id` |
+| password_hash_version | INTEGER | Password hash metadata version |
+| password_hash_params | JSONB | Memory/time/parallelism/hash parameters |
+| is_active | BOOLEAN | Account active flag |
+| email_verified_at | TIMESTAMP | Null until verification succeeds |
+| deletion_requested_at | TIMESTAMP | Future account deletion workflow |
+| deleted_at | TIMESTAMP | Soft marker for deleted account state |
+| created_at | TIMESTAMP | Row creation time |
+| updated_at | TIMESTAMP | Last account update time |
+
+Indexes:
+
+```sql
+UNIQUE (normalized_email)
+INDEX (normalized_email)
+```
+
+## Table: auth_sessions
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| refresh_token_hash | VARCHAR | Unique hash of current refresh token |
+| device_label | VARCHAR | Optional client/device label |
+| last_activity_at | TIMESTAMP | Used for inactivity re-auth |
+| expires_at | TIMESTAMP | Refresh session expiry |
+| revoked_at | TIMESTAMP | Null while active |
+| revoke_reason | VARCHAR | Logout, password reset, reuse, expiry, or inactivity reason |
+| created_at | TIMESTAMP | Row creation time |
+| updated_at | TIMESTAMP | Last session update time |
+
+Indexes:
+
+```sql
+UNIQUE (refresh_token_hash)
+INDEX (user_id)
+INDEX (expires_at)
+```
+
+## Table: consumed_refresh_tokens
+
+Stores rotated refresh token hashes long enough to detect reuse.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| session_id | UUID | Foreign key to `auth_sessions.id` |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| refresh_token_hash | VARCHAR | Unique consumed token hash |
+| consumed_at | TIMESTAMP | Rotation time |
+| expires_at | TIMESTAMP | Original refresh token expiry |
+| created_at | TIMESTAMP | Row creation time |
+
+## Table: email_verification_codes
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| code_hash | VARCHAR | Hashed verification code |
+| sent_to_email | VARCHAR | Recipient email |
+| expires_at | TIMESTAMP | Code expiry |
+| consumed_at | TIMESTAMP | Null until used |
+| resend_count | INTEGER | Number of resend attempts in the flow |
+| rate_limited_until | TIMESTAMP | Resend cooldown boundary |
+| created_at | TIMESTAMP | Issue time used for latest-code semantics |
+
+## Table: password_reset_codes
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| code_hash | VARCHAR | Hashed reset code |
+| sent_to_email | VARCHAR | Recipient email |
+| expires_at | TIMESTAMP | Code expiry |
+| consumed_at | TIMESTAMP | Null until used or superseded |
+| created_at | TIMESTAMP | Issue time used for latest-code semantics |
+
+## Table: user_entitlements
+
+Foundation table for future plan/capability state.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| user_id | UUID | Primary key and foreign key to `user_accounts.id` |
+| plan | VARCHAR | Current default is `FREE` |
+| status | VARCHAR | Current default is `ACTIVE` |
+| valid_until | TIMESTAMP | Optional entitlement expiry |
+| created_at | TIMESTAMP | Row creation time |
+| updated_at | TIMESTAMP | Last entitlement update time |
+
+## Table: usage_events
+
+Append-only foundation for future feature usage limits, starting with OCR/identify.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| capability | VARCHAR | Capability key, such as `ocr_identify` |
+| units | INTEGER | Usage units recorded |
+| occurred_at | TIMESTAMP | Event time |
+| event_metadata | JSONB | Optional structured metadata |
+| created_at | TIMESTAMP | Row creation time |
 
 ---
 

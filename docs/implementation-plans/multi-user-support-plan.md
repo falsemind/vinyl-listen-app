@@ -187,11 +187,14 @@ Add versioned endpoints for:
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/password-reset/request`
+- `POST /api/v1/auth/password-reset/confirm`
+
+Later account-management endpoints:
+
 - `POST /api/v1/auth/password/change`
-- `POST /api/v1/auth/password/reset/request`
-- `POST /api/v1/auth/password/reset/confirm`
 - `DELETE /api/v1/account`
-- `GET /api/v1/account/me`
 
 ### Authorization
 
@@ -298,12 +301,13 @@ Add versioned endpoints for:
 
 ### Phase 4: Auth API And Default Protection
 
-- Add versioned auth/account endpoints.
-- Add current-user dependency/middleware for authenticated routes.
-- Deny access to all application endpoints by default in production unless explicitly public.
-- Public allowlist includes auth bootstrap endpoints and minimal non-sensitive health/readiness endpoints.
-- Add structured error responses for invalid token, expired access token, revoked refresh token, and inactivity re-auth required.
-- Done when protected endpoint tests reject missing/invalid auth and the public allowlist is covered by route tests.
+- Add versioned auth endpoints for register, verify email, resend verification, login, refresh, logout, current account summary, and password reset request/confirm.
+- Add current-user dependency for authenticated routes.
+- Deny access to application routers by default unless explicitly public.
+- Keep auth bootstrap endpoints and minimal non-sensitive health/readiness endpoints public.
+- Add structured error responses for missing auth, invalid/expired access token, revoked session, invalid/reused/expired refresh token, and inactivity re-auth required.
+- Add Docker/local-dev auth configuration so local verification can be tested without Mailgun.
+- Done when protected endpoint tests reject missing/invalid auth, auth API tests cover expired/reused/wrong codes, and the public allowlist is covered by route tests.
 
 ### Phase 5: User Scoping And Data Ownership
 
