@@ -49,6 +49,7 @@ import com.example.vinyllistenapp.ui.screens.MoodRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
 import com.example.vinyllistenapp.ui.screens.RatingRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
+import com.example.vinyllistenapp.ui.screens.RecordActionItemsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
 import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
 import com.example.vinyllistenapp.ui.screens.SettingsScreen
@@ -467,7 +468,9 @@ fun VinylNavHost(
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
                     onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
-                    onOpenCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                    onOpenRecordActionItems = { releaseId, actionType ->
+                        navController.navigate(VinylRoutes.recordActionItems(releaseId, actionType))
+                    },
                     onCollectionMembershipChanged = {
                         val handle = navController.previousBackStackEntry?.savedStateHandle
                         handle?.set(
@@ -520,6 +523,31 @@ fun VinylNavHost(
                     },
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                )
+            }
+            composable(
+                route = VinylRoutes.RECORD_ACTION_ITEMS_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.RELEASE_ID) { type = NavType.StringType },
+                        navArgument(VinylRoutes.ACTION_TYPE) { type = NavType.StringType },
+                    ),
+            ) { backStackEntry ->
+                RecordActionItemsScreen(
+                    releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
+                    actionType = backStackEntry.arguments?.getString(VinylRoutes.ACTION_TYPE),
+                    apiClient = apiClient,
+                    onBack = { navController.popBackStack() },
+                    onOpenArtistCollection = { artist ->
+                        navController.navigate(VinylRoutes.collectionArtist(artist)) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
+                    onOpenLabelCollection = { label ->
+                        navController.navigate(VinylRoutes.collectionLabel(label)) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
                 )
             }
             composable(

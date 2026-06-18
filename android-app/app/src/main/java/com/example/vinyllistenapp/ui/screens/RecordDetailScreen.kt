@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
@@ -93,6 +94,10 @@ import com.example.vinyllistenapp.domain.RecordFlowReleaseSummary
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.navigation.VinylRoutes.RECORD_ACTION_COLLECTION_ARTISTS
+import com.example.vinyllistenapp.navigation.VinylRoutes.RECORD_ACTION_COLLECTION_LABELS
+import com.example.vinyllistenapp.navigation.VinylRoutes.RECORD_ACTION_DISCOGS_ARTISTS
+import com.example.vinyllistenapp.navigation.VinylRoutes.RECORD_ACTION_DISCOGS_LABELS
 import com.example.vinyllistenapp.ui.components.ActionMenuAction
 import com.example.vinyllistenapp.ui.components.ActionMenuPopup
 import com.example.vinyllistenapp.ui.components.ActionMenuToggle
@@ -128,7 +133,7 @@ fun RecordDetailScreen(
     onOpenRecord: (String) -> Unit,
     onOpenArtistCollection: (String) -> Unit,
     onOpenLabelCollection: (String) -> Unit,
-    onOpenCollection: () -> Unit,
+    onOpenRecordActionItems: (String, String) -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
     onCollectionMembershipChanged: () -> Unit = {},
@@ -520,47 +525,50 @@ fun RecordDetailScreen(
                     )
                     if (isMoreInCollectionExpanded) {
                         ActionMenuDelimiter()
-                        val collectionOptions =
-                            recordDetailCollectionMenuOptions(
-                                artistNames = collectionArtistNames,
-                                labelNames = collectionLabelNames,
-                            )
-                        collectionOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
-                            when (option) {
-                                is RecordDetailCollectionMenuOption.Artist -> {
-                                    ActionMenuSubOption(
-                                        label = option.name,
-                                        icon = Icons.Filled.Person,
-                                        onClickLabel = "Filter collection by ${option.name}",
-                                        onClick = {
-                                            isActionMenuOpen = false
-                                            isMoreInCollectionExpanded = false
-                                            onOpenArtistCollection(option.name)
-                                        },
-                                    )
-                                }
-
-                                is RecordDetailCollectionMenuOption.Label -> {
-                                    ActionMenuSubOption(
-                                        label = option.name,
-                                        onClickLabel = "Filter collection by ${option.name}",
-                                        onClick = {
-                                            isActionMenuOpen = false
-                                            isMoreInCollectionExpanded = false
-                                            onOpenLabelCollection(option.name)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        if (collectionOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                        collectionArtistNames.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artistName ->
                             ActionMenuSubOption(
-                                label = "View all in collection",
-                                onClickLabel = "View all collection records",
+                                label = artistName,
+                                icon = Icons.Filled.Person,
+                                onClickLabel = "Filter collection by $artistName",
                                 onClick = {
                                     isActionMenuOpen = false
                                     isMoreInCollectionExpanded = false
-                                    onOpenCollection()
+                                    onOpenArtistCollection(artistName)
+                                },
+                            )
+                        }
+                        if (collectionArtistNames.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                            ActionMenuSubOption(
+                                label = "View all artists",
+                                icon = Icons.Filled.MoreHoriz,
+                                onClickLabel = "View all release artists",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isMoreInCollectionExpanded = false
+                                    onOpenRecordActionItems(record.releaseId, RECORD_ACTION_COLLECTION_ARTISTS)
+                                },
+                            )
+                        }
+                        collectionLabelNames.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
+                            ActionMenuSubOption(
+                                label = labelName,
+                                onClickLabel = "Filter collection by $labelName",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isMoreInCollectionExpanded = false
+                                    onOpenLabelCollection(labelName)
+                                },
+                            )
+                        }
+                        if (collectionLabelNames.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                            ActionMenuSubOption(
+                                label = "View all labels",
+                                icon = Icons.Filled.MoreHoriz,
+                                onClickLabel = "View all release labels",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isMoreInCollectionExpanded = false
+                                    onOpenRecordActionItems(record.releaseId, RECORD_ACTION_COLLECTION_LABELS)
                                 },
                             )
                         }
@@ -585,55 +593,57 @@ fun RecordDetailScreen(
                         },
                     )
                     val discogsArtistRows = discogsArtistRows(record)
-                    val discogsOptions =
-                        recordDetailDiscogsMenuOptions(
-                            artistRows = discogsArtistRows,
-                            labelNames = collectionLabelNames,
-                        )
-                    discogsOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
-                        when (option) {
-                            is RecordDetailDiscogsMenuOption.Artist -> {
-                                val displayArtistName = cleanDiscogsDisplayName(option.artist.name)
-                                ActionMenuSubOption(
-                                    label = displayArtistName,
-                                    icon = Icons.Filled.Person,
-                                    onClickLabel = "Open $displayArtistName on Discogs",
-                                    onClick = {
-                                        isActionMenuOpen = false
-                                        isViewOnDiscogsExpanded = false
-                                        uriHandler.openUri(
-                                            if (option.artist.discogsArtistId > 0) {
-                                                discogsArtistUrl(option.artist.discogsArtistId)
-                                            } else {
-                                                discogsArtistSearchUrl(displayArtistName)
-                                            },
-                                        )
-                                    },
-                                )
-                            }
-
-                            is RecordDetailDiscogsMenuOption.Label -> {
-                                ActionMenuSubOption(
-                                    label = option.name,
-                                    onClickLabel = "Open ${option.name} on Discogs",
-                                    onClick = {
-                                        isActionMenuOpen = false
-                                        isViewOnDiscogsExpanded = false
-                                        uriHandler.openUri(discogsLabelSearchUrl(option.name))
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    if (discogsOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                    discogsArtistRows.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artist ->
+                        val displayArtistName = cleanDiscogsDisplayName(artist.name)
                         ActionMenuSubOption(
-                            label = "View all on Discogs",
-                            icon = Icons.Filled.Album,
-                            onClickLabel = "View release page on Discogs",
+                            label = displayArtistName,
+                            icon = Icons.Filled.Person,
+                            onClickLabel = "Open $displayArtistName on Discogs",
                             onClick = {
                                 isActionMenuOpen = false
                                 isViewOnDiscogsExpanded = false
-                                uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
+                                uriHandler.openUri(
+                                    if (artist.discogsArtistId > 0) {
+                                        discogsArtistUrl(artist.discogsArtistId)
+                                    } else {
+                                        discogsArtistSearchUrl(displayArtistName)
+                                    },
+                                )
+                            },
+                        )
+                    }
+                    if (discogsArtistRows.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                        ActionMenuSubOption(
+                            label = "View all artists",
+                            icon = Icons.Filled.MoreHoriz,
+                            onClickLabel = "View all release artists",
+                            onClick = {
+                                isActionMenuOpen = false
+                                isViewOnDiscogsExpanded = false
+                                onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_ARTISTS)
+                            },
+                        )
+                    }
+                    collectionLabelNames.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
+                        ActionMenuSubOption(
+                            label = labelName,
+                            onClickLabel = "Open $labelName on Discogs",
+                            onClick = {
+                                isActionMenuOpen = false
+                                isViewOnDiscogsExpanded = false
+                                uriHandler.openUri(discogsLabelSearchUrl(labelName))
+                            },
+                        )
+                    }
+                    if (collectionLabelNames.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                        ActionMenuSubOption(
+                            label = "View all labels",
+                            icon = Icons.Filled.MoreHoriz,
+                            onClickLabel = "View all release labels",
+                            onClick = {
+                                isActionMenuOpen = false
+                                isViewOnDiscogsExpanded = false
+                                onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_LABELS)
                             },
                         )
                     }
@@ -1127,13 +1137,13 @@ private fun RecordTracklistContent(
     }
 }
 
-private fun discogsReleaseUrl(discogsReleaseId: Long): String = "https://www.discogs.com/release/$discogsReleaseId"
+internal fun discogsReleaseUrl(discogsReleaseId: Long): String = "https://www.discogs.com/release/$discogsReleaseId"
 
 internal fun discogsArtistUrl(discogsArtistId: Long): String = "https://www.discogs.com/artist/$discogsArtistId"
 
-private fun discogsArtistSearchUrl(artistName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(artistName)}&type=artist"
+internal fun discogsArtistSearchUrl(artistName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(artistName)}&type=artist"
 
-private fun discogsLabelSearchUrl(labelName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(labelName)}&type=label"
+internal fun discogsLabelSearchUrl(labelName: String): String = "https://www.discogs.com/search/?q=${Uri.encode(labelName)}&type=label"
 
 internal fun displayReleaseTrack(track: ReleaseTrack): String {
     val duration =
@@ -2457,41 +2467,35 @@ private fun recordActionMenuLabels(
         if (collectionArtists.isNotEmpty() || collectionLabels.isNotEmpty()) {
             add("More in collection")
             if (isMoreInCollectionExpanded) {
-                val collectionOptions =
-                    recordDetailCollectionMenuOptions(
-                        artistNames = collectionArtists,
-                        labelNames = collectionLabels,
-                    )
-                collectionOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
-                    when (option) {
-                        is RecordDetailCollectionMenuOption.Artist -> add("• ${option.name}")
-                        is RecordDetailCollectionMenuOption.Label -> add("• ${option.name}")
-                    }
+                collectionArtists.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artistName ->
+                    add("• $artistName")
                 }
-                if (collectionOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
-                    add("• View all in collection")
+                if (collectionArtists.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                    add("• View all artists")
+                }
+                collectionLabels.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
+                    add("• $labelName")
+                }
+                if (collectionLabels.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                    add("• View all labels")
                 }
             }
         }
         add("View on Discogs")
         if (isViewOnDiscogsExpanded) {
             add("• Release page")
-            val discogsOptions =
-                recordDetailDiscogsMenuOptions(
-                    artistRows = discogsArtistRows(record),
-                    labelNames = collectionLabels,
-                )
-            discogsOptions.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { option ->
-                when (option) {
-                    is RecordDetailDiscogsMenuOption.Artist -> {
-                        add("• ${cleanDiscogsDisplayName(option.artist.name)}")
-                    }
-
-                    is RecordDetailDiscogsMenuOption.Label -> add("• ${option.name}")
-                }
+            val discogsArtists = discogsArtistRows(record)
+            discogsArtists.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artist ->
+                add("• ${cleanDiscogsDisplayName(artist.name)}")
             }
-            if (discogsOptions.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
-                add("• View all on Discogs")
+            if (discogsArtists.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                add("• View all artists")
+            }
+            collectionLabels.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
+                add("• $labelName")
+            }
+            if (collectionLabels.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                add("• View all labels")
             }
         }
     }
