@@ -738,6 +738,8 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,
+            VinylRoutes.RECORD_ACTION_ITEMS_PATTERN,
+            VinylRoutes.ALL_DISCOGS_FOLDERS,
             VinylRoutes.AI_INSIGHTS,
         )
 
