@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     auth_password_argon2_parallelism: int = 4
     auth_password_argon2_hash_len: int = 32
     auth_password_argon2_salt_len: int = 16
+    auth_code_hash_secret: str | None = None
+    auth_email_code_length: int = 6
+    auth_email_verification_code_ttl_minutes: int = 15
+    auth_password_reset_code_ttl_minutes: int = 15
+    auth_email_resend_cooldown_seconds: int = 60
+    auth_email_delivery_backend: Literal["local", "mailgun"] = "local"
+    auth_local_email_outbox_path: str = "auth-local-email-outbox.jsonl"
+    auth_email_from_address: str = "noreply@vinyl-listen.local"
+    mailgun_api_base_url: str = "https://api.mailgun.net"
+    mailgun_api_key: str | None = None
+    mailgun_domain: str | None = None
 
     ai_chat_enabled: bool = False
     ai_chat_base_url: str | None = None

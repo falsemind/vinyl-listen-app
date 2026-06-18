@@ -62,6 +62,23 @@ class AuthRepository:
         user.email_verified_at = verified_at
         return _persist(db, user, commit=commit)
 
+    def update_password_hash(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        password_hash: str,
+        password_hash_algorithm: str,
+        password_hash_version: int,
+        password_hash_params: dict | None,
+        commit: bool = True,
+    ) -> UserAccount:
+        user.password_hash = password_hash
+        user.password_hash_algorithm = password_hash_algorithm
+        user.password_hash_version = password_hash_version
+        user.password_hash_params = password_hash_params
+        return _persist(db, user, commit=commit)
+
     def create_auth_session(
         self,
         db: Session,
@@ -124,6 +141,29 @@ class AuthRepository:
         auth_session.revoke_reason = reason
         return _persist(db, auth_session, commit=commit)
 
+    def revoke_user_sessions(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        revoked_at: datetime,
+        reason: str,
+        commit: bool = True,
+    ) -> int:
+        sessions = (
+            db.query(AuthSession).filter(AuthSession.user_id == user_id).filter(AuthSession.revoked_at.is_(None)).all()
+        )
+        for auth_session in sessions:
+            auth_session.revoked_at = revoked_at
+            auth_session.revoke_reason = reason
+            db.add(auth_session)
+
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return len(sessions)
+
     def create_consumed_refresh_token(
         self,
         db: Session,
@@ -180,6 +220,19 @@ class AuthRepository:
             rate_limited_until=rate_limited_until,
         )
         return _persist(db, code, commit=commit)
+
+    def get_latest_email_verification_code(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+    ) -> EmailVerificationCode | None:
+        return (
+            db.query(EmailVerificationCode)
+            .filter(EmailVerificationCode.user_id == user_id)
+            .order_by(EmailVerificationCode.created_at.desc(), EmailVerificationCode.id.desc())
+            .first()
+        )
 
     def get_email_verification_code_by_hash(
         self,
