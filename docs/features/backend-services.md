@@ -380,7 +380,7 @@ The mapper handles common Discogs shapes:
 4. Optionally checks the raw Discogs release payload for valid side labels.
 5. Validates optional `session_group_id` through `SessionGroupsService`.
 6. Creates a session through `SessionsRepository`.
-7. Persists optional selected tracks through `session_tracks`, including track-level Discogs artist snapshots when present.
+7. Persists optional selected tracks through `session_tracks`, including track-level Discogs artist snapshots when present. Response mapping enriches older track rows from cached Discogs tracklists when the stored artist snapshot is missing.
 8. Returns `CreateSessionResult` with session ID, timestamp, optional session group id, and success status.
 
 ### Edit flow

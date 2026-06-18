@@ -111,6 +111,15 @@ class SessionTrackSelection:
 
 
 @dataclass(frozen=True)
+class SessionTrackSnapshot:
+    track_position: str
+    track_artist: str | None
+    track_title: str
+    track_duration: str | None
+    track_sequence: int | None
+
+
+@dataclass(frozen=True)
 class CreateSessionData:
     release_id: str
     session_group_id: str | None
@@ -358,6 +367,44 @@ class SessionsService:
 
     def get_tracks_by_session_ids(self, db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
         return self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+
+    def get_session_tracks_for_response(self, db: Session, session: Sessions) -> list[SessionTrackSnapshot]:
+        tracks = self._sessions_repository.get_tracks_by_session_id(db, session.id)
+        release = self._releases_repository.get_by_id(db, session.release_id)
+        return self._enrich_track_artists(db, release, tracks)
+
+    def get_tracks_by_session_ids_for_release_id(
+        self,
+        db: Session,
+        *,
+        release_id: str,
+        session_ids: list[str],
+    ) -> dict[str, list[SessionTrackSnapshot]]:
+        tracks_by_session_id = self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+        release = self._releases_repository.get_by_id(db, release_id)
+        return {
+            session_id: self._enrich_track_artists(db, release, tracks)
+            for session_id, tracks in tracks_by_session_id.items()
+        }
+
+    def get_tracks_by_session_ids_for_releases(
+        self,
+        db: Session,
+        session_releases: list[tuple[str, Releases]],
+    ) -> dict[str, list[SessionTrackSnapshot]]:
+        session_ids = [session_id for session_id, _release in session_releases]
+        tracks_by_session_id = self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+        release_by_session_id = dict(session_releases)
+        lookup_cache: dict[int, tuple[dict[tuple[str, str], str], dict[str, str]]] = {}
+        return {
+            session_id: self._enrich_track_artists(
+                db,
+                release_by_session_id.get(session_id),
+                tracks,
+                lookup_cache=lookup_cache,
+            )
+            for session_id, tracks in tracks_by_session_id.items()
+        }
 
     def get_record_flow_insights(
         self,
@@ -769,6 +816,54 @@ class SessionsService:
         expected_side = normalized_side.split(":")[-1]
         return self._track_side_prefix(track_position) == expected_side
 
+    def _enrich_track_artists(
+        self,
+        db: Session,
+        release: Releases | None,
+        tracks: list[SessionTracks],
+        *,
+        lookup_cache: dict[int, tuple[dict[tuple[str, str], str], dict[str, str]]] | None = None,
+    ) -> list[SessionTrackSnapshot]:
+        if release is None or all(track.track_artist for track in tracks):
+            return [_session_track_snapshot(track) for track in tracks]
+
+        cache = lookup_cache if lookup_cache is not None else {}
+        if release.discogs_release_id not in cache:
+            cache[release.discogs_release_id] = self._cached_track_artist_lookup(db, release.discogs_release_id)
+        artist_by_key, artist_by_position = cache[release.discogs_release_id]
+        return [
+            _session_track_snapshot(
+                track,
+                artist=(
+                    track.track_artist
+                    or artist_by_key.get(_track_artist_key(track.track_position, track.track_title))
+                    or artist_by_position.get(_normalize_track_position(track.track_position))
+                ),
+            )
+            for track in tracks
+        ]
+
+    def _cached_track_artist_lookup(
+        self,
+        db: Session,
+        discogs_release_id: int,
+    ) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
+        tracklist = extract_release_tracklist(cache_entry.raw_discogs_json if cache_entry is not None else None)
+        artist_by_key: dict[tuple[str, str], str] = {}
+        artists_by_position: dict[str, set[str]] = {}
+        for track in tracklist:
+            artist = _display_track_artists(track.artists)
+            if not artist:
+                continue
+            artist_by_key[_track_artist_key(track.position, track.title)] = artist
+            artists_by_position.setdefault(_normalize_track_position(track.position), set()).add(artist)
+
+        artist_by_position = {
+            position: next(iter(artists)) for position, artists in artists_by_position.items() if len(artists) == 1
+        }
+        return artist_by_key, artist_by_position
+
     def _track_side_prefix(self, track_position: str) -> str | None:
         letters: list[str] = []
         for character in track_position.strip().upper():
@@ -874,3 +969,21 @@ def _display_track_artists(artists: list[ReleaseTrackArtistData]) -> str | None:
             parts.append(f" {join.strip()} " if join and join.strip() else ", ")
         parts.append(name)
     return "".join(parts).strip() or None
+
+
+def _session_track_snapshot(track: SessionTracks, *, artist: str | None = None) -> SessionTrackSnapshot:
+    return SessionTrackSnapshot(
+        track_position=track.track_position,
+        track_artist=artist if artist is not None else track.track_artist,
+        track_title=track.track_title,
+        track_duration=track.track_duration,
+        track_sequence=track.track_sequence,
+    )
+
+
+def _track_artist_key(position: str, title: str) -> tuple[str, str]:
+    return _normalize_track_position(position), " ".join(title.strip().casefold().split())
+
+
+def _normalize_track_position(position: str) -> str:
+    return position.strip().upper()

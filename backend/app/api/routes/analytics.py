@@ -23,6 +23,7 @@ from app.schemas.analytics import (
 from app.schemas.sessions import ErrorResponse, SessionTrackResponse
 from app.services.analytics_service import AnalyticsService, AnalyticsValidationError
 from app.services.session_groups_service import SessionGroupsService
+from app.services.sessions_service import SessionsService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,6 +35,10 @@ def get_analytics_service() -> AnalyticsService:
 
 def get_session_groups_service() -> SessionGroupsService:
     return SessionGroupsService()
+
+
+def get_sessions_service() -> SessionsService:
+    return SessionsService()
 
 
 @router.get("/plays/monthly", response_model=MonthlyPlaysResponse)
@@ -95,6 +100,7 @@ def get_sessions_for_month(
     db: Annotated[Session, Depends(get_db)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     session_groups_service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
+    sessions_service: Annotated[SessionsService, Depends(get_sessions_service)],
     month: str = Query(...),
     limit: int = Query(default=10),
     offset: int = Query(default=0),
@@ -111,11 +117,16 @@ def get_sessions_for_month(
         session_group.id: session_group
         for session_group in session_groups_service.get_session_groups_by_ids(db, session_group_ids)
     }
+    tracks_by_session_id = sessions_service.get_tracks_by_session_ids_for_releases(
+        db,
+        [(item.session.id, item.release) for item in page.sessions],
+    )
 
     return AnalyticsSessionsResponse(
         sessions=[
             _map_analytics_session(
                 item,
+                tracks=tracks_by_session_id.get(item.session.id, item.tracks),
                 session_group=session_groups_by_id.get(item.session.session_group_id),
                 session_groups_service=session_groups_service,
             )
@@ -237,11 +248,13 @@ def _map_pagination(pagination: Any) -> AnalyticsPagination:
 def _map_analytics_session(
     item: Any,
     *,
+    tracks: list[Any] | None = None,
     session_group: Any | None = None,
     session_groups_service: SessionGroupsService | None = None,
 ) -> AnalyticsSessionItem:
     session = item.session
     release = item.release
+    session_tracks = tracks if tracks is not None else item.tracks
     return AnalyticsSessionItem(
         session_id=session.id,
         release_id=release.id,
@@ -268,7 +281,7 @@ def _map_analytics_session(
                 duration=track.track_duration,
                 sequence=track.track_sequence,
             )
-            for track in item.tracks
+            for track in session_tracks
         ],
         rating=session.rating,
         mood=session.mood,

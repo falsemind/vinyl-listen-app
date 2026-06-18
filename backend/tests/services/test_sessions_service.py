@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.services.session_groups_service import SessionGroupInactiveError
 from app.services.sessions_service import (
     ReleaseNotFoundError,
@@ -307,6 +307,47 @@ def test_create_session_saves_selected_tracks_for_side(
         ("A1", "Pixl & Tim Reaper", "Intro", "1:00", 1),
         ("A2", "Equinox & Tim Reaper", "Main Tune", None, 2),
     ]
+
+
+def test_response_tracks_enrich_missing_artists_from_cached_discogs(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+) -> None:
+    repository = sessions_repository_factory()
+    release = build_release("release-123", 555123)
+    repository.tracks_by_session_id["session-123"] = [
+        SessionTracks(
+            id="track-1",
+            session_id="session-123",
+            track_position="A1",
+            track_artist=None,
+            track_title="The Rush",
+            track_duration=None,
+            track_sequence=1,
+        )
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[release],
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {
+                        "position": "A1",
+                        "type_": "track",
+                        "artists": [{"name": "Pixl", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "The Rush",
+                    }
+                ]
+            }
+        },
+    )
+
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_releases(object(), [("session-123", release)])
+
+    assert tracks_by_session_id["session-123"][0].track_artist == "Pixl & Tim Reaper"
+    assert repository.tracks_by_session_id["session-123"][0].track_artist is None
 
 
 def test_create_session_rejects_track_from_another_side(build_sessions_service) -> None:

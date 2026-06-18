@@ -278,9 +278,9 @@ def get_home_summary(
             content={"error": {"code": error.code, "message": error.message}},
         )
 
-    tracks_by_session_id = service.get_tracks_by_session_ids(
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_releases(
         db,
-        [item.session.id for item in summary.recent_sessions],
+        [(item.session.id, item.release) for item in summary.recent_sessions],
     )
     session_group_ids = [
         item.session.session_group_id for item in summary.recent_sessions if item.session.session_group_id is not None
@@ -477,7 +477,7 @@ def _map_session_response(
         notes=session.notes,
         played_at=session.played_at,
         vinyl_side=session.vinyl_side,
-        tracks=_map_session_tracks(service.get_session_tracks(db, session.id)),
+        tracks=_map_session_tracks(service.get_session_tracks_for_response(db, session)),
         created_at=session.created_at,
         can_edit=service.can_edit_session(session),
         editable_until=service.editable_until(session),

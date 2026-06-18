@@ -474,7 +474,11 @@ def get_release_sessions(
             content={"error": {"code": "release_not_found", "message": str(error)}},
         )
 
-    tracks_by_session_id = service.get_tracks_by_session_ids(db, [session.id for session in sessions])
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_release_id(
+        db,
+        release_id=release_id,
+        session_ids=[session.id for session in sessions],
+    )
     return ReleaseSessionsResponse(
         sessions=[
             ReleaseSessionHistoryItem(

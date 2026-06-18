@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.api.routes.analytics import get_analytics_service, get_session_groups_service
+from app.api.routes.analytics import get_analytics_service, get_session_groups_service, get_sessions_service
 from app.main import app
 from app.services.analytics_service import (
     AnalyticsPagination,
@@ -155,6 +155,26 @@ class StubSessionGroupsService:
         return datetime(2026, 5, 12, 10, 45, tzinfo=UTC)
 
 
+class StubSessionsService:
+    def __init__(self) -> None:
+        self.track_calls: list[list[tuple[str, object]]] = []
+
+    def get_tracks_by_session_ids_for_releases(self, _db, session_releases: list[tuple[str, object]]):
+        self.track_calls.append(session_releases)
+        return {
+            session_id: [
+                SimpleNamespace(
+                    track_position="A1",
+                    track_artist="Boards of Canada",
+                    track_title="Wildlife Analysis",
+                    track_duration="1:17",
+                    track_sequence=1,
+                )
+            ]
+            for session_id, _release in session_releases
+        }
+
+
 def test_monthly_plays_endpoint_returns_chart_data() -> None:
     service = StubAnalyticsService()
     app.dependency_overrides[get_analytics_service] = lambda: service
@@ -234,8 +254,10 @@ def test_distribution_endpoints_return_chart_data() -> None:
 def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
     service = StubAnalyticsService()
     session_groups_service = StubSessionGroupsService()
+    sessions_service = StubSessionsService()
     app.dependency_overrides[get_analytics_service] = lambda: service
     app.dependency_overrides[get_session_groups_service] = lambda: session_groups_service
+    app.dependency_overrides[get_sessions_service] = lambda: sessions_service
 
     with TestClient(app) as client:
         response = client.get("/api/v1/analytics/sessions?month=2026-05&limit=5&offset=5")
@@ -287,6 +309,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
     }
     assert service.month_calls == [("2026-05", 5, 5)]
     assert session_groups_service.get_by_ids_calls == [["group-123"]]
+    assert sessions_service.track_calls[0][0][0] == "session-123"
 
 
 def test_record_drilldown_endpoints_return_paged_record_counts() -> None:

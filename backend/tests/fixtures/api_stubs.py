@@ -630,8 +630,18 @@ class StubSessionsService:
     def get_session_tracks(self, _db, session_id: str):
         return self.tracks_by_session_id.get(session_id, [])
 
+    def get_session_tracks_for_response(self, _db, session: SessionStub):
+        return self.tracks_by_session_id.get(session.id, [])
+
     def get_tracks_by_session_ids(self, _db, session_ids: list[str]):
         return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
+
+    def get_tracks_by_session_ids_for_release_id(self, _db, *, release_id: str, session_ids: list[str]):
+        _ = release_id
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
+
+    def get_tracks_by_session_ids_for_releases(self, _db, session_releases: list[tuple[str, object]]):
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id, _release in session_releases}
 
     def get_sessions_by_release(self, _db, release_id: str, *, limit: int, offset: int) -> list[SessionStub]:
         self.list_calls.append((release_id, limit, offset))
