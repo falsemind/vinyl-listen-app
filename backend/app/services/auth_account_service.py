@@ -58,6 +58,10 @@ class PasswordResetCodeConsumedError(AuthAccountError):
     pass
 
 
+class PasswordResetRequestRateLimitedError(AuthAccountError):
+    pass
+
+
 @dataclass(frozen=True)
 class RegisterAccountResult:
     user_id: str
@@ -193,6 +197,19 @@ class AuthAccountService:
         if user is None or user.deleted_at is not None:
             return PasswordResetRequestResult(email=email.strip())
 
+        now = self._now_provider()
+        latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
+        if latest_code is not None and latest_code.consumed_at is None:
+            latest_issued_at = _ensure_utc(latest_code.expires_at) - self._password_reset_code_ttl
+            if latest_issued_at + self._resend_cooldown > now:
+                raise PasswordResetRequestRateLimitedError("password reset request is rate limited.")
+
+        self._repository.consume_unconsumed_password_reset_codes(
+            db,
+            user_id=user.id,
+            consumed_at=now,
+            commit=False,
+        )
         code, reset_code = self._create_password_reset_code(db, user=user)
         db.commit()
 
@@ -212,6 +229,9 @@ class AuthAccountService:
 
         user = self._repository.get_user_by_id(db, reset_code.user_id)
         if user is None or user.normalized_email != normalize_email(email):
+            raise PasswordResetCodeInvalidError("password reset code is invalid.")
+        latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
+        if latest_code is None or latest_code.id != reset_code.id:
             raise PasswordResetCodeInvalidError("password reset code is invalid.")
 
         password_hash = self._password_hasher.hash_password(new_password)

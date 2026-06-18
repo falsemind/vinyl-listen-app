@@ -34,7 +34,7 @@ class AuthEmailSender(Protocol):
 
 
 class LocalDevEmailSender:
-    """Write auth email messages to a local JSONL outbox for development."""
+    """Write plaintext auth codes to a local JSONL outbox for development only."""
 
     def __init__(self, outbox_path: str | Path = settings.auth_local_email_outbox_path) -> None:
         path = Path(outbox_path)

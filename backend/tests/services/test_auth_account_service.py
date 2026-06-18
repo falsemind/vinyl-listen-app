@@ -23,6 +23,8 @@ from app.services.auth_account_service import (
     EmailVerificationCodeExpiredError,
     EmailVerificationCodeInvalidError,
     EmailVerificationResendRateLimitedError,
+    PasswordResetCodeConsumedError,
+    PasswordResetRequestRateLimitedError,
 )
 from app.services.auth_email_delivery import AuthEmailMessage, LocalDevEmailSender
 from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashConfig
@@ -207,6 +209,40 @@ def test_password_reset_request_is_generic_for_unknown_email(
     assert result.accepted is True
     assert result.email == "unknown@example.com"
     assert email_sender.messages == []
+
+
+def test_password_reset_request_is_rate_limited_and_replaces_previous_code_after_cooldown(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+    email_sender: RecordingEmailSender,
+    clock: AuthTestClock,
+) -> None:
+    registration = service.register_account(db_session, email="alex@example.com", password="password")
+    service.request_password_reset(db_session, email="alex@example.com")
+    first_reset_code = email_sender.messages[1].code
+
+    with pytest.raises(PasswordResetRequestRateLimitedError):
+        service.request_password_reset(db_session, email="alex@example.com")
+
+    assert len(email_sender.messages) == 2
+
+    clock.advance(timedelta(seconds=61))
+    service.request_password_reset(db_session, email="alex@example.com")
+
+    assert len(email_sender.messages) == 3
+    assert email_sender.messages[2].code != first_reset_code
+    latest_code = repository.get_latest_password_reset_code(db_session, user_id=registration.user_id)
+    assert latest_code is not None
+    assert latest_code.consumed_at is None
+
+    with pytest.raises(PasswordResetCodeConsumedError):
+        service.confirm_password_reset(
+            db_session,
+            email="alex@example.com",
+            code=first_reset_code,
+            new_password="new-password",
+        )
 
 
 def test_password_reset_confirm_updates_password_and_revokes_sessions(

@@ -343,3 +343,6 @@ site/
 # project related local data
 docs/research/
 docs/product/app-screens-mockups/
+
+# local auth email outbox with plaintext dev verification/reset codes
+backend/auth-local-email-outbox.jsonl

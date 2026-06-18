@@ -230,7 +230,7 @@ class AuthRepository:
         return (
             db.query(EmailVerificationCode)
             .filter(EmailVerificationCode.user_id == user_id)
-            .order_by(EmailVerificationCode.created_at.desc(), EmailVerificationCode.id.desc())
+            .order_by(EmailVerificationCode.expires_at.desc(), EmailVerificationCode.id.desc())
             .first()
         )
 
@@ -279,6 +279,19 @@ class AuthRepository:
     ) -> PasswordResetCode | None:
         return db.query(PasswordResetCode).filter(PasswordResetCode.code_hash == code_hash).one_or_none()
 
+    def get_latest_password_reset_code(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+    ) -> PasswordResetCode | None:
+        return (
+            db.query(PasswordResetCode)
+            .filter(PasswordResetCode.user_id == user_id)
+            .order_by(PasswordResetCode.expires_at.desc(), PasswordResetCode.id.desc())
+            .first()
+        )
+
     def consume_password_reset_code(
         self,
         db: Session,
@@ -289,6 +302,30 @@ class AuthRepository:
     ) -> PasswordResetCode:
         code.consumed_at = consumed_at
         return _persist(db, code, commit=commit)
+
+    def consume_unconsumed_password_reset_codes(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        consumed_at: datetime,
+        commit: bool = True,
+    ) -> int:
+        codes = (
+            db.query(PasswordResetCode)
+            .filter(PasswordResetCode.user_id == user_id)
+            .filter(PasswordResetCode.consumed_at.is_(None))
+            .all()
+        )
+        for code in codes:
+            code.consumed_at = consumed_at
+            db.add(code)
+
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return len(codes)
 
     def get_entitlement(self, db: Session, user_id: str) -> UserEntitlement | None:
         return db.query(UserEntitlement).filter(UserEntitlement.user_id == user_id).one_or_none()
