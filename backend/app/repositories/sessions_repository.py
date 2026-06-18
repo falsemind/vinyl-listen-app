@@ -171,6 +171,7 @@ class SessionsRepository:
             SessionTracks(
                 session_id=session_id,
                 track_position=track["position"],
+                track_artist=track.get("artist"),
                 track_title=track["title"],
                 track_duration=track.get("duration"),
                 track_sequence=track.get("sequence"),

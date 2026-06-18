@@ -455,6 +455,7 @@ Stores optional track selections for a side-level listening session. A session c
 |id|UUID|Primary key|
 |session_id|UUID|FK -> sessions.id|
 |track_position|TEXT|Discogs track position snapshot, e.g. A1|
+|track_artist|TEXT|Optional Discogs track artist snapshot, e.g. Pixl & Tim Reaper|
 |track_title|TEXT|Discogs track title snapshot|
 |track_duration|TEXT|Optional Discogs duration snapshot|
 |track_sequence|INTEGER|Tracklist order at time of logging|

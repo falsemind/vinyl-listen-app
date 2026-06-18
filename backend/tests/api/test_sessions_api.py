@@ -322,6 +322,7 @@ def test_get_session_endpoint_returns_session_details(
         "tracks": [
             {
                 "position": "A1",
+                "artist": "Boards of Canada",
                 "title": "Wildlife Analysis",
                 "duration": "1:17",
                 "sequence": 1,
@@ -365,6 +366,7 @@ def test_update_session_endpoint_returns_updated_session(
         "tracks": [
             {
                 "position": "B1",
+                "artist": None,
                 "title": "Track B1",
                 "duration": None,
                 "sequence": 1,
@@ -478,6 +480,7 @@ def test_get_home_summary_endpoint_returns_real_session_data(
                 "tracks": [
                     {
                         "position": "A1",
+                        "artist": "Boards of Canada",
                         "title": "Wildlife Analysis",
                         "duration": "1:17",
                         "sequence": 1,
@@ -655,6 +658,7 @@ def test_get_release_sessions_endpoint_returns_paginated_history(
                 "tracks": [
                     {
                         "position": "A1",
+                        "artist": "Boards of Canada",
                         "title": "Wildlife Analysis",
                         "duration": "1:17",
                         "sequence": 1,

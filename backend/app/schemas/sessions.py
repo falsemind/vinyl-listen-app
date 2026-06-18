@@ -113,6 +113,7 @@ class SessionMoodResponse(BaseModel):
 
 class SessionTrackResponse(BaseModel):
     position: str
+    artist: str | None = None
     title: str
     duration: str | None = None
     sequence: int | None = None

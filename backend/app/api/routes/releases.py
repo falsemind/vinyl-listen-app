@@ -486,6 +486,7 @@ def get_release_sessions(
                 tracks=[
                     SessionTrackResponse(
                         position=track.track_position,
+                        artist=track.track_artist,
                         title=track.track_title,
                         duration=track.track_duration,
                         sequence=track.track_sequence,

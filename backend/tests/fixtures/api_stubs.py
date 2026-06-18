@@ -13,6 +13,7 @@ from app.services.release_import_service import ReleaseImportResult
 from app.services.release_mapper import (
     ReleaseArtistData,
     ReleaseSideOptionData,
+    ReleaseTrackArtistData,
     ReleaseTrackCreditData,
     ReleaseTrackData,
 )
@@ -204,6 +205,10 @@ class StubReleaseImportService:
             ReleaseTrackData(
                 position="A2",
                 title="An Eagle In Your Mind",
+                artists=[
+                    ReleaseTrackArtistData(name="Boards of Canada", join="&", discogs_artist_id=194),
+                    ReleaseTrackArtistData(name="Plaid", discogs_artist_id=2470),
+                ],
                 extra_artists=[ReleaseTrackCreditData(name="Plaid", role="Remix")],
             ),
         ]
@@ -511,6 +516,7 @@ class StubSessionsService:
             "session-123": [
                 SimpleNamespace(
                     track_position="A1",
+                    track_artist="Boards of Canada",
                     track_title="Wildlife Analysis",
                     track_duration="1:17",
                     track_sequence=1,
@@ -606,6 +612,7 @@ class StubSessionsService:
             self.tracks_by_session_id[self.session.id] = [
                 SimpleNamespace(
                     track_position=position,
+                    track_artist=None,
                     track_title=f"Track {position}",
                     track_duration=None,
                     track_sequence=index,

@@ -25,10 +25,17 @@ class ReleaseTrackCreditResponse(BaseModel):
     role: str | None = None
 
 
+class ReleaseTrackArtistResponse(BaseModel):
+    name: str
+    join: str | None = None
+    discogs_artist_id: int | None = None
+
+
 class ReleaseTrackResponse(BaseModel):
     position: str
     title: str
     duration: str | None = None
+    artists: list[ReleaseTrackArtistResponse] = Field(default_factory=list)
     extra_artists: list[ReleaseTrackCreditResponse] = Field(default_factory=list)
 
 

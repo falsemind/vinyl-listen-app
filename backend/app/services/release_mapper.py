@@ -35,10 +35,18 @@ class ReleaseTrackCreditData:
 
 
 @dataclass(frozen=True)
+class ReleaseTrackArtistData:
+    name: str
+    join: str | None = None
+    discogs_artist_id: int | None = None
+
+
+@dataclass(frozen=True)
 class ReleaseTrackData:
     position: str
     title: str
     duration: str | None = None
+    artists: list[ReleaseTrackArtistData] = field(default_factory=list)
     extra_artists: list[ReleaseTrackCreditData] = field(default_factory=list)
 
 
@@ -159,11 +167,43 @@ def extract_release_tracklist(raw_discogs_json: dict[str, Any] | None) -> list[R
                 position=position,
                 title=title,
                 duration=_clean_string(track.get("duration")),
+                artists=_extract_track_artists(track),
                 extra_artists=_extract_track_extra_artists(track),
             )
         )
 
     return tracks
+
+
+def _extract_track_artists(track: dict[str, Any]) -> list[ReleaseTrackArtistData]:
+    artists = track.get("artists")
+    if not isinstance(artists, list):
+        return []
+
+    track_artists: list[ReleaseTrackArtistData] = []
+    seen: set[tuple[int | None, str]] = set()
+    for artist in artists:
+        if not isinstance(artist, dict):
+            continue
+
+        artist_id = _coerce_int(artist.get("id"))
+        name = clean_discogs_artist_name(_clean_string(artist.get("anv")) or _clean_string(artist.get("name")))
+        if not name:
+            continue
+
+        artist_key = (artist_id, name.casefold())
+        if artist_key in seen:
+            continue
+
+        track_artists.append(
+            ReleaseTrackArtistData(
+                name=name,
+                join=_clean_string(artist.get("join")),
+                discogs_artist_id=artist_id,
+            )
+        )
+        seen.add(artist_key)
+    return track_artists
 
 
 def _extract_track_extra_artists(track: dict[str, Any]) -> list[ReleaseTrackCreditData]:

@@ -285,6 +285,10 @@ def test_get_tracklist_returns_discogs_tracks(
                     "type_": "track",
                     "title": "S.O.U.R",
                     "duration": "",
+                    "artists": [
+                        {"name": "Equinox (3)", "join": "&", "id": 67456},
+                        {"name": "Tim Reaper", "id": 1881856},
+                    ],
                     "extraartists": [{"name": "Target Artist (2)", "role": "Remix"}],
                 },
                 {"position": "Y1", "type_": "track", "title": "Another Tune", "duration": "5:12"},
@@ -299,6 +303,11 @@ def test_get_tracklist_returns_discogs_tracks(
         ("X2", "S.O.U.R", None),
         ("Y1", "Another Tune", "5:12"),
     ]
+    assert [(artist.name, artist.join, artist.discogs_artist_id) for artist in tracks[0].artists] == [
+        ("Equinox", "&", 67456),
+        ("Tim Reaper", None, 1881856),
+    ]
+    assert tracks[1].artists == []
     assert [(artist.name, artist.role) for artist in tracks[0].extra_artists] == [("Target Artist", "Remix")]
     assert tracks[1].extra_artists == []
 

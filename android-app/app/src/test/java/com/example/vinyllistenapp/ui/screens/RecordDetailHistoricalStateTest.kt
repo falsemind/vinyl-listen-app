@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.ui.screens
 import com.example.vinyllistenapp.domain.RecordSummary
 import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.ReleaseTrackArtist
 import com.example.vinyllistenapp.domain.ReleaseTrackCredit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -106,6 +107,55 @@ class RecordDetailHistoricalStateTest {
     }
 
     @Test
+    fun actionMenusIncludeTrackArtists() {
+        val record =
+            RecordSummary(
+                releaseId = "release-full",
+                discogsReleaseId = 18590200,
+                artist = "Various",
+                title = "Meeting Of The Minds Vol. 8",
+                label = "Western Lore",
+                year = 2021,
+                format = "Vinyl",
+                rating = 0,
+                lastPlayed = "0",
+                hasFullDiscogsInfo = true,
+                tracklist =
+                    listOf(
+                        ReleaseTrack(
+                            position = "A1",
+                            title = "Burger Sauce",
+                            artists =
+                                listOf(
+                                    ReleaseTrackArtist(name = "Equinox (3)", join = "&", discogsArtistId = 67456),
+                                    ReleaseTrackArtist(name = "Tim Reaper", discogsArtistId = 1881856),
+                                ),
+                        ),
+                        ReleaseTrack(
+                            position = "A2",
+                            title = "Re-Entry",
+                            artists =
+                                listOf(
+                                    ReleaseTrackArtist(name = "Infest (3)", join = "&", discogsArtistId = 1379026),
+                                    ReleaseTrackArtist(name = "Tim Reaper", discogsArtistId = 1881856),
+                                ),
+                        ),
+                    ),
+            )
+
+        assertTrue(shouldShowArtistDiscographyAction(record))
+        assertEquals(listOf("Equinox", "Tim Reaper", "Infest"), collectionArtistNames(record))
+        assertEquals(
+            listOf(
+                ReleaseArtist("Equinox", 67456),
+                ReleaseArtist("Tim Reaper", 1881856),
+                ReleaseArtist("Infest", 1379026),
+            ),
+            discogsArtistRows(record),
+        )
+    }
+
+    @Test
     fun releaseTotalPlayTimeOnlyShowsForFullReleaseWithEveryDuration() {
         val fullRecord =
             recordWithTracks(
@@ -134,6 +184,11 @@ class RecordDetailHistoricalStateTest {
             ReleaseTrack(
                 position = "B2",
                 title = "Ketel",
+                artists =
+                    listOf(
+                        ReleaseTrackArtist(name = "Equinox", join = "&"),
+                        ReleaseTrackArtist(name = "Tim Reaper"),
+                    ),
                 extraArtists =
                     listOf(
                         ReleaseTrackCredit(name = "TMSV", role = "Remix"),
@@ -145,10 +200,15 @@ class RecordDetailHistoricalStateTest {
                     ),
             )
 
-        assertEquals("B2: Ketel", displayReleaseTrack(track))
+        assertEquals("B2: Equinox & Tim Reaper - Ketel", displayReleaseTrack(track))
+        assertEquals("Equinox & Tim Reaper", displayReleaseTrackArtists(track))
         assertEquals(
             "Remix: TMSV, Requake; Featuring: Begum X, Delhi Sultanate; Dub Studio",
             displayReleaseTrackCredits(track),
+        )
+        assertEquals(
+            "B2: Equinox, Tim Reaper - Ketel",
+            displayReleaseTrack(track.copy(artists = track.artists.map { it.copy(join = null) })),
         )
         assertNull(displayReleaseTrackCredits(track.copy(extraArtists = emptyList())))
     }

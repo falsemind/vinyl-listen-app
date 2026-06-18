@@ -32,6 +32,9 @@ class StubAnalyticsService:
             discogs_release_id=555123,
             artist="Boards of Canada",
             title="Music Has The Right To Children",
+            year=1998,
+            label="Warp Records",
+            catalog_number="WARPLP55",
             cover_image_url="https://img.discogs.com/cover.jpg",
         )
         self.session = SimpleNamespace(
@@ -46,6 +49,7 @@ class StubAnalyticsService:
         self.tracks = [
             SimpleNamespace(
                 track_position="A1",
+                track_artist="Boards of Canada",
                 track_title="Wildlife Analysis",
                 track_duration="1:17",
                 track_sequence=1,
@@ -258,6 +262,9 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 },
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
+                "year": 1998,
+                "label": "Warp Records",
+                "catalog_number": "WARPLP55",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "date": "2026-05-12",
                 "played_at": "2026-05-12T10:00:00Z",
@@ -265,6 +272,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 "tracks": [
                     {
                         "position": "A1",
+                        "artist": "Boards of Canada",
                         "title": "Wildlife Analysis",
                         "duration": "1:17",
                         "sequence": 1,

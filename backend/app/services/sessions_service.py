@@ -14,7 +14,12 @@ from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
-from app.services.release_mapper import ReleaseTrackData, extract_release_side_options, extract_release_tracklist
+from app.services.release_mapper import (
+    ReleaseTrackArtistData,
+    ReleaseTrackData,
+    extract_release_side_options,
+    extract_release_tracklist,
+)
 from app.services.session_groups_service import SessionGroupsService
 
 logger = logging.getLogger(__name__)
@@ -90,6 +95,7 @@ class ReleaseNotFoundError(SessionsServiceError):
 @dataclass(frozen=True)
 class SessionTrackSelection:
     position: str
+    artist: str | None
     title: str
     duration: str | None
     sequence: int
@@ -97,6 +103,7 @@ class SessionTrackSelection:
     def as_repository_payload(self) -> dict[str, object]:
         return {
             "position": self.position,
+            "artist": self.artist,
             "title": self.title,
             "duration": self.duration,
             "sequence": self.sequence,
@@ -729,6 +736,7 @@ class SessionsService:
             selected_tracks.append(
                 SessionTrackSelection(
                     position=track.position,
+                    artist=_display_track_artists(track.artists),
                     title=track.title,
                     duration=track.duration,
                     sequence=sequence,
@@ -853,3 +861,16 @@ class SessionsService:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+
+def _display_track_artists(artists: list[ReleaseTrackArtistData]) -> str | None:
+    parts: list[str] = []
+    for index, artist in enumerate(artists):
+        name = artist.name.strip()
+        if not name:
+            continue
+        if index > 0:
+            join = artists[index - 1].join
+            parts.append(f" {join.strip()} " if join and join.strip() else ", ")
+        parts.append(name)
+    return "".join(parts).strip() or None

@@ -253,6 +253,9 @@ def _map_analytics_session(
         ),
         artist=release.artist,
         title=release.title,
+        year=release.year,
+        label=release.label,
+        catalog_number=release.catalog_number,
         thumbnail_url=release.cover_image_url,
         date=session.played_at.date().isoformat() if session.played_at is not None else None,
         played_at=session.played_at,
@@ -260,6 +263,7 @@ def _map_analytics_session(
         tracks=[
             SessionTrackResponse(
                 position=track.track_position,
+                artist=track.track_artist,
                 title=track.track_title,
                 duration=track.track_duration,
                 sequence=track.track_sequence,

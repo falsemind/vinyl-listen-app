@@ -980,6 +980,7 @@ All fields are optional, but at least one field must be present. Send `null` to 
   "tracks": [
     {
       "position": "B1",
+      "artist": "Pixl & Tim Reaper",
       "title": "Flip Tune",
       "duration": null,
       "sequence": 3
@@ -1265,6 +1266,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "tracks": [
         {
           "position": "A1",
+          "artist": "DJ Harmony & Kid Lib",
           "title": "Future",
           "duration": "6:34",
           "sequence": 1
@@ -1383,6 +1385,7 @@ Used for listening history.
       "tracks": [
         {
           "position": "B1",
+          "artist": "Pixl & Tim Reaper",
           "title": "Flip Tune",
           "duration": null,
           "sequence": 3
@@ -1620,10 +1623,22 @@ Returns listening sessions for a selected month from Plays Over Time.
       },
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
+      "year": 2024,
+      "label": "Deep Jungle",
+      "catalog_number": "DJ-001",
       "thumbnail_url": "https://...",
       "date": "2026-05-10",
       "played_at": "2026-05-10T23:30:00Z",
       "side": "A",
+      "tracks": [
+        {
+          "position": "A1",
+          "artist": "DJ Harmony & Kid Lib",
+          "title": "Future",
+          "duration": "6:34",
+          "sequence": 1
+        }
+      ],
       "rating": 5,
       "mood": "Focused",
       "has_notes": true

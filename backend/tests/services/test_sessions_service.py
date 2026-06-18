@@ -267,8 +267,20 @@ def test_create_session_saves_selected_tracks_for_side(
         payload_by_discogs_id={
             555123: {
                 "tracklist": [
-                    {"position": "A1", "type_": "track", "title": "Intro", "duration": "1:00"},
-                    {"position": "A2", "type_": "track", "title": "Main Tune", "duration": ""},
+                    {
+                        "position": "A1",
+                        "type_": "track",
+                        "artists": [{"name": "Pixl", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "Intro",
+                        "duration": "1:00",
+                    },
+                    {
+                        "position": "A2",
+                        "type_": "track",
+                        "artists": [{"name": "Equinox (3)", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "Main Tune",
+                        "duration": "",
+                    },
                     {"position": "B1", "type_": "track", "title": "Flip", "duration": "2:00"},
                 ]
             }
@@ -288,11 +300,12 @@ def test_create_session_saves_selected_tracks_for_side(
 
     tracks = repository.get_tracks_by_session_id(object(), "session-123")
     track_summaries = [
-        (track.track_position, track.track_title, track.track_duration, track.track_sequence) for track in tracks
+        (track.track_position, track.track_artist, track.track_title, track.track_duration, track.track_sequence)
+        for track in tracks
     ]
     assert track_summaries == [
-        ("A1", "Intro", "1:00", 1),
-        ("A2", "Main Tune", None, 2),
+        ("A1", "Pixl & Tim Reaper", "Intro", "1:00", 1),
+        ("A2", "Equinox & Tim Reaper", "Main Tune", None, 2),
     ]
 
 

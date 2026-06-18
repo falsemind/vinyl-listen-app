@@ -114,6 +114,7 @@ class SessionTracks(Base):
         nullable=False,
     )
     track_position: Mapped[str] = mapped_column(String, nullable=False)
+    track_artist: Mapped[str | None] = mapped_column(String, nullable=True)
     track_title: Mapped[str] = mapped_column(String, nullable=False)
     track_duration: Mapped[str | None] = mapped_column(String, nullable=True)
     track_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)

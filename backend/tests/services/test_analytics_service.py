@@ -33,6 +33,7 @@ class StubAnalyticsRepository:
         self.tracks = [
             SimpleNamespace(
                 track_position="A1",
+                track_artist="Boards of Canada",
                 track_title="Wildlife Analysis",
                 track_duration="1:17",
                 track_sequence=1,
@@ -152,6 +153,7 @@ def test_get_sessions_for_month_validates_and_maps_page() -> None:
     assert result.sessions[0].session.id == "session-123"
     assert result.sessions[0].release.id == "release-123"
     assert result.sessions[0].tracks[0].track_position == "A1"
+    assert result.sessions[0].tracks[0].track_artist == "Boards of Canada"
     assert result.pagination.limit == 5
     assert result.pagination.offset == 5
     assert result.pagination.total == 12

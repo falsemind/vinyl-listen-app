@@ -488,6 +488,7 @@ def _map_session_tracks(tracks) -> list[SessionTrackResponse]:
     return [
         SessionTrackResponse(
             position=track.track_position,
+            artist=track.track_artist,
             title=track.track_title,
             duration=track.track_duration,
             sequence=track.track_sequence,

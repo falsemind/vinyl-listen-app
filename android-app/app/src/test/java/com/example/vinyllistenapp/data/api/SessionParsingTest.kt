@@ -23,6 +23,7 @@ class SessionParsingTest {
                   "tracks": [
                     {
                       "position": "B1",
+                      "artist": "Pixl & Tim Reaper",
                       "title": "Flip Tune",
                       "duration": "5:12",
                       "sequence": 3
@@ -44,6 +45,7 @@ class SessionParsingTest {
         assertEquals("Opened up after the second track.", session.notes)
         assertEquals(1, session.tracks.size)
         assertEquals("B1", session.tracks.first().position)
+        assertEquals("Pixl & Tim Reaper", session.tracks.first().artist)
         assertEquals("Flip Tune", session.tracks.first().title)
         assertEquals("5:12", session.tracks.first().duration)
         assertEquals(3, session.tracks.first().sequence)

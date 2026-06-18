@@ -20,10 +20,21 @@ class AnalyticsPageParsingTest {
                       "release_id": "release-123",
                       "artist": "Rhythm & Sound",
                       "title": "Carrier",
+                      "year": 1999,
+                      "label": "Burial Mix",
+                      "catalog_number": "BM-01",
                       "thumbnail_url": "https://example.com/cover.jpg",
                       "date": "2026-05-10",
                       "played_at": "2026-05-10T23:30:00Z",
                       "side": "A",
+                      "tracks": [
+                        {
+                          "position": "A1",
+                          "artist": "Pixl & Tim Reaper",
+                          "title": "Tidal Waves",
+                          "sequence": 1
+                        }
+                      ],
                       "rating": 5,
                       "mood": "Focused",
                       "has_notes": true
@@ -39,16 +50,23 @@ class AnalyticsPageParsingTest {
                 """.trimIndent(),
             ).toAnalyticsSessionsPage()
 
+        val session = page.sessions.first()
+        val track = session.tracks.first()
         assertEquals(1, page.sessions.size)
-        assertEquals("session-123", page.sessions.first().sessionId)
-        assertEquals("release-123", page.sessions.first().releaseId)
-        assertEquals("Rhythm & Sound", page.sessions.first().artist)
-        assertEquals("Carrier", page.sessions.first().title)
-        assertEquals("2026-05-10T23:30:00Z", page.sessions.first().playedAt)
-        assertEquals("Focused", page.sessions.first().mood)
-        assertEquals(5, page.sessions.first().rating)
-        assertEquals("A", page.sessions.first().side)
-        assertTrue(page.sessions.first().hasNotes)
+        assertEquals("session-123", session.sessionId)
+        assertEquals("release-123", session.releaseId)
+        assertEquals("Rhythm & Sound", session.artist)
+        assertEquals("Carrier", session.title)
+        assertEquals(1999, session.year)
+        assertEquals("Burial Mix", session.label)
+        assertEquals("BM-01", session.catalogNumber)
+        assertEquals("2026-05-10T23:30:00Z", session.playedAt)
+        assertEquals("Pixl & Tim Reaper", track.artist)
+        assertEquals("Tidal Waves", track.title)
+        assertEquals("Focused", session.mood)
+        assertEquals(5, session.rating)
+        assertEquals("A", session.side)
+        assertTrue(session.hasNotes)
         assertEquals(10, page.pagination.limit)
         assertEquals(0, page.pagination.offset)
         assertEquals(12, page.pagination.total)
