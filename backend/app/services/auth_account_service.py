@@ -62,6 +62,14 @@ class PasswordResetRequestRateLimitedError(AuthAccountError):
     pass
 
 
+class SignInInvalidCredentialsError(AuthAccountError):
+    pass
+
+
+class SignInEmailNotVerifiedError(AuthAccountError):
+    pass
+
+
 @dataclass(frozen=True)
 class RegisterAccountResult:
     user_id: str
@@ -81,6 +89,11 @@ class ResendVerificationResult:
 class PasswordResetRequestResult:
     email: str
     accepted: bool = True
+
+
+@dataclass(frozen=True)
+class SignInResult:
+    user: UserAccount
 
 
 class AuthAccountService:
@@ -217,6 +230,39 @@ class AuthAccountService:
 
         self._send_password_reset_code(user.email, code, reset_code.expires_at)
         return PasswordResetRequestResult(email=user.email)
+
+    def sign_in_with_password(self, db: Session, *, email: str, password: str) -> SignInResult:
+        user = self._repository.get_user_by_normalized_email(db, email)
+        if user is None or user.deleted_at is not None or not user.is_active:
+            raise SignInInvalidCredentialsError("email or password is invalid.")
+
+        verification = self._password_hasher.verify_password(
+            password=password,
+            password_hash=user.password_hash,
+            algorithm=user.password_hash_algorithm,
+            version=user.password_hash_version,
+            params=user.password_hash_params,
+        )
+        if not verification.is_valid:
+            raise SignInInvalidCredentialsError("email or password is invalid.")
+        if user.email_verified_at is None:
+            raise SignInEmailNotVerifiedError("email must be verified before signing in.")
+
+        if verification.needs_rehash:
+            password_hash = self._password_hasher.hash_password(password)
+            self._repository.update_password_hash(
+                db,
+                user=user,
+                password_hash=password_hash.password_hash,
+                password_hash_algorithm=password_hash.algorithm,
+                password_hash_version=password_hash.version,
+                password_hash_params=password_hash.params,
+                commit=False,
+            )
+            db.commit()
+            db.refresh(user)
+
+        return SignInResult(user=user)
 
     def confirm_password_reset(self, db: Session, *, email: str, code: str, new_password: str) -> UserAccount:
         reset_code = self._get_password_reset_code(db, email=email, code=code)

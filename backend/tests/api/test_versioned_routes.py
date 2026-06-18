@@ -41,7 +41,22 @@ def test_analytics_route_is_versioned() -> None:
 
 
 def test_ai_route_is_versioned() -> None:
+    class StubAiService:
+        def chat(self, *, db, message: str, conversation_id=None, client_context=None):
+            _ = db, message, conversation_id, client_context
+
+            class Reply:
+                conversation_id = "local-single-thread"
+                content = "Hello"
+                used_tools = []
+
+            return Reply()
+
+    from app.api.routes.ai import get_ai_insights_service
+
+    app.dependency_overrides[get_ai_insights_service] = lambda: StubAiService()
     response = client.post("/api/v1/ai/chat", json={"message": "Hello"})
+    app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json()["conversation_id"] == "local-single-thread"
