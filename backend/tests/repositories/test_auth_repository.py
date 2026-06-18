@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.auth import (
     AuthSession,
+    ConsumedRefreshToken,
     EmailVerificationCode,
     PasswordResetCode,
     UsageEvent,
@@ -18,6 +19,7 @@ from app.repositories.auth_repository import AuthRepository, normalize_email
 AUTH_TABLES = [
     UserAccount.__table__,
     AuthSession.__table__,
+    ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
     PasswordResetCode.__table__,
     UserEntitlement.__table__,

@@ -66,6 +66,34 @@ class AuthSession(Base):
     )
 
 
+class ConsumedRefreshToken(Base):
+    """Consumed refresh-token hash kept long enough to detect token reuse."""
+
+    __tablename__ = "consumed_refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("auth_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    refresh_token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    consumed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class EmailVerificationCode(Base):
     """Single-use email verification code metadata."""
 

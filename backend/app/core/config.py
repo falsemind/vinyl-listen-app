@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     inbound_rate_limit_redis_fail_open: bool = True
     inbound_rate_limit_redis_timeout_seconds: float = 0.25
 
+    auth_access_token_secret: str | None = None
+    auth_access_token_lifetime_seconds: int = 900
+    auth_refresh_token_lifetime_days: int = 30
+    auth_inactivity_reauth_days: int = 7
+    auth_password_argon2_time_cost: int = 3
+    auth_password_argon2_memory_cost: int = 65536
+    auth_password_argon2_parallelism: int = 4
+    auth_password_argon2_hash_len: int = 32
+    auth_password_argon2_salt_len: int = 16
+
     ai_chat_enabled: bool = False
     ai_chat_base_url: str | None = None
     ai_chat_endpoint_path: str = "/api/v1/chat"

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.auth import (
     AuthSession,
+    ConsumedRefreshToken,
     EmailVerificationCode,
     PasswordResetCode,
     UsageEvent,
@@ -90,6 +91,9 @@ class AuthRepository:
     ) -> AuthSession | None:
         return db.query(AuthSession).filter(AuthSession.refresh_token_hash == refresh_token_hash).one_or_none()
 
+    def get_auth_session_by_id(self, db: Session, session_id: str) -> AuthSession | None:
+        return db.query(AuthSession).filter(AuthSession.id == session_id).one_or_none()
+
     def touch_auth_session(
         self,
         db: Session,
@@ -119,6 +123,39 @@ class AuthRepository:
         auth_session.revoked_at = revoked_at
         auth_session.revoke_reason = reason
         return _persist(db, auth_session, commit=commit)
+
+    def create_consumed_refresh_token(
+        self,
+        db: Session,
+        *,
+        session_id: str,
+        user_id: str,
+        refresh_token_hash: str,
+        consumed_at: datetime,
+        expires_at: datetime,
+        consumed_token_id: str | None = None,
+        commit: bool = True,
+    ) -> ConsumedRefreshToken:
+        consumed_token = ConsumedRefreshToken(
+            id=consumed_token_id or _new_id(),
+            session_id=session_id,
+            user_id=user_id,
+            refresh_token_hash=refresh_token_hash,
+            consumed_at=consumed_at,
+            expires_at=expires_at,
+        )
+        return _persist(db, consumed_token, commit=commit)
+
+    def get_consumed_refresh_token_by_hash(
+        self,
+        db: Session,
+        refresh_token_hash: str,
+    ) -> ConsumedRefreshToken | None:
+        return (
+            db.query(ConsumedRefreshToken)
+            .filter(ConsumedRefreshToken.refresh_token_hash == refresh_token_hash)
+            .one_or_none()
+        )
 
     def create_email_verification_code(
         self,
