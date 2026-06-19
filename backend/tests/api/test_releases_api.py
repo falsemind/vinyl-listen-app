@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException, status
@@ -14,11 +15,16 @@ def test_discogs_service_dependency_requires_saved_token() -> None:
     from app.api.routes.releases import get_discogs_service
 
     class MissingIntegrationService:
-        def build_discogs_service(self, _db: object) -> object:
+        def build_discogs_service(self, _db: object, *, user_id: str | None = None) -> object:
+            _ = user_id
             raise DiscogsConfigurationError("Discogs token is not configured.")
 
     with pytest.raises(HTTPException) as error:
-        get_discogs_service(db=object(), integration_service=MissingIntegrationService())
+        get_discogs_service(
+            db=object(),
+            current_user=SimpleNamespace(account=SimpleNamespace(id="test-user")),
+            integration_service=MissingIntegrationService(),
+        )
 
     assert error.value.status_code == status.HTTP_400_BAD_REQUEST
     assert error.value.detail == "Discogs access token is required."
@@ -371,11 +377,15 @@ def test_get_release_endpoint_returns_local_release_metadata(
             {"value": "AA", "label": "Side AA", "side": "AA", "disc_number": None},
         ],
         "tracklist": [
-            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17", "extra_artists": []},
+            {"position": "A1", "title": "Wildlife Analysis", "duration": "1:17", "artists": [], "extra_artists": []},
             {
                 "position": "A2",
                 "title": "An Eagle In Your Mind",
                 "duration": None,
+                "artists": [
+                    {"name": "Boards of Canada", "join": "&", "discogs_artist_id": 194},
+                    {"name": "Plaid", "join": None, "discogs_artist_id": 2470},
+                ],
                 "extra_artists": [{"name": "Plaid", "role": "Remix"}],
             },
         ],

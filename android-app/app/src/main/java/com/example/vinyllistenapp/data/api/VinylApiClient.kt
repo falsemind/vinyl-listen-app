@@ -29,6 +29,7 @@ import com.example.vinyllistenapp.domain.ReleaseArtist
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
 import com.example.vinyllistenapp.domain.ReleaseSideOption
 import com.example.vinyllistenapp.domain.ReleaseTrack
+import com.example.vinyllistenapp.domain.ReleaseTrackArtist
 import com.example.vinyllistenapp.domain.ReleaseTrackCredit
 import com.example.vinyllistenapp.domain.SessionTrack
 import com.example.vinyllistenapp.domain.StyleDistributionItem
@@ -1352,6 +1353,8 @@ private fun JSONObject.optNullableString(name: String): String? = if (isNull(nam
 
 private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) null else optInt(name)
 
+private fun JSONObject.optNullableLong(name: String): Long? = if (isNull(name)) null else optLong(name).takeIf { it > 0 }
+
 private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
 
 private fun Int.toApiErrorKind(): ApiErrorKind =
@@ -1425,6 +1428,7 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
             position = item.optString("position"),
             title = item.optString("title"),
             duration = item.optNullableString("duration"),
+            artists = item.optJSONArray("artists").orEmpty().toReleaseTrackArtists(),
             extraArtists =
                 (
                     item.optJSONArray("extra_artists")
@@ -1432,6 +1436,15 @@ private fun JSONArray.toReleaseTracks(): List<ReleaseTrack> =
                 ).orEmpty().toReleaseTrackCredits(),
         )
     }.filter { it.position.isNotBlank() && it.title.isNotBlank() }
+
+private fun JSONArray.toReleaseTrackArtists(): List<ReleaseTrackArtist> =
+    mapObjects { item ->
+        ReleaseTrackArtist(
+            name = item.optString("name"),
+            join = item.optNullableString("join"),
+            discogsArtistId = item.optNullableLong("discogs_artist_id") ?: item.optNullableLong("id"),
+        )
+    }.filter { it.name.isNotBlank() }
 
 private fun JSONArray.toReleaseTrackCredits(): List<ReleaseTrackCredit> =
     mapObjects { item ->
@@ -1477,6 +1490,7 @@ private fun JSONArray.toSessionTracks(): List<SessionTrack> =
     mapObjects { item ->
         SessionTrack(
             position = item.optString("position"),
+            artist = item.optNullableString("artist") ?: item.optNullableString("track_artist"),
             title = item.optString("title"),
             duration = item.optNullableString("duration"),
             sequence = item.optNullableInt("sequence"),

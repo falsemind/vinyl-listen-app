@@ -21,48 +21,48 @@ class AiInsightToolRunner:
         self.sessions_repository = sessions_repository or SessionsRepository()
         self.spotify_repository = spotify_repository or SpotifyListeningRepository()
 
-    def run(self, db: Session, *, message: str) -> list[AiChatToolResult]:
+    def run(self, db: Session, *, user_id: str, message: str) -> list[AiChatToolResult]:
         normalized_message = message.lower()
         spotify_requested = self._should_include_spotify_tools(normalized_message)
-        results = [self._listening_summary(db)]
+        results = [self._listening_summary(db, user_id=user_id)]
 
         if self._should_include_session_notes(normalized_message):
-            results.append(self._session_notes(db))
+            results.append(self._session_notes(db, user_id=user_id))
         if self._mentions_any(normalized_message, ("recent", "lately", "latest", "night", "month", "recommend")):
-            results.append(self._recent_sessions(db))
+            results.append(self._recent_sessions(db, user_id=user_id))
         if self._mentions_any(normalized_message, ("top", "most", "record", "recommend", "played", "play")):
-            results.append(self._top_records(db))
+            results.append(self._top_records(db, user_id=user_id))
         if self._mentions_any(normalized_message, ("style", "genre")):
-            results.append(self._style_distribution(db))
+            results.append(self._style_distribution(db, user_id=user_id))
         if "mood" in normalized_message:
-            results.append(self._mood_distribution(db))
+            results.append(self._mood_distribution(db, user_id=user_id))
         if "rating" in normalized_message or "rated" in normalized_message:
-            results.append(self._rating_distribution(db))
+            results.append(self._rating_distribution(db, user_id=user_id))
         if spotify_requested:
-            results.append(self._spotify_vinyl_overlap_summary(db))
-            results.append(self._spotify_top_artists_by_period(db))
+            results.append(self._spotify_vinyl_overlap_summary(db, user_id=user_id))
+            results.append(self._spotify_top_artists_by_period(db, user_id=user_id))
             if self._mentions_any(
                 normalized_message,
                 ("time", "hour", "night", "morning", "day", "pattern", "when"),
             ):
-                results.append(self._spotify_listening_time_patterns(db))
+                results.append(self._spotify_listening_time_patterns(db, user_id=user_id))
             if self._mentions_any(
                 normalized_message,
                 ("recommend", "recommendation", "suggest", "collection", "record", "vinyl"),
             ):
-                results.append(self._spotify_collection_recommendation_signals(db))
+                results.append(self._spotify_collection_recommendation_signals(db, user_id=user_id))
 
         return [result for result in results if result.content.strip()]
 
-    def _listening_summary(self, db: Session) -> AiChatToolResult:
-        total_sessions = self.sessions_repository.count_all(db)
+    def _listening_summary(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        total_sessions = self.sessions_repository.count_all(db, user_id=user_id)
         return AiChatToolResult(
             name="get_listening_summary",
             content=f"Total logged listening sessions: {total_sessions}.",
         )
 
-    def _recent_sessions(self, db: Session) -> AiChatToolResult:
-        rows = self.sessions_repository.get_recent_with_releases(db, limit=5)
+    def _recent_sessions(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        rows = self.sessions_repository.get_recent_with_releases(db, user_id=user_id, limit=5)
         if not rows:
             return AiChatToolResult(name="get_recent_sessions", content="No listening sessions are logged yet.")
 
@@ -79,8 +79,8 @@ class AiInsightToolRunner:
             lines.append("; ".join(details))
         return AiChatToolResult(name="get_recent_sessions", content="\n".join(lines))
 
-    def _session_notes(self, db: Session) -> AiChatToolResult:
-        rows = self.sessions_repository.get_recent_notes_with_releases(db, limit=8)
+    def _session_notes(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        rows = self.sessions_repository.get_recent_notes_with_releases(db, user_id=user_id, limit=8)
         if not rows:
             return AiChatToolResult(name="get_session_notes", content="No saved session notes are available yet.")
 
@@ -101,8 +101,8 @@ class AiInsightToolRunner:
             lines.append("; ".join(details))
         return AiChatToolResult(name="get_session_notes", content="\n".join(lines))
 
-    def _top_records(self, db: Session) -> AiChatToolResult:
-        records = self.analytics_service.get_top_records(db, limit=5)
+    def _top_records(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        records = self.analytics_service.get_top_records(db, user_id=user_id, limit=5)
         if not records:
             return AiChatToolResult(name="get_top_records", content="No top records are available yet.")
 
@@ -116,30 +116,30 @@ class AiInsightToolRunner:
             )
         return AiChatToolResult(name="get_top_records", content="\n".join(lines))
 
-    def _style_distribution(self, db: Session) -> AiChatToolResult:
-        distribution = self.analytics_service.get_style_distribution(db)
+    def _style_distribution(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        distribution = self.analytics_service.get_style_distribution(db, user_id=user_id)
         return AiChatToolResult(
             name="get_style_distribution",
             content=self._render_distribution(distribution, empty_message="No style data is available yet."),
         )
 
-    def _mood_distribution(self, db: Session) -> AiChatToolResult:
-        distribution = self.analytics_service.get_mood_distribution(db)
+    def _mood_distribution(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        distribution = self.analytics_service.get_mood_distribution(db, user_id=user_id)
         return AiChatToolResult(
             name="get_mood_distribution",
             content=self._render_distribution(distribution, empty_message="No mood data is available yet."),
         )
 
-    def _rating_distribution(self, db: Session) -> AiChatToolResult:
-        distribution = self.analytics_service.get_rating_distribution(db)
+    def _rating_distribution(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        distribution = self.analytics_service.get_rating_distribution(db, user_id=user_id)
         return AiChatToolResult(
             name="get_rating_distribution",
             content=self._render_distribution(distribution, empty_message="No rating data is available yet."),
         )
 
-    def _spotify_vinyl_overlap_summary(self, db: Session) -> AiChatToolResult:
-        artist_matches = self.spotify_repository.list_artist_matches(db, limit=5)
-        release_matches = self.spotify_repository.list_release_matches(db, limit=5)
+    def _spotify_vinyl_overlap_summary(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        artist_matches = self.spotify_repository.list_artist_matches(db, user_id=user_id, limit=5)
+        release_matches = self.spotify_repository.list_release_matches(db, user_id=user_id, limit=5)
         if not artist_matches and not release_matches:
             return AiChatToolResult(
                 name="get_spotify_vinyl_overlap_summary",
@@ -165,8 +165,8 @@ class AiInsightToolRunner:
             )
         return AiChatToolResult(name="get_spotify_vinyl_overlap_summary", content="\n".join(lines))
 
-    def _spotify_listening_time_patterns(self, db: Session) -> AiChatToolResult:
-        hourly_stats = self.spotify_repository.list_hourly_stats(db)
+    def _spotify_listening_time_patterns(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        hourly_stats = self.spotify_repository.list_hourly_stats(db, user_id=user_id)
         if not hourly_stats:
             return AiChatToolResult(
                 name="get_spotify_listening_time_patterns",
@@ -183,8 +183,8 @@ class AiInsightToolRunner:
         ]
         return AiChatToolResult(name="get_spotify_listening_time_patterns", content="\n".join(lines))
 
-    def _spotify_top_artists_by_period(self, db: Session) -> AiChatToolResult:
-        top_artists = self.spotify_repository.list_top_artists(db, limit=5)
+    def _spotify_top_artists_by_period(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        top_artists = self.spotify_repository.list_top_artists(db, user_id=user_id, limit=5)
         if not top_artists:
             return AiChatToolResult(
                 name="get_spotify_top_artists_by_period",
@@ -204,6 +204,7 @@ class AiInsightToolRunner:
         top_artist = top_artists[0]
         monthly_stats = self.spotify_repository.list_monthly_artist_stats(
             db,
+            user_id=user_id,
             normalized_artist_name=top_artist.normalized_artist_name,
         )
         for stat in monthly_stats[-5:]:
@@ -214,8 +215,8 @@ class AiInsightToolRunner:
             )
         return AiChatToolResult(name="get_spotify_top_artists_by_period", content="\n".join(lines))
 
-    def _spotify_collection_recommendation_signals(self, db: Session) -> AiChatToolResult:
-        release_matches = self.spotify_repository.list_release_matches(db, limit=5)
+    def _spotify_collection_recommendation_signals(self, db: Session, *, user_id: str) -> AiChatToolResult:
+        release_matches = self.spotify_repository.list_release_matches(db, user_id=user_id, limit=5)
         if not release_matches:
             return AiChatToolResult(
                 name="get_spotify_collection_recommendation_signals",

@@ -60,15 +60,16 @@ class CollectionSyncJobService:
         self._stale_active_job_timeout = stale_active_job_timeout
         self._require_discogs_config = require_discogs_config
 
-    def create_job(self, db: Session) -> CollectionSyncJobStatusResponse:
+    def create_job(self, db: Session, *, user_id: str) -> CollectionSyncJobStatusResponse:
         if self._require_discogs_config:
-            self._validate_discogs_config(db)
+            self._validate_discogs_config(db, user_id=user_id)
 
         created_at = self._now_provider()
-        self._expire_stale_active_jobs(db, now=created_at)
+        self._expire_stale_active_jobs(db, user_id=user_id, now=created_at)
         job = self._repository.create(
             db,
             job_id=str(uuid4()),
+            user_id=user_id,
             status="queued",
             message="Collection sync queued",
             created_at=created_at,
@@ -76,16 +77,16 @@ class CollectionSyncJobService:
         )
         return self._to_response(job)
 
-    def get_job(self, db: Session, job_id: str) -> CollectionSyncJobStatusResponse:
-        self._expire_stale_active_jobs(db, now=self._now_provider())
-        job = self._repository.get(db, job_id)
+    def get_job(self, db: Session, job_id: str, *, user_id: str) -> CollectionSyncJobStatusResponse:
+        self._expire_stale_active_jobs(db, user_id=user_id, now=self._now_provider())
+        job = self._repository.get(db, job_id, user_id=user_id)
         if job is None:
             raise CollectionSyncJobNotFoundError(job_id)
         return self._to_response(job)
 
-    def get_active_job(self, db: Session) -> CollectionSyncJobStatusResponse | None:
-        self._expire_stale_active_jobs(db, now=self._now_provider())
-        job = self._repository.get_active(db)
+    def get_active_job(self, db: Session, *, user_id: str) -> CollectionSyncJobStatusResponse | None:
+        self._expire_stale_active_jobs(db, user_id=user_id, now=self._now_provider())
+        job = self._repository.get_active(db, user_id=user_id)
         if job is None:
             return None
         return self._to_response(job)
@@ -96,11 +97,13 @@ class CollectionSyncJobService:
             if job is None:
                 logger.warning("Collection sync job disappeared before processing job_id=%s", job_id)
                 return
+            user_id = job.user_id
 
         try:
             with self._session_factory() as db:
                 result = self._sync_service.sync_collection(
                     db,
+                    user_id=user_id,
                     progress_reporter=lambda **progress: self._update_progress(job_id, **progress),
                 )
         except Exception as error:  # noqa: BLE001
@@ -202,11 +205,11 @@ class CollectionSyncJobService:
             failed_step="unknown",
         )
 
-    def _validate_discogs_config(self, db: Session) -> None:
-        if not self._discogs_integration_service.get_status(db).access_token_saved:
+    def _validate_discogs_config(self, db: Session, *, user_id: str) -> None:
+        if not self._discogs_integration_service.get_status(db, user_id=user_id).access_token_saved:
             raise CollectionSyncConfigurationError()
 
-    def _expire_stale_active_jobs(self, db: Session, *, now: datetime) -> int:
+    def _expire_stale_active_jobs(self, db: Session, *, user_id: str, now: datetime) -> int:
         if self._stale_active_job_timeout.total_seconds() <= 0:
             return 0
 
@@ -216,6 +219,7 @@ class CollectionSyncJobService:
         )
         return self._repository.expire_stale_active(
             db,
+            user_id=user_id,
             stale_before=stale_before,
             expires_at_or_before=now,
             updated_at=now,

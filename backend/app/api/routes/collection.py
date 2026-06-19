@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.collection_folders_repository import CollectionFoldersRepository
@@ -27,6 +28,7 @@ from app.services.collection_sync_job_service import (
     CollectionSyncJobNotFoundError,
     CollectionSyncJobService,
 )
+from app.utils.discogs_display import clean_discogs_label_name
 
 router = APIRouter()
 COLLECTION_ARTIST_QUERY_MAX_LENGTH = 255
@@ -60,19 +62,21 @@ def get_provider_integration_repository() -> ProviderIntegrationRepository:
 @router.get("/settings", response_model=CollectionSettingsResponse)
 def get_collection_settings(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
 ) -> CollectionSettingsResponse:
-    settings_record = repository.get_or_create(db)
+    settings_record = repository.get_or_create(db, user_id=current_user.account.id)
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 
 @router.get("/folders", response_model=CollectionFoldersResponse)
 def list_collection_folders(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     folder_repository: Annotated[CollectionFoldersRepository, Depends(get_collection_folders_repository)],
     integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
 ) -> CollectionFoldersResponse:
-    integration = integration_repository.get_discogs(db)
+    integration = integration_repository.get_discogs(db, user_id=current_user.account.id)
     if not _has_configured_discogs_collection(integration):
         return CollectionFoldersResponse(discogs_configured=False, folders=[], has_extra_folders=False)
 
@@ -83,7 +87,7 @@ def list_collection_folders(
             count=folder.item_count,
             is_default=folder.is_default,
         )
-        for folder in folder_repository.list_folders(db)
+        for folder in folder_repository.list_folders(db, user_id=current_user.account.id)
     ]
     return CollectionFoldersResponse(
         discogs_configured=True,
@@ -96,11 +100,12 @@ def list_collection_folders(
 def update_collection_settings(
     payload: CollectionSettingsRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
     integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
 ) -> CollectionSettingsResponse | JSONResponse:
     if payload.source_of_truth == CollectionSourceOfTruth.DISCOGS:
-        integration = integration_repository.get_discogs(db)
+        integration = integration_repository.get_discogs(db, user_id=current_user.account.id)
         if not _has_configured_discogs_collection(integration):
             return _error_response(
                 status_code=400,
@@ -108,7 +113,7 @@ def update_collection_settings(
                 message="Discogs access token is required before using Discogs as source of truth.",
             )
 
-    settings_record = repository.set_source_of_truth(db, payload.source_of_truth)
+    settings_record = repository.set_source_of_truth(db, payload.source_of_truth, user_id=current_user.account.id)
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 
@@ -121,10 +126,11 @@ def update_collection_settings(
 def create_collection_sync_job(
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ):
     try:
-        job = job_service.create_job(db)
+        job = job_service.create_job(db, user_id=current_user.account.id)
     except CollectionSyncConfigurationError as error:
         return _error_response(status_code=error.status_code, code=error.code, message=error.message)
 
@@ -139,9 +145,10 @@ def create_collection_sync_job(
 )
 def get_active_collection_sync_job(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ) -> CollectionSyncJobStatusResponse | Response:
-    job = job_service.get_active_job(db)
+    job = job_service.get_active_job(db, user_id=current_user.account.id)
     if job is None:
         return Response(status_code=204)
     return job
@@ -155,10 +162,11 @@ def get_active_collection_sync_job(
 def get_collection_sync_job(
     job_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ):
     try:
-        return job_service.get_job(db, job_id)
+        return job_service.get_job(db, job_id, user_id=current_user.account.id)
     except CollectionSyncJobNotFoundError:
         return _error_response(
             status_code=404,
@@ -170,6 +178,7 @@ def get_collection_sync_job(
 @router.get("/releases", response_model=CollectionReleasesResponse)
 def list_collection_releases(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -181,6 +190,7 @@ def list_collection_releases(
 ) -> CollectionReleasesResponse:
     total = repository.count_collection_releases(
         db,
+        user_id=current_user.account.id,
         include_removed=include_removed,
         artist=artist,
         label=label,
@@ -189,6 +199,7 @@ def list_collection_releases(
     )
     releases = repository.list_collection_releases(
         db,
+        user_id=current_user.account.id,
         limit=limit + 1,
         offset=offset,
         include_removed=include_removed,
@@ -204,13 +215,14 @@ def list_collection_releases(
         offset=offset,
         total=total,
         has_more=offset + len(visible_releases) < total,
-        has_favorites=repository.has_favorite_collection_releases(db),
+        has_favorites=repository.has_favorite_collection_releases(db, user_id=current_user.account.id),
     )
 
 
 @router.get("/search", response_model=ReleaseSearchResponse)
 def search_collection_releases(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     title: Annotated[str | None, Query(min_length=1)] = None,
@@ -222,6 +234,7 @@ def search_collection_releases(
 ) -> ReleaseSearchResponse:
     releases = repository.search_collection_releases(
         db,
+        user_id=current_user.account.id,
         artist=artist,
         title=title,
         catalog=catalog,
@@ -239,7 +252,7 @@ def search_collection_releases(
                 artist=release.artist,
                 title=release.title,
                 year=release.year,
-                label=release.label,
+                label=clean_discogs_label_name(release.label),
                 catalog_number=release.catalog_number,
                 thumbnail_url=release.cover_image_url,
                 format=release.format,
@@ -260,7 +273,7 @@ def _to_collection_release_response(release) -> CollectionReleaseResponse:
         artist=release.artist,
         year=release.year,
         format=release.format,
-        label=release.label,
+        label=clean_discogs_label_name(release.label),
         catalog_number=release.catalog_number,
         styles=release.styles,
         thumb_url=release.thumbnail_url or release.cover_image_url,

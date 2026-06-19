@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.releases import (
@@ -29,7 +30,7 @@ from app.services.sessions_service import (
     SessionsService,
     SessionValidationError,
 )
-from app.utils.discogs_display import clean_discogs_artist_name
+from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_label_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,10 +46,11 @@ def get_discogs_integration_service() -> DiscogsIntegrationService:
 
 def get_discogs_service(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     integration_service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
 ) -> DiscogsService:
     try:
-        return integration_service.build_discogs_service(db)
+        return integration_service.build_discogs_service(db, user_id=current_user.account.id)
     except DiscogsConfigurationError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -136,7 +138,7 @@ def _map_discogs_search_result(
         "artist": clean_discogs_artist_name(artist or fallback_artist) or "Unknown Artist",
         "title": title or fallback_title or str(item.get("title") or "Untitled Release"),
         "year": _coerce_int(item.get("year")),
-        "label": _first_string(item.get("label")),
+        "label": clean_discogs_label_name(_first_string(item.get("label"))),
         "catalog_number": _first_string(item.get("catno")),
         "thumbnail_url": item.get("thumb") or item.get("cover_image"),
         "format": _format_release_format(item.get("format")),
@@ -181,6 +183,7 @@ def import_release(
     payload: ReleaseImportRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
 ):
     logger.info("Importing Discogs release %s", payload.discogs_release_id)
@@ -189,6 +192,7 @@ def import_release(
         result = service.import_release(
             db,
             payload.discogs_release_id,
+            user_id=current_user.account.id,
             force_refresh=payload.force_refresh,
         )
     except DiscogsConfigurationError as error:
@@ -216,6 +220,7 @@ def import_release_to_collection(
     payload: ReleaseImportRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
 ):
     logger.info("Importing Discogs release %s to collection", payload.discogs_release_id)
@@ -224,6 +229,7 @@ def import_release_to_collection(
         result = service.import_release_to_collection(
             db,
             payload.discogs_release_id,
+            user_id=current_user.account.id,
             force_refresh=payload.force_refresh,
         )
     except DiscogsConfigurationError as error:
@@ -272,7 +278,9 @@ def import_client_discogs_release(
 def get_release(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
@@ -281,7 +289,7 @@ def get_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    return _release_response(db, service, release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.patch("/{release_id}/favorite", response_model=ReleaseResponse)
@@ -289,6 +297,7 @@ def update_release_favorite(
     release_id: str,
     payload: ReleaseFavoriteRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -299,14 +308,15 @@ def update_release_favorite(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.set_favorite(db, release, is_favorite=payload.is_favorite)
-    return _release_response(db, service, updated_release)
+    repository.set_favorite(db, release, user_id=current_user.account.id, is_favorite=payload.is_favorite)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/collection/deactivate", response_model=ReleaseResponse)
 def deactivate_release_collection_membership(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -317,18 +327,20 @@ def deactivate_release_collection_membership(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.deactivate_collection_membership(
+    repository.deactivate_collection_membership(
         db,
         release,
+        user_id=current_user.account.id,
         removed_at=datetime.now(UTC),
     )
-    return _release_response(db, service, updated_release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/collection/reactivate", response_model=ReleaseResponse)
 def reactivate_release_collection_membership(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -339,22 +351,25 @@ def reactivate_release_collection_membership(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.reactivate_collection_membership(
+    repository.reactivate_collection_membership(
         db,
         release,
+        user_id=current_user.account.id,
         added_at=datetime.now(UTC),
     )
-    return _release_response(db, service, updated_release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/refresh", response_model=ReleaseResponse)
 def refresh_release(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
     try:
-        result = service.refresh_release(db, release_id)
+        result = service.refresh_release(db, release_id, user_id=current_user.account.id)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     except DiscogsClientError as error:
@@ -368,25 +383,45 @@ def refresh_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    return _release_response(db, service, result.release)
+    return _release_response(db, service, result.release, user_id=current_user.account.id, repository=repository)
 
 
-def _release_response(db: Session, service: ReleaseImportService, release) -> ReleaseResponse:
+def _release_response(
+    db: Session,
+    service: ReleaseImportService,
+    release,
+    *,
+    user_id: str,
+    repository: ReleasesRepository,
+) -> ReleaseResponse:
     available_side_options = service.get_available_side_options(db, release.discogs_release_id)
     available_sides = []
     for option in available_side_options:
         if option.side not in available_sides:
             available_sides.append(option.side)
 
-    return ReleaseResponse.model_validate(release).model_copy(
-        update={
-            "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
-            "available_sides": available_sides,
-            "available_side_options": available_side_options,
-            "tracklist": service.get_tracklist(db, release.discogs_release_id),
-            "discogs_artists": service.get_artists(db, release.discogs_release_id),
-        }
-    )
+    update_data = {
+        "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
+        "label": clean_discogs_label_name(release.label),
+        "available_sides": available_sides,
+        "available_side_options": available_side_options,
+        "tracklist": service.get_tracklist(db, release.discogs_release_id),
+        "discogs_artists": service.get_artists(db, release.discogs_release_id),
+    }
+    membership = repository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+    if membership is not None:
+        update_data.update(
+            {
+                "in_collection": membership.in_collection,
+                "collection_added_at": membership.collection_added_at,
+                "collection_removed_at": membership.collection_removed_at,
+                "last_discogs_sync_at": membership.last_discogs_sync_at,
+                "discogs_instance_id": membership.discogs_instance_id,
+                "is_favorite": membership.is_favorite,
+            }
+        )
+
+    return ReleaseResponse.model_validate(release).model_copy(update=update_data)
 
 
 @router.get(
@@ -397,12 +432,19 @@ def _release_response(db: Session, service: ReleaseImportService, release) -> Re
 def get_release_flow_insights(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
     limit: int = Query(default=5, ge=1, le=10),
     period: str = Query(default="3m"),
 ):
     try:
-        insights = service.get_record_flow_insights(db, release_id, limit=limit, period=period)
+        insights = service.get_record_flow_insights(
+            db,
+            release_id,
+            user_id=current_user.account.id,
+            limit=limit,
+            period=period,
+        )
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -457,12 +499,19 @@ def _record_flow_release_response(summary) -> RecordFlowReleaseSummaryResponse:
 def get_release_sessions(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
     limit: int = Query(default=20),
     offset: int = Query(default=0),
 ):
     try:
-        sessions = service.get_sessions_by_release(db, release_id, limit=limit, offset=offset)
+        sessions = service.get_sessions_by_release(
+            db,
+            release_id,
+            user_id=current_user.account.id,
+            limit=limit,
+            offset=offset,
+        )
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -474,7 +523,11 @@ def get_release_sessions(
             content={"error": {"code": "release_not_found", "message": str(error)}},
         )
 
-    tracks_by_session_id = service.get_tracks_by_session_ids(db, [session.id for session in sessions])
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_release_id(
+        db,
+        release_id=release_id,
+        session_ids=[session.id for session in sessions],
+    )
     return ReleaseSessionsResponse(
         sessions=[
             ReleaseSessionHistoryItem(
@@ -486,6 +539,7 @@ def get_release_sessions(
                 tracks=[
                     SessionTrackResponse(
                         position=track.track_position,
+                        artist=track.track_artist,
                         title=track.track_title,
                         duration=track.track_duration,
                         sequence=track.track_sequence,

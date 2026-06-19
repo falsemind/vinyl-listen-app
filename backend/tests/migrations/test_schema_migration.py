@@ -76,3 +76,29 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "external_user_id VARCHAR(255)" in sql
     assert "external_username VARCHAR(255)" in sql
     assert "CREATE INDEX idx_provider_integrations_provider_user_id" in sql
+    assert "CREATE TABLE user_accounts" in sql
+    assert "uq_user_accounts_normalized_email" in sql
+    assert "CREATE TABLE auth_sessions" in sql
+    assert "uq_auth_sessions_refresh_token_hash" in sql
+    assert "CREATE INDEX idx_auth_sessions_user_id" in sql
+    assert "CREATE TABLE consumed_refresh_tokens" in sql
+    assert "uq_consumed_refresh_tokens_hash" in sql
+    assert "CREATE INDEX idx_consumed_refresh_tokens_refresh_token_hash" in sql
+    assert "CREATE TABLE email_verification_codes" in sql
+    assert "CREATE INDEX idx_email_verification_codes_code_hash" in sql
+    assert "ADD COLUMN failed_attempt_count INTEGER DEFAULT '0' NOT NULL" in sql
+    assert "ADD COLUMN failed_attempt_limited_until TIMESTAMP WITH TIME ZONE" in sql
+    assert "CREATE TABLE password_reset_codes" in sql
+    assert "CREATE INDEX idx_password_reset_codes_code_hash" in sql
+    assert "CREATE TABLE user_entitlements" in sql
+    assert "CREATE TABLE usage_events" in sql
+    assert "CREATE INDEX idx_usage_events_capability" in sql
+    assert "CREATE INDEX idx_usage_events_user_capability_time" in sql
+    assert "CREATE TABLE account_deletion_audits" in sql
+    assert "CREATE INDEX idx_account_deletion_audits_deleted_at" in sql
+    assert "CREATE TABLE auth_audit_events" in sql
+    assert "CREATE INDEX idx_auth_audit_events_user_time" in sql
+    assert "CREATE INDEX idx_auth_audit_events_event_type_time" in sql
+    assert "ALTER TABLE session_moods ADD COLUMN user_id VARCHAR(36)" in sql
+    assert "uq_session_moods_user_name" in sql
+    assert "CREATE INDEX idx_session_moods_user_custom" in sql

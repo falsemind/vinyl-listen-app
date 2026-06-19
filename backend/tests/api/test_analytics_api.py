@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.api.routes.analytics import get_analytics_service, get_session_groups_service
+from app.api.routes.analytics import get_analytics_service, get_session_groups_service, get_sessions_service
 from app.main import app
 from app.services.analytics_service import (
     AnalyticsPagination,
@@ -25,6 +25,7 @@ class StubAnalyticsService:
         self.rating_calls: list[tuple[int, int, int]] = []
         self.mood_calls: list[tuple[str, int, int]] = []
         self.style_calls: list[tuple[str, int, int]] = []
+        self.user_id_calls: list[str | None] = []
         self.drilldown_error: Exception | None = None
         self.empty_drilldowns = False
         self.release = SimpleNamespace(
@@ -32,6 +33,9 @@ class StubAnalyticsService:
             discogs_release_id=555123,
             artist="Boards of Canada",
             title="Music Has The Right To Children",
+            year=1998,
+            label="System Music (2)",
+            catalog_number="WARPLP55",
             cover_image_url="https://img.discogs.com/cover.jpg",
         )
         self.session = SimpleNamespace(
@@ -46,19 +50,22 @@ class StubAnalyticsService:
         self.tracks = [
             SimpleNamespace(
                 track_position="A1",
+                track_artist="Boards of Canada",
                 track_title="Wildlife Analysis",
                 track_duration="1:17",
                 track_sequence=1,
             )
         ]
 
-    def get_monthly_plays(self, _db):
+    def get_monthly_plays(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         return [
             MonthlyPlayCount(month="2026-01", plays=2),
             MonthlyPlayCount(month="2026-02", plays=3),
         ]
 
-    def get_top_records(self, _db, *, limit: int):
+    def get_top_records(self, _db, *, limit: int, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         self.top_calls.append(limit)
         if self.top_error is not None:
             raise self.top_error
@@ -72,7 +79,16 @@ class StubAnalyticsService:
             )
         ]
 
-    def get_sessions_for_month(self, _db, *, month: str, limit: int, offset: int):
+    def get_sessions_for_month(
+        self,
+        _db,
+        *,
+        month: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        self.user_id_calls.append(user_id)
         self.month_calls.append((month, limit, offset))
         if self.drilldown_error is not None:
             raise self.drilldown_error
@@ -86,31 +102,61 @@ class StubAnalyticsService:
             pagination=AnalyticsPagination(limit=limit, offset=offset, total=12, has_more=True),
         )
 
-    def get_records_for_rating(self, _db, *, rating: int, limit: int, offset: int):
+    def get_records_for_rating(
+        self,
+        _db,
+        *,
+        rating: int,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        self.user_id_calls.append(user_id)
         self.rating_calls.append((rating, limit, offset))
         if self.drilldown_error is not None:
             raise self.drilldown_error
         return self._record_count_page(limit=limit, offset=offset)
 
-    def get_records_for_mood(self, _db, *, mood: str, limit: int, offset: int):
+    def get_records_for_mood(
+        self,
+        _db,
+        *,
+        mood: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        self.user_id_calls.append(user_id)
         self.mood_calls.append((mood, limit, offset))
         if self.drilldown_error is not None:
             raise self.drilldown_error
         return self._record_count_page(limit=limit, offset=offset)
 
-    def get_records_for_style(self, _db, *, style: str, limit: int, offset: int):
+    def get_records_for_style(
+        self,
+        _db,
+        *,
+        style: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        self.user_id_calls.append(user_id)
         self.style_calls.append((style, limit, offset))
         if self.drilldown_error is not None:
             raise self.drilldown_error
         return self._record_count_page(limit=limit, offset=offset)
 
-    def get_rating_distribution(self, _db):
+    def get_rating_distribution(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         return {"1": 0, "2": 1, "3": 0, "4": 2, "5": 3}
 
-    def get_mood_distribution(self, _db):
+    def get_mood_distribution(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         return {"Calm": 3, "Focused": 2}
 
-    def get_style_distribution(self, _db):
+    def get_style_distribution(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         return {"Dub Techno": 4, "House": 2}
 
     def _record_count_page(self, *, limit: int, offset: int) -> AnalyticsRecordCountPage:
@@ -140,7 +186,8 @@ class StubSessionGroupsService:
             ended_at=datetime(2026, 5, 12, 10, 30, tzinfo=UTC),
         )
 
-    def get_session_groups_by_ids(self, _db, session_group_ids: list[str]):
+    def get_session_groups_by_ids(self, _db, session_group_ids: list[str], *, user_id: str | None = None):
+        _ = user_id
         self.get_by_ids_calls.append(session_group_ids)
         return [self.group] if self.group.id in session_group_ids else []
 
@@ -149,6 +196,26 @@ class StubSessionGroupsService:
 
     def editable_until(self, _session_group):
         return datetime(2026, 5, 12, 10, 45, tzinfo=UTC)
+
+
+class StubSessionsService:
+    def __init__(self) -> None:
+        self.track_calls: list[list[tuple[str, object]]] = []
+
+    def get_tracks_by_session_ids_for_releases(self, _db, session_releases: list[tuple[str, object]]):
+        self.track_calls.append(session_releases)
+        return {
+            session_id: [
+                SimpleNamespace(
+                    track_position="A1",
+                    track_artist="Boards of Canada",
+                    track_title="Wildlife Analysis",
+                    track_duration="1:17",
+                    track_sequence=1,
+                )
+            ]
+            for session_id, _release in session_releases
+        }
 
 
 def test_monthly_plays_endpoint_returns_chart_data() -> None:
@@ -230,8 +297,10 @@ def test_distribution_endpoints_return_chart_data() -> None:
 def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
     service = StubAnalyticsService()
     session_groups_service = StubSessionGroupsService()
+    sessions_service = StubSessionsService()
     app.dependency_overrides[get_analytics_service] = lambda: service
     app.dependency_overrides[get_session_groups_service] = lambda: session_groups_service
+    app.dependency_overrides[get_sessions_service] = lambda: sessions_service
 
     with TestClient(app) as client:
         response = client.get("/api/v1/analytics/sessions?month=2026-05&limit=5&offset=5")
@@ -258,6 +327,9 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 },
                 "artist": "Boards of Canada",
                 "title": "Music Has The Right To Children",
+                "year": 1998,
+                "label": "System Music",
+                "catalog_number": "WARPLP55",
                 "thumbnail_url": "https://img.discogs.com/cover.jpg",
                 "date": "2026-05-12",
                 "played_at": "2026-05-12T10:00:00Z",
@@ -265,6 +337,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
                 "tracks": [
                     {
                         "position": "A1",
+                        "artist": "Boards of Canada",
                         "title": "Wildlife Analysis",
                         "duration": "1:17",
                         "sequence": 1,
@@ -279,6 +352,7 @@ def test_month_sessions_endpoint_returns_paged_session_cards() -> None:
     }
     assert service.month_calls == [("2026-05", 5, 5)]
     assert session_groups_service.get_by_ids_calls == [["group-123"]]
+    assert sessions_service.track_calls[0][0][0] == "session-123"
 
 
 def test_record_drilldown_endpoints_return_paged_record_counts() -> None:

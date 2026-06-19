@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -18,10 +18,17 @@ class IdentifyJob(Base):
         Index("idx_identify_jobs_status", "status"),
         Index("idx_identify_jobs_status_updated_at", "status", "updated_at"),
         Index("idx_identify_jobs_client_key_status", "client_key", "status"),
+        Index("idx_identify_jobs_user_status", "user_id", "status"),
+        Index("idx_identify_jobs_user_client_status", "user_id", "client_key", "status"),
         Index("idx_identify_jobs_expires_at", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     client_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(String(255), nullable=False)

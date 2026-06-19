@@ -38,12 +38,14 @@ def test_search_collection_releases_paginates_cached_track_artist_matches() -> N
     with session_factory() as db:
         first_page = ReleasesRepository.search_collection_releases(
             db,
+            user_id="user-a",
             artist="Target Artist",
             limit=10,
             offset=0,
         )
         second_page = ReleasesRepository.search_collection_releases(
             db,
+            user_id="user-a",
             artist="Target Artist",
             limit=10,
             offset=10,
@@ -84,6 +86,7 @@ def test_list_collection_releases_filters_cached_artist_matches() -> None:
     with session_factory() as db:
         releases = ReleasesRepository.list_collection_releases(
             db,
+            user_id="user-a",
             artist="Maurizio",
             limit=10,
             offset=0,
@@ -126,6 +129,7 @@ def test_list_collection_releases_filters_cached_label_matches() -> None:
     with session_factory() as db:
         releases = ReleasesRepository.list_collection_releases(
             db,
+            user_id="user-a",
             label="Studio One",
             limit=10,
             offset=0,
@@ -157,6 +161,7 @@ def test_list_collection_releases_filters_favorites() -> None:
     with session_factory() as db:
         releases = ReleasesRepository.list_collection_releases(
             db,
+            user_id="user-a",
             favorite=True,
             limit=10,
             offset=0,
@@ -199,15 +204,63 @@ def test_list_collection_releases_filters_by_discogs_folder_active_membership() 
     with session_factory() as db:
         releases = ReleasesRepository.list_collection_releases(
             db,
+            user_id="user-a",
             folder_id=123,
             include_removed=True,
             limit=10,
             offset=0,
         )
-        total = ReleasesRepository.count_collection_releases(db, folder_id=123, include_removed=True)
+        total = ReleasesRepository.count_collection_releases(db, user_id="user-a", folder_id=123, include_removed=True)
 
     assert [release.title for release in releases] == ["Shelf A"]
     assert total == 1
+
+
+def test_list_collection_releases_is_scoped_by_user_membership() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+
+    with engine.begin() as connection:
+        _create_release_search_tables(connection)
+        _insert_release(
+            connection,
+            discogs_release_id=1000,
+            artist="Basic Channel",
+            title="User A Record",
+        )
+        _insert_release(
+            connection,
+            discogs_release_id=2000,
+            artist="Basic Channel",
+            title="User B Record",
+        )
+        connection.exec_driver_sql(
+            "DELETE FROM release_collection_memberships WHERE release_id = 'release-2000' AND user_id = 'user-a'"
+        )
+        _insert_release_collection_membership(
+            connection,
+            release_id="release-2000",
+            is_favorite=False,
+            in_collection=True,
+            user_id="user-b",
+        )
+
+    with session_factory() as db:
+        user_a_releases = ReleasesRepository.list_collection_releases(
+            db,
+            user_id="user-a",
+            limit=10,
+            offset=0,
+        )
+        user_b_releases = ReleasesRepository.list_collection_releases(
+            db,
+            user_id="user-b",
+            limit=10,
+            offset=0,
+        )
+
+    assert [release.title for release in user_a_releases] == ["User A Record"]
+    assert [release.title for release in user_b_releases] == ["User B Record"]
 
 
 def _create_release_search_tables(connection: Connection) -> None:
@@ -247,6 +300,7 @@ def _create_release_search_tables(connection: Connection) -> None:
     connection.exec_driver_sql("""
         CREATE TABLE collection_folders (
             id INTEGER PRIMARY KEY,
+            user_id TEXT,
             discogs_folder_id INTEGER NOT NULL UNIQUE,
             name TEXT NOT NULL,
             item_count INTEGER,
@@ -259,11 +313,27 @@ def _create_release_search_tables(connection: Connection) -> None:
     connection.exec_driver_sql("""
         CREATE TABLE release_collection_folders (
             id INTEGER PRIMARY KEY,
+            user_id TEXT,
             release_id TEXT NOT NULL,
             collection_folder_id INTEGER NOT NULL,
             discogs_instance_id INTEGER,
             date_added TIMESTAMP,
             last_discogs_sync_at TIMESTAMP,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """)
+    connection.exec_driver_sql("""
+        CREATE TABLE release_collection_memberships (
+            id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            release_id TEXT NOT NULL,
+            in_collection BOOLEAN NOT NULL,
+            collection_added_at TIMESTAMP,
+            collection_removed_at TIMESTAMP,
+            last_discogs_sync_at TIMESTAMP,
+            discogs_instance_id INTEGER,
+            is_favorite BOOLEAN NOT NULL,
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
@@ -317,6 +387,12 @@ def _insert_release(
         },
     )
     if raw_discogs_json is None:
+        _insert_release_collection_membership(
+            connection,
+            release_id=f"release-{discogs_release_id}",
+            is_favorite=is_favorite,
+            in_collection=in_collection,
+        )
         return
 
     connection.exec_driver_sql(
@@ -337,6 +413,12 @@ def _insert_release(
             "raw_discogs_json": json.dumps(raw_discogs_json),
         },
     )
+    _insert_release_collection_membership(
+        connection,
+        release_id=f"release-{discogs_release_id}",
+        is_favorite=is_favorite,
+        in_collection=in_collection,
+    )
 
 
 def _insert_collection_folder(
@@ -350,6 +432,7 @@ def _insert_collection_folder(
         """
         INSERT INTO collection_folders (
             id,
+            user_id,
             discogs_folder_id,
             name,
             is_default,
@@ -358,6 +441,7 @@ def _insert_collection_folder(
         )
         VALUES (
             :id,
+            :user_id,
             :discogs_folder_id,
             :name,
             0,
@@ -367,6 +451,7 @@ def _insert_collection_folder(
         """,
         {
             "id": folder_pk,
+            "user_id": "user-a",
             "discogs_folder_id": discogs_folder_id,
             "name": name,
         },
@@ -378,12 +463,14 @@ def _insert_release_collection_folder(connection: Connection, *, release_id: str
         """
         INSERT INTO release_collection_folders (
             release_id,
+            user_id,
             collection_folder_id,
             created_at,
             updated_at
         )
         VALUES (
             :release_id,
+            :user_id,
             :collection_folder_id,
             '2026-06-05T10:00:00+00:00',
             '2026-06-05T10:00:00+00:00'
@@ -391,6 +478,45 @@ def _insert_release_collection_folder(connection: Connection, *, release_id: str
         """,
         {
             "release_id": release_id,
+            "user_id": "user-a",
             "collection_folder_id": folder_pk,
+        },
+    )
+
+
+def _insert_release_collection_membership(
+    connection: Connection,
+    *,
+    release_id: str,
+    is_favorite: bool,
+    in_collection: bool,
+    user_id: str = "user-a",
+) -> None:
+    connection.exec_driver_sql(
+        """
+        INSERT INTO release_collection_memberships (
+            user_id,
+            release_id,
+            in_collection,
+            collection_added_at,
+            is_favorite,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            :user_id,
+            :release_id,
+            :in_collection,
+            '2026-06-05T10:00:00+00:00',
+            :is_favorite,
+            '2026-06-05T10:00:00+00:00',
+            '2026-06-05T10:00:00+00:00'
+        )
+        """,
+        {
+            "user_id": user_id,
+            "release_id": release_id,
+            "in_collection": in_collection,
+            "is_favorite": is_favorite,
         },
     )

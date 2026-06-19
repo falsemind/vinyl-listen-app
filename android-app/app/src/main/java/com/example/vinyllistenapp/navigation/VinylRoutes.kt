@@ -38,6 +38,11 @@ object VinylRoutes {
     const val STYLE = "style"
     const val ARTIST = "artist"
     const val LABEL = "label"
+    const val ACTION_TYPE = "actionType"
+    const val RECORD_ACTION_COLLECTION_ARTISTS = "collection_artists"
+    const val RECORD_ACTION_COLLECTION_LABELS = "collection_labels"
+    const val RECORD_ACTION_DISCOGS_ARTISTS = "discogs_artists"
+    const val RECORD_ACTION_DISCOGS_LABELS = "discogs_labels"
     const val FOLDER_ID = "folderId"
     const val FOLDER_NAME = "folderName"
     const val FOLDER_COUNT = "folderCount"
@@ -45,6 +50,8 @@ object VinylRoutes {
     const val SESSION_EDIT = "session_edit"
     const val SESSION_EDIT_PATTERN = "$SESSION_EDIT/{$SESSION_ID}"
     const val RECORD_DETAIL_PATTERN = "record_detail/{$RELEASE_ID}"
+    const val RECORD_ACTION_ITEMS = "record_action_items"
+    const val RECORD_ACTION_ITEMS_PATTERN = "$RECORD_ACTION_ITEMS/{$RELEASE_ID}/{$ACTION_TYPE}"
     const val ANALYTICS_MONTH_SESSIONS_PATTERN = "$ANALYTICS_MONTH_SESSIONS/{$MONTH}"
     const val ANALYTICS_RATING_RECORDS_PATTERN = "$ANALYTICS_RATING_RECORDS/{$RATING}"
     const val ANALYTICS_MOOD_RECORDS_PATTERN = "$ANALYTICS_MOOD_RECORDS/{$MOOD}"
@@ -63,6 +70,11 @@ object VinylRoutes {
     fun sessionEdit(sessionId: String): String = "$SESSION_EDIT/${Uri.encode(sessionId)}"
 
     fun recordDetail(releaseId: String): String = "record_detail/${Uri.encode(releaseId)}"
+
+    fun recordActionItems(
+        releaseId: String,
+        actionType: String,
+    ): String = "$RECORD_ACTION_ITEMS/${Uri.encode(releaseId)}/${Uri.encode(actionType)}"
 
     fun analyticsMonthSessions(month: String): String = "$ANALYTICS_MONTH_SESSIONS/${Uri.encode(month)}"
 

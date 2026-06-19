@@ -1545,7 +1545,7 @@ private fun SidePlayedChip(side: String?) {
     )
 }
 
-private fun timedSessionTracklistText(sessions: List<ListeningSession>): String =
+internal fun timedSessionTracklistText(sessions: List<ListeningSession>): String =
     timedSessionTracklistEntries(sessions)
         .mapIndexed { index, entry -> "${index + 1}. $entry" }
         .joinToString(separator = "\n")
@@ -1572,8 +1572,12 @@ private fun timedSessionHeaderDateLabel(
             ?.toDateLabel()
         ?: "n/a"
 
-private fun timedSessionTracklistEntries(sessions: List<ListeningSession>): List<String> =
-    sessions.flatMap { session ->
+private fun timedSessionTracklistEntries(sessions: List<ListeningSession>): List<String> {
+    val sortedSessions =
+        sessions.sortedBy { session ->
+            parseSessionInstant(session.playedAt) ?: parseSessionInstant(session.createdAt) ?: Instant.MIN
+        }
+    return sortedSessions.flatMap { session ->
         val releaseDetails = session.timedSessionReleaseDetails()
         val sortedTracks =
             session.tracks.sortedWith(
@@ -1584,24 +1588,38 @@ private fun timedSessionTracklistEntries(sessions: List<ListeningSession>): List
         when {
             sortedTracks.isNotEmpty() ->
                 sortedTracks.map { track ->
-                    "${session.artist.cleanTracklistValue()} - ${track.title.cleanTracklistValue()} / $releaseDetails"
+                    listOf(
+                        "${track.timedSessionArtistLabel(session)} - ${track.title.cleanTracklistValue()}",
+                        releaseDetails,
+                    ).mapNotNull { value -> value?.trim()?.takeIf { it.isNotBlank() } }
+                        .joinToString(separator = " / ")
                 }
 
             !session.side.isNullOrBlank() ->
                 listOf(
-                    "${session.title.cleanTracklistValue()} - ${timedSessionSideLabel(session.side)} / $releaseDetails",
+                    listOf(
+                        "${session.title.cleanTracklistValue()} - ${timedSessionSideLabel(session.side)}",
+                        releaseDetails,
+                    ).mapNotNull { value -> value?.trim()?.takeIf { it.isNotBlank() } }
+                        .joinToString(separator = " / "),
                 )
 
             else -> emptyList()
         }
     }
+}
 
-private fun ListeningSession.timedSessionReleaseDetails(): String =
+private fun SessionTrack.timedSessionArtistLabel(session: ListeningSession): String =
+    artist.cleanTracklistValue(fallback = session.artist.cleanTracklistValue())
+
+private fun ListeningSession.timedSessionReleaseDetails(): String? =
     listOf(
         year?.toString(),
         label,
         catalogNumber,
-    ).joinToString(separator = " / ") { value -> value.cleanTracklistValue(fallback = "n/a") }
+    ).mapNotNull { value -> value?.trim()?.takeIf { it.isNotBlank() } }
+        .joinToString(separator = " / ")
+        .takeIf { it.isNotBlank() }
 
 private fun timedSessionSideLabel(side: String): String {
     val cleanSide = side.cleanTracklistValue()

@@ -35,7 +35,14 @@ data class ReleaseTrack(
     val position: String,
     val title: String,
     val duration: String? = null,
+    val artists: List<ReleaseTrackArtist> = emptyList(),
     val extraArtists: List<ReleaseTrackCredit> = emptyList(),
+)
+
+data class ReleaseTrackArtist(
+    val name: String,
+    val join: String? = null,
+    val discogsArtistId: Long? = null,
 )
 
 data class ReleaseTrackCredit(
@@ -50,6 +57,7 @@ data class ReleaseArtist(
 
 data class SessionTrack(
     val position: String,
+    val artist: String? = null,
     val title: String,
     val duration: String? = null,
     val sequence: Int? = null,

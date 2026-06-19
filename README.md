@@ -132,10 +132,13 @@ The repository root keeps `docker-compose.yml` because it orchestrates project-l
 
 Create a root `.env` file or export these variables in your shell:
 
-Generate `DISCOGS_TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep it stable across backend restarts so saved Discogs tokens remain decryptable.
+Generate `DISCOGS_TOKEN_ENCRYPTION_KEY`, `AUTH_ACCESS_TOKEN_SECRET`, and `AUTH_CODE_HASH_SECRET` with `openssl rand -base64 32`. Keep the Discogs key stable across backend restarts so saved Discogs tokens remain decryptable. Keep auth secrets stable while testing active sessions and verification/reset codes.
 
 ```env
 DISCOGS_TOKEN_ENCRYPTION_KEY=generate_with_openssl_rand_base64_32
+AUTH_ACCESS_TOKEN_SECRET=generate_with_openssl_rand_base64_32
+AUTH_CODE_HASH_SECRET=generate_with_openssl_rand_base64_32
+AUTH_EMAIL_DELIVERY_BACKEND=local
 DISCOGS_BASE_URL=https://api.discogs.com
 IDENTIFY_OCR_BACKEND=auto
 IDENTIFY_MLX_VLM_SERVICE_URL=http://host.docker.internal:8111
@@ -152,6 +155,7 @@ Docker Compose creates two local PostgreSQL databases:
 Set `DATABASE_PROFILE=dev` or `DATABASE_PROFILE=collection` before launching the backend. `DATABASE_URL` can still be set as an explicit one-off override.
 The `postgres-init` service idempotently creates both databases, including when an older local Docker volume already exists.
 `IDENTIFY_MLX_VLM_SERVICE_URL` points the backend container to a VLM server running on the host machine.
+With local auth email delivery, Docker writes verification/reset codes to `backend/auth-local-email-outbox/auth-local-email-outbox.jsonl` on the host.
 
 ### 2. Start the local VLM OCR server
 
@@ -235,13 +239,17 @@ POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-root
 
 Create `backend/.env`:
 
-Generate `DISCOGS_TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep it stable across backend restarts so saved Discogs tokens remain decryptable.
+Generate `DISCOGS_TOKEN_ENCRYPTION_KEY`, `AUTH_ACCESS_TOKEN_SECRET`, and `AUTH_CODE_HASH_SECRET` with `openssl rand -base64 32`. Keep the Discogs key stable across backend restarts so saved Discogs tokens remain decryptable. Keep auth secrets stable while testing active sessions and verification/reset codes.
 
 ```env
 DATABASE_PROFILE=dev
 DATABASE_DEV_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_dev
 DATABASE_COLLECTION_URL=postgresql://vinyl:vinyl@localhost:5432/vinyl_collection
 DISCOGS_TOKEN_ENCRYPTION_KEY=generate_with_openssl_rand_base64_32
+AUTH_ACCESS_TOKEN_SECRET=generate_with_openssl_rand_base64_32
+AUTH_CODE_HASH_SECRET=generate_with_openssl_rand_base64_32
+AUTH_EMAIL_DELIVERY_BACKEND=local
+AUTH_LOCAL_EMAIL_OUTBOX_PATH=auth-local-email-outbox.jsonl
 DISCOGS_BASE_URL=https://api.discogs.com
 API_RATE_LIMIT_PER_MINUTE=60
 IDENTIFY_OCR_BACKEND=auto

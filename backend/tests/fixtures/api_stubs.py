@@ -13,6 +13,7 @@ from app.services.release_import_service import ReleaseImportResult
 from app.services.release_mapper import (
     ReleaseArtistData,
     ReleaseSideOptionData,
+    ReleaseTrackArtistData,
     ReleaseTrackCreditData,
     ReleaseTrackData,
 )
@@ -51,6 +52,11 @@ class StubIdentifyService:
         )
         self.error: IdentifyValidationError | None = None
 
+    def validate_upload(self, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        _ = (image_bytes, filename, content_type)
+        if self.error is not None:
+            raise self.error
+
     def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str) -> IdentifyResult:
         self.calls.append(
             {
@@ -88,6 +94,7 @@ class StubIdentifyJobService:
         self,
         _db,
         *,
+        user_id: str,
         image_bytes: bytes,
         filename: str,
         content_type: str,
@@ -96,6 +103,7 @@ class StubIdentifyJobService:
         _ = client_key
         self.calls.append(
             {
+                "user_id": user_id,
                 "size_bytes": len(image_bytes),
                 "filename": filename,
                 "content_type": content_type,
@@ -126,17 +134,45 @@ class StubIdentifyJobService:
             }
         )
 
-    def get_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+    def get_job(self, _db, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        self.calls.append({"action": "get", "user_id": user_id, "job_id": job_id})
         if self.get_error is not None:
             raise self.get_error
         return self.response.model_copy(update={"job_id": job_id})
 
-    def cancel_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+    def cancel_job(self, _db, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        self.calls.append({"action": "cancel", "user_id": user_id, "job_id": job_id})
         self.cancel_calls.append(job_id)
         if self.cancel_error is not None:
             raise self.cancel_error
         response = self.cancel_response or self.response.model_copy(update={"cancel_requested": True})
         return response.model_copy(update={"job_id": job_id})
+
+
+class StubEntitlementService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.error: Exception | None = None
+
+    def consume_usage(
+        self,
+        _db,
+        *,
+        user_id: str,
+        capability: str,
+        units: int = 1,
+        event_metadata: dict | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "capability": capability,
+                "units": units,
+                "event_metadata": event_metadata,
+            }
+        )
+        if self.error is not None:
+            raise self.error
 
 
 @dataclass
@@ -182,6 +218,7 @@ class StubReleaseImportService:
             updated_at=datetime(2026, 4, 19, tzinfo=UTC),
         )
         self.import_result = ReleaseImportResult(release=self.release, created=True)
+        self.membership: SimpleNamespace | None = None
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
         self.collection_import_error: Exception | None = None
@@ -204,6 +241,10 @@ class StubReleaseImportService:
             ReleaseTrackData(
                 position="A2",
                 title="An Eagle In Your Mind",
+                artists=[
+                    ReleaseTrackArtistData(name="Boards of Canada", join="&", discogs_artist_id=194),
+                    ReleaseTrackArtistData(name="Plaid", discogs_artist_id=2470),
+                ],
                 extra_artists=[ReleaseTrackCreditData(name="Plaid", role="Remix")],
             ),
         ]
@@ -211,7 +252,15 @@ class StubReleaseImportService:
             ReleaseArtistData(name="Boards of Canada", discogs_artist_id=194),
         ]
 
-    def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
+    def import_release(
+        self,
+        _db,
+        discogs_release_id: int,
+        *,
+        user_id: str | None = None,
+        force_refresh: bool = False,
+    ) -> ReleaseImportResult:
+        _ = user_id
         self.import_calls.append((discogs_release_id, force_refresh))
         if self.import_error is not None:
             raise self.import_error
@@ -222,8 +271,10 @@ class StubReleaseImportService:
         _db,
         discogs_release_id: int,
         *,
+        user_id: str,
         force_refresh: bool = False,
     ) -> ReleaseImportResult:
+        _ = user_id
         self.collection_import_calls.append((discogs_release_id, force_refresh))
         if self.collection_import_error is not None:
             raise self.collection_import_error
@@ -244,7 +295,8 @@ class StubReleaseImportService:
             return self.release
         return None
 
-    def refresh_release(self, db, release_id: str) -> ReleaseImportResult | None:
+    def refresh_release(self, db, release_id: str, *, user_id: str | None = None) -> ReleaseImportResult | None:
+        _ = user_id
         self.refresh_calls.append(release_id)
         release = self.get_release(db, release_id)
         if release is None:
@@ -274,23 +326,47 @@ class StubReleaseImportService:
             return self.artists
         return []
 
-    def set_favorite(self, _db, release: ReleaseStub, *, is_favorite: bool) -> ReleaseStub:
+    def set_favorite(self, _db, release: ReleaseStub, *, user_id: str, is_favorite: bool):
+        _ = user_id
         self.favorite_calls.append((release.id, is_favorite))
         release.is_favorite = is_favorite
-        return release
+        self.membership = _membership_from_release(release)
+        self.membership.is_favorite = is_favorite
+        return self.membership
 
-    def deactivate_collection_membership(self, _db, release: ReleaseStub, *, removed_at: datetime) -> ReleaseStub:
+    def deactivate_collection_membership(self, _db, release: ReleaseStub, *, user_id: str, removed_at: datetime):
+        _ = user_id
         self.deactivate_calls.append(release.id)
         release.in_collection = False
         release.collection_removed_at = removed_at
-        return release
+        self.membership = _membership_from_release(release)
+        return self.membership
 
-    def reactivate_collection_membership(self, _db, release: ReleaseStub, *, added_at: datetime) -> ReleaseStub:
+    def reactivate_collection_membership(self, _db, release: ReleaseStub, *, user_id: str, added_at: datetime):
+        _ = user_id
         self.reactivate_calls.append(release.id)
         release.in_collection = True
         release.collection_added_at = added_at
         release.collection_removed_at = None
-        return release
+        self.membership = _membership_from_release(release)
+        return self.membership
+
+    def get_collection_membership(self, _db, *, release_id: str, user_id: str):
+        _ = user_id
+        if release_id != self.release.id:
+            return None
+        return self.membership
+
+
+def _membership_from_release(release: ReleaseStub) -> SimpleNamespace:
+    return SimpleNamespace(
+        in_collection=release.in_collection,
+        collection_added_at=release.collection_added_at,
+        collection_removed_at=release.collection_removed_at,
+        last_discogs_sync_at=release.last_discogs_sync_at,
+        discogs_instance_id=release.discogs_instance_id,
+        is_favorite=release.is_favorite,
+    )
 
 
 class StubDiscogsSearchService:
@@ -353,6 +429,7 @@ class StubSessionGroupsService:
         self.start_error: Exception | None = None
         self.get_error: Exception | None = None
         self.finish_error: Exception | None = None
+        self.user_id_calls: list[str | None] = []
         self.start_calls: list[dict] = []
         self.get_calls: list[str] = []
         self.get_by_ids_calls: list[list[str]] = []
@@ -363,6 +440,7 @@ class StubSessionGroupsService:
         self,
         _db,
         *,
+        user_id: str | None = None,
         title: str | None,
         started_at: str | None = None,
         style_focus: str | None = None,
@@ -370,6 +448,7 @@ class StubSessionGroupsService:
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.start_calls.append(
             {
                 "title": title,
@@ -392,22 +471,39 @@ class StubSessionGroupsService:
             self.group.notes = notes
         return self.group
 
-    def get_active_session_group(self, _db) -> SessionGroupStub | None:
+    def get_active_session_group(self, _db, *, user_id: str | None = None) -> SessionGroupStub | None:
+        self.user_id_calls.append(user_id)
         return self.active_group
 
-    def get_session_group(self, _db, session_group_id: str) -> SessionGroupStub:
+    def get_session_group(self, _db, session_group_id: str, *, user_id: str | None = None) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.get_calls.append(session_group_id)
         if self.get_error is not None:
             raise self.get_error
         return self.group
 
-    def get_session_groups_by_ids(self, _db, session_group_ids: list[str]) -> list[SessionGroupStub]:
+    def get_session_groups_by_ids(
+        self,
+        _db,
+        session_group_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> list[SessionGroupStub]:
+        self.user_id_calls.append(user_id)
         self.get_by_ids_calls.append(session_group_ids)
         if self.get_error is not None:
             raise self.get_error
         return [self.group] if self.group.id in session_group_ids else []
 
-    def update_session_group(self, _db, session_group_id: str, *, fields: dict) -> SessionGroupStub:
+    def update_session_group(
+        self,
+        _db,
+        session_group_id: str,
+        *,
+        user_id: str | None = None,
+        fields: dict,
+    ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.update_calls.append((session_group_id, fields))
         if self.get_error is not None:
             raise self.get_error
@@ -420,12 +516,14 @@ class StubSessionGroupsService:
         _db,
         session_group_id: str,
         *,
+        user_id: str | None = None,
         ended_at: str | None = None,
         style_focus: str | None = None,
         mood_direction: str | None = None,
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.finish_calls.append((session_group_id, ended_at, style_focus, mood_direction, session_type, notes))
         if self.finish_error is not None:
             raise self.finish_error
@@ -465,8 +563,9 @@ class StubSessionsService:
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
         self.flow_calls: list[tuple[str, int, str]] = []
-        self.create_mood_calls: list[str] = []
-        self.delete_mood_calls: list[str] = []
+        self.create_mood_calls: list[tuple[str, str | None]] = []
+        self.delete_mood_calls: list[tuple[str, str | None]] = []
+        self.user_id_calls: list[str | None] = []
         self.custom_moods = [
             SimpleNamespace(name="Dubby", is_custom=True),
             SimpleNamespace(name="Late Night", is_custom=True),
@@ -511,6 +610,7 @@ class StubSessionsService:
             "session-123": [
                 SimpleNamespace(
                     track_position="A1",
+                    track_artist="Boards of Canada",
                     track_title="Wildlife Analysis",
                     track_duration="1:17",
                     track_sequence=1,
@@ -579,18 +679,21 @@ class StubSessionsService:
         )
 
     def create_session(self, _db, **kwargs) -> CreateSessionResult:
+        self.user_id_calls.append(kwargs.pop("user_id", None))
         self.create_calls.append(kwargs)
         if self.create_error is not None:
             raise self.create_error
         return self.created_result
 
-    def get_session(self, _db, session_id: str) -> SessionStub:
+    def get_session(self, _db, session_id: str, *, user_id: str | None = None) -> SessionStub:
+        self.user_id_calls.append(user_id)
         self.get_calls.append(session_id)
         if self.get_error is not None:
             raise self.get_error
         return self.session
 
-    def update_session(self, _db, *, session_id: str, fields: dict) -> SessionStub:
+    def update_session(self, _db, *, session_id: str, fields: dict, user_id: str | None = None) -> SessionStub:
+        self.user_id_calls.append(user_id)
         self.update_calls.append((session_id, fields))
         if self.update_error is not None:
             raise self.update_error
@@ -606,6 +709,7 @@ class StubSessionsService:
             self.tracks_by_session_id[self.session.id] = [
                 SimpleNamespace(
                     track_position=position,
+                    track_artist=None,
                     track_title=f"Track {position}",
                     track_duration=None,
                     track_sequence=index,
@@ -623,16 +727,43 @@ class StubSessionsService:
     def get_session_tracks(self, _db, session_id: str):
         return self.tracks_by_session_id.get(session_id, [])
 
+    def get_session_tracks_for_response(self, _db, session: SessionStub):
+        return self.tracks_by_session_id.get(session.id, [])
+
     def get_tracks_by_session_ids(self, _db, session_ids: list[str]):
         return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
 
-    def get_sessions_by_release(self, _db, release_id: str, *, limit: int, offset: int) -> list[SessionStub]:
+    def get_tracks_by_session_ids_for_release_id(self, _db, *, release_id: str, session_ids: list[str]):
+        _ = release_id
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
+
+    def get_tracks_by_session_ids_for_releases(self, _db, session_releases: list[tuple[str, object]]):
+        return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id, _release in session_releases}
+
+    def get_sessions_by_release(
+        self,
+        _db,
+        release_id: str,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ) -> list[SessionStub]:
+        self.user_id_calls.append(user_id)
         self.list_calls.append((release_id, limit, offset))
         if self.list_error is not None:
             raise self.list_error
         return self.release_sessions[offset : offset + limit]
 
-    def get_home_summary(self, _db, *, recent_limit: int, top_limit: int) -> HomeSummary:
+    def get_home_summary(
+        self,
+        _db,
+        *,
+        recent_limit: int,
+        top_limit: int,
+        user_id: str | None = None,
+    ) -> HomeSummary:
+        self.user_id_calls.append(user_id)
         self.summary_calls.append((recent_limit, top_limit))
         if self.summary_error is not None:
             raise self.summary_error
@@ -652,29 +783,34 @@ class StubSessionsService:
         _db,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int = 5,
         period: str = "3m",
     ) -> RecordFlowInsights:
+        self.user_id_calls.append(user_id)
         self.flow_calls.append((release_id, limit, period))
         if self.list_error is not None:
             raise self.list_error
         return self.flow_insights
 
-    def list_custom_moods(self, _db):
+    def list_custom_moods(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         if self.mood_error is not None:
             raise self.mood_error
         return self.custom_moods
 
-    def create_custom_mood(self, _db, name: str):
-        self.create_mood_calls.append(name)
+    def create_custom_mood(self, _db, name: str, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
+        self.create_mood_calls.append((name, user_id))
         if self.mood_error is not None:
             raise self.mood_error
         mood = SimpleNamespace(name=name.strip(), is_custom=True)
         self.custom_moods.append(mood)
         return mood
 
-    def delete_custom_mood(self, _db, name: str) -> None:
-        self.delete_mood_calls.append(name)
+    def delete_custom_mood(self, _db, name: str, *, user_id: str | None = None) -> None:
+        self.user_id_calls.append(user_id)
+        self.delete_mood_calls.append((name, user_id))
         if self.mood_error is not None:
             raise self.mood_error
         self.custom_moods = [mood for mood in self.custom_moods if mood.name != name]
@@ -751,12 +887,32 @@ def override_identify_job_service() -> Callable[[StubIdentifyJobService], None]:
 
 
 @pytest.fixture
+def build_stub_entitlement_service() -> Callable[[], StubEntitlementService]:
+    def _factory() -> StubEntitlementService:
+        return StubEntitlementService()
+
+    return _factory
+
+
+@pytest.fixture
+def override_entitlement_service() -> Callable[[StubEntitlementService], None]:
+    def _override(service: StubEntitlementService) -> None:
+        from app.api.routes.identify import get_entitlement_service
+        from app.main import app
+
+        app.dependency_overrides[get_entitlement_service] = lambda: service
+
+    return _override
+
+
+@pytest.fixture
 def override_release_import_service() -> Callable[[StubReleaseImportService], None]:
     def _override(service: StubReleaseImportService) -> None:
-        from app.api.routes.releases import get_release_import_service
+        from app.api.routes.releases import get_release_import_service, get_releases_repository
         from app.main import app
 
         app.dependency_overrides[get_release_import_service] = lambda: service
+        app.dependency_overrides[get_releases_repository] = lambda: service
 
     return _override
 

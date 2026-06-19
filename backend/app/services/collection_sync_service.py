@@ -78,14 +78,15 @@ class CollectionSyncService:
         self,
         db: Session,
         *,
+        user_id: str,
         progress_reporter: CollectionProgressReporter | None = None,
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
-        source_of_truth = self._settings_repository.get_source_of_truth(db)
+        source_of_truth = self._settings_repository.get_source_of_truth(db, user_id=user_id)
         mirror_discogs_collection = source_of_truth == CollectionSourceOfTruth.DISCOGS
         _report_progress(progress_reporter, step="fetching", message="Fetching collection data")
         try:
-            raw_items = self._fetch_discogs_collection_releases(db)
+            raw_items = self._fetch_discogs_collection_releases(db, user_id=user_id)
             collection_items = collapse_collection_items(raw_items)
             _report_progress(
                 progress_reporter,
@@ -102,10 +103,20 @@ class CollectionSyncService:
             for processed_count, item in enumerate(collection_items, start=1):
                 release_data = _map_collection_item_to_release(item)
                 release, created = self._repository.save_or_update(db, release_data, commit=False)
-                if _should_activate_import(source_of_truth=source_of_truth, release=release, created=created):
+                has_membership_history = self._repository.has_collection_membership_history(
+                    db, release=release, user_id=user_id
+                )
+                membership = self._repository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+                if _should_activate_import(
+                    source_of_truth=source_of_truth,
+                    in_collection=bool(membership and membership.in_collection),
+                    created=created,
+                    has_membership_history=has_membership_history,
+                ):
                     self._repository.mark_in_collection(
                         db,
                         release,
+                        user_id=user_id,
                         discogs_instance_id=item.instance_id,
                         collection_added_at=item.date_added,
                         synced_at=sync_started_at,
@@ -131,10 +142,11 @@ class CollectionSyncService:
                 removed_count = self._repository.mark_missing_collection_releases_removed(
                     db,
                     active_discogs_release_ids,
+                    user_id=user_id,
                     removed_at=sync_started_at,
                     commit=False,
                 )
-            self._sync_collection_folders(db, raw_items=raw_items, synced_at=sync_started_at)
+            self._sync_collection_folders(db, user_id=user_id, raw_items=raw_items, synced_at=sync_started_at)
             db.commit()
             _report_progress(
                 progress_reporter,
@@ -174,10 +186,13 @@ class CollectionSyncService:
         self,
         db: Session,
         *,
+        user_id: str,
         raw_items: list[dict[str, Any]],
         synced_at: datetime,
     ) -> None:
-        folder_items = [_parse_collection_folder(folder) for folder in self._fetch_discogs_collection_folders(db)]
+        folder_items = [
+            _parse_collection_folder(folder) for folder in self._fetch_discogs_collection_folders(db, user_id=user_id)
+        ]
         folder_records = self._folder_repository.upsert_folders(
             db,
             [
@@ -189,6 +204,7 @@ class CollectionSyncService:
                 )
                 for folder in folder_items
             ],
+            user_id=user_id,
             synced_at=synced_at,
             commit=False,
         )
@@ -198,29 +214,32 @@ class CollectionSyncService:
             folder_raw_items = (
                 raw_items
                 if folder.is_default
-                else self._fetch_discogs_collection_releases(db, folder_id=folder.discogs_folder_id)
+                else self._fetch_discogs_collection_releases(db, user_id=user_id, folder_id=folder.discogs_folder_id)
             )
             self._folder_repository.replace_folder_memberships(
                 db,
+                user_id=user_id,
                 folder=folder_record,
                 memberships=_folder_memberships_from_items(folder_raw_items),
                 synced_at=synced_at,
                 commit=False,
             )
 
-    def _fetch_discogs_collection_releases(self, db: Session, *, folder_id: int = 0) -> list[dict[str, Any]]:
+    def _fetch_discogs_collection_releases(
+        self, db: Session, *, user_id: str, folder_id: int = 0
+    ) -> list[dict[str, Any]]:
         if self._discogs_service is not None:
             return self._discogs_service.fetch_collection_releases(folder_id=folder_id)
 
-        credentials = self._discogs_integration_service.get_saved_credentials(db)
+        credentials = self._discogs_integration_service.get_saved_credentials(db, user_id=user_id)
         discogs_service = self._discogs_service_factory(credentials.access_token)
         return discogs_service.fetch_collection_releases(username=credentials.username, folder_id=folder_id)
 
-    def _fetch_discogs_collection_folders(self, db: Session) -> list[dict[str, Any]]:
+    def _fetch_discogs_collection_folders(self, db: Session, *, user_id: str) -> list[dict[str, Any]]:
         if self._discogs_service is not None:
             return self._discogs_service.fetch_collection_folders()
 
-        credentials = self._discogs_integration_service.get_saved_credentials(db)
+        credentials = self._discogs_integration_service.get_saved_credentials(db, user_id=user_id)
         discogs_service = self._discogs_service_factory(credentials.access_token)
         return discogs_service.fetch_collection_folders(username=credentials.username)
 
@@ -302,20 +321,18 @@ def _map_collection_item_to_release(item: CollectionReleaseItem) -> InternalRele
         raise CollectionSyncError(f"Discogs collection release {item.discogs_release_id} cannot be mapped.") from exc
 
 
-def _should_activate_import(*, source_of_truth: CollectionSourceOfTruth, release: Any, created: bool) -> bool:
+def _should_activate_import(
+    *,
+    source_of_truth: CollectionSourceOfTruth,
+    in_collection: bool,
+    created: bool,
+    has_membership_history: bool,
+) -> bool:
     if source_of_truth == CollectionSourceOfTruth.DISCOGS:
         return True
-    if created or release.in_collection:
+    if created or in_collection:
         return True
-    return not _has_collection_membership_history(release)
-
-
-def _has_collection_membership_history(release: Any) -> bool:
-    return (
-        release.collection_added_at is not None
-        or release.collection_removed_at is not None
-        or release.discogs_instance_id is not None
-    )
+    return not has_membership_history
 
 
 def _is_better_representative(candidate: CollectionReleaseItem, current: CollectionReleaseItem) -> bool:

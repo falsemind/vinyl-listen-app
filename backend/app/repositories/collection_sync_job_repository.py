@@ -14,6 +14,7 @@ class CollectionSyncJobRepository:
         db: Session,
         *,
         job_id: str,
+        user_id: str,
         status: str,
         message: str,
         created_at: datetime,
@@ -21,6 +22,7 @@ class CollectionSyncJobRepository:
     ) -> CollectionSyncJob:
         job = CollectionSyncJob(
             id=job_id,
+            user_id=user_id,
             status=status,
             step=None,
             message=message,
@@ -39,13 +41,17 @@ class CollectionSyncJobRepository:
         return job
 
     @staticmethod
-    def get(db: Session, job_id: str) -> CollectionSyncJob | None:
-        return db.query(CollectionSyncJob).filter(CollectionSyncJob.id == job_id).one_or_none()
+    def get(db: Session, job_id: str, *, user_id: str | None = None) -> CollectionSyncJob | None:
+        query = db.query(CollectionSyncJob).filter(CollectionSyncJob.id == job_id)
+        if user_id is not None:
+            query = query.filter(CollectionSyncJob.user_id == user_id)
+        return query.one_or_none()
 
     @staticmethod
-    def get_active(db: Session) -> CollectionSyncJob | None:
+    def get_active(db: Session, *, user_id: str) -> CollectionSyncJob | None:
         return (
             db.query(CollectionSyncJob)
+            .filter(CollectionSyncJob.user_id == user_id)
             .filter(CollectionSyncJob.status.in_(ACTIVE_COLLECTION_SYNC_JOB_STATUSES))
             .order_by(CollectionSyncJob.created_at.desc())
             .first()
@@ -55,6 +61,7 @@ class CollectionSyncJobRepository:
     def expire_stale_active(
         db: Session,
         *,
+        user_id: str | None = None,
         stale_before: datetime,
         expires_at_or_before: datetime,
         updated_at: datetime,
@@ -68,8 +75,10 @@ class CollectionSyncJobRepository:
                     CollectionSyncJob.expires_at <= expires_at_or_before,
                 )
             )
-            .all()
         )
+        if user_id is not None:
+            stale_jobs = stale_jobs.filter(CollectionSyncJob.user_id == user_id)
+        stale_jobs = stale_jobs.all()
         if not stale_jobs:
             return 0
 

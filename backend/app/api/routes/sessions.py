@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
 from app.schemas.sessions import (
     ActiveSessionGroupResponse,
@@ -43,6 +44,7 @@ from app.services.sessions_service import (
     SessionsService,
     SessionValidationError,
 )
+from app.utils.discogs_display import clean_discogs_label_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -65,11 +67,13 @@ def get_session_groups_service() -> SessionGroupsService:
 def start_session_group(
     payload: StartSessionGroupRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
         session_group = service.start_session_group(
             db,
+            user_id=current_user.account.id,
             title=payload.title,
             started_at=payload.started_at,
             style_focus=payload.style_focus,
@@ -97,9 +101,10 @@ def start_session_group(
 )
 def get_active_session_group(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
-    session_group = service.get_active_session_group(db)
+    session_group = service.get_active_session_group(db, user_id=current_user.account.id)
     return ActiveSessionGroupResponse(
         session_group=_map_session_group_response(session_group, service) if session_group is not None else None,
     )
@@ -113,10 +118,11 @@ def get_active_session_group(
 def get_session_group(
     session_group_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
-        session_group = service.get_session_group(db, session_group_id)
+        session_group = service.get_session_group(db, session_group_id, user_id=current_user.account.id)
     except SessionGroupNotFoundError as error:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -135,12 +141,14 @@ def update_session_group(
     session_group_id: str,
     payload: UpdateSessionGroupRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
         session_group = service.update_session_group(
             db,
             session_group_id,
+            user_id=current_user.account.id,
             fields=payload.model_dump(exclude_unset=True),
         )
     except SessionGroupValidationError as error:
@@ -171,12 +179,14 @@ def finish_session_group(
     session_group_id: str,
     payload: FinishSessionGroupRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
 ):
     try:
         session_group = service.finish_session_group(
             db,
             session_group_id,
+            user_id=current_user.account.id,
             ended_at=payload.ended_at,
             style_focus=payload.style_focus,
             mood_direction=payload.mood_direction,
@@ -212,6 +222,7 @@ def log_session(
     payload: CreateSessionRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     logger.info("Creating listening session for release %s", payload.release_id)
@@ -219,6 +230,7 @@ def log_session(
     try:
         result = service.create_session(
             db,
+            user_id=current_user.account.id,
             release_id=payload.release_id,
             rating=payload.rating,
             mood=payload.mood,
@@ -265,29 +277,39 @@ def log_session(
 )
 def get_home_summary(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
     session_groups_service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
     recent_limit: int = Query(default=5),
     top_limit: int = Query(default=3),
 ):
     try:
-        summary = service.get_home_summary(db, recent_limit=recent_limit, top_limit=top_limit)
+        summary = service.get_home_summary(
+            db,
+            user_id=current_user.account.id,
+            recent_limit=recent_limit,
+            top_limit=top_limit,
+        )
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={"error": {"code": error.code, "message": error.message}},
         )
 
-    tracks_by_session_id = service.get_tracks_by_session_ids(
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_releases(
         db,
-        [item.session.id for item in summary.recent_sessions],
+        [(item.session.id, item.release) for item in summary.recent_sessions],
     )
     session_group_ids = [
         item.session.session_group_id for item in summary.recent_sessions if item.session.session_group_id is not None
     ]
     session_groups_by_id = {
         session_group.id: session_group
-        for session_group in session_groups_service.get_session_groups_by_ids(db, session_group_ids)
+        for session_group in session_groups_service.get_session_groups_by_ids(
+            db,
+            session_group_ids,
+            user_id=current_user.account.id,
+        )
     }
 
     return HomeSummaryResponse(
@@ -307,7 +329,7 @@ def get_home_summary(
                 artist=item.release.artist,
                 title=item.release.title,
                 year=item.release.year,
-                label=item.release.label,
+                label=clean_discogs_label_name(item.release.label),
                 catalog_number=item.release.catalog_number,
                 thumbnail_url=item.release.cover_image_url,
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
@@ -345,9 +367,10 @@ def get_home_summary(
 )
 def list_custom_moods(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
-    moods = service.list_custom_moods(db)
+    moods = service.list_custom_moods(db, user_id=current_user.account.id)
     return SessionMoodsResponse(
         moods=[SessionMoodItem(name=mood.name, is_custom=mood.is_custom) for mood in moods],
     )
@@ -362,10 +385,11 @@ def list_custom_moods(
 def create_custom_mood(
     payload: CreateSessionMoodRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
-        mood = service.create_custom_mood(db, payload.name)
+        mood = service.create_custom_mood(db, payload.name, user_id=current_user.account.id)
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -388,10 +412,11 @@ def create_custom_mood(
 def delete_custom_mood(
     mood_name: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
-        service.delete_custom_mood(db, mood_name)
+        service.delete_custom_mood(db, mood_name, user_id=current_user.account.id)
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -409,10 +434,11 @@ def delete_custom_mood(
 def get_session(
     session_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
-        session = service.get_session(db, session_id)
+        session = service.get_session(db, session_id, user_id=current_user.account.id)
     except SessionNotFoundError as error:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -431,11 +457,13 @@ def update_session(
     session_id: str,
     payload: UpdateSessionRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
         session = service.update_session(
             db,
+            user_id=current_user.account.id,
             session_id=session_id,
             fields=payload.model_dump(exclude_unset=True),
         )
@@ -477,7 +505,7 @@ def _map_session_response(
         notes=session.notes,
         played_at=session.played_at,
         vinyl_side=session.vinyl_side,
-        tracks=_map_session_tracks(service.get_session_tracks(db, session.id)),
+        tracks=_map_session_tracks(service.get_session_tracks_for_response(db, session)),
         created_at=session.created_at,
         can_edit=service.can_edit_session(session),
         editable_until=service.editable_until(session),
@@ -488,6 +516,7 @@ def _map_session_tracks(tracks) -> list[SessionTrackResponse]:
     return [
         SessionTrackResponse(
             position=track.track_position,
+            artist=track.track_artist,
             title=track.track_title,
             duration=track.track_duration,
             sequence=track.track_sequence,

@@ -16,7 +16,8 @@ def test_releases_route_is_versioned() -> None:
 
 def test_sessions_route_is_versioned() -> None:
     class StubSessionsService:
-        def get_session(self, _db, _session_id: str):
+        def get_session(self, _db, _session_id: str, *, user_id: str | None = None):
+            _ = user_id
             raise SessionNotFoundError("missing-session")
 
     app.dependency_overrides[get_sessions_service] = lambda: StubSessionsService()
@@ -28,7 +29,8 @@ def test_sessions_route_is_versioned() -> None:
 
 def test_analytics_route_is_versioned() -> None:
     class StubAnalyticsService:
-        def get_monthly_plays(self, _db):
+        def get_monthly_plays(self, _db, *, user_id: str | None = None):
+            _ = user_id
             return []
 
     from app.api.routes.analytics import get_analytics_service
@@ -41,7 +43,22 @@ def test_analytics_route_is_versioned() -> None:
 
 
 def test_ai_route_is_versioned() -> None:
+    class StubAiService:
+        def chat(self, *, db, user_id: str, message: str, conversation_id=None, client_context=None):
+            _ = db, user_id, message, conversation_id, client_context
+
+            class Reply:
+                conversation_id = "local-single-thread"
+                content = "Hello"
+                used_tools = []
+
+            return Reply()
+
+    from app.api.routes.ai import get_ai_insights_service
+
+    app.dependency_overrides[get_ai_insights_service] = lambda: StubAiService()
     response = client.post("/api/v1/ai/chat", json={"message": "Hello"})
+    app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json()["conversation_id"] == "local-single-thread"

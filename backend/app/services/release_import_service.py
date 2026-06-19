@@ -52,6 +52,7 @@ class ReleaseImportService:
         db: Session,
         discogs_release_id: int,
         *,
+        user_id: str | None = None,
         force_refresh: bool = False,
     ) -> ReleaseImportResult:
         logger.info(
@@ -59,7 +60,7 @@ class ReleaseImportService:
             discogs_release_id,
             force_refresh,
         )
-        discogs_service = self._discogs_service or self._build_discogs_service_for_import(db)
+        discogs_service = self._discogs_service or self._build_discogs_service_for_import(db, user_id=user_id)
         raw_payload = discogs_service.fetch_release(
             db,
             discogs_release_id,
@@ -80,25 +81,28 @@ class ReleaseImportService:
         db: Session,
         discogs_release_id: int,
         *,
+        user_id: str,
         force_refresh: bool = False,
     ) -> ReleaseImportResult:
         result = self.import_release(
             db,
             discogs_release_id,
+            user_id=user_id,
             force_refresh=force_refresh,
         )
         synced_at = datetime.now(UTC)
-        release = self._repository.mark_in_collection(
+        self._repository.mark_in_collection(
             db,
             result.release,
+            user_id=user_id,
             discogs_instance_id=None,
             collection_added_at=synced_at,
             synced_at=synced_at,
         )
-        return ReleaseImportResult(release=release, created=result.created)
+        return result
 
-    def _build_discogs_service_for_import(self, db: Session) -> DiscogsService:
-        return self._discogs_integration_service.build_discogs_service(db)
+    def _build_discogs_service_for_import(self, db: Session, *, user_id: str | None = None) -> DiscogsService:
+        return self._discogs_integration_service.build_discogs_service(db, user_id=user_id)
 
     def import_client_discogs_release(
         self,
@@ -127,11 +131,17 @@ class ReleaseImportService:
             logger.info("Release not found release_id=%s", release_id)
         return release
 
-    def refresh_release(self, db: Session, release_id: str) -> ReleaseImportResult | None:
+    def refresh_release(
+        self,
+        db: Session,
+        release_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> ReleaseImportResult | None:
         release = self.get_release(db, release_id)
         if release is None:
             return None
-        return self.import_release(db, release.discogs_release_id, force_refresh=True)
+        return self.import_release(db, release.discogs_release_id, user_id=user_id, force_refresh=True)
 
     def has_full_discogs_info(self, db: Session, discogs_release_id: int) -> bool:
         return self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id) is not None

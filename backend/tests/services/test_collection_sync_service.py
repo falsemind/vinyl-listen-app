@@ -31,6 +31,10 @@ class FakeRelease:
     last_discogs_sync_at: datetime | None = None
     discogs_instance_id: int | None = None
 
+    @property
+    def id(self) -> str:
+        return f"release-{self.discogs_release_id}"
+
 
 class FakeDiscogsService:
     def __init__(
@@ -60,8 +64,10 @@ class FakeDiscogsService:
 class FakeDiscogsIntegrationService:
     def __init__(self, credentials: SavedDiscogsCredentials) -> None:
         self.credentials = credentials
+        self.user_ids: list[str | None] = []
 
-    def get_saved_credentials(self, _db: object) -> SavedDiscogsCredentials:
+    def get_saved_credentials(self, _db: object, *, user_id: str | None = None) -> SavedDiscogsCredentials:
+        self.user_ids.append(user_id)
         return self.credentials
 
 
@@ -128,11 +134,13 @@ class FakeReleasesRepository:
         _db: object,
         release: FakeRelease,
         *,
+        user_id: str,
         discogs_instance_id: int | None,
         collection_added_at: datetime | None,
         synced_at: datetime,
         commit: bool = True,
     ) -> FakeRelease:
+        _ = user_id
         self.commit_flags.append(commit)
         release.in_collection = True
         release.discogs_instance_id = discogs_instance_id
@@ -146,9 +154,11 @@ class FakeReleasesRepository:
         _db: object,
         active_discogs_release_ids: set[int],
         *,
+        user_id: str,
         removed_at: datetime,
         commit: bool = True,
     ) -> int:
+        _ = user_id
         self.commit_flags.append(commit)
         removed_count = 0
         for release_id, release in self.releases.items():
@@ -159,19 +169,26 @@ class FakeReleasesRepository:
                 removed_count += 1
         return removed_count
 
-    def count_collection_releases(self, _db: object, *, include_removed: bool = False) -> int:
-        if include_removed:
-            return len(self.releases)
-        return sum(1 for release in self.releases.values() if release.in_collection)
+    def get_collection_membership(self, _db: object, *, release_id: str, user_id: str):
+        _ = user_id
+        for release in self.releases.values():
+            if getattr(release, "id", f"release-{release.discogs_release_id}") == release_id:
+                return release
+        return None
 
-    def has_collection_membership_history(self, _db: object) -> bool:
-        return any(
+    def has_collection_membership_history(self, _db: object, *, release: FakeRelease, user_id: str) -> bool:
+        _ = user_id
+        return (
             release.in_collection
             or release.collection_added_at is not None
             or release.collection_removed_at is not None
             or release.discogs_instance_id is not None
-            for release in self.releases.values()
         )
+
+    def count_collection_releases(self, _db: object, *, include_removed: bool = False) -> int:
+        if include_removed:
+            return len(self.releases)
+        return sum(1 for release in self.releases.values() if release.in_collection)
 
 
 class FakeCollectionFoldersRepository:
@@ -184,10 +201,11 @@ class FakeCollectionFoldersRepository:
         _db: object,
         folders: list[CollectionFolderData],
         *,
+        user_id: str,
         synced_at: datetime,
         commit: bool = True,
     ) -> dict[int, Any]:
-        _ = synced_at, commit
+        _ = user_id, synced_at, commit
         for index, folder in enumerate(folders, start=1):
             self.folders[folder.discogs_folder_id] = SimpleFolder(
                 id=index,
@@ -202,12 +220,13 @@ class FakeCollectionFoldersRepository:
         self,
         _db: object,
         *,
+        user_id: str,
         folder: Any,
         memberships: list[ReleaseFolderMembershipData],
         synced_at: datetime,
         commit: bool = True,
     ) -> int:
-        _ = synced_at, commit
+        _ = user_id, synced_at, commit
         self.memberships[folder.discogs_folder_id] = list(memberships)
         return len(memberships)
 
@@ -225,7 +244,8 @@ class FakeCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
         self.source_of_truth = source_of_truth
 
-    def get_source_of_truth(self, _db: object) -> CollectionSourceOfTruth:
+    def get_source_of_truth(self, _db: object, *, user_id: str | None = None) -> CollectionSourceOfTruth:
+        _ = user_id
         return self.source_of_truth
 
 
@@ -286,7 +306,7 @@ def test_sync_collection_uses_saved_discogs_credentials() -> None:
         now_provider=lambda: datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
     )
 
-    result = service.sync_collection(db)
+    result = service.sync_collection(db, user_id="user-a")
 
     assert access_tokens == ["stored-token", "stored-token"]
     assert discogs_service.usernames == ["discogs-user"]
@@ -313,7 +333,7 @@ def test_sync_collection_initial_app_mode_import_marks_releases_active() -> None
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.total_items == 3
     assert result.unique_releases == 2
@@ -351,7 +371,7 @@ def test_sync_collection_persists_discogs_folder_memberships() -> None:
         now_provider=lambda: now,
     )
 
-    result = service.sync_collection(db=FakeDb())
+    result = service.sync_collection(db=FakeDb(), user_id="user-a")
 
     assert result.unique_releases == 2
     assert set(folder_repository.folders) == {0, 123}
@@ -389,7 +409,7 @@ def test_sync_collection_initial_app_mode_ignores_non_collection_release_rows() 
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.added_count == 1
     assert result.updated_count == 0
@@ -430,7 +450,7 @@ def test_sync_collection_app_mode_adds_new_discogs_items_when_local_collection_e
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.added_count == 1
     assert result.updated_count == 0
@@ -478,7 +498,7 @@ def test_sync_collection_keeps_removed_releases_inactive_in_app_mode() -> None:
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.added_count == 0
     assert result.updated_count == 1
@@ -510,7 +530,7 @@ def test_sync_collection_adds_unique_releases_and_marks_them_active_in_discogs_m
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.total_items == 3
     assert result.unique_releases == 2
@@ -554,7 +574,7 @@ def test_sync_collection_marks_missing_active_releases_removed_without_deleting(
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.added_count == 1
     assert result.removed_count == 1
@@ -593,7 +613,7 @@ def test_sync_collection_keeps_missing_active_releases_in_app_mode() -> None:
 
     db = FakeDb()
 
-    result = service.sync_collection(db=db)
+    result = service.sync_collection(db=db, user_id="user-a")
 
     assert result.added_count == 0
     assert result.removed_count == 0
@@ -621,7 +641,7 @@ def test_sync_collection_rolls_back_when_later_item_fails() -> None:
     db = FakeDb()
 
     with pytest.raises(CollectionSyncError, match="Second item failed"):
-        service.sync_collection(db=db)
+        service.sync_collection(db=db, user_id="user-a")
 
     assert db.commit_count == 0
     assert db.rollback_count == 1

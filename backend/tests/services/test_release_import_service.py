@@ -73,7 +73,7 @@ def test_import_release_to_collection_imports_full_release_and_marks_active(
     repository = release_import_repository_factory()
     service = build_release_import_service(discogs_service=discogs_service, repository=repository)
 
-    result = service.import_release_to_collection(db=object(), discogs_release_id=555123)
+    result = service.import_release_to_collection(db=object(), discogs_release_id=555123, user_id="user-a")
 
     assert result.created is True
     assert result.release.id == "release-123"
@@ -84,8 +84,9 @@ def test_import_release_to_collection_imports_full_release_and_marks_active(
     assert result.release.last_discogs_sync_at == result.release.collection_added_at
     assert discogs_service.calls == [(555123, False)]
     assert len(repository.collection_mark_calls) == 1
-    release_id, discogs_instance_id, collection_added_at, synced_at = repository.collection_mark_calls[0]
+    release_id, user_id, discogs_instance_id, collection_added_at, synced_at = repository.collection_mark_calls[0]
     assert release_id == "release-123"
+    assert user_id == "user-a"
     assert discogs_instance_id is None
     assert collection_added_at == synced_at
 
@@ -117,7 +118,9 @@ def test_import_release_to_collection_reactivates_existing_release(
     repository = release_import_repository_factory(existing_release)
     service = build_release_import_service(discogs_service=discogs_service, repository=repository)
 
-    result = service.import_release_to_collection(db=object(), discogs_release_id=555123, force_refresh=True)
+    result = service.import_release_to_collection(
+        db=object(), discogs_release_id=555123, user_id="user-a", force_refresh=True
+    )
 
     assert result.created is False
     assert result.release is existing_release
@@ -133,7 +136,8 @@ def test_import_release_requires_backend_discogs_token_when_token_missing() -> N
         def __init__(self) -> None:
             self.authenticated_calls = 0
 
-        def build_discogs_service(self, _db):
+        def build_discogs_service(self, _db, *, user_id: str | None = None):
+            _ = user_id
             self.authenticated_calls += 1
             raise DiscogsConfigurationError("Discogs token is not configured.")
 
@@ -285,6 +289,10 @@ def test_get_tracklist_returns_discogs_tracks(
                     "type_": "track",
                     "title": "S.O.U.R",
                     "duration": "",
+                    "artists": [
+                        {"name": "Equinox (3)", "join": "&", "id": 67456},
+                        {"name": "Tim Reaper", "id": 1881856},
+                    ],
                     "extraartists": [{"name": "Target Artist (2)", "role": "Remix"}],
                 },
                 {"position": "Y1", "type_": "track", "title": "Another Tune", "duration": "5:12"},
@@ -299,6 +307,11 @@ def test_get_tracklist_returns_discogs_tracks(
         ("X2", "S.O.U.R", None),
         ("Y1", "Another Tune", "5:12"),
     ]
+    assert [(artist.name, artist.join, artist.discogs_artist_id) for artist in tracks[0].artists] == [
+        ("Equinox", "&", 67456),
+        ("Tim Reaper", None, 1881856),
+    ]
+    assert tracks[1].artists == []
     assert [(artist.name, artist.role) for artist in tracks[0].extra_artists] == [("Target Artist", "Remix")]
     assert tracks[1].extra_artists == []
 

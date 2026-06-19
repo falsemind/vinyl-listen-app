@@ -11,6 +11,7 @@ Define the backend API endpoints, request/response structure, and operational co
 
 Backend responsibilities:
 
+* Account registration, email verification, sign-in, token refresh, and password reset flows
 * Record identification via Discogs API when a saved Discogs integration token is available
 * Discogs integration status and token storage
 * Listening session logging
@@ -93,12 +94,199 @@ Main API domains:
 /sessions
 /analytics
 /ai
+/auth
 /health
+```
+
+All application endpoints require bearer authentication unless explicitly public. The public allowlist is:
+
+* `/auth/register`
+* `/auth/verify-email`
+* `/auth/resend-verification`
+* `/auth/login`
+* `/auth/refresh`
+* `/auth/password-reset/request`
+* `/auth/password-reset/confirm`
+* `/health` and `/health/runtime`
+
+Protected endpoints require:
+
+```http
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Auth failures use the standard error shape:
+
+```json
+{
+  "error": {
+    "code": "auth_required",
+    "message": "Authentication is required."
+  }
+}
 ```
 
 ---
 
-# 1. Record Identification
+# 1. Auth And Account Access
+
+Auth endpoints live under `/api/v1/auth`. Local development uses the local email delivery backend by default, so verification and reset codes are written to the configured JSONL outbox instead of being sent through Mailgun.
+
+## POST /auth/register
+
+Creates an unverified account and sends a verification code through the configured auth email sender.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "password": "correct-horse-battery-staple"
+}
+```
+
+### Response
+
+```
+201 Created
+```
+
+```json
+{
+  "user_id": "6e3e1c1c-b5c5-4c0e-bbc8-2b5bdb5c4e21",
+  "email": "alex@example.com",
+  "verification_expires_at": "2026-06-18T20:15:00Z"
+}
+```
+
+Duplicate emails return `409 email_already_registered`.
+
+## POST /auth/verify-email
+
+Consumes a single-use verification code and marks the account email as verified.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "code": "123456"
+}
+```
+
+Wrong codes return `400 email_code_invalid`, reused codes return `400 email_code_consumed`, expired codes return `410 email_code_expired`, and repeated wrong-code attempts for the same account return `429 email_code_attempts_rate_limited`.
+
+## POST /auth/resend-verification
+
+Sends a new verification code for an unverified account. Rate-limited requests return `429 email_verification_rate_limited`.
+
+## POST /auth/login
+
+Verifies email/password credentials and returns an access token plus refresh token. The account must already be email verified.
+
+### Request
+
+```json
+{
+  "email": "alex@example.com",
+  "password": "correct-horse-battery-staple",
+  "device_label": "Pixel"
+}
+```
+
+### Response
+
+```json
+{
+  "access_token": "eyJ...",
+  "access_expires_at": "2026-06-18T20:15:00Z",
+  "refresh_token": "opaque-refresh-token",
+  "refresh_expires_at": "2026-07-18T20:00:00Z",
+  "token_type": "Bearer",
+  "session_id": "0f65cf9d-d1bb-4680-85d8-35d9d20787c5"
+}
+```
+
+Invalid credentials return `401 invalid_credentials`. Unverified accounts return `403 email_not_verified`.
+
+## POST /auth/refresh
+
+Rotates a valid refresh token and returns a new access/refresh token pair. Reused, expired, revoked, and invalid refresh tokens return structured `401` errors. If the session has been inactive for more than the configured inactivity window, the backend returns `401 inactivity_reauth_required` and the client should ask for the password again.
+
+## POST /auth/logout
+
+Protected endpoint. Revokes the current auth session.
+
+## POST /auth/logout-all
+
+Protected endpoint. Revokes all active refresh sessions for the authenticated account, including the caller's current session.
+
+## GET /auth/me
+
+Protected endpoint. Returns the current authenticated account summary.
+
+## POST /auth/password-reset/request
+
+Accepts an email address and sends a reset code when the account exists. Unknown emails still return a generic accepted response. Delivery failures are logged and still return the same accepted response so callers cannot distinguish existing accounts by email-provider errors.
+
+## POST /auth/password-reset/confirm
+
+Consumes a reset code, updates the password hash, and revokes existing sessions for that account. Repeated wrong-code attempts for the same account return `429 password_reset_attempts_rate_limited`.
+
+## POST /auth/password/change
+
+Protected endpoint. Verifies the current password, stores a fresh password hash, and revokes active refresh sessions. By default the caller's current session remains active; set `sign_out_everywhere` to revoke it too.
+
+After the password change commits, the backend sends a best-effort security notification email to the account email address. Notification delivery failure is logged but does not undo the password change.
+
+### Request
+
+```json
+{
+  "current_password": "old-password",
+  "new_password": "new-password",
+  "sign_out_everywhere": false
+}
+```
+
+### Response
+
+```json
+{
+  "changed": true,
+  "revoked_sessions": 1
+}
+```
+
+Wrong current password returns `401 invalid_current_password`.
+
+## DELETE /auth/account
+
+Protected endpoint. Requires password re-authentication, hard-deletes the account and user-owned data, revokes/deletes auth state, and retains only a minimal deletion audit receipt.
+
+### Request
+
+```json
+{
+  "password": "correct-horse-battery-staple"
+}
+```
+
+### Response
+
+```json
+{
+  "deleted": true,
+  "deletion_receipt_id": "6d3958c3-27c0-4459-b8e5-cf3fc5e18f43",
+  "deleted_at": "2026-06-19T18:00:00Z"
+}
+```
+
+Wrong password returns `401 invalid_credentials`. After a successful deletion, existing access and refresh tokens are invalid and the client should clear local auth/cache state.
+
+---
+
+# 2. Record Identification
 
 Endpoints used after the user captures or uploads a photo.
 
@@ -176,6 +364,22 @@ Notes:
 * Candidates from Discogs may have `release_id: null`.
 * If `release_id` is null, the client imports the selected Discogs release before logging a session.
 * Collection add uses the same candidate shape. Android no-token collection add fetches the selected full Discogs release from the device, imports it through `POST /releases/import/client-discogs`, then calls `POST /releases/{release_id}/collection/reactivate` before opening Record Details.
+* Accepted sync identify calls record one `ocr_identify` usage unit for the authenticated user.
+* If the user's plan exceeds the configured OCR/identify allowance, the endpoint returns `402`:
+
+```json
+{
+  "error": {
+    "code": "feature_usage_limit_exceeded",
+    "message": "Usage limit reached for this feature.",
+    "capability": "ocr_identify",
+    "plan": "FREE",
+    "limit": 25,
+    "used": 25,
+    "reset_at": "2026-07-19T12:00:00+00:00"
+  }
+}
+```
 
 ## POST /identify/jobs
 
@@ -217,6 +421,8 @@ Fields:
 ```
 
 Upload validation errors use the same structured error format and status codes as `POST /identify`.
+
+Accepted async identify jobs record one `ocr_identify` usage unit for the authenticated user. Feature-gated responses use the same `402 feature_usage_limit_exceeded` shape as `POST /identify`; validation and capacity rejections do not consume usage.
 
 If the client already has too many active identify jobs, or local identify capacity is full, the endpoint returns `429` with a `Retry-After` header:
 
@@ -347,7 +553,7 @@ Missing jobs return the same `404` shape as `GET /identify/jobs/{job_id}`.
 
 ---
 
-# 2. Manual Release Search
+# 3. Manual Release Search
 
 Fallback when automatic identification fails.
 
@@ -410,7 +616,7 @@ The response contains Discogs results, not local records. Android no-token flows
 
 ---
 
-# 3. Release Details
+# 4. Release Details
 
 Release detail endpoints read and update releases by internal `release_id`. Manual Discogs imports and identify flow matches create or update the local release row first, then Android navigates with the internal ID.
 
@@ -614,9 +820,9 @@ Restores an existing release to the active collection without creating a duplica
 
 ---
 
-# 4. Collection Management
+# 5. Collection Management
 
-Endpoints used by the Records Collection screen to load local collection records, start manual Discogs metadata sync, and manage the collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich metadata but must not remove, deactivate, or re-add local collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
+Endpoints used by the Records Collection screen to load the authenticated user's collection records, start manual Discogs metadata sync, and manage that user's collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich shared release metadata but must not remove, deactivate, or re-add the user's collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
 
 ## GET /collection/settings
 
@@ -658,15 +864,15 @@ Same response shape as `GET /collection/settings`.
 
 ## POST /collection/sync
 
-Starts a manual background collection sync job and returns immediately. Requires
-a saved Discogs integration token. The backend uses the username returned by
+Starts a manual background collection sync job for the authenticated user and returns immediately. Requires
+that user's saved Discogs integration token. The backend uses the username returned by
 Discogs identity validation, not a username from backend configuration.
 
 Sync behavior depends on `source_of_truth`:
 
 | Source | Behavior |
 | --- | --- |
-| `APP` | Preserve local `in_collection` state. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
+| `APP` | Preserve the user's local `in_collection` membership. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
 | `DISCOGS` | Treat Discogs as the collection source of truth. Releases missing from the Discogs collection can be marked inactive locally while metadata, sessions, analytics, and cached payloads remain stored. |
 
 ### Response
@@ -690,7 +896,7 @@ Returns `202 Accepted`.
 
 ## GET /collection/sync/active
 
-Returns the most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
+Returns the authenticated user's most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
 
 Queued or running jobs left behind by a previous backend process are marked `expired` and are not returned as active.
 
@@ -698,7 +904,7 @@ Returns `204 No Content` when no collection sync is active.
 
 ## GET /collection/sync/{job_id}
 
-Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
+Returns progress for one of the authenticated user's collection sync jobs. Android polls this endpoint while showing collection import status.
 
 Status values are `queued`, `running`, `succeeded`, `failed`, and `expired`. `expired` means a queued or running job was orphaned by a backend restart or exceeded its lifetime.
 
@@ -723,7 +929,7 @@ Terminal statuses are `succeeded` and `failed`. Missing jobs return `404` with `
 
 ## GET /collection/releases
 
-Returns active collection records ordered by Discogs collection add date, newest first.
+Returns the authenticated user's active collection records ordered by Discogs collection add date, newest first. Release metadata is shared catalog data; `in_collection`, `collection_added_at`, and `is_favorite` come from that user's collection membership row.
 
 ### Query Parameters
 
@@ -733,8 +939,8 @@ Returns active collection records ordered by Discogs collection add date, newest
 | `offset` | integer | Number of active collection records to skip. |
 | `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
 | `label` | string | Optional label-name filter, 1..255 characters. Matches the release label field and cached Discogs release data so multi-label releases can be shown from Record Details. |
-| `favorite` | boolean | Optional flag. When `true`, returns only records marked as personal favorites. |
-| `folder_id` | integer | Optional Discogs collection folder id. When present, returns active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
+| `favorite` | boolean | Optional flag. When `true`, returns only records marked as the user's personal favorites. |
+| `folder_id` | integer | Optional Discogs collection folder id. When present, returns the user's active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
 
 ### Response
 
@@ -769,7 +975,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 
 ## GET /collection/folders
 
-Returns persisted Discogs collection folders for the Collection action menu.
+Returns the authenticated user's persisted Discogs collection folders for the Collection action menu.
 When Discogs credentials are missing or inactive, the endpoint returns a safe
 not-configured response so Android can hide folder controls without surfacing an
 error. Default-only Discogs collections return `has_extra_folders=false`; Android
@@ -829,11 +1035,11 @@ Same response shape as `GET /releases/search`, with `release_id` populated for d
 
 ---
 
-# 5. Integrations
+# 6. Integrations
 
-Endpoints used by Settings to manage optional provider integrations. The current
-implementation supports a single app-wide Discogs integration; `user_id` storage
-is nullable so the schema can evolve toward multi-user ownership later.
+Endpoints used by Settings to manage optional provider integrations. Discogs
+integration state is scoped to the authenticated user; legacy rows may remain
+unowned only until local data is reset or a future migration assigns ownership.
 
 ## GET /integrations/discogs
 
@@ -893,7 +1099,7 @@ Same response shape as `GET /integrations/discogs`.
 
 ---
 
-# 6. Create Listening Session
+# 7. Create Listening Session
 
 Logs a listening session.
 
@@ -980,6 +1186,7 @@ All fields are optional, but at least one field must be present. Send `null` to 
   "tracks": [
     {
       "position": "B1",
+      "artist": "Pixl & Tim Reaper",
       "title": "Flip Tune",
       "duration": null,
       "sequence": 3
@@ -995,7 +1202,7 @@ Expired edit windows return `403` with `session_edit_window_expired`.
 
 ---
 
-# 7. Timed Session Groups
+# 8. Timed Session Groups
 
 Used by Android to start an optional timed listening session. Individual record plays are still stored as normal `sessions` rows. When auto-add is enabled, the app passes the active group id as `session_group_id` while logging each record.
 
@@ -1147,13 +1354,13 @@ Inactive groups return `409` with `session_group_inactive`. `ended_at` before `s
 
 ---
 
-# 8. Session Moods
+# 9. Session Moods
 
-Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
+Used by the **Log Session screen** to load, create, and delete the authenticated user's custom mood chips. Saved mood options live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
 ## GET /sessions/moods
 
-Returns custom mood options.
+Returns the authenticated user's custom mood options.
 
 ```json
 {
@@ -1168,7 +1375,7 @@ Returns custom mood options.
 
 ## POST /sessions/moods
 
-Creates a custom mood option. Names are compared case-insensitively.
+Creates a custom mood option for the authenticated user. Names are compared case-insensitively within that account.
 
 ### Request
 
@@ -1199,7 +1406,7 @@ Validation rules:
 name must be 3-20 characters
 name may contain only letters, numbers, and spaces
 name must not match a built-in mood
-name must not match an existing custom mood
+name must not match an existing custom mood for the same account
 ```
 
 Duplicate names return `409 Conflict` with `duplicate_mood`.
@@ -1208,7 +1415,7 @@ If a deleted custom mood still exists in historical session rows, the backend re
 
 ## DELETE /sessions/moods/{mood_name}
 
-Deletes a custom mood option. Existing listening sessions keep their saved `mood` value for analytics history.
+Deletes one of the authenticated user's custom mood options. Existing listening sessions keep their saved `mood` value for analytics history.
 
 Response:
 
@@ -1218,7 +1425,7 @@ Response:
 
 ---
 
-# 9. Home Summary
+# 10. Home Summary
 
 Used by the **Home screen** to show real listening data after sessions are logged.
 
@@ -1265,6 +1472,7 @@ Used by the **Home screen** to show real listening data after sessions are logge
       "tracks": [
         {
           "position": "A1",
+          "artist": "DJ Harmony & Kid Lib",
           "title": "Future",
           "duration": "6:34",
           "sequence": 1
@@ -1301,7 +1509,7 @@ When `session_group_id` is non-null, `session_group` carries the timed-session m
 
 ---
 
-# 10. Get Record Details
+# 11. Get Record Details
 
 Used by the **Record Detail screen**.
 
@@ -1356,7 +1564,7 @@ Record metadata comes from `GET /releases/{release_id}`. Listening history comes
 
 ---
 
-# 11. Session History
+# 12. Session History
 
 Used for listening history.
 
@@ -1383,6 +1591,7 @@ Used for listening history.
       "tracks": [
         {
           "position": "B1",
+          "artist": "Pixl & Tim Reaper",
           "title": "Flip Tune",
           "duration": null,
           "sequence": 3
@@ -1472,7 +1681,7 @@ history.
 
 ---
 
-# 12. Analytics
+# 13. Analytics
 
 Endpoints used by the **Analytics screen charts**.
 
@@ -1620,10 +1829,22 @@ Returns listening sessions for a selected month from Plays Over Time.
       },
       "artist": "DJ Harmony & Kid Lib",
       "title": "Future / Fire Feeler / Dressback",
+      "year": 2024,
+      "label": "Deep Jungle",
+      "catalog_number": "DJ-001",
       "thumbnail_url": "https://...",
       "date": "2026-05-10",
       "played_at": "2026-05-10T23:30:00Z",
       "side": "A",
+      "tracks": [
+        {
+          "position": "A1",
+          "artist": "DJ Harmony & Kid Lib",
+          "title": "Future",
+          "duration": "6:34",
+          "sequence": 1
+        }
+      ],
       "rating": 5,
       "mood": "Focused",
       "has_notes": true
@@ -1715,15 +1936,15 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 ---
 
-# 13. AI Insights
+# 14. AI Insights
 
 Used by the **Insights screen** chat shell.
 
-The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted in the backend so the assistant can receive recent conversation history and the user has clear/export paths.
+The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted under the authenticated user so the assistant can receive recent conversation history and the user has clear/export paths.
 
 Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn. Saved session notes are included as high-priority context for recommendation and subjective insight prompts when notes are present.
 
-When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases already known to the local app collection.
+When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use the authenticated user's precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases in that user's collection.
 
 ## POST /ai/chat
 
@@ -1739,7 +1960,7 @@ When the prompt explicitly asks about Spotify, streaming history, listening hist
 }
 ```
 
-`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`. Provided `conversation_id` values must be 36 characters or fewer.
+`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`. Conversation ids are scoped by authenticated user, so two accounts can use the same default id without sharing history. Provided `conversation_id` values must be 36 characters or fewer.
 
 `client_context` currently supports only the optional `timezone` field. `timezone` must be 64 characters or fewer, and unknown `client_context` fields are rejected with `422`.
 
@@ -1786,7 +2007,7 @@ Blank provided `conversation_id` values return `empty_conversation_id`.
 
 ## GET /ai/chat/history
 
-Returns the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+Returns the authenticated user's persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
 
 ```json
 {
@@ -1810,11 +2031,11 @@ Returns the persisted conversation for the requested `conversation_id`, or `loca
 
 ## GET /ai/chat/export
 
-Returns the same persisted messages plus `exported_at` for privacy/data export.
+Returns the same user-owned persisted messages plus `exported_at` for privacy/data export.
 
 ## DELETE /ai/chat/history
 
-Deletes the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+Deletes the authenticated user's persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
 
 ```json
 {
@@ -1825,7 +2046,7 @@ Deletes the persisted conversation for the requested `conversation_id`, or `loca
 
 ## POST /ai/spotify/import
 
-Imports local Spotify `end_song` JSON export files from the configured backend import directory. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
+Imports local Spotify `end_song` JSON export files from the configured backend import directory into the authenticated user's Spotify history. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
 
 ### Request
 
@@ -1862,11 +2083,11 @@ Imports local Spotify `end_song` JSON export files from the configured backend i
 }
 ```
 
-The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events, then refreshes Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
+The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events per user, then refreshes that user's Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
 
 ---
 
-# 14. Health Endpoints
+# 15. Health Endpoints
 
 Used by local development, runtime checks, and clients that need basic backend
 readiness.

@@ -81,14 +81,20 @@ class AnalyticsService:
         self._analytics_repository = analytics_repository or AnalyticsRepository()
         self._max_page_limit = max_page_limit or settings.max_page_limit
 
-    def get_monthly_plays(self, db: Session) -> list[MonthlyPlayCount]:
+    def get_monthly_plays(self, db: Session, *, user_id: str | None = None) -> list[MonthlyPlayCount]:
         logger.info("Loading monthly analytics play counts")
         return [
             MonthlyPlayCount(month=str(month), plays=int(plays))
-            for month, plays in self._analytics_repository.get_monthly_play_counts(db)
+            for month, plays in self._analytics_repository.get_monthly_play_counts(db, user_id=user_id)
         ]
 
-    def get_top_records(self, db: Session, *, limit: int = 10) -> list[AnalyticsTopRecord]:
+    def get_top_records(
+        self,
+        db: Session,
+        *,
+        user_id: str | None = None,
+        limit: int = 10,
+    ) -> list[AnalyticsTopRecord]:
         self._validate_limit(limit)
 
         logger.info("Loading analytics top records limit=%s", limit)
@@ -102,6 +108,7 @@ class AnalyticsService:
             )
             for release, plays, average_rating, top_track, top_mood in self._analytics_repository.get_top_records(
                 db,
+                user_id=user_id,
                 limit=limit,
             )
         ]
@@ -110,6 +117,7 @@ class AnalyticsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         month: str,
         limit: int = 10,
         offset: int = 0,
@@ -120,11 +128,12 @@ class AnalyticsService:
         logger.info("Loading analytics month sessions month=%s limit=%s offset=%s", normalized_month, limit, offset)
         rows = self._analytics_repository.get_sessions_for_month(
             db,
+            user_id=user_id,
             month=normalized_month,
             limit=limit,
             offset=offset,
         )
-        total = self._analytics_repository.count_sessions_for_month(db, month=normalized_month)
+        total = self._analytics_repository.count_sessions_for_month(db, month=normalized_month, user_id=user_id)
         tracks_by_session_id = self._analytics_repository.get_tracks_by_session_ids(
             db,
             [session.id for session, _release in rows],
@@ -146,6 +155,7 @@ class AnalyticsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         rating: int,
         limit: int = 10,
         offset: int = 0,
@@ -154,8 +164,14 @@ class AnalyticsService:
         self._validate_pagination(limit=limit, offset=offset)
 
         logger.info("Loading analytics rating records rating=%s limit=%s offset=%s", rating, limit, offset)
-        rows = self._analytics_repository.get_records_for_rating(db, rating=rating, limit=limit, offset=offset)
-        total = self._analytics_repository.count_records_for_rating(db, rating=rating)
+        rows = self._analytics_repository.get_records_for_rating(
+            db,
+            user_id=user_id,
+            rating=rating,
+            limit=limit,
+            offset=offset,
+        )
+        total = self._analytics_repository.count_records_for_rating(db, rating=rating, user_id=user_id)
         records = [AnalyticsRecordCount(release=release, count=int(count)) for release, count in rows]
         return AnalyticsRecordCountPage(
             records=records,
@@ -166,6 +182,7 @@ class AnalyticsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         mood: str,
         limit: int = 10,
         offset: int = 0,
@@ -176,11 +193,12 @@ class AnalyticsService:
         logger.info("Loading analytics mood records mood=%s limit=%s offset=%s", normalized_mood, limit, offset)
         rows = self._analytics_repository.get_records_for_mood(
             db,
+            user_id=user_id,
             mood=normalized_mood,
             limit=limit,
             offset=offset,
         )
-        total = self._analytics_repository.count_records_for_mood(db, mood=normalized_mood)
+        total = self._analytics_repository.count_records_for_mood(db, mood=normalized_mood, user_id=user_id)
         records = [AnalyticsRecordCount(release=release, count=int(count)) for release, count in rows]
         return AnalyticsRecordCountPage(
             records=records,
@@ -191,6 +209,7 @@ class AnalyticsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         style: str,
         limit: int = 10,
         offset: int = 0,
@@ -201,6 +220,7 @@ class AnalyticsService:
         logger.info("Loading analytics style records style=%s limit=%s offset=%s", normalized_style, limit, offset)
         rows, total = self._analytics_repository.get_records_for_style_page(
             db,
+            user_id=user_id,
             style=normalized_style,
             limit=limit,
             offset=offset,
@@ -211,26 +231,26 @@ class AnalyticsService:
             pagination=self._pagination(limit=limit, offset=offset, total=total, item_count=len(records)),
         )
 
-    def get_rating_distribution(self, db: Session) -> dict[str, int]:
+    def get_rating_distribution(self, db: Session, *, user_id: str | None = None) -> dict[str, int]:
         logger.info("Loading analytics rating distribution")
         ratings = {str(rating): 0 for rating in range(1, 6)}
-        for rating, plays in self._analytics_repository.get_rating_distribution(db):
+        for rating, plays in self._analytics_repository.get_rating_distribution(db, user_id=user_id):
             ratings[str(int(rating))] = int(plays)
         return ratings
 
-    def get_mood_distribution(self, db: Session) -> dict[str, int]:
+    def get_mood_distribution(self, db: Session, *, user_id: str | None = None) -> dict[str, int]:
         logger.info("Loading analytics mood distribution")
         return {
             str(mood): int(plays)
-            for mood, plays in self._analytics_repository.get_mood_distribution(db)
+            for mood, plays in self._analytics_repository.get_mood_distribution(db, user_id=user_id)
             if mood is not None and str(mood).strip()
         }
 
-    def get_style_distribution(self, db: Session) -> dict[str, int]:
+    def get_style_distribution(self, db: Session, *, user_id: str | None = None) -> dict[str, int]:
         logger.info("Loading analytics style distribution")
         return {
             str(style): int(plays)
-            for style, plays in self._analytics_repository.get_style_distribution(db)
+            for style, plays in self._analytics_repository.get_style_distribution(db, user_id=user_id)
             if style is not None and str(style).strip()
         }
 

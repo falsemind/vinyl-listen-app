@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 
+from app.api.auth_dependencies import AuthAPIError
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -109,6 +110,15 @@ async def rate_limit_middleware(request: Request, call_next):
 
 
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.exception_handler(AuthAPIError)
+async def auth_api_exception_handler(_request: Request, exc: AuthAPIError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.code, "message": exc.message}},
+        headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+    )
 
 
 @app.exception_handler(RequestValidationError)
