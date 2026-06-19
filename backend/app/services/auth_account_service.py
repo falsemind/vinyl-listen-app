@@ -288,9 +288,10 @@ class AuthAccountService:
         )
 
     def request_password_reset(self, db: Session, *, email: str) -> PasswordResetRequestResult:
+        response_email = email.strip()
         user = self._repository.get_user_by_normalized_email(db, email)
         if user is None or user.deleted_at is not None:
-            return PasswordResetRequestResult(email=email.strip())
+            return PasswordResetRequestResult(email=response_email)
 
         now = self._now_provider()
         latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
@@ -322,7 +323,7 @@ class AuthAccountService:
             self._send_password_reset_code(user.email, code, reset_code.expires_at)
         except AuthEmailDeliveryError:
             logger.exception("Password reset email failed to send to=%s", user.email)
-        return PasswordResetRequestResult(email=user.email)
+        return PasswordResetRequestResult(email=response_email)
 
     def sign_in_with_password(self, db: Session, *, email: str, password: str) -> SignInResult:
         user = self._repository.get_user_by_normalized_email(db, email)

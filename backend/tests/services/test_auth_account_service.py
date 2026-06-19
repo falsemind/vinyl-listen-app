@@ -350,6 +350,22 @@ def test_password_reset_request_is_generic_when_delivery_fails(
     assert len(setup_sender.messages) == 1
 
 
+def test_password_reset_request_echoes_input_email_casing(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+    email_sender: RecordingEmailSender,
+) -> None:
+    service = _service(repository=repository, clock=clock, email_sender=email_sender)
+    service.register_account(db_session, email="Alex@Example.COM", password="password")
+
+    result = service.request_password_reset(db_session, email="alex@example.com")
+
+    assert result.accepted is True
+    assert result.email == "alex@example.com"
+    assert email_sender.messages[1].to_email == "Alex@Example.COM"
+
+
 def test_password_reset_confirm_rate_limits_repeated_wrong_codes_per_account(
     db_session: Session,
     repository: AuthRepository,
