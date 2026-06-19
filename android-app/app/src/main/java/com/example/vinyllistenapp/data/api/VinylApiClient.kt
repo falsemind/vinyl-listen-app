@@ -3,7 +3,11 @@ package com.example.vinyllistenapp.data.api
 import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.data.auth.AuthAccountSummary
+import com.example.vinyllistenapp.data.auth.AuthPasswordResetRequestResult
+import com.example.vinyllistenapp.data.auth.AuthRegistrationResult
 import com.example.vinyllistenapp.data.auth.AuthTokenPair
+import com.example.vinyllistenapp.data.auth.AuthVerificationResendResult
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
 import com.example.vinyllistenapp.domain.AnalyticsPagination
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
@@ -66,6 +70,70 @@ class VinylApiClient(
         apiCall {
             val body = JSONObject().put("refresh_token", refreshToken)
             postJson("auth/refresh", body).toAuthTokenPair()
+        }
+
+    suspend fun registerAccount(
+        email: String,
+        password: String,
+    ): AuthRegistrationResult =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("password", password)
+            postJson("auth/register", body).toAuthRegistrationResult()
+        }
+
+    suspend fun verifyEmail(
+        email: String,
+        code: String,
+    ): AuthAccountSummary =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("code", code)
+            postJson("auth/verify-email", body).toAuthAccountSummary()
+        }
+
+    suspend fun resendEmailVerification(email: String): AuthVerificationResendResult =
+        apiCall {
+            val body = JSONObject().put("email", email)
+            postJson("auth/resend-verification", body).toAuthVerificationResendResult()
+        }
+
+    suspend fun login(
+        email: String,
+        password: String,
+        deviceLabel: String?,
+    ): AuthTokenPair =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("password", password)
+                    .put("device_label", deviceLabel)
+            postJson("auth/login", body).toAuthTokenPair()
+        }
+
+    suspend fun requestPasswordReset(email: String): AuthPasswordResetRequestResult =
+        apiCall {
+            val body = JSONObject().put("email", email)
+            postJson("auth/password-reset/request", body).toAuthPasswordResetRequestResult()
+        }
+
+    suspend fun confirmPasswordReset(
+        email: String,
+        code: String,
+        newPassword: String,
+    ): AuthAccountSummary =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("code", code)
+                    .put("new_password", newPassword)
+            postJson("auth/password-reset/confirm", body).toAuthAccountSummary()
         }
 
     suspend fun identifyImage(
@@ -1381,6 +1449,34 @@ private fun JSONObject.toAuthTokenPair(): AuthTokenPair =
         refreshExpiresAt = getString("refresh_expires_at"),
         tokenType = optString("token_type", "Bearer"),
         sessionId = getString("session_id"),
+    )
+
+private fun JSONObject.toAuthRegistrationResult(): AuthRegistrationResult =
+    AuthRegistrationResult(
+        userId = getString("user_id"),
+        email = getString("email"),
+        verificationExpiresAt = getString("verification_expires_at"),
+    )
+
+private fun JSONObject.toAuthAccountSummary(): AuthAccountSummary =
+    AuthAccountSummary(
+        userId = getString("user_id"),
+        email = getString("email"),
+        emailVerifiedAt = optNullableString("email_verified_at"),
+    )
+
+private fun JSONObject.toAuthVerificationResendResult(): AuthVerificationResendResult =
+    AuthVerificationResendResult(
+        userId = getString("user_id"),
+        email = getString("email"),
+        verificationExpiresAt = getString("verification_expires_at"),
+        resendCount = getInt("resend_count"),
+    )
+
+private fun JSONObject.toAuthPasswordResetRequestResult(): AuthPasswordResetRequestResult =
+    AuthPasswordResetRequestResult(
+        accepted = optBoolean("accepted", false),
+        email = getString("email"),
     )
 
 private fun Int.toApiErrorKind(): ApiErrorKind =

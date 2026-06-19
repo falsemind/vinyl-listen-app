@@ -9,6 +9,30 @@ data class AuthTokenPair(
     val sessionId: String,
 )
 
+data class AuthRegistrationResult(
+    val userId: String,
+    val email: String,
+    val verificationExpiresAt: String,
+)
+
+data class AuthAccountSummary(
+    val userId: String,
+    val email: String,
+    val emailVerifiedAt: String?,
+)
+
+data class AuthVerificationResendResult(
+    val userId: String,
+    val email: String,
+    val verificationExpiresAt: String,
+    val resendCount: Int,
+)
+
+data class AuthPasswordResetRequestResult(
+    val accepted: Boolean,
+    val email: String,
+)
+
 sealed interface AuthStartupResult {
     data object Ready : AuthStartupResult
 

@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp
 
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,11 +14,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupResult
 import com.example.vinyllistenapp.data.auth.SharedPreferencesAuthSessionStore
 import com.example.vinyllistenapp.navigation.VinylNavHost
-import com.example.vinyllistenapp.ui.screens.AuthEntryScreen
+import com.example.vinyllistenapp.ui.screens.AuthFlowScreen
 import com.example.vinyllistenapp.ui.screens.AuthSplashScreen
 import com.example.vinyllistenapp.ui.screens.PasswordReentryRequiredScreen
 import kotlinx.coroutines.launch
@@ -35,6 +37,20 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 sessionStore = sessionStore,
                 refreshSession = apiClient::refreshAuthSession,
                 onAccessTokenChanged = apiClient::setAccessToken,
+            )
+        }
+    val authAccountRepository =
+        remember(apiClient, sessionStore) {
+            AuthAccountRepository(
+                sessionStore = sessionStore,
+                registerAccountRequest = apiClient::registerAccount,
+                verifyEmailRequest = apiClient::verifyEmail,
+                resendVerificationRequest = apiClient::resendEmailVerification,
+                loginRequest = apiClient::login,
+                passwordResetRequest = apiClient::requestPasswordReset,
+                passwordResetConfirmRequest = apiClient::confirmPasswordReset,
+                onAccessTokenChanged = apiClient::setAccessToken,
+                deviceLabelProvider = ::androidDeviceLabel,
             )
         }
     val coroutineScope = rememberCoroutineScope()
@@ -65,9 +81,9 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 modifier = modifier,
             )
         AuthGateUiState.NeedsAuth ->
-            AuthEntryScreen(
-                onCreateAccount = {},
-                onSignIn = {},
+            AuthFlowScreen(
+                authRepository = authAccountRepository,
+                onAuthenticated = { authState = AuthGateUiState.Ready },
                 modifier = modifier,
             )
         AuthGateUiState.NeedsPasswordReentry ->
@@ -112,3 +128,9 @@ private fun AuthStartupResult.toUiState(): AuthGateUiState =
         AuthStartupResult.NeedsPasswordReentry -> AuthGateUiState.NeedsPasswordReentry
         is AuthStartupResult.RetryableError -> AuthGateUiState.RetryableError(message)
     }
+
+private fun androidDeviceLabel(): String =
+    listOf(Build.MANUFACTURER, Build.MODEL)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { "Android" }
