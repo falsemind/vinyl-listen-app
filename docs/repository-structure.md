@@ -191,10 +191,10 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/deletion-audit foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: auth account/token/email/password handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: auth account/token/email/password/deletion handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -211,9 +211,12 @@ All routes are nested under `/api/v1`.
 | `POST /auth/login` | `api/routes/auth.py` | `AuthAccountService` plus `AuthTokenLifecycleService`. |
 | `POST /auth/refresh` | `api/routes/auth.py` | `AuthTokenLifecycleService`. |
 | `POST /auth/logout` | `api/routes/auth.py` | Current auth session revocation. |
+| `POST /auth/logout-all` | `api/routes/auth.py` | All-session revocation for the current account. |
 | `GET /auth/me` | `api/routes/auth.py` | Current account summary. |
 | `POST /auth/password-reset/request` | `api/routes/auth.py` | `AuthAccountService`. |
 | `POST /auth/password-reset/confirm` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/password/change` | `api/routes/auth.py` | `AuthAccountService`. |
+| `DELETE /auth/account` | `api/routes/auth.py` | `AuthAccountService`. |
 | `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard. |
 | `POST /identify/jobs` | `api/routes/identify.py` | User-owned `IdentifyJobService` with per-user/client admission control. |
 | `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | User-owned `IdentifyJobService`. |

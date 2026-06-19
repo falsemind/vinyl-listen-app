@@ -217,6 +217,10 @@ Rotates a valid refresh token and returns a new access/refresh token pair. Reuse
 
 Protected endpoint. Revokes the current auth session.
 
+## POST /auth/logout-all
+
+Protected endpoint. Revokes all active refresh sessions for the authenticated account, including the caller's current session.
+
 ## GET /auth/me
 
 Protected endpoint. Returns the current authenticated account summary.
@@ -228,6 +232,55 @@ Accepts an email address and sends a reset code when the account exists. Unknown
 ## POST /auth/password-reset/confirm
 
 Consumes a reset code, updates the password hash, and revokes existing sessions for that account.
+
+## POST /auth/password/change
+
+Protected endpoint. Verifies the current password, stores a fresh password hash, and revokes active refresh sessions. By default the caller's current session remains active; set `sign_out_everywhere` to revoke it too.
+
+### Request
+
+```json
+{
+  "current_password": "old-password",
+  "new_password": "new-password",
+  "sign_out_everywhere": false
+}
+```
+
+### Response
+
+```json
+{
+  "changed": true,
+  "revoked_sessions": 1
+}
+```
+
+Wrong current password returns `401 invalid_current_password`.
+
+## DELETE /auth/account
+
+Protected endpoint. Requires password re-authentication, hard-deletes the account and user-owned data, revokes/deletes auth state, and retains only a minimal deletion audit receipt.
+
+### Request
+
+```json
+{
+  "password": "correct-horse-battery-staple"
+}
+```
+
+### Response
+
+```json
+{
+  "deleted": true,
+  "deletion_receipt_id": "6d3958c3-27c0-4459-b8e5-cf3fc5e18f43",
+  "deleted_at": "2026-06-19T18:00:00Z"
+}
+```
+
+Wrong password returns `401 invalid_credentials`. After a successful deletion, existing access and refresh tokens are invalid and the client should clear local auth/cache state.
 
 ---
 

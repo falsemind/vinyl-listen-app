@@ -13,6 +13,7 @@ from app.api.routes.auth import get_auth_account_service, get_auth_token_lifecyc
 from app.database.session import get_db
 from app.main import app
 from app.models.auth import (
+    AccountDeletionAudit,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -29,6 +30,7 @@ from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashCo
 
 AUTH_TABLES = [
     UserAccount.__table__,
+    AccountDeletionAudit.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
@@ -239,3 +241,82 @@ def test_refresh_requires_password_after_inactivity(auth_api: AuthApiContext) ->
             "message": "Password re-entry is required after inactivity.",
         }
     }
+
+
+@pytest.mark.real_auth
+def test_password_change_and_logout_all_manage_sessions(auth_api: AuthApiContext) -> None:
+    first_login = _verified_login(auth_api, email="alex@example.com", password="old-password")
+    second_login = auth_api.client.post(
+        "/api/v1/auth/login",
+        json={"email": "alex@example.com", "password": "old-password", "device_label": "Backup"},
+    ).json()
+
+    wrong_response = auth_api.client.post(
+        "/api/v1/auth/password/change",
+        json={"current_password": "wrong-password", "new_password": "new-password"},
+        headers={"Authorization": f"Bearer {first_login['access_token']}"},
+    )
+    change_response = auth_api.client.post(
+        "/api/v1/auth/password/change",
+        json={"current_password": "old-password", "new_password": "new-password"},
+        headers={"Authorization": f"Bearer {first_login['access_token']}"},
+    )
+    revoked_refresh_response = auth_api.client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": second_login["refresh_token"]},
+    )
+    logout_all_response = auth_api.client.post(
+        "/api/v1/auth/logout-all",
+        headers={"Authorization": f"Bearer {first_login['access_token']}"},
+    )
+
+    assert wrong_response.status_code == 401
+    assert wrong_response.json()["error"]["code"] == "invalid_current_password"
+    assert change_response.status_code == 200
+    assert change_response.json() == {"changed": True, "revoked_sessions": 1}
+    assert revoked_refresh_response.status_code == 401
+    assert revoked_refresh_response.json()["error"]["code"] == "refresh_token_revoked"
+    assert logout_all_response.status_code == 200
+    assert logout_all_response.json() == {"revoked_sessions": 1}
+
+
+@pytest.mark.real_auth
+def test_delete_account_requires_password_and_invalidates_access(auth_api: AuthApiContext) -> None:
+    token_payload = _verified_login(auth_api, email="alex@example.com", password="password")
+
+    wrong_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account",
+        json={"password": "wrong-password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    delete_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account",
+        json={"password": "password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    protected_response = auth_api.client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+
+    assert wrong_response.status_code == 401
+    assert wrong_response.json()["error"]["code"] == "invalid_credentials"
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert delete_response.json()["deletion_receipt_id"]
+    assert protected_response.status_code == 401
+    assert protected_response.json()["error"]["code"] == "invalid_access_token"
+
+
+def _verified_login(auth_api: AuthApiContext, *, email: str, password: str) -> dict:
+    auth_api.client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    code = auth_api.email_sender.messages[-1].code
+    auth_api.client.post("/api/v1/auth/verify-email", json={"email": email, "code": code})
+    login_response = auth_api.client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login_response.status_code == 200
+    return login_response.json()

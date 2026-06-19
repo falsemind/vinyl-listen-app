@@ -6,7 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
+    AccountDeletionAudit,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -15,14 +17,24 @@ from app.models.auth import (
     UserAccount,
     UserEntitlement,
 )
+from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder, ReleaseCollectionMembership
+from app.models.collection_settings import CollectionSettings
+from app.models.collection_sync_job import CollectionSyncJob
+from app.models.identify_job import IdentifyJob
+from app.models.provider_integration import ProviderIntegration
+from app.models.releases import Releases
+from app.models.sessions import SessionGroups, Sessions, SessionTracks
+from app.models.spotify_listening import SpotifyArtistStats, SpotifyListeningImportBatch
 from app.repositories.auth_repository import AuthRepository
 from app.services.auth_account_service import (
     AuthAccountService,
+    DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
     EmailVerificationCodeConsumedError,
     EmailVerificationCodeExpiredError,
     EmailVerificationCodeInvalidError,
     EmailVerificationResendRateLimitedError,
+    PasswordChangeInvalidCurrentPasswordError,
     PasswordResetCodeConsumedError,
     PasswordResetRequestRateLimitedError,
 )
@@ -31,6 +43,7 @@ from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashCo
 
 AUTH_TABLES = [
     UserAccount.__table__,
+    AccountDeletionAudit.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
@@ -38,6 +51,25 @@ AUTH_TABLES = [
     UserEntitlement.__table__,
     UsageEvent.__table__,
 ]
+
+ACCOUNT_DELETE_TABLES = [
+    ProviderIntegration.__table__,
+    CollectionSettings.__table__,
+    CollectionFolder.__table__,
+    ReleaseCollectionMembership.__table__,
+    ReleaseCollectionFolder.__table__,
+    CollectionSyncJob.__table__,
+    IdentifyJob.__table__,
+    AiChatSession.__table__,
+    AiChatMessageRecord.__table__,
+    SpotifyListeningImportBatch.__table__,
+    SpotifyArtistStats.__table__,
+    SessionGroups.__table__,
+    Sessions.__table__,
+    SessionTracks.__table__,
+]
+
+_ = Releases.__table__
 
 FAST_HASH_CONFIG = PasswordHashConfig(
     time_cost=1,
@@ -336,6 +368,151 @@ def test_password_reset_confirm_accepts_newest_code_when_older_code_expires_late
     assert verification.is_valid is True
 
 
+def test_change_password_updates_hash_and_revokes_other_sessions(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+    clock: AuthTestClock,
+) -> None:
+    registration = service.register_account(db_session, email="alex@example.com", password="old-password")
+    user = repository.get_user_by_id(db_session, registration.user_id)
+    assert user is not None
+    current_session = repository.create_auth_session(
+        db_session,
+        session_id="session-current",
+        user_id=user.id,
+        refresh_token_hash="refresh-current",
+        last_activity_at=datetime(2026, 6, 18, 12),
+        expires_at=datetime(2026, 7, 18, 12),
+    )
+    other_session = repository.create_auth_session(
+        db_session,
+        session_id="session-other",
+        user_id=user.id,
+        refresh_token_hash="refresh-other",
+        last_activity_at=datetime(2026, 6, 18, 12),
+        expires_at=datetime(2026, 7, 18, 12),
+    )
+    clock.advance(timedelta(minutes=2))
+
+    result = service.change_password(
+        db_session,
+        user=user,
+        current_password="old-password",
+        new_password="new-password",
+        current_session_id=current_session.id,
+    )
+
+    verification = Argon2idPasswordHasher(FAST_HASH_CONFIG).verify_password(
+        password="new-password",
+        password_hash=result.user.password_hash,
+        algorithm=result.user.password_hash_algorithm,
+        version=result.user.password_hash_version,
+        params=result.user.password_hash_params,
+    )
+    assert verification.is_valid is True
+    assert result.revoked_sessions == 1
+    assert current_session.revoked_at is None
+    assert other_session.revoked_at == datetime(2026, 6, 18, 12, 2)
+    assert other_session.revoke_reason == "password_change"
+
+
+def test_change_password_can_sign_out_everywhere_and_rejects_wrong_current_password(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+    clock: AuthTestClock,
+) -> None:
+    registration = service.register_account(db_session, email="alex@example.com", password="old-password")
+    user = repository.get_user_by_id(db_session, registration.user_id)
+    assert user is not None
+    auth_session = repository.create_auth_session(
+        db_session,
+        session_id="session-current",
+        user_id=user.id,
+        refresh_token_hash="refresh-current",
+        last_activity_at=datetime(2026, 6, 18, 12),
+        expires_at=datetime(2026, 7, 18, 12),
+    )
+
+    with pytest.raises(PasswordChangeInvalidCurrentPasswordError):
+        service.change_password(
+            db_session,
+            user=user,
+            current_password="wrong-password",
+            new_password="new-password",
+            current_session_id=auth_session.id,
+        )
+
+    clock.advance(timedelta(minutes=3))
+    result = service.change_password(
+        db_session,
+        user=user,
+        current_password="old-password",
+        new_password="new-password",
+        current_session_id=auth_session.id,
+        sign_out_everywhere=True,
+    )
+
+    assert result.revoked_sessions == 1
+    assert auth_session.revoked_at == datetime(2026, 6, 18, 12, 3)
+    assert auth_session.revoke_reason == "password_change"
+
+
+def test_delete_account_requires_password_and_hard_deletes_owned_data(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+) -> None:
+    _create_account_delete_tables(db_session)
+    try:
+        registration = service.register_account(db_session, email="alex@example.com", password="password")
+        user = repository.get_user_by_id(db_session, registration.user_id)
+        assert user is not None
+
+        with pytest.raises(DeleteAccountInvalidPasswordError):
+            service.delete_account(db_session, user=user, password="wrong-password")
+
+        _seed_account_owned_data(db_session, repository=repository, user_id=user.id)
+        result = service.delete_account(db_session, user=user, password="password")
+
+        assert repository.get_user_by_id(db_session, user.id) is None
+        audit = db_session.query(AccountDeletionAudit).one()
+        assert audit.id == result.deletion_receipt_id
+        assert audit.event_type == "account_deleted"
+        assert set(AccountDeletionAudit.__table__.columns.keys()) == {
+            "id",
+            "event_type",
+            "requested_at",
+            "deleted_at",
+            "created_at",
+        }
+        for model in (
+            AuthSession,
+            ConsumedRefreshToken,
+            ProviderIntegration,
+            CollectionSettings,
+            ReleaseCollectionFolder,
+            ReleaseCollectionMembership,
+            CollectionFolder,
+            CollectionSyncJob,
+            IdentifyJob,
+            AiChatMessageRecord,
+            AiChatSession,
+            SpotifyListeningImportBatch,
+            SpotifyArtistStats,
+            SessionTracks,
+            Sessions,
+            SessionGroups,
+            UsageEvent,
+            UserEntitlement,
+            EmailVerificationCode,
+        ):
+            assert db_session.query(model).count() == 0
+    finally:
+        _drop_account_delete_tables(db_session)
+
+
 def test_local_dev_email_sender_writes_jsonl_outbox(tmp_path) -> None:
     outbox_path = tmp_path / "auth-outbox.jsonl"
     sender = LocalDevEmailSender(outbox_path)
@@ -361,6 +538,136 @@ def test_local_dev_email_sender_writes_jsonl_outbox(tmp_path) -> None:
             "to_email": "alex@example.com",
         }
     ]
+
+
+def _create_account_delete_tables(db_session: Session) -> None:
+    bind = db_session.get_bind()
+    for table in ACCOUNT_DELETE_TABLES:
+        table.create(bind, checkfirst=True)
+
+
+def _drop_account_delete_tables(db_session: Session) -> None:
+    bind = db_session.get_bind()
+    for table in reversed(ACCOUNT_DELETE_TABLES):
+        table.drop(bind, checkfirst=True)
+
+
+def _seed_account_owned_data(db_session: Session, *, repository: AuthRepository, user_id: str) -> None:
+    now = datetime(2026, 6, 18, 12, tzinfo=UTC)
+    auth_session = repository.create_auth_session(
+        db_session,
+        session_id="session-delete",
+        user_id=user_id,
+        refresh_token_hash="refresh-delete",
+        last_activity_at=now,
+        expires_at=now + timedelta(days=30),
+        commit=False,
+    )
+    repository.create_consumed_refresh_token(
+        db_session,
+        session_id=auth_session.id,
+        user_id=user_id,
+        refresh_token_hash="consumed-refresh-delete",
+        consumed_at=now,
+        expires_at=now + timedelta(days=30),
+        commit=False,
+    )
+    repository.ensure_entitlement(db_session, user_id=user_id, commit=False)
+    repository.record_usage_event(
+        db_session,
+        user_id=user_id,
+        capability="ocr_identify",
+        occurred_at=now,
+        commit=False,
+    )
+
+    folder = CollectionFolder(user_id=user_id, discogs_folder_id=1, name="All", is_default=True)
+    chat_session = AiChatSession(
+        id="chat-delete",
+        user_id=user_id,
+        public_conversation_id="conversation-delete",
+        created_at=now,
+        updated_at=now,
+    )
+    session_group = SessionGroups(
+        id="group-delete",
+        user_id=user_id,
+        status="active",
+        style_focus="mixed",
+        mood_direction="steady_mood",
+        session_type="casual_listening",
+        started_at=now,
+    )
+    listening_session = Sessions(
+        id="listen-delete",
+        release_id="release-delete",
+        user_id=user_id,
+        session_group_id=session_group.id,
+        played_at=now,
+    )
+    db_session.add_all(
+        [
+            ProviderIntegration(
+                provider="discogs",
+                user_id=user_id,
+                access_token_ciphertext="encrypted-token",
+                external_user_id="discogs-user",
+                external_username="alex",
+            ),
+            CollectionSettings(user_id=user_id, source_of_truth="DISCOGS"),
+            folder,
+            ReleaseCollectionMembership(user_id=user_id, release_id="release-delete", in_collection=True),
+            CollectionSyncJob(
+                id="sync-delete",
+                user_id=user_id,
+                status="queued",
+                message="Queued",
+                expires_at=now + timedelta(hours=1),
+            ),
+            IdentifyJob(
+                id="identify-delete",
+                user_id=user_id,
+                status="queued",
+                message="Queued",
+                filename="cover.jpg",
+                content_type="image/jpeg",
+                expires_at=now + timedelta(hours=1),
+            ),
+            chat_session,
+            AiChatMessageRecord(conversation_id=chat_session.id, role="user", content="hello"),
+            SpotifyListeningImportBatch(
+                id="spotify-batch-delete",
+                user_id=user_id,
+                source_paths=["spotify.json"],
+                status="completed",
+            ),
+            SpotifyArtistStats(
+                stat_key="spotify-artist-delete",
+                user_id=user_id,
+                normalized_artist_name="artist",
+                artist_name="Artist",
+                play_count=1,
+                meaningful_play_count=1,
+                skipped_count=0,
+                total_ms_played=180000,
+                first_played_at=now,
+                last_played_at=now,
+            ),
+            session_group,
+            listening_session,
+            SessionTracks(session_id=listening_session.id, track_position="A1", track_title="Track"),
+        ]
+    )
+    db_session.flush()
+    db_session.add(
+        ReleaseCollectionFolder(
+            user_id=user_id,
+            release_id="release-delete",
+            collection_folder_id=folder.id,
+            discogs_instance_id=123,
+        )
+    )
+    db_session.commit()
 
 
 def _service(

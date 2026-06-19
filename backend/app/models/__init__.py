@@ -1,5 +1,6 @@
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
+    AccountDeletionAudit,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -33,6 +34,7 @@ from app.models.spotify_listening import (
 __all__ = [
     "AiChatMessageRecord",
     "AiChatSession",
+    "AccountDeletionAudit",
     "AuthSession",
     "ConsumedRefreshToken",
     "CollectionFolder",

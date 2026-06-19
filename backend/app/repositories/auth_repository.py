@@ -1,9 +1,12 @@
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy import delete, inspect, select
 from sqlalchemy.orm import Session
 
+from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
+    AccountDeletionAudit,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -11,6 +14,24 @@ from app.models.auth import (
     UsageEvent,
     UserAccount,
     UserEntitlement,
+)
+from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder, ReleaseCollectionMembership
+from app.models.collection_settings import CollectionSettings
+from app.models.collection_sync_job import CollectionSyncJob
+from app.models.identify_job import IdentifyJob
+from app.models.provider_integration import ProviderIntegration
+from app.models.sessions import SessionGroups, Sessions, SessionTracks
+from app.models.spotify_listening import (
+    SpotifyAlbumStats,
+    SpotifyArtistStats,
+    SpotifyHourlyStats,
+    SpotifyListeningEvent,
+    SpotifyListeningImportBatch,
+    SpotifyMonthlyArtistStats,
+    SpotifySkipStats,
+    SpotifyTrackStats,
+    SpotifyVinylArtistMatch,
+    SpotifyVinylReleaseMatch,
 )
 
 
@@ -148,11 +169,13 @@ class AuthRepository:
         user_id: str,
         revoked_at: datetime,
         reason: str,
+        except_session_id: str | None = None,
         commit: bool = True,
     ) -> int:
-        sessions = (
-            db.query(AuthSession).filter(AuthSession.user_id == user_id).filter(AuthSession.revoked_at.is_(None)).all()
-        )
+        query = db.query(AuthSession).filter(AuthSession.user_id == user_id).filter(AuthSession.revoked_at.is_(None))
+        if except_session_id is not None:
+            query = query.filter(AuthSession.id != except_session_id)
+        sessions = query.all()
         for auth_session in sessions:
             auth_session.revoked_at = revoked_at
             auth_session.revoke_reason = reason
@@ -375,9 +398,121 @@ class AuthRepository:
         )
         return _persist(db, event, commit=commit)
 
+    def create_account_deletion_audit(
+        self,
+        db: Session,
+        *,
+        requested_at: datetime,
+        deleted_at: datetime,
+        audit_id: str | None = None,
+        commit: bool = True,
+    ) -> AccountDeletionAudit:
+        audit = AccountDeletionAudit(
+            id=audit_id or _new_id(),
+            event_type="account_deleted",
+            requested_at=requested_at,
+            deleted_at=deleted_at,
+        )
+        return _persist(db, audit, commit=commit)
+
+    def delete_user_account_and_owned_data(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        requested_at: datetime,
+        deleted_at: datetime,
+        audit_id: str | None = None,
+        commit: bool = True,
+    ) -> AccountDeletionAudit:
+        self._delete_user_owned_data(db, user_id=user.id)
+        audit = self.create_account_deletion_audit(
+            db,
+            requested_at=requested_at,
+            deleted_at=deleted_at,
+            audit_id=audit_id,
+            commit=False,
+        )
+        db.delete(user)
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return audit
+
+    def _delete_user_owned_data(self, db: Session, *, user_id: str) -> None:
+        existing_tables = _existing_table_names(db)
+
+        if _table_exists(existing_tables, AiChatMessageRecord) and _table_exists(existing_tables, AiChatSession):
+            db.execute(
+                delete(AiChatMessageRecord).where(
+                    AiChatMessageRecord.conversation_id.in_(
+                        select(AiChatSession.id).where(AiChatSession.user_id == user_id)
+                    )
+                )
+            )
+        if _table_exists(existing_tables, SessionTracks) and _table_exists(existing_tables, Sessions):
+            db.execute(
+                delete(SessionTracks).where(
+                    SessionTracks.session_id.in_(select(Sessions.id).where(Sessions.user_id == user_id))
+                )
+            )
+
+        for model in (
+            ConsumedRefreshToken,
+            EmailVerificationCode,
+            PasswordResetCode,
+            UsageEvent,
+            UserEntitlement,
+            ProviderIntegration,
+            CollectionSettings,
+            ReleaseCollectionFolder,
+            ReleaseCollectionMembership,
+            CollectionFolder,
+            CollectionSyncJob,
+            IdentifyJob,
+            SpotifyVinylReleaseMatch,
+            SpotifyVinylArtistMatch,
+            SpotifySkipStats,
+            SpotifyMonthlyArtistStats,
+            SpotifyHourlyStats,
+            SpotifyTrackStats,
+            SpotifyAlbumStats,
+            SpotifyArtistStats,
+            SpotifyListeningEvent,
+            SpotifyListeningImportBatch,
+            AiChatSession,
+            Sessions,
+            SessionGroups,
+            AuthSession,
+        ):
+            _delete_model_by_user_id(db, model, user_id=user_id, existing_tables=existing_tables)
+
+        db.flush()
+
 
 def _new_id() -> str:
     return str(uuid4())
+
+
+def _existing_table_names(db: Session) -> set[str]:
+    return set(inspect(db.connection()).get_table_names())
+
+
+def _table_exists(existing_tables: set[str], model: type) -> bool:
+    return model.__table__.name in existing_tables
+
+
+def _delete_model_by_user_id(
+    db: Session,
+    model: type,
+    *,
+    user_id: str,
+    existing_tables: set[str],
+) -> None:
+    if not _table_exists(existing_tables, model):
+        return
+    db.execute(delete(model).where(model.user_id == user_id))
 
 
 def _persist[T](db: Session, model: T, *, commit: bool) -> T:

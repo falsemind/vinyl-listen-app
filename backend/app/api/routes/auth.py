@@ -14,8 +14,13 @@ from app.database.session import get_db
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.auth import (
     AuthErrorResponse,
+    DeleteAccountRequest,
+    DeleteAccountResponse,
     LoginRequest,
+    LogoutAllResponse,
     LogoutResponse,
+    PasswordChangeRequest,
+    PasswordChangeResponse,
     PasswordResetConfirmRequest,
     PasswordResetRequestRequest,
     PasswordResetRequestResponse,
@@ -30,11 +35,13 @@ from app.schemas.auth import (
 )
 from app.services.auth_account_service import (
     AuthAccountService,
+    DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
     EmailVerificationCodeConsumedError,
     EmailVerificationCodeExpiredError,
     EmailVerificationCodeInvalidError,
     EmailVerificationResendRateLimitedError,
+    PasswordChangeInvalidCurrentPasswordError,
     PasswordResetCodeConsumedError,
     PasswordResetCodeExpiredError,
     PasswordResetCodeInvalidError,
@@ -253,6 +260,24 @@ def logout(
     return LogoutResponse(revoked=True)
 
 
+@router.post(
+    "/logout-all",
+    response_model=LogoutAllResponse,
+)
+def logout_all(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    repository: Annotated[AuthRepository, Depends(get_auth_repository)],
+) -> LogoutAllResponse:
+    revoked_sessions = repository.revoke_user_sessions(
+        db,
+        user_id=current_user.account.id,
+        revoked_at=datetime.now(UTC),
+        reason="logout_all",
+    )
+    return LogoutAllResponse(revoked_sessions=revoked_sessions)
+
+
 @router.get(
     "/me",
     response_model=UserAccountResponse,
@@ -320,6 +345,67 @@ def confirm_password_reset(
         )
 
     return _account_response(user_id=user.id, email=user.email, email_verified_at=user.email_verified_at)
+
+
+@router.post(
+    "/password/change",
+    response_model=PasswordChangeResponse,
+    responses={401: {"model": AuthErrorResponse}},
+)
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    account_service: Annotated[AuthAccountService, Depends(get_auth_account_service)],
+) -> PasswordChangeResponse:
+    try:
+        result = account_service.change_password(
+            db,
+            user=current_user.account,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+            current_session_id=current_user.claims.session_id,
+            sign_out_everywhere=payload.sign_out_everywhere,
+        )
+    except PasswordChangeInvalidCurrentPasswordError:
+        raise_auth_error(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="invalid_current_password",
+            message="Current password is invalid.",
+        )
+
+    return PasswordChangeResponse(changed=True, revoked_sessions=result.revoked_sessions)
+
+
+@router.delete(
+    "/account",
+    response_model=DeleteAccountResponse,
+    responses={401: {"model": AuthErrorResponse}},
+)
+def delete_account(
+    payload: DeleteAccountRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    account_service: Annotated[AuthAccountService, Depends(get_auth_account_service)],
+) -> DeleteAccountResponse:
+    try:
+        result = account_service.delete_account(
+            db,
+            user=current_user.account,
+            password=payload.password,
+        )
+    except DeleteAccountInvalidPasswordError:
+        raise_auth_error(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="invalid_credentials",
+            message="Password is invalid.",
+        )
+
+    return DeleteAccountResponse(
+        deleted=True,
+        deletion_receipt_id=result.deletion_receipt_id,
+        deleted_at=result.deleted_at,
+    )
 
 
 def _account_response(*, user_id: str, email: str, email_verified_at) -> UserAccountResponse:

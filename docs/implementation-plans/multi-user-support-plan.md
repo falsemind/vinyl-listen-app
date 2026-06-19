@@ -192,11 +192,9 @@ Add versioned endpoints for:
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/password-reset/request`
 - `POST /api/v1/auth/password-reset/confirm`
-
-Later account-management endpoints:
-
 - `POST /api/v1/auth/password/change`
-- `DELETE /api/v1/account`
+- `POST /api/v1/auth/logout-all`
+- `DELETE /api/v1/auth/account`
 
 ### Authorization
 
@@ -354,10 +352,13 @@ Implementation note: the Phase 5c migration backfills legacy async/AI/Spotify ro
 
 ### Phase 6: Account Management And Deletion
 
-- Add password change, sign out, sign out everywhere, password reset, and account deletion flows.
-- Account deletion hard-deletes user-owned data and provider tokens while retaining minimal audit records only.
+- Add password change, sign out, sign out everywhere, and account deletion flows on top of the existing password reset flow.
+- Password change requires the current password, writes a fresh Argon2id hash, and revokes every active refresh session except the current session unless `sign_out_everywhere` is requested.
+- Sign out everywhere revokes all active refresh sessions for the account, including the caller's session.
+- Account deletion requires password re-authentication and hard-deletes user-owned data, auth sessions, refresh-token reuse state, provider tokens, collection settings, collection memberships/folders, collection sync jobs, identify jobs, AI chat history, Spotify imports/rollups, listening sessions, usage events, and entitlement rows.
+- Account deletion retains only a minimal deletion audit receipt with deletion request id, event type, request timestamp, and deletion timestamp. It must not retain email, provider tokens, collection contents, listening history, notes, prompts, analytics inputs, or other user-owned payloads.
 - Shared Discogs/catalog metadata can remain only when no user-owned data remains attached.
-- Done when deletion tests prove collection, sessions, analytics, AI history, manual releases, associations, integrations, sessions, and local token state contracts are removed or revoked.
+- Done when account-management API tests cover password-change revocation, sign-out-everywhere revocation, wrong-password deletion rejection, successful deletion receipt, invalidated access, and deletion tests prove user-owned backend rows are removed while the minimal audit receipt remains.
 
 ### Phase 7: Entitlement And Usage-Counter Foundation
 

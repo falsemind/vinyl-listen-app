@@ -132,7 +132,7 @@ spotify_listening_import_batches
 
 # Auth Tables
 
-Auth tables support account bootstrap, email verification, password reset, token-backed sessions, and future entitlement/usage gates. Some user-owned data now has nullable owner columns for legacy compatibility; the full collection-membership split remains a later multi-user phase.
+Auth tables support account bootstrap, email verification, password reset, token-backed sessions, account deletion receipts, and future entitlement/usage gates. Some user-owned data has nullable owner columns for legacy compatibility, but active multi-user flows must filter by the authenticated owner.
 
 ## Table: user_accounts
 
@@ -248,6 +248,18 @@ Append-only foundation for future feature usage limits, starting with OCR/identi
 | occurred_at | TIMESTAMP | Event time |
 | event_metadata | JSONB | Optional structured metadata |
 | created_at | TIMESTAMP | Row creation time |
+
+## Table: account_deletion_audits
+
+Minimal receipt table retained after hard account deletion. It intentionally does not store email, provider tokens, collection contents, listening history, prompts, analytics inputs, or other user-owned payloads.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Deletion receipt/request id |
+| event_type | VARCHAR | Current value is `account_deleted` |
+| requested_at | TIMESTAMP | Password-confirmed deletion request time |
+| deleted_at | TIMESTAMP | Hard deletion completion time |
+| created_at | TIMESTAMP | Audit row creation time |
 
 ---
 

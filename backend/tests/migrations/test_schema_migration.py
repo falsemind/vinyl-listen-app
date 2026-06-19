@@ -91,3 +91,5 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE TABLE user_entitlements" in sql
     assert "CREATE TABLE usage_events" in sql
     assert "CREATE INDEX idx_usage_events_capability" in sql
+    assert "CREATE TABLE account_deletion_audits" in sql
+    assert "CREATE INDEX idx_account_deletion_audits_deleted_at" in sql

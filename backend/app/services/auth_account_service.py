@@ -70,6 +70,14 @@ class SignInEmailNotVerifiedError(AuthAccountError):
     pass
 
 
+class PasswordChangeInvalidCurrentPasswordError(AuthAccountError):
+    pass
+
+
+class DeleteAccountInvalidPasswordError(AuthAccountError):
+    pass
+
+
 @dataclass(frozen=True)
 class RegisterAccountResult:
     user_id: str
@@ -94,6 +102,18 @@ class PasswordResetRequestResult:
 @dataclass(frozen=True)
 class SignInResult:
     user: UserAccount
+
+
+@dataclass(frozen=True)
+class PasswordChangeResult:
+    user: UserAccount
+    revoked_sessions: int
+
+
+@dataclass(frozen=True)
+class DeleteAccountResult:
+    deletion_receipt_id: str
+    deleted_at: datetime
 
 
 class AuthAccountService:
@@ -304,6 +324,65 @@ class AuthAccountService:
         db.refresh(user)
         return user
 
+    def change_password(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        current_password: str,
+        new_password: str,
+        current_session_id: str,
+        sign_out_everywhere: bool = False,
+    ) -> PasswordChangeResult:
+        if not self._verify_password(user=user, password=current_password):
+            raise PasswordChangeInvalidCurrentPasswordError("current password is invalid.")
+
+        now = self._now_provider()
+        password_hash = self._password_hasher.hash_password(new_password)
+        self._repository.update_password_hash(
+            db,
+            user=user,
+            password_hash=password_hash.password_hash,
+            password_hash_algorithm=password_hash.algorithm,
+            password_hash_version=password_hash.version,
+            password_hash_params=password_hash.params,
+            commit=False,
+        )
+        revoked_sessions = self._repository.revoke_user_sessions(
+            db,
+            user_id=user.id,
+            revoked_at=now,
+            reason="password_change",
+            except_session_id=None if sign_out_everywhere else current_session_id,
+            commit=False,
+        )
+        db.commit()
+        db.refresh(user)
+        return PasswordChangeResult(user=user, revoked_sessions=revoked_sessions)
+
+    def delete_account(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        password: str,
+    ) -> DeleteAccountResult:
+        if not self._verify_password(user=user, password=password):
+            raise DeleteAccountInvalidPasswordError("password is invalid.")
+
+        now = self._now_provider()
+        audit = self._repository.delete_user_account_and_owned_data(
+            db,
+            user=user,
+            requested_at=now,
+            deleted_at=now,
+            commit=False,
+        )
+        deletion_receipt_id = audit.id
+        deleted_at = audit.deleted_at
+        db.commit()
+        return DeleteAccountResult(deletion_receipt_id=deletion_receipt_id, deleted_at=deleted_at)
+
     def _create_email_verification_code(
         self,
         db: Session,
@@ -361,6 +440,16 @@ class AuthAccountService:
     def _hash_code(self, purpose: str, email: str, code: str) -> str:
         payload = f"{purpose}:{normalize_email(email)}:{code}".encode()
         return hmac.new(self._code_hash_secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+    def _verify_password(self, *, user: UserAccount, password: str) -> bool:
+        verification = self._password_hasher.verify_password(
+            password=password,
+            password_hash=user.password_hash,
+            algorithm=user.password_hash_algorithm,
+            version=user.password_hash_version,
+            params=user.password_hash_params,
+        )
+        return verification.is_valid
 
     def _send_email_verification_code(self, email: str, code: str) -> None:
         self._email_sender.send(

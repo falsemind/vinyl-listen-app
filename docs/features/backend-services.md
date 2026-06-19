@@ -9,7 +9,7 @@ description: This document explains the backend service layer in `backend/app/se
 
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
-| `auth_account_service.py` | Register accounts, verify email codes, sign in with password, resend verification, and run password reset flows. | `AuthRepository`, `Argon2idPasswordHasher`, auth email sender. |
+| `auth_account_service.py` | Register accounts, verify email codes, sign in with password, resend verification, run password reset/change flows, and delete accounts after password re-authentication. | `AuthRepository`, `Argon2idPasswordHasher`, auth email sender. |
 | `auth_token_service.py` | Issue access tokens, rotate refresh tokens, detect refresh-token reuse, and enforce inactivity re-auth. | `AuthRepository`, `AccessTokenService`, `consumed_refresh_tokens`. |
 | `auth_email_delivery.py` | Send auth verification/reset messages through local JSONL outbox or Mailgun Provider API. | Auth account service, Mailgun configuration, local outbox path. |
 | `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
@@ -39,6 +39,8 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 3. `resend_email_verification` issues a new code after the configured cooldown.
 4. `sign_in_with_password` verifies the stored password hash and blocks sign-in until email verification is complete.
 5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions.
+6. `change_password` verifies the current password, stores a fresh Argon2id hash, and revokes other active sessions unless sign-out-everywhere is requested.
+7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state, and retains only a minimal deletion audit receipt.
 
 `AuthTokenLifecycleService` owns session tokens:
 
