@@ -197,6 +197,42 @@ def test_create_and_consume_email_verification_code(db_session: Session) -> None
     assert code.consumed_at == consumed_at
 
 
+def test_record_email_verification_failed_attempt_locks_at_limit(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+    code = repository.create_email_verification_code(
+        db_session,
+        code_id="code-1",
+        user_id="user-1",
+        code_hash="email-code-hash",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 12) + timedelta(minutes=10),
+    )
+    locked_until = datetime(2026, 6, 17, 12, 5)
+
+    repository.record_email_verification_failed_attempt(
+        db_session,
+        code=code,
+        attempt_limit=2,
+        lock_until=locked_until,
+    )
+    repository.record_email_verification_failed_attempt(
+        db_session,
+        code=code,
+        attempt_limit=2,
+        lock_until=locked_until,
+    )
+
+    assert code.failed_attempt_count == 2
+    assert code.failed_attempt_limited_until == locked_until
+
+
 def test_get_latest_email_verification_code_orders_by_issue_time(db_session: Session) -> None:
     repository = AuthRepository()
     repository.create_user_account(
@@ -256,6 +292,36 @@ def test_create_and_consume_password_reset_code(db_session: Session) -> None:
     repository.consume_password_reset_code(db_session, code=code, consumed_at=consumed_at)
 
     assert code.consumed_at == consumed_at
+
+
+def test_record_password_reset_failed_attempt_locks_at_limit(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+    code = repository.create_password_reset_code(
+        db_session,
+        code_id="reset-1",
+        user_id="user-1",
+        code_hash="reset-code-hash",
+        sent_to_email="alex@example.com",
+        expires_at=datetime(2026, 6, 17, 12) + timedelta(minutes=15),
+    )
+    locked_until = datetime(2026, 6, 17, 12, 5)
+
+    repository.record_password_reset_failed_attempt(
+        db_session,
+        code=code,
+        attempt_limit=1,
+        lock_until=locked_until,
+    )
+
+    assert code.failed_attempt_count == 1
+    assert code.failed_attempt_limited_until == locked_until
 
 
 def test_sum_usage_units_filters_by_user_capability_and_window(db_session: Session) -> None:

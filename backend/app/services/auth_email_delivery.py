@@ -47,14 +47,17 @@ class LocalDevEmailSender:
         return self._outbox_path
 
     def send(self, message: AuthEmailMessage) -> None:
-        self._outbox_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "sent_at": datetime.now(UTC).isoformat(),
-            **asdict(message),
-        }
-        with self._outbox_path.open("a", encoding="utf-8") as outbox:
-            outbox.write(json.dumps(payload, sort_keys=True))
-            outbox.write("\n")
+        try:
+            self._outbox_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "sent_at": datetime.now(UTC).isoformat(),
+                **asdict(message),
+            }
+            with self._outbox_path.open("a", encoding="utf-8") as outbox:
+                outbox.write(json.dumps(payload, sort_keys=True))
+                outbox.write("\n")
+        except OSError as exc:
+            raise AuthEmailDeliveryError("Local auth email delivery failed.") from exc
         logger.info(
             "Auth email written to local outbox path=%s purpose=%s to=%s",
             self._outbox_path,

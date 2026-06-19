@@ -32,12 +32,15 @@ from app.services.auth_account_service import (
     AuthAccountService,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
+    EmailVerificationAttemptRateLimitedError,
     EmailVerificationCodeConsumedError,
     EmailVerificationCodeExpiredError,
     EmailVerificationCodeInvalidError,
     EmailVerificationResendRateLimitedError,
     PasswordChangeInvalidCurrentPasswordError,
+    PasswordResetAttemptRateLimitedError,
     PasswordResetCodeConsumedError,
+    PasswordResetCodeInvalidError,
     PasswordResetRequestRateLimitedError,
 )
 from app.services.auth_email_delivery import (
@@ -230,6 +233,40 @@ def test_verify_email_rejects_invalid_expired_and_consumed_codes(
         service.verify_email(db_session, email="sam@example.com", code=sam_code)
 
 
+def test_verify_email_rate_limits_repeated_wrong_codes_per_account(
+    db_session: Session,
+    repository: AuthRepository,
+    email_sender: RecordingEmailSender,
+    clock: AuthTestClock,
+) -> None:
+    limited_service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        code_failed_attempt_limit=2,
+        code_failed_attempt_lock=timedelta(minutes=5),
+    )
+    result = limited_service.register_account(db_session, email="alex@example.com", password="password")
+    correct_code = email_sender.messages[0].code
+
+    with pytest.raises(EmailVerificationCodeInvalidError):
+        limited_service.verify_email(db_session, email="alex@example.com", code="000000")
+    with pytest.raises(EmailVerificationCodeInvalidError):
+        limited_service.verify_email(db_session, email="alex@example.com", code="111111")
+    with pytest.raises(EmailVerificationAttemptRateLimitedError):
+        limited_service.verify_email(db_session, email="alex@example.com", code=correct_code)
+
+    latest_code = repository.get_latest_email_verification_code(db_session, user_id=result.user_id)
+    assert latest_code is not None
+    assert latest_code.failed_attempt_count == 2
+    assert latest_code.failed_attempt_limited_until == datetime(2026, 6, 18, 12, 5)
+
+    clock.advance(timedelta(minutes=5, seconds=1))
+    account = limited_service.verify_email(db_session, email="alex@example.com", code=correct_code)
+
+    assert account.email_verified_at == datetime(2026, 6, 18, 12, 5, 1)
+
+
 def test_resend_email_verification_rate_limits_and_sends_new_code(
     db_session: Session,
     service: AuthAccountService,
@@ -294,6 +331,85 @@ def test_password_reset_request_is_rate_limited_and_replaces_previous_code_after
             code=first_reset_code,
             new_password="new-password",
         )
+
+
+def test_password_reset_request_is_generic_when_delivery_fails(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+) -> None:
+    setup_sender = RecordingEmailSender()
+    setup_service = _service(repository=repository, clock=clock, email_sender=setup_sender)
+    setup_service.register_account(db_session, email="alex@example.com", password="password")
+    failing_service = _service(repository=repository, clock=clock, email_sender=FailingEmailSender())
+
+    result = failing_service.request_password_reset(db_session, email="alex@example.com")
+
+    assert result.accepted is True
+    assert result.email == "alex@example.com"
+    assert len(setup_sender.messages) == 1
+
+
+def test_password_reset_confirm_rate_limits_repeated_wrong_codes_per_account(
+    db_session: Session,
+    repository: AuthRepository,
+    email_sender: RecordingEmailSender,
+    clock: AuthTestClock,
+) -> None:
+    limited_service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        code_failed_attempt_limit=2,
+        code_failed_attempt_lock=timedelta(minutes=5),
+    )
+    registration = limited_service.register_account(db_session, email="alex@example.com", password="old-password")
+    limited_service.request_password_reset(db_session, email="alex@example.com")
+    correct_code = email_sender.messages[1].code
+
+    with pytest.raises(PasswordResetCodeInvalidError):
+        limited_service.confirm_password_reset(
+            db_session,
+            email="alex@example.com",
+            code="000000",
+            new_password="new-password",
+        )
+    with pytest.raises(PasswordResetCodeInvalidError):
+        limited_service.confirm_password_reset(
+            db_session,
+            email="alex@example.com",
+            code="111111",
+            new_password="new-password",
+        )
+    with pytest.raises(PasswordResetAttemptRateLimitedError):
+        limited_service.confirm_password_reset(
+            db_session,
+            email="alex@example.com",
+            code=correct_code,
+            new_password="new-password",
+        )
+
+    latest_code = repository.get_latest_password_reset_code(db_session, user_id=registration.user_id)
+    assert latest_code is not None
+    assert latest_code.failed_attempt_count == 2
+    assert latest_code.failed_attempt_limited_until == datetime(2026, 6, 18, 12, 5)
+
+    clock.advance(timedelta(minutes=5, seconds=1))
+    account = limited_service.confirm_password_reset(
+        db_session,
+        email="alex@example.com",
+        code=correct_code,
+        new_password="new-password",
+    )
+
+    verification = Argon2idPasswordHasher(FAST_HASH_CONFIG).verify_password(
+        password="new-password",
+        password_hash=account.password_hash,
+        algorithm=account.password_hash_algorithm,
+        version=account.password_hash_version,
+        params=account.password_hash_params,
+    )
+    assert verification.is_valid is True
 
 
 def test_password_reset_confirm_updates_password_and_revokes_sessions(
@@ -565,6 +681,7 @@ def test_delete_account_requires_password_and_hard_deletes_owned_data(
             "created_at",
         }
         for model in (
+            AuthAuditEvent,
             AuthSession,
             ConsumedRefreshToken,
             ProviderIntegration,
@@ -755,6 +872,8 @@ def _service(
     clock: AuthTestClock,
     email_sender: AuthEmailSender,
     password_reset_code_ttl: timedelta = timedelta(minutes=15),
+    code_failed_attempt_limit: int = 5,
+    code_failed_attempt_lock: timedelta = timedelta(minutes=5),
 ) -> AuthAccountService:
     return AuthAccountService(
         repository=repository,
@@ -765,4 +884,6 @@ def _service(
         verification_code_ttl=timedelta(minutes=15),
         password_reset_code_ttl=password_reset_code_ttl,
         resend_cooldown=timedelta(seconds=60),
+        code_failed_attempt_limit=code_failed_attempt_limit,
+        code_failed_attempt_lock=code_failed_attempt_lock,
     )

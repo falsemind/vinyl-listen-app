@@ -225,6 +225,8 @@ Indexes include `idx_auth_audit_events_user_time` and `idx_auth_audit_events_eve
 | consumed_at | TIMESTAMP | Null until used |
 | resend_count | INTEGER | Number of resend attempts in the flow |
 | rate_limited_until | TIMESTAMP | Resend cooldown boundary |
+| failed_attempt_count | INTEGER | Wrong-code attempts against this code |
+| failed_attempt_limited_until | TIMESTAMP | Per-account wrong-code lockout boundary |
 | created_at | TIMESTAMP | Issue time used for latest-code semantics |
 
 ## Table: password_reset_codes
@@ -237,6 +239,8 @@ Indexes include `idx_auth_audit_events_user_time` and `idx_auth_audit_events_eve
 | sent_to_email | VARCHAR | Recipient email |
 | expires_at | TIMESTAMP | Code expiry |
 | consumed_at | TIMESTAMP | Null until used or superseded |
+| failed_attempt_count | INTEGER | Wrong-code attempts against this code |
+| failed_attempt_limited_until | TIMESTAMP | Per-account wrong-code lockout boundary |
 | created_at | TIMESTAMP | Issue time used for latest-code semantics |
 
 ## Table: user_entitlements

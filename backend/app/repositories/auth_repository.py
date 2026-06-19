@@ -306,6 +306,20 @@ class AuthRepository:
         code.consumed_at = consumed_at
         return _persist(db, code, commit=commit)
 
+    def record_email_verification_failed_attempt(
+        self,
+        db: Session,
+        *,
+        code: EmailVerificationCode,
+        attempt_limit: int,
+        lock_until: datetime | None = None,
+        commit: bool = True,
+    ) -> EmailVerificationCode:
+        code.failed_attempt_count += 1
+        if code.failed_attempt_count >= attempt_limit:
+            code.failed_attempt_limited_until = lock_until
+        return _persist(db, code, commit=commit)
+
     def create_password_reset_code(
         self,
         db: Session,
@@ -358,6 +372,20 @@ class AuthRepository:
         commit: bool = True,
     ) -> PasswordResetCode:
         code.consumed_at = consumed_at
+        return _persist(db, code, commit=commit)
+
+    def record_password_reset_failed_attempt(
+        self,
+        db: Session,
+        *,
+        code: PasswordResetCode,
+        attempt_limit: int,
+        lock_until: datetime | None = None,
+        commit: bool = True,
+    ) -> PasswordResetCode:
+        code.failed_attempt_count += 1
+        if code.failed_attempt_count >= attempt_limit:
+            code.failed_attempt_limited_until = lock_until
         return _persist(db, code, commit=commit)
 
     def consume_unconsumed_password_reset_codes(
@@ -513,6 +541,7 @@ class AuthRepository:
             )
 
         for model in (
+            AuthAuditEvent,
             ConsumedRefreshToken,
             EmailVerificationCode,
             PasswordResetCode,

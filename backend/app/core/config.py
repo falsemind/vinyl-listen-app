@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     auth_email_verification_code_ttl_minutes: int = 15
     auth_password_reset_code_ttl_minutes: int = 15
     auth_email_resend_cooldown_seconds: int = 60
+    auth_code_failed_attempt_limit: int = Field(default=5, ge=1)
+    auth_code_failed_attempt_lock_seconds: int = Field(default=300, ge=1)
     auth_email_delivery_backend: Literal["local", "mailgun"] = "local"
     auth_local_email_outbox_path: str = "auth-local-email-outbox.jsonl"
     auth_email_from_address: str = "noreply@vinyl-listen.local"

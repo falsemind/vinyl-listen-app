@@ -30,7 +30,7 @@ AUTH_AUDIT_PASSWORD_RESET_REQUESTED = "password_reset_requested"
 AUTH_AUDIT_PASSWORD_RESET_CONFIRMED = "password_reset_confirmed"
 AUTH_AUDIT_SIGN_IN = "sign_in"
 AUTH_AUDIT_PASSWORD_CHANGED = "password_changed"
-AUTH_AUDIT_ACCOUNT_DELETED = "account_deleted"
+AUTH_AUDIT_ACCOUNT_DELETION_REJECTED = "account_deletion_rejected"
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,10 @@ class EmailVerificationResendRateLimitedError(AuthAccountError):
     pass
 
 
+class EmailVerificationAttemptRateLimitedError(AuthAccountError):
+    pass
+
+
 class PasswordResetCodeInvalidError(AuthAccountError):
     pass
 
@@ -76,6 +80,10 @@ class PasswordResetCodeConsumedError(AuthAccountError):
 
 
 class PasswordResetRequestRateLimitedError(AuthAccountError):
+    pass
+
+
+class PasswordResetAttemptRateLimitedError(AuthAccountError):
     pass
 
 
@@ -147,6 +155,8 @@ class AuthAccountService:
         verification_code_ttl: timedelta | None = None,
         password_reset_code_ttl: timedelta | None = None,
         resend_cooldown: timedelta | None = None,
+        code_failed_attempt_limit: int = settings.auth_code_failed_attempt_limit,
+        code_failed_attempt_lock: timedelta | None = None,
         code_length: int = settings.auth_email_code_length,
     ) -> None:
         self._repository = repository or AuthRepository()
@@ -161,10 +171,18 @@ class AuthAccountService:
             minutes=settings.auth_password_reset_code_ttl_minutes
         )
         self._resend_cooldown = resend_cooldown or timedelta(seconds=settings.auth_email_resend_cooldown_seconds)
+        self._code_failed_attempt_limit = code_failed_attempt_limit
+        self._code_failed_attempt_lock = code_failed_attempt_lock or timedelta(
+            seconds=settings.auth_code_failed_attempt_lock_seconds
+        )
         self._code_length = code_length
 
         if self._code_length <= 0:
             raise ValueError("code length must be positive.")
+        if self._code_failed_attempt_limit <= 0:
+            raise ValueError("failed attempt limit must be positive.")
+        if self._code_failed_attempt_lock <= timedelta(0):
+            raise ValueError("failed attempt lock must be positive.")
 
     def register_account(self, db: Session, *, email: str, password: str) -> RegisterAccountResult:
         existing_user = self._repository.get_user_by_normalized_email(db, email)
@@ -205,8 +223,9 @@ class AuthAccountService:
         )
 
     def verify_email(self, db: Session, *, email: str, code: str) -> UserAccount:
-        verification_code = self._get_email_verification_code(db, email=email, code=code)
         now = self._now_provider()
+        self._ensure_email_verification_attempt_allowed(db, email=email, now=now)
+        verification_code = self._get_email_verification_code(db, email=email, code=code, now=now)
         _ensure_code_usable(
             code=verification_code,
             now=now,
@@ -299,7 +318,10 @@ class AuthAccountService:
         )
         db.commit()
 
-        self._send_password_reset_code(user.email, code, reset_code.expires_at)
+        try:
+            self._send_password_reset_code(user.email, code, reset_code.expires_at)
+        except AuthEmailDeliveryError:
+            logger.exception("Password reset email failed to send to=%s", user.email)
         return PasswordResetRequestResult(email=user.email)
 
     def sign_in_with_password(self, db: Session, *, email: str, password: str) -> SignInResult:
@@ -367,8 +389,9 @@ class AuthAccountService:
         return SignInResult(user=user)
 
     def confirm_password_reset(self, db: Session, *, email: str, code: str, new_password: str) -> UserAccount:
-        reset_code = self._get_password_reset_code(db, email=email, code=code)
         now = self._now_provider()
+        self._ensure_password_reset_attempt_allowed(db, email=email, now=now)
+        reset_code = self._get_password_reset_code(db, email=email, code=code, now=now)
         _ensure_code_usable(
             code=reset_code,
             now=now,
@@ -481,7 +504,7 @@ class AuthAccountService:
             self._repository.record_auth_audit_event(
                 db,
                 user_id=user.id,
-                event_type=AUTH_AUDIT_ACCOUNT_DELETED,
+                event_type=AUTH_AUDIT_ACCOUNT_DELETION_REJECTED,
                 outcome="failure",
                 occurred_at=self._now_provider(),
                 event_details={"reason": "invalid_password"},
@@ -498,14 +521,6 @@ class AuthAccountService:
         )
         deletion_receipt_id = audit.id
         deleted_at = audit.deleted_at
-        self._repository.record_auth_audit_event(
-            db,
-            event_type=AUTH_AUDIT_ACCOUNT_DELETED,
-            outcome="success",
-            occurred_at=now,
-            event_details={"deletion_receipt_id": deletion_receipt_id},
-            commit=False,
-        )
         db.commit()
         return DeleteAccountResult(deletion_receipt_id=deletion_receipt_id, deleted_at=deleted_at)
 
@@ -545,23 +560,91 @@ class AuthAccountService:
         )
         return code, reset_code
 
-    def _get_email_verification_code(self, db: Session, *, email: str, code: str) -> EmailVerificationCode:
+    def _get_email_verification_code(
+        self,
+        db: Session,
+        *,
+        email: str,
+        code: str,
+        now: datetime,
+    ) -> EmailVerificationCode:
         verification_code = self._repository.get_email_verification_code_by_hash(
             db,
             self._hash_code(EMAIL_VERIFICATION_PURPOSE, email, code),
         )
         if verification_code is None:
+            self._record_email_verification_failed_attempt(db, email=email, now=now)
             raise EmailVerificationCodeInvalidError("email verification code is invalid.")
         return verification_code
 
-    def _get_password_reset_code(self, db: Session, *, email: str, code: str) -> PasswordResetCode:
+    def _get_password_reset_code(
+        self,
+        db: Session,
+        *,
+        email: str,
+        code: str,
+        now: datetime,
+    ) -> PasswordResetCode:
         reset_code = self._repository.get_password_reset_code_by_hash(
             db,
             self._hash_code(PASSWORD_RESET_PURPOSE, email, code),
         )
         if reset_code is None:
+            self._record_password_reset_failed_attempt(db, email=email, now=now)
             raise PasswordResetCodeInvalidError("password reset code is invalid.")
         return reset_code
+
+    def _ensure_email_verification_attempt_allowed(self, db: Session, *, email: str, now: datetime) -> None:
+        user = self._repository.get_user_by_normalized_email(db, email)
+        if user is None:
+            return
+        latest_code = self._repository.get_latest_email_verification_code(db, user_id=user.id)
+        if (
+            latest_code is not None
+            and latest_code.failed_attempt_limited_until is not None
+            and _ensure_utc(latest_code.failed_attempt_limited_until) > now
+        ):
+            raise EmailVerificationAttemptRateLimitedError("email verification attempts are rate limited.")
+
+    def _ensure_password_reset_attempt_allowed(self, db: Session, *, email: str, now: datetime) -> None:
+        user = self._repository.get_user_by_normalized_email(db, email)
+        if user is None:
+            return
+        latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
+        if (
+            latest_code is not None
+            and latest_code.failed_attempt_limited_until is not None
+            and _ensure_utc(latest_code.failed_attempt_limited_until) > now
+        ):
+            raise PasswordResetAttemptRateLimitedError("password reset attempts are rate limited.")
+
+    def _record_email_verification_failed_attempt(self, db: Session, *, email: str, now: datetime) -> None:
+        user = self._repository.get_user_by_normalized_email(db, email)
+        if user is None:
+            return
+        latest_code = self._repository.get_latest_email_verification_code(db, user_id=user.id)
+        if latest_code is None or latest_code.consumed_at is not None:
+            return
+        self._repository.record_email_verification_failed_attempt(
+            db,
+            code=latest_code,
+            attempt_limit=self._code_failed_attempt_limit,
+            lock_until=now + self._code_failed_attempt_lock,
+        )
+
+    def _record_password_reset_failed_attempt(self, db: Session, *, email: str, now: datetime) -> None:
+        user = self._repository.get_user_by_normalized_email(db, email)
+        if user is None:
+            return
+        latest_code = self._repository.get_latest_password_reset_code(db, user_id=user.id)
+        if latest_code is None or latest_code.consumed_at is not None:
+            return
+        self._repository.record_password_reset_failed_attempt(
+            db,
+            code=latest_code,
+            attempt_limit=self._code_failed_attempt_limit,
+            lock_until=now + self._code_failed_attempt_lock,
+        )
 
     def _hash_code(self, purpose: str, email: str, code: str) -> str:
         payload = f"{purpose}:{normalize_email(email)}:{code}".encode()

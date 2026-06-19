@@ -86,6 +86,8 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE INDEX idx_consumed_refresh_tokens_refresh_token_hash" in sql
     assert "CREATE TABLE email_verification_codes" in sql
     assert "CREATE INDEX idx_email_verification_codes_code_hash" in sql
+    assert "ADD COLUMN failed_attempt_count INTEGER DEFAULT '0' NOT NULL" in sql
+    assert "ADD COLUMN failed_attempt_limited_until TIMESTAMP WITH TIME ZONE" in sql
     assert "CREATE TABLE password_reset_codes" in sql
     assert "CREATE INDEX idx_password_reset_codes_code_hash" in sql
     assert "CREATE TABLE user_entitlements" in sql

@@ -157,6 +157,8 @@ class EmailVerificationCode(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resend_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     rate_limited_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    failed_attempt_limited_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -180,6 +182,8 @@ class PasswordResetCode(Base):
     sent_to_email: Mapped[str] = mapped_column(String(320), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    failed_attempt_limited_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

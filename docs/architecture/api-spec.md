@@ -174,7 +174,7 @@ Consumes a single-use verification code and marks the account email as verified.
 }
 ```
 
-Wrong codes return `400 email_code_invalid`, reused codes return `400 email_code_consumed`, and expired codes return `410 email_code_expired`.
+Wrong codes return `400 email_code_invalid`, reused codes return `400 email_code_consumed`, expired codes return `410 email_code_expired`, and repeated wrong-code attempts for the same account return `429 email_code_attempts_rate_limited`.
 
 ## POST /auth/resend-verification
 
@@ -227,11 +227,11 @@ Protected endpoint. Returns the current authenticated account summary.
 
 ## POST /auth/password-reset/request
 
-Accepts an email address and sends a reset code when the account exists. Unknown emails still return a generic accepted response.
+Accepts an email address and sends a reset code when the account exists. Unknown emails still return a generic accepted response. Delivery failures are logged and still return the same accepted response so callers cannot distinguish existing accounts by email-provider errors.
 
 ## POST /auth/password-reset/confirm
 
-Consumes a reset code, updates the password hash, and revokes existing sessions for that account.
+Consumes a reset code, updates the password hash, and revokes existing sessions for that account. Repeated wrong-code attempts for the same account return `429 password_reset_attempts_rate_limited`.
 
 ## POST /auth/password/change
 

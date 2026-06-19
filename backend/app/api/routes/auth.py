@@ -37,11 +37,13 @@ from app.services.auth_account_service import (
     AuthAccountService,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
+    EmailVerificationAttemptRateLimitedError,
     EmailVerificationCodeConsumedError,
     EmailVerificationCodeExpiredError,
     EmailVerificationCodeInvalidError,
     EmailVerificationResendRateLimitedError,
     PasswordChangeInvalidCurrentPasswordError,
+    PasswordResetAttemptRateLimitedError,
     PasswordResetCodeConsumedError,
     PasswordResetCodeExpiredError,
     PasswordResetCodeInvalidError,
@@ -104,6 +106,7 @@ def register_account(
     response_model=UserAccountResponse,
     responses={
         400: {"model": AuthErrorResponse},
+        429: {"model": AuthErrorResponse},
         410: {"model": AuthErrorResponse},
     },
 )
@@ -121,6 +124,12 @@ def verify_email(
             status_code=status.HTTP_400_BAD_REQUEST,
             code="email_code_consumed",
             message="Code has already been used.",
+        )
+    except EmailVerificationAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="email_code_attempts_rate_limited",
+            message="Email verification attempts are rate limited.",
         )
     except EmailVerificationCodeInvalidError:
         raise_auth_error(
@@ -342,7 +351,7 @@ def request_password_reset(
 @router.post(
     "/password-reset/confirm",
     response_model=UserAccountResponse,
-    responses={400: {"model": AuthErrorResponse}, 410: {"model": AuthErrorResponse}},
+    responses={400: {"model": AuthErrorResponse}, 410: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
 )
 def confirm_password_reset(
     payload: PasswordResetConfirmRequest,
@@ -363,6 +372,12 @@ def confirm_password_reset(
             status_code=status.HTTP_400_BAD_REQUEST,
             code="password_reset_consumed",
             message="Code has already been used.",
+        )
+    except PasswordResetAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="password_reset_attempts_rate_limited",
+            message="Password reset attempts are rate limited.",
         )
     except PasswordResetCodeInvalidError:
         raise_auth_error(

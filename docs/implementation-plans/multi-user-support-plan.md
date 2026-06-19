@@ -221,6 +221,7 @@ Add versioned endpoints for:
 - Password hashing parameters must be configurable so production can tune memory, time, and parallelism cost without a schema change.
 - Stored password hashes must include algorithm/version metadata so future rehash upgrades can happen at login.
 - Confirmation/reset codes are stored hashed, expire quickly, and are single-use.
+- Verification/reset confirmation track per-account wrong-code attempts and temporarily lock repeated failures.
 - Refresh tokens are stored hashed server-side.
 - Access tokens include only minimal claims.
 - Provider tokens remain encrypted at rest.
@@ -357,7 +358,7 @@ Implementation note: the Phase 5c migration backfills legacy async/AI/Spotify ro
 - Password change requires the current password, writes a fresh Argon2id hash, and revokes every active refresh session except the current session unless `sign_out_everywhere` is requested.
 - Password change sends a best-effort security notification email after the database commit succeeds.
 - Sign out everywhere revokes all active refresh sessions for the account, including the caller's session.
-- Account deletion requires password re-authentication and hard-deletes user-owned data, auth sessions, refresh-token reuse state, provider tokens, collection settings, collection memberships/folders, collection sync jobs, identify jobs, AI chat history, Spotify imports/rollups, listening sessions, custom mood options, usage events, and entitlement rows.
+- Account deletion requires password re-authentication and hard-deletes user-owned data, auth sessions, auth audit events for the account, refresh-token reuse state, provider tokens, collection settings, collection memberships/folders, collection sync jobs, identify jobs, AI chat history, Spotify imports/rollups, listening sessions, custom mood options, usage events, and entitlement rows.
 - Account deletion retains only a minimal deletion audit receipt with deletion request id, event type, request timestamp, and deletion timestamp. It must not retain email, provider tokens, collection contents, listening history, notes, prompts, analytics inputs, or other user-owned payloads.
 - Shared Discogs/catalog metadata can remain only when no user-owned data remains attached.
 - Done when account-management API tests cover password-change revocation, sign-out-everywhere revocation, wrong-password deletion rejection, successful deletion receipt, invalidated access, and deletion tests prove user-owned backend rows are removed while the minimal audit receipt remains.
