@@ -26,7 +26,7 @@ class AuthEmailMessage:
     subject: str
     body: str
     purpose: str
-    code: str
+    code: str | None = None
 
 
 class AuthEmailSender(Protocol):

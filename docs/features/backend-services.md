@@ -40,7 +40,7 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 3. `resend_email_verification` issues a new code after the configured cooldown.
 4. `sign_in_with_password` verifies the stored password hash and blocks sign-in until email verification is complete.
 5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions.
-6. `change_password` verifies the current password, stores a fresh Argon2id hash, and revokes other active sessions unless sign-out-everywhere is requested.
+6. `change_password` verifies the current password, stores a fresh Argon2id hash, revokes other active sessions unless sign-out-everywhere is requested, and sends a best-effort security notification email after the DB commit succeeds.
 7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state, and retains only a minimal deletion audit receipt.
 
 `AuthTokenLifecycleService` owns session tokens:
@@ -50,7 +50,7 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 - Consumed refresh token hashes are kept so token reuse can be detected and the owning session revoked.
 - Sessions that exceed the inactivity window return `inactivity_reauth_required`; clients should ask for the password again.
 
-Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, codes are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
+Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, auth emails are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
 
 ## EntitlementService
 

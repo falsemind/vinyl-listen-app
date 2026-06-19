@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,11 +12,19 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.auth import EmailVerificationCode, PasswordResetCode, UserAccount
 from app.repositories.auth_repository import AuthRepository, normalize_email
-from app.services.auth_email_delivery import AuthEmailMessage, AuthEmailSender, build_auth_email_sender
+from app.services.auth_email_delivery import (
+    AuthEmailDeliveryError,
+    AuthEmailMessage,
+    AuthEmailSender,
+    build_auth_email_sender,
+)
 from app.services.password_hashing import Argon2idPasswordHasher
 
 EMAIL_VERIFICATION_PURPOSE = "email_verification"
 PASSWORD_RESET_PURPOSE = "password_reset"
+PASSWORD_CHANGE_NOTIFICATION_PURPOSE = "password_change_notification"
+
+logger = logging.getLogger(__name__)
 
 
 class AuthAccountError(Exception):
@@ -358,6 +367,7 @@ class AuthAccountService:
         )
         db.commit()
         db.refresh(user)
+        self._send_password_change_notification(user.email, changed_at=now)
         return PasswordChangeResult(user=user, revoked_sessions=revoked_sessions)
 
     def delete_account(
@@ -472,6 +482,22 @@ class AuthAccountService:
                 code=code,
             )
         )
+
+    def _send_password_change_notification(self, email: str, *, changed_at: datetime) -> None:
+        try:
+            self._email_sender.send(
+                AuthEmailMessage(
+                    to_email=email,
+                    subject="Your Vinyl Listen password was changed",
+                    body=(
+                        "Your Vinyl Listen password was changed at "
+                        f"{changed_at.isoformat()}. If this was not you, reset your password immediately."
+                    ),
+                    purpose=PASSWORD_CHANGE_NOTIFICATION_PURPOSE,
+                )
+            )
+        except AuthEmailDeliveryError:
+            logger.exception("Password change notification email failed to send to=%s", email)
 
 
 def _resolve_code_hash_secret(code_hash_secret: str | None) -> str:

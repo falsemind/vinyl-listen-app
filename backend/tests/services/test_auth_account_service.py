@@ -39,7 +39,12 @@ from app.services.auth_account_service import (
     PasswordResetCodeConsumedError,
     PasswordResetRequestRateLimitedError,
 )
-from app.services.auth_email_delivery import AuthEmailMessage, LocalDevEmailSender
+from app.services.auth_email_delivery import (
+    AuthEmailDeliveryError,
+    AuthEmailMessage,
+    AuthEmailSender,
+    LocalDevEmailSender,
+)
 from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashConfig
 
 AUTH_TABLES = [
@@ -99,6 +104,12 @@ class RecordingEmailSender:
 
     def send(self, message: AuthEmailMessage) -> None:
         self.messages.append(message)
+
+
+class FailingEmailSender:
+    def send(self, message: AuthEmailMessage) -> None:
+        _ = message
+        raise AuthEmailDeliveryError("delivery failed")
 
 
 @pytest.fixture()
@@ -374,6 +385,7 @@ def test_change_password_updates_hash_and_revokes_other_sessions(
     db_session: Session,
     repository: AuthRepository,
     service: AuthAccountService,
+    email_sender: RecordingEmailSender,
     clock: AuthTestClock,
 ) -> None:
     registration = service.register_account(db_session, email="alex@example.com", password="old-password")
@@ -417,12 +429,17 @@ def test_change_password_updates_hash_and_revokes_other_sessions(
     assert current_session.revoked_at is None
     assert other_session.revoked_at == datetime(2026, 6, 18, 12, 2)
     assert other_session.revoke_reason == "password_change"
+    assert email_sender.messages[-1].purpose == "password_change_notification"
+    assert email_sender.messages[-1].to_email == "alex@example.com"
+    assert email_sender.messages[-1].code is None
+    assert "2026-06-18T12:02:00+00:00" in email_sender.messages[-1].body
 
 
 def test_change_password_can_sign_out_everywhere_and_rejects_wrong_current_password(
     db_session: Session,
     repository: AuthRepository,
     service: AuthAccountService,
+    email_sender: RecordingEmailSender,
     clock: AuthTestClock,
 ) -> None:
     registration = service.register_account(db_session, email="alex@example.com", password="old-password")
@@ -445,6 +462,7 @@ def test_change_password_can_sign_out_everywhere_and_rejects_wrong_current_passw
             new_password="new-password",
             current_session_id=auth_session.id,
         )
+    assert [message.purpose for message in email_sender.messages] == ["email_verification"]
 
     clock.advance(timedelta(minutes=3))
     result = service.change_password(
@@ -459,6 +477,49 @@ def test_change_password_can_sign_out_everywhere_and_rejects_wrong_current_passw
     assert result.revoked_sessions == 1
     assert auth_session.revoked_at == datetime(2026, 6, 18, 12, 3)
     assert auth_session.revoke_reason == "password_change"
+    assert [message.purpose for message in email_sender.messages] == [
+        "email_verification",
+        "password_change_notification",
+    ]
+
+
+def test_change_password_succeeds_when_security_notification_fails(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+) -> None:
+    setup_sender = RecordingEmailSender()
+    setup_service = _service(repository=repository, clock=clock, email_sender=setup_sender)
+    registration = setup_service.register_account(db_session, email="alex@example.com", password="old-password")
+    user = repository.get_user_by_id(db_session, registration.user_id)
+    assert user is not None
+    auth_session = repository.create_auth_session(
+        db_session,
+        session_id="session-current",
+        user_id=user.id,
+        refresh_token_hash="refresh-current",
+        last_activity_at=datetime(2026, 6, 18, 12),
+        expires_at=datetime(2026, 7, 18, 12),
+    )
+    failing_service = _service(repository=repository, clock=clock, email_sender=FailingEmailSender())
+    clock.advance(timedelta(minutes=4))
+
+    result = failing_service.change_password(
+        db_session,
+        user=user,
+        current_password="old-password",
+        new_password="new-password",
+        current_session_id=auth_session.id,
+    )
+
+    verification = Argon2idPasswordHasher(FAST_HASH_CONFIG).verify_password(
+        password="new-password",
+        password_hash=result.user.password_hash,
+        algorithm=result.user.password_hash_algorithm,
+        version=result.user.password_hash_version,
+        params=result.user.password_hash_params,
+    )
+    assert verification.is_valid is True
 
 
 def test_delete_account_requires_password_and_hard_deletes_owned_data(
@@ -678,7 +739,7 @@ def _service(
     *,
     repository: AuthRepository,
     clock: AuthTestClock,
-    email_sender: RecordingEmailSender,
+    email_sender: AuthEmailSender,
     password_reset_code_ttl: timedelta = timedelta(minutes=15),
 ) -> AuthAccountService:
     return AuthAccountService(

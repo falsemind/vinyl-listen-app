@@ -237,6 +237,8 @@ Consumes a reset code, updates the password hash, and revokes existing sessions 
 
 Protected endpoint. Verifies the current password, stores a fresh password hash, and revokes active refresh sessions. By default the caller's current session remains active; set `sign_out_everywhere` to revoke it too.
 
+After the password change commits, the backend sends a best-effort security notification email to the account email address. Notification delivery failure is logged but does not undo the password change.
+
 ### Request
 
 ```json

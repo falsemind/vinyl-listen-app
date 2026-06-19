@@ -354,6 +354,7 @@ Implementation note: the Phase 5c migration backfills legacy async/AI/Spotify ro
 
 - Add password change, sign out, sign out everywhere, and account deletion flows on top of the existing password reset flow.
 - Password change requires the current password, writes a fresh Argon2id hash, and revokes every active refresh session except the current session unless `sign_out_everywhere` is requested.
+- Password change sends a best-effort security notification email after the database commit succeeds.
 - Sign out everywhere revokes all active refresh sessions for the account, including the caller's session.
 - Account deletion requires password re-authentication and hard-deletes user-owned data, auth sessions, refresh-token reuse state, provider tokens, collection settings, collection memberships/folders, collection sync jobs, identify jobs, AI chat history, Spotify imports/rollups, listening sessions, custom mood options, usage events, and entitlement rows.
 - Account deletion retains only a minimal deletion audit receipt with deletion request id, event type, request timestamp, and deletion timestamp. It must not retain email, provider tokens, collection contents, listening history, notes, prompts, analytics inputs, or other user-owned payloads.
