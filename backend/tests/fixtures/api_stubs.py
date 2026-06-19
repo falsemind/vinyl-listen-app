@@ -89,6 +89,7 @@ class StubIdentifyJobService:
         self,
         _db,
         *,
+        user_id: str,
         image_bytes: bytes,
         filename: str,
         content_type: str,
@@ -97,6 +98,7 @@ class StubIdentifyJobService:
         _ = client_key
         self.calls.append(
             {
+                "user_id": user_id,
                 "size_bytes": len(image_bytes),
                 "filename": filename,
                 "content_type": content_type,
@@ -127,12 +129,14 @@ class StubIdentifyJobService:
             }
         )
 
-    def get_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+    def get_job(self, _db, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        self.calls.append({"action": "get", "user_id": user_id, "job_id": job_id})
         if self.get_error is not None:
             raise self.get_error
         return self.response.model_copy(update={"job_id": job_id})
 
-    def cancel_job(self, _db, job_id: str) -> IdentifyJobStatusResponse:
+    def cancel_job(self, _db, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        self.calls.append({"action": "cancel", "user_id": user_id, "job_id": job_id})
         self.cancel_calls.append(job_id)
         if self.cancel_error is not None:
             raise self.cancel_error

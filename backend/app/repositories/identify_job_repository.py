@@ -14,6 +14,7 @@ class IdentifyJobRepository:
         db: Session,
         *,
         job_id: str,
+        user_id: str,
         status: str,
         message: str,
         client_key: str | None,
@@ -24,6 +25,7 @@ class IdentifyJobRepository:
     ) -> IdentifyJob:
         job = IdentifyJob(
             id=job_id,
+            user_id=user_id,
             status=status,
             client_key=client_key,
             message=message,
@@ -39,12 +41,21 @@ class IdentifyJobRepository:
         return job
 
     @staticmethod
-    def get(db: Session, job_id: str) -> IdentifyJob | None:
-        return db.query(IdentifyJob).filter(IdentifyJob.id == job_id).one_or_none()
+    def get(db: Session, job_id: str, *, user_id: str | None = None) -> IdentifyJob | None:
+        query = db.query(IdentifyJob).filter(IdentifyJob.id == job_id)
+        if user_id is not None:
+            query = query.filter(IdentifyJob.user_id == user_id)
+        return query.one_or_none()
 
     @staticmethod
-    def request_cancel(db: Session, job_id: str, *, requested_at: datetime) -> IdentifyJob | None:
-        job = IdentifyJobRepository.get(db, job_id)
+    def request_cancel(
+        db: Session,
+        job_id: str,
+        *,
+        requested_at: datetime,
+        user_id: str | None = None,
+    ) -> IdentifyJob | None:
+        job = IdentifyJobRepository.get(db, job_id, user_id=user_id)
         if job is None:
             return None
         if job.status in TERMINAL_IDENTIFY_JOB_STATUSES or job.cancel_requested_at is not None:
@@ -68,9 +79,10 @@ class IdentifyJobRepository:
         )
 
     @staticmethod
-    def count_active_by_client(db: Session, *, client_key: str, active_statuses: set[str]) -> int:
+    def count_active_by_client(db: Session, *, user_id: str, client_key: str, active_statuses: set[str]) -> int:
         return (
             db.query(func.count(IdentifyJob.id))
+            .filter(IdentifyJob.user_id == user_id)
             .filter(IdentifyJob.client_key == client_key)
             .filter(IdentifyJob.status.in_(active_statuses))
             .scalar()

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.collection_folders import ReleaseCollectionMembership
 from app.models.releases import Releases
 from app.models.spotify_listening import (
     SpotifyAlbumStats,
@@ -85,7 +86,7 @@ class SpotifyListeningRollupService:
     def __init__(self, repository: SpotifyListeningRepository | None = None) -> None:
         self._repository = repository or SpotifyListeningRepository()
 
-    def refresh(self, db: Session, *, commit: bool = True) -> SpotifyListeningRollupRefreshResult:
+    def refresh(self, db: Session, *, user_id: str, commit: bool = True) -> SpotifyListeningRollupRefreshResult:
         artist_stats: dict[str, _ListeningStatsAccumulator] = defaultdict(_ListeningStatsAccumulator)
         album_stats: dict[tuple[str, str], _ListeningStatsAccumulator] = defaultdict(_ListeningStatsAccumulator)
         track_stats: dict[tuple[str, str | None, str], _ListeningStatsAccumulator] = defaultdict(
@@ -97,7 +98,7 @@ class SpotifyListeningRollupService:
         )
         skip_stats: dict[tuple[bool | None, str | None], _CounterAccumulator] = defaultdict(_CounterAccumulator)
 
-        for event in db.query(SpotifyListeningEvent).yield_per(1_000):
+        for event in db.query(SpotifyListeningEvent).filter(SpotifyListeningEvent.user_id == user_id).yield_per(1_000):
             artist_stats[event.normalized_artist_name].add(event)
 
             if event.normalized_album_name is not None:
@@ -112,6 +113,8 @@ class SpotifyListeningRollupService:
 
         artist_rows = [
             SpotifyArtistStats(
+                stat_key=stable_spotify_key([user_id, normalized_artist_name]),
+                user_id=user_id,
                 normalized_artist_name=normalized_artist_name,
                 artist_name=stats.artist_name or normalized_artist_name,
                 play_count=stats.play_count,
@@ -125,7 +128,8 @@ class SpotifyListeningRollupService:
         ]
         album_rows = [
             SpotifyAlbumStats(
-                stat_key=stable_spotify_key([normalized_artist_name, normalized_album_name]),
+                stat_key=stable_spotify_key([user_id, normalized_artist_name, normalized_album_name]),
+                user_id=user_id,
                 normalized_artist_name=normalized_artist_name,
                 normalized_album_name=normalized_album_name,
                 artist_name=stats.artist_name or normalized_artist_name,
@@ -141,7 +145,10 @@ class SpotifyListeningRollupService:
         ]
         track_rows = [
             SpotifyTrackStats(
-                stat_key=stable_spotify_key([normalized_artist_name, normalized_album_name, normalized_track_name]),
+                stat_key=stable_spotify_key(
+                    [user_id, normalized_artist_name, normalized_album_name, normalized_track_name]
+                ),
+                user_id=user_id,
                 normalized_artist_name=normalized_artist_name,
                 normalized_album_name=normalized_album_name,
                 normalized_track_name=normalized_track_name,
@@ -159,6 +166,8 @@ class SpotifyListeningRollupService:
         ]
         hourly_rows = [
             SpotifyHourlyStats(
+                stat_key=stable_spotify_key([user_id, str(played_hour)]),
+                user_id=user_id,
                 played_hour=played_hour,
                 play_count=stats.play_count,
                 meaningful_play_count=stats.meaningful_play_count,
@@ -169,7 +178,8 @@ class SpotifyListeningRollupService:
         ]
         monthly_artist_rows = [
             SpotifyMonthlyArtistStats(
-                stat_key=stable_spotify_key([played_year_month, normalized_artist_name]),
+                stat_key=stable_spotify_key([user_id, played_year_month, normalized_artist_name]),
+                user_id=user_id,
                 played_year_month=played_year_month,
                 normalized_artist_name=normalized_artist_name,
                 artist_name=stats.artist_name or normalized_artist_name,
@@ -182,7 +192,8 @@ class SpotifyListeningRollupService:
         ]
         skip_rows = [
             SpotifySkipStats(
-                stat_key=stable_spotify_key([str(skipped), reason_end]),
+                stat_key=stable_spotify_key([user_id, str(skipped), reason_end]),
+                user_id=user_id,
                 skipped=skipped,
                 reason_end=reason_end,
                 play_count=stats.play_count,
@@ -192,9 +203,14 @@ class SpotifyListeningRollupService:
             for (skipped, reason_end), stats in skip_stats.items()
         ]
 
-        artist_matches, release_matches = self._build_collection_matches(db, artist_rows, album_rows)
+        artist_matches, release_matches = self._build_collection_matches(
+            db,
+            user_id=user_id,
+            artist_stats=artist_rows,
+            album_stats=album_rows,
+        )
 
-        self._repository.clear_rollups_and_matches(db)
+        self._repository.clear_rollups_and_matches(db, user_id=user_id)
         self._repository.add_rollups_and_matches(
             db,
             artist_stats=artist_rows,
@@ -224,13 +240,22 @@ class SpotifyListeningRollupService:
     def _build_collection_matches(
         self,
         db: Session,
+        *,
+        user_id: str,
         artist_stats: list[SpotifyArtistStats],
         album_stats: list[SpotifyAlbumStats],
     ) -> tuple[list[SpotifyVinylArtistMatch], list[SpotifyVinylReleaseMatch]]:
         releases_by_artist: dict[str, list[_ReleaseCandidate]] = defaultdict(list)
         releases_by_artist_title: dict[tuple[str, str], list[_ReleaseCandidate]] = defaultdict(list)
 
-        for release_id, artist, title in db.query(Releases.id, Releases.artist, Releases.title).all():
+        collection_rows = (
+            db.query(Releases.id, Releases.artist, Releases.title)
+            .join(ReleaseCollectionMembership, ReleaseCollectionMembership.release_id == Releases.id)
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+            .filter(ReleaseCollectionMembership.in_collection.is_(True))
+            .all()
+        )
+        for release_id, artist, title in collection_rows:
             normalized_artist = normalize_spotify_text(artist)
             normalized_title = normalize_spotify_text(title)
             candidate = _ReleaseCandidate(release_id=release_id, artist=artist, title=title)
@@ -246,6 +271,8 @@ class SpotifyListeningRollupService:
             release_ids = sorted(candidate.release_id for candidate in candidates)
             artist_matches.append(
                 SpotifyVinylArtistMatch(
+                    match_key=stable_spotify_key([user_id, artist_stat.normalized_artist_name]),
+                    user_id=user_id,
                     normalized_artist_name=artist_stat.normalized_artist_name,
                     artist_name=artist_stat.artist_name,
                     release_ids=release_ids,
@@ -269,8 +296,14 @@ class SpotifyListeningRollupService:
                 release_matches.append(
                     SpotifyVinylReleaseMatch(
                         match_key=stable_spotify_key(
-                            [candidate.release_id, album_stat.normalized_artist_name, album_stat.normalized_album_name]
+                            [
+                                user_id,
+                                candidate.release_id,
+                                album_stat.normalized_artist_name,
+                                album_stat.normalized_album_name,
+                            ]
                         ),
+                        user_id=user_id,
                         release_id=candidate.release_id,
                         normalized_artist_name=album_stat.normalized_artist_name,
                         normalized_album_name=album_stat.normalized_album_name,

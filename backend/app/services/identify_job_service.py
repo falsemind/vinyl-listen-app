@@ -180,6 +180,7 @@ class IdentifyJobService:
         self,
         db: Session,
         *,
+        user_id: str,
         image_bytes: bytes,
         filename: str,
         content_type: str,
@@ -196,6 +197,7 @@ class IdentifyJobService:
 
             active_job_count = self._repository.count_active_by_client(
                 db,
+                user_id=user_id,
                 client_key=client_key,
                 active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
             )
@@ -232,6 +234,7 @@ class IdentifyJobService:
                 job = self._repository.create(
                     db,
                     job_id=job_id,
+                    user_id=user_id,
                     status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
                     message="Image upload received",
                     client_key=client_key,
@@ -253,22 +256,22 @@ class IdentifyJobService:
             )
             return self._to_response(job)
 
-    def get_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
-        job = self._repository.get(db, job_id)
+    def get_job(self, db: Session, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        job = self._repository.get(db, job_id, user_id=user_id)
         if job is None:
             raise IdentifyJobNotFoundError(job_id)
         if _ensure_utc(job.expires_at) <= self._now_provider():
             raise IdentifyJobExpiredError(job_id)
         return self._to_response(job)
 
-    def cancel_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
-        existing_job = self._repository.get(db, job_id)
+    def cancel_job(self, db: Session, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        existing_job = self._repository.get(db, job_id, user_id=user_id)
         if existing_job is None:
             raise IdentifyJobNotFoundError(job_id)
 
         was_terminal = existing_job.status in TERMINAL_IDENTIFY_JOB_STATUSES
         was_cancel_requested = existing_job.cancel_requested_at is not None
-        job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider())
+        job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider(), user_id=user_id)
         if job is None:
             raise IdentifyJobNotFoundError(job_id)
         if was_terminal:

@@ -44,8 +44,8 @@ def test_analytics_route_is_versioned() -> None:
 
 def test_ai_route_is_versioned() -> None:
     class StubAiService:
-        def chat(self, *, db, message: str, conversation_id=None, client_context=None):
-            _ = db, message, conversation_id, client_context
+        def chat(self, *, db, user_id: str, message: str, conversation_id=None, client_context=None):
+            _ = db, user_id, message, conversation_id, client_context
 
             class Reply:
                 conversation_id = "local-single-thread"

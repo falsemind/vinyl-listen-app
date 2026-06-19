@@ -3,12 +3,14 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.models.auth import UserAccount
 from app.models.identify_job import IdentifyJob
 from app.repositories.identify_job_repository import IdentifyJobRepository
 
 
 def test_expire_stale_active_marks_only_stale_active_jobs() -> None:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
@@ -58,6 +60,7 @@ def test_expire_stale_active_marks_only_stale_active_jobs() -> None:
 
 def test_request_cancel_marks_active_job_without_changing_status() -> None:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
@@ -89,6 +92,7 @@ def test_request_cancel_marks_active_job_without_changing_status() -> None:
 
 def test_request_cancel_is_idempotent_and_preserves_first_request_time() -> None:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
@@ -120,6 +124,7 @@ def test_request_cancel_is_idempotent_and_preserves_first_request_time() -> None
 
 def test_request_cancel_does_not_mutate_terminal_job() -> None:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
@@ -152,6 +157,7 @@ def test_request_cancel_does_not_mutate_terminal_job() -> None:
 
 def test_mark_canceled_sets_terminal_status_without_failure_payload() -> None:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
@@ -193,6 +199,7 @@ def _job(
 ) -> IdentifyJob:
     return IdentifyJob(
         id=job_id,
+        user_id="user-a",
         status=status,
         client_key=client_key,
         message="Message",

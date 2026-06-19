@@ -61,6 +61,7 @@ class SpotifyListeningImportService:
         db: Session,
         file_paths: Sequence[str | Path],
         *,
+        user_id: str,
         batch_size: int = 1_000,
         refresh_rollups: bool = True,
     ) -> SpotifyListeningImportResult:
@@ -70,7 +71,7 @@ class SpotifyListeningImportService:
             raise ValueError("batch_size must be greater than zero")
 
         source_paths = [str(Path(file_path)) for file_path in file_paths]
-        batch = self._repository.create_import_batch(db, source_paths)
+        batch = self._repository.create_import_batch(db, user_id=user_id, source_paths=source_paths)
         counts = _ImportCounts()
         error_summary: list[str] = []
         pending_events: list[SpotifyListeningEvent] = []
@@ -83,7 +84,7 @@ class SpotifyListeningImportService:
                 for item in self._load_items(Path(file_path)):
                     counts.total_items += 1
                     try:
-                        event = self._map_item(item, import_batch_id=batch.id)
+                        event = self._map_item(item, user_id=user_id, import_batch_id=batch.id)
                     except SpotifyListeningImportItemError as error:
                         counts.skipped_count += 1
                         counts.error_count += 1
@@ -102,18 +103,19 @@ class SpotifyListeningImportService:
                     pending_events.append(event)
 
                     if len(pending_events) >= batch_size:
-                        self._flush_events(db, pending_events, counts)
+                        self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
                         pending_events.clear()
 
             if pending_events:
-                self._flush_events(db, pending_events, counts)
+                self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
 
             if refresh_rollups:
-                self._rollup_service.refresh(db, commit=False)
+                self._rollup_service.refresh(db, user_id=user_id, commit=False)
 
             completed_batch = self._repository.mark_completed(
                 db,
                 batch.id,
+                user_id=user_id,
                 total_items=counts.total_items,
                 imported_count=counts.imported_count,
                 duplicate_count=counts.duplicate_count,
@@ -127,6 +129,7 @@ class SpotifyListeningImportService:
             self._repository.mark_failed(
                 db,
                 batch.id,
+                user_id=user_id,
                 total_items=counts.total_items,
                 imported_count=counts.imported_count,
                 duplicate_count=counts.duplicate_count,
@@ -155,8 +158,15 @@ class SpotifyListeningImportService:
             error_summary=list(completed_batch.error_summary or []),
         )
 
-    def _flush_events(self, db: Session, events: Sequence[SpotifyListeningEvent], counts: _ImportCounts) -> None:
-        imported_count, duplicate_count = self._repository.add_new_events(db, events)
+    def _flush_events(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        events: Sequence[SpotifyListeningEvent],
+        counts: _ImportCounts,
+    ) -> None:
+        imported_count, duplicate_count = self._repository.add_new_events(db, user_id=user_id, events=events)
         counts.imported_count += imported_count
         counts.duplicate_count += duplicate_count
 
@@ -169,7 +179,7 @@ class SpotifyListeningImportService:
 
         yield from payload
 
-    def _map_item(self, item: dict[str, Any], *, import_batch_id: str) -> SpotifyListeningEvent | None:
+    def _map_item(self, item: dict[str, Any], *, user_id: str, import_batch_id: str) -> SpotifyListeningEvent | None:
         if not isinstance(item, dict):
             raise SpotifyListeningImportItemError("item is not a JSON object")
 
@@ -196,6 +206,7 @@ class SpotifyListeningImportService:
         )
 
         return SpotifyListeningEvent(
+            user_id=user_id,
             import_batch_id=import_batch_id,
             event_key=event_key,
             played_at=played_at,

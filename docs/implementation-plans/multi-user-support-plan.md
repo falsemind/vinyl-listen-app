@@ -339,14 +339,18 @@ Legacy upgrade requirement: existing single-user collection rows must be backfil
 
 #### Phase 5c: Async Jobs, AI History, Spotify Data, And Usage Inputs
 
+Status: implemented for backend identify jobs, AI chat history/tools, and Spotify import/rollup ownership.
+
 - Add `user_id` to identify jobs and filter create/status/cancel by authenticated user.
 - Use `user_id` rather than only client/IP keys for identify job ownership, while keeping client/IP keys for rate limiting where useful.
 - Scope AI chat sessions/messages by `user_id`; the default local conversation id must not collide across accounts.
 - Scope AI insight tools to user-owned sessions, analytics, collection membership, and imported Spotify data.
-- Add `user_id` to Spotify import batches, events, rollups, artist/album stats, and vinyl match tables, or keep Spotify import disabled/admin-only until ownership is implemented.
+- Add `user_id` to Spotify import batches, events, rollups, artist/album stats, and vinyl match tables.
 - Keep manual releases user-owned and separate from shared Discogs/catalog releases.
 - Add optional user-owned association rows for later manual-to-Discogs "keep both" flows.
 - Done when User A cannot read, mutate, cancel, analyze, export, or delete User B async jobs, AI history, Spotify imports, manual releases, or usage inputs.
+
+Implementation note: the Phase 5c migration backfills legacy async/AI/Spotify rows to a resolved owner using `VINYL_LEGACY_OWNER_EMAIL` when needed. If legacy rows exist and no single active owner can be resolved, the migration fails loudly. AI chat stores an internal session id plus a user-scoped public conversation id so `local-single-thread` remains stable without cross-account collisions. Spotify rollups and match rows are rebuilt per user and match only against that user's active collection memberships.
 
 ### Phase 6: Account Management And Deletion
 

@@ -47,7 +47,13 @@ def test_identify_endpoint_returns_ranked_candidates(
             }
         ]
     }
-    assert service.calls == [{"size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}]
+    assert service.calls == [
+        {
+            "size_bytes": 12,
+            "filename": "cover.jpg",
+            "content_type": "image/jpeg",
+        }
+    ]
 
 
 def test_identify_endpoint_returns_structured_validation_errors(
@@ -117,7 +123,14 @@ def test_identify_job_endpoint_returns_accepted_status(
     assert response.status_code == 202
     assert response.json()["job_id"] == "job-123"
     assert response.json()["status"] == "upload_received"
-    assert service.calls == [{"size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}]
+    assert service.calls == [
+        {
+            "user_id": "test-user",
+            "size_bytes": 12,
+            "filename": "cover.jpg",
+            "content_type": "image/jpeg",
+        }
+    ]
     assert service.process_calls == [
         {"job_id": "job-123", "size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}
     ]

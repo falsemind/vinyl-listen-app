@@ -215,8 +215,8 @@ All routes are nested under `/api/v1`.
 | `POST /auth/password-reset/request` | `api/routes/auth.py` | `AuthAccountService`. |
 | `POST /auth/password-reset/confirm` | `api/routes/auth.py` | `AuthAccountService`. |
 | `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard. |
-| `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService` with per-client admission control. |
-| `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
+| `POST /identify/jobs` | `api/routes/identify.py` | User-owned `IdentifyJobService` with per-user/client admission control. |
+| `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | User-owned `IdentifyJobService`. |
 | `GET /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
 | `PUT /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
@@ -253,8 +253,8 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/records/by-rating` | `api/routes/analytics.py` | `AnalyticsService` rating drilldown with record counts. |
 | `GET /analytics/records/by-mood` | `api/routes/analytics.py` | `AnalyticsService` mood drilldown with record counts. |
 | `GET /analytics/records/by-style` | `api/routes/analytics.py` | `AnalyticsService` style drilldown with record counts. |
-| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` grounded chat service. |
-| `POST /ai/spotify/import` | `api/routes/ai.py` | `SpotifyListeningImportService`. |
+| `POST /ai/chat` | `api/routes/ai.py` | User-scoped `AiInsightsService` grounded chat service. |
+| `POST /ai/spotify/import` | `api/routes/ai.py` | User-scoped `SpotifyListeningImportService`. |
 
 ### Identification Pipeline Package
 
@@ -325,6 +325,7 @@ backend/alembic/
     ├── 4e2a1c9d8b70_add_spotify_listening_import.py
     ├── 8c1d2e3f4a5b_add_session_groups.py
     ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
+    ├── c8d9e0f1a2b3_scope_async_ai_spotify.py
     ├── ab12cd34ef56_add_provider_integrations.py
     └── eed6974773b8_init.py
 

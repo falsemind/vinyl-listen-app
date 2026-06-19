@@ -735,6 +735,7 @@ This table supports the Android Processing screen. It lets the client poll backe
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID string|Primary key returned to clients as `job_id`|
+|user_id|UUID string|FK -> `user_accounts.id`; job owner|
 |status|TEXT|Current identify status|
 |client_key|TEXT|Resolved client identity used for per-client active job admission|
 |message|TEXT|Short progress or terminal message|
@@ -775,6 +776,10 @@ INDEX (status, updated_at)
 
 INDEX (client_key, status)
 
+INDEX (user_id, status)
+
+INDEX (user_id, client_key, status)
+
 INDEX (expires_at)
 ```
 
@@ -796,13 +801,15 @@ Image bytes are not stored in this table.
 
 # Table: ai_chat_sessions
 
-Stores persistent AI Insights chat conversations. The MVP uses one local conversation by default: `local-single-thread`.
+Stores persistent AI Insights chat conversations. The MVP uses one public local conversation id by default: `local-single-thread`. Sessions are scoped by owner so the same public conversation id can exist for multiple accounts.
 
 ### Columns
 
 |Column|Type|Notes|
 |---|---|---|
-|id|UUID/string|Primary key returned as `conversation_id`|
+|id|UUID string|Internal primary key|
+|user_id|UUID string|FK -> `user_accounts.id`; chat owner|
+|public_conversation_id|TEXT|Client-visible id returned as `conversation_id`|
 |created_at|TIMESTAMP|Conversation creation time|
 |updated_at|TIMESTAMP|Last message time|
 
@@ -810,6 +817,10 @@ Stores persistent AI Insights chat conversations. The MVP uses one local convers
 
 ```
 PRIMARY KEY (id)
+
+UNIQUE (user_id, public_conversation_id)
+
+INDEX (user_id, updated_at)
 
 INDEX (updated_at)
 ```
@@ -823,7 +834,7 @@ Stores persisted user and assistant messages for AI Insights.
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID string|Primary key|
-|conversation_id|UUID/string|Foreign key to `ai_chat_sessions.id`|
+|conversation_id|UUID/string|Foreign key to internal `ai_chat_sessions.id`|
 |role|TEXT|`user` or `assistant`|
 |content|TEXT|Message content|
 |used_tools|JSONB|Assistant tool names, empty for user messages|
@@ -861,6 +872,7 @@ Tracks backend-local import attempts.
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID string|Primary key|
+|user_id|UUID string|FK -> `user_accounts.id`; import owner|
 |source_paths|JSONB|Validated relative source file names|
 |status|TEXT|`running`, `completed`, or failed status|
 |total_items|INTEGER|Parsed export rows|
@@ -879,8 +891,9 @@ Stores filtered song events plus derived fields used for rollups.
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID string|Primary key|
+|user_id|UUID string|FK -> `user_accounts.id`; event owner|
 |batch_id|UUID string|FK -> `spotify_listening_import_batches.id`|
-|event_key|TEXT|Unique dedupe key|
+|event_key|TEXT|Per-user dedupe key|
 |played_at|TIMESTAMP|Spotify `ts` value|
 |played_date|DATE|Derived local date bucket|
 |played_hour|INTEGER|Derived local hour bucket|
@@ -906,18 +919,18 @@ Stores filtered song events plus derived fields used for rollups.
 ### Indexes
 
 ```
-UNIQUE (event_key)
-INDEX (played_at)
+UNIQUE (user_id, event_key)
+INDEX (user_id, played_at)
 INDEX (played_date)
 INDEX (played_year_month)
-INDEX (normalized_artist_name)
+INDEX (user_id, normalized_artist_name)
 INDEX (normalized_album_name)
 INDEX (normalized_track_name)
 ```
 
 ## Spotify Summary Tables
 
-Summary tables are rebuilt from imported events and queried by AI tools.
+Summary tables are rebuilt from imported events and queried by AI tools. Every summary row carries `user_id`; key and uniqueness constraints include the owner so different accounts can import identical Spotify history without colliding.
 
 |Table|Purpose|
 |---|---|
@@ -930,7 +943,7 @@ Summary tables are rebuilt from imported events and queried by AI tools.
 
 ## Spotify Collection Match Tables
 
-Match tables connect Spotify summaries to known local releases. They support collection-only recommendations and explain why a Spotify signal maps to vinyl data.
+Match tables connect Spotify summaries to user-owned collection memberships. They support collection-only recommendations and explain why a Spotify signal maps to vinyl data.
 
 |Table|Purpose|
 |---|---|

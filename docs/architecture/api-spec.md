@@ -1867,11 +1867,11 @@ Same response shape as `GET /analytics/records/by-rating`, with `count` represen
 
 Used by the **Insights screen** chat shell.
 
-The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted in the backend so the assistant can receive recent conversation history and the user has clear/export paths.
+The backend owns the AI boundary. When AI chat settings are disabled or incomplete, it returns a clear disabled assistant response. When configured, it calls an LM Studio native chat endpoint or an OpenAI-compatible chat completions provider. Chat messages are persisted under the authenticated user so the assistant can receive recent conversation history and the user has clear/export paths.
 
 Before calling the model, the backend runs deterministic read-only insight tools against known collection data. Tool results are passed to the model as bounded context, and the response `used_tools` field lists the tool names used for that turn. Saved session notes are included as high-priority context for recommendation and subjective insight prompts when notes are present.
 
-When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases already known to the local app collection.
+When the prompt explicitly asks about Spotify, streaming history, listening history, overlap, or correlation, the backend may add Spotify summary tools. These tools use the authenticated user's precomputed rollups and exact collection matches; they do not pass raw Spotify events to the model. Spotify-backed recommendation signals return only releases in that user's collection.
 
 ## POST /ai/chat
 
@@ -1887,7 +1887,7 @@ When the prompt explicitly asks about Spotify, streaming history, listening hist
 }
 ```
 
-`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`. Provided `conversation_id` values must be 36 characters or fewer.
+`conversation_id` and `client_context` are optional. When `conversation_id` is omitted, the backend uses `local-single-thread`. Conversation ids are scoped by authenticated user, so two accounts can use the same default id without sharing history. Provided `conversation_id` values must be 36 characters or fewer.
 
 `client_context` currently supports only the optional `timezone` field. `timezone` must be 64 characters or fewer, and unknown `client_context` fields are rejected with `422`.
 
@@ -1934,7 +1934,7 @@ Blank provided `conversation_id` values return `empty_conversation_id`.
 
 ## GET /ai/chat/history
 
-Returns the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+Returns the authenticated user's persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
 
 ```json
 {
@@ -1958,11 +1958,11 @@ Returns the persisted conversation for the requested `conversation_id`, or `loca
 
 ## GET /ai/chat/export
 
-Returns the same persisted messages plus `exported_at` for privacy/data export.
+Returns the same user-owned persisted messages plus `exported_at` for privacy/data export.
 
 ## DELETE /ai/chat/history
 
-Deletes the persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
+Deletes the authenticated user's persisted conversation for the requested `conversation_id`, or `local-single-thread` when omitted.
 
 ```json
 {
@@ -1973,7 +1973,7 @@ Deletes the persisted conversation for the requested `conversation_id`, or `loca
 
 ## POST /ai/spotify/import
 
-Imports local Spotify `end_song` JSON export files from the configured backend import directory. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
+Imports local Spotify `end_song` JSON export files from the configured backend import directory into the authenticated user's Spotify history. This endpoint is for local backend testing and experimentation; it does not upload files from Android.
 
 ### Request
 
@@ -2010,7 +2010,7 @@ Imports local Spotify `end_song` JSON export files from the configured backend i
 }
 ```
 
-The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events, then refreshes Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
+The import stores only the filtered song-event fields defined in the AI Insights implementation plan, dedupes repeated events per user, then refreshes that user's Spotify rollups and collection matches when `refresh_rollups` is `true`. Later AI chat requests read those summary tables through deterministic tools instead of scanning raw event history.
 
 ---
 

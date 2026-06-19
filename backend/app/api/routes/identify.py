@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Request, UploadFi
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.core.config import settings
 from app.database.session import get_db
 from app.schemas.identify import IdentifyCandidateResponse, IdentifyJobStatusResponse, IdentifyResponse
@@ -45,10 +46,11 @@ async def identify_release(
     image: Annotated[UploadFile, File(...)],
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[IdentifyService, Depends(get_identify_service)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
 ):
-    _ = request
+    _ = request, current_user
     try:
         admission_ticket = job_service.acquire_sync_identify_slot()
     except IdentifyCapacityExceededError as error:
@@ -103,6 +105,7 @@ async def create_identify_job(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
 ):
     filename = image.filename or ""
@@ -112,6 +115,7 @@ async def create_identify_job(
         client_key = request.app.state.client_key_resolver.resolve(request)
         job = job_service.create_job(
             db,
+            user_id=current_user.account.id,
             image_bytes=image_bytes,
             filename=filename,
             content_type=content_type,
@@ -140,10 +144,11 @@ async def create_identify_job(
 def get_identify_job(
     job_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
 ):
     try:
-        return job_service.get_job(db, job_id)
+        return job_service.get_job(db, job_id, user_id=current_user.account.id)
     except IdentifyJobNotFoundError:
         return _error_response(
             status_code=404,
@@ -166,10 +171,11 @@ def get_identify_job(
 def cancel_identify_job(
     job_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
 ):
     try:
-        return job_service.cancel_job(db, job_id)
+        return job_service.cancel_job(db, job_id, user_id=current_user.account.id)
     except IdentifyJobNotFoundError:
         return _error_response(
             status_code=404,

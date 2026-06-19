@@ -83,6 +83,7 @@ class AiInsightsService:
         self,
         *,
         db: Session,
+        user_id: str,
         message: str,
         conversation_id: str | None = None,
         client_context: dict[str, str] | None = None,
@@ -98,11 +99,12 @@ class AiInsightsService:
             for message_record in self.repository.list_messages(
                 db,
                 cleaned_conversation_id,
+                user_id=user_id,
                 limit=self.MAX_PROMPT_HISTORY_MESSAGES,
             )
             if message_record.role in {"user", "assistant"}
         ]
-        tool_context = self.tool_runner.run(db, message=cleaned_message)
+        tool_context = self.tool_runner.run(db, user_id=user_id, message=cleaned_message)
         used_tool_names = [result.name for result in tool_context]
 
         try:
@@ -136,6 +138,7 @@ class AiInsightsService:
 
         self.repository.append_turn(
             db,
+            user_id=user_id,
             conversation_id=cleaned_conversation_id,
             user_content=cleaned_message,
             assistant_content=adapter_reply.content,
@@ -152,10 +155,11 @@ class AiInsightsService:
         self,
         db: Session,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsHistory:
         cleaned_conversation_id = self._conversation_id(conversation_id)
-        messages = self.repository.list_messages(db, cleaned_conversation_id)
+        messages = self.repository.list_messages(db, cleaned_conversation_id, user_id=user_id)
         return AiInsightsHistory(
             conversation_id=cleaned_conversation_id,
             messages=[self._history_message(message_record) for message_record in messages],
@@ -165,10 +169,15 @@ class AiInsightsService:
         self,
         db: Session,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsClearResult:
         cleaned_conversation_id = self._conversation_id(conversation_id)
-        deleted_messages = self.repository.delete_conversation(db, cleaned_conversation_id)
+        deleted_messages = self.repository.delete_conversation(
+            db,
+            user_id=user_id,
+            conversation_id=cleaned_conversation_id,
+        )
         return AiInsightsClearResult(
             conversation_id=cleaned_conversation_id,
             deleted_messages=deleted_messages,
@@ -178,9 +187,10 @@ class AiInsightsService:
         self,
         db: Session,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsHistory:
-        return self.get_history(db, conversation_id=conversation_id)
+        return self.get_history(db, user_id=user_id, conversation_id=conversation_id)
 
     def _conversation_id(self, conversation_id: str | None) -> str:
         if conversation_id is None:

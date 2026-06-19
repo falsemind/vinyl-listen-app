@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.core.config import BACKEND_ROOT, settings
 from app.database.session import get_db
 from app.schemas.ai import (
@@ -45,11 +46,13 @@ def get_spotify_listening_import_service() -> SpotifyListeningImportService:
 def chat(
     request: AiChatRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AiInsightsService, Depends(get_ai_insights_service)],
 ) -> AiChatResponse | JSONResponse:
     try:
         reply = service.chat(
             db=db,
+            user_id=current_user.account.id,
             message=request.message,
             conversation_id=request.conversation_id,
             client_context=request.client_context.model_dump(exclude_none=True) if request.client_context else None,
@@ -74,11 +77,12 @@ def chat(
 )
 def get_chat_history(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AiInsightsService, Depends(get_ai_insights_service)],
     conversation_id: Annotated[str | None, Query(max_length=36)] = None,
 ) -> AiChatHistoryResponse | JSONResponse:
     try:
-        history = service.get_history(db, conversation_id=conversation_id)
+        history = service.get_history(db, user_id=current_user.account.id, conversation_id=conversation_id)
     except AiInsightsValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -105,11 +109,12 @@ def get_chat_history(
 )
 def clear_chat_history(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AiInsightsService, Depends(get_ai_insights_service)],
     conversation_id: Annotated[str | None, Query(max_length=36)] = None,
 ) -> AiChatClearResponse | JSONResponse:
     try:
-        result = service.clear_history(db, conversation_id=conversation_id)
+        result = service.clear_history(db, user_id=current_user.account.id, conversation_id=conversation_id)
     except AiInsightsValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -128,11 +133,12 @@ def clear_chat_history(
 )
 def export_chat_history(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AiInsightsService, Depends(get_ai_insights_service)],
     conversation_id: Annotated[str | None, Query(max_length=36)] = None,
 ) -> AiChatExportResponse | JSONResponse:
     try:
-        history = service.export_history(db, conversation_id=conversation_id)
+        history = service.export_history(db, user_id=current_user.account.id, conversation_id=conversation_id)
     except AiInsightsValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -161,6 +167,7 @@ def export_chat_history(
 def import_spotify_listening_history(
     request: SpotifyListeningImportRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SpotifyListeningImportService, Depends(get_spotify_listening_import_service)],
 ) -> SpotifyListeningImportResponse | JSONResponse:
     try:
@@ -169,6 +176,7 @@ def import_spotify_listening_history(
         result = service.import_files(
             db,
             resolved_files,
+            user_id=current_user.account.id,
             batch_size=request.batch_size,
             refresh_rollups=request.refresh_rollups,
         )

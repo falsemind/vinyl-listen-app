@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.models.auth import UserAccount
 from app.models.identify_job import IdentifyJob
 from app.pipelines.identification import IdentifyCandidate
 from app.repositories.identify_job_repository import IdentifyJobRepository
@@ -165,12 +166,14 @@ def test_identify_job_service_completes_job() -> None:
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        completed = service.get_job(db, job.job_id)
+        completed = service.get_job(db, job.job_id, user_id="user-a")
 
     assert completed.status == "completed"
     assert completed.result is not None
@@ -187,12 +190,14 @@ def test_identify_job_service_persists_discogs_failure() -> None:
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        failed = service.get_job(db, job.job_id)
+        failed = service.get_job(db, job.job_id, user_id="user-a")
 
     assert failed.status == "failed"
     assert failed.error is not None
@@ -209,12 +214,14 @@ def test_identify_job_service_maps_failure_from_last_progress_status() -> None:
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        failed = service.get_job(db, job.job_id)
+        failed = service.get_job(db, job.job_id, user_id="user-a")
 
     assert failed.status == "failed"
     assert failed.error is not None
@@ -232,7 +239,7 @@ def test_identify_job_service_rejects_invalid_upload_before_job_creation() -> No
 
     with session_factory() as db:
         try:
-            service.create_job(db, image_bytes=b"", filename="cover.jpg", content_type="image/jpeg")
+            service.create_job(db, user_id="user-a", image_bytes=b"", filename="cover.jpg", content_type="image/jpeg")
         except IdentifyValidationError as raised:
             assert raised.code == "empty_image"
         else:
@@ -252,6 +259,7 @@ def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> N
     with session_factory() as db:
         first_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -261,6 +269,7 @@ def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> N
         try:
             service.create_job(
                 db,
+                user_id="user-a",
                 image_bytes=b"image",
                 filename="cover.jpg",
                 content_type="image/jpeg",
@@ -272,6 +281,37 @@ def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> N
             raise AssertionError("Expected IdentifyCapacityExceededError")
 
     service.process_job(first_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+
+
+def test_identify_job_service_scopes_job_access_by_user() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        job = service.create_job(
+            db,
+            user_id="user-a",
+            image_bytes=b"image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+        )
+
+        try:
+            service.get_job(db, job.job_id, user_id="user-b")
+        except IdentifyJobNotFoundError:
+            pass
+        else:
+            raise AssertionError("Expected IdentifyJobNotFoundError")
+
+        try:
+            service.cancel_job(db, job.job_id, user_id="user-b")
+        except IdentifyJobNotFoundError:
+            pass
+        else:
+            raise AssertionError("Expected IdentifyJobNotFoundError")
 
 
 def test_identify_job_service_serializes_same_client_admission() -> None:
@@ -290,6 +330,7 @@ def test_identify_job_service_serializes_same_client_admission() -> None:
             try:
                 job = service.create_job(
                     db,
+                    user_id="user-a",
                     image_bytes=b"image",
                     filename="cover.jpg",
                     content_type="image/jpeg",
@@ -329,6 +370,7 @@ def test_identify_job_service_serializes_db_global_admission() -> None:
             try:
                 job = service.create_job(
                     db,
+                    user_id="user-a",
                     image_bytes=b"image",
                     filename="cover.jpg",
                     content_type="image/jpeg",
@@ -363,6 +405,7 @@ def test_identify_job_service_rejects_when_global_capacity_is_full() -> None:
     with session_factory() as db:
         first_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -371,6 +414,7 @@ def test_identify_job_service_rejects_when_global_capacity_is_full() -> None:
         try:
             service.create_job(
                 db,
+                user_id="user-a",
                 image_bytes=b"image",
                 filename="cover.jpg",
                 content_type="image/jpeg",
@@ -397,6 +441,7 @@ def test_identify_job_service_rejects_when_db_global_active_capacity_is_full() -
     with session_factory() as db:
         first_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -405,6 +450,7 @@ def test_identify_job_service_rejects_when_db_global_active_capacity_is_full() -
         try:
             service.create_job(
                 db,
+                user_id="user-a",
                 image_bytes=b"image",
                 filename="cover.jpg",
                 content_type="image/jpeg",
@@ -434,6 +480,7 @@ def test_identify_job_service_expires_stale_active_job_before_admission() -> Non
         db.add(
             IdentifyJob(
                 id="stale-job",
+                user_id="user-a",
                 status="upload_received",
                 client_key="client-a",
                 message="Image upload received",
@@ -448,6 +495,7 @@ def test_identify_job_service_expires_stale_active_job_before_admission() -> Non
 
         new_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -481,6 +529,7 @@ def test_identify_job_service_expires_orphaned_active_job_after_restart() -> Non
         db.add(
             IdentifyJob(
                 id="orphaned-job",
+                user_id="user-a",
                 status="upload_received",
                 client_key="client-a",
                 message="Image upload received",
@@ -495,6 +544,7 @@ def test_identify_job_service_expires_orphaned_active_job_after_restart() -> Non
 
         new_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -523,6 +573,7 @@ def test_identify_job_service_releases_capacity_after_worker_failure() -> None:
     with session_factory() as db:
         first_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -534,6 +585,7 @@ def test_identify_job_service_releases_capacity_after_worker_failure() -> None:
     with session_factory() as db:
         second_job = service.create_job(
             db,
+            user_id="user-a",
             image_bytes=b"image",
             filename="cover.jpg",
             content_type="image/jpeg",
@@ -553,8 +605,10 @@ def test_identify_job_service_cancel_job_requests_cancel_for_active_job() -> Non
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
-        canceled = service.cancel_job(db, job.job_id)
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
+        canceled = service.cancel_job(db, job.job_id, user_id="user-a")
 
     assert canceled.status == "upload_received"
     assert canceled.cancel_requested is True
@@ -573,6 +627,7 @@ def test_identify_job_service_cancel_job_returns_terminal_job_without_rewriting_
         db.add(
             IdentifyJob(
                 id="completed-job",
+                user_id="user-a",
                 status="completed",
                 client_key="client-a",
                 message="Identify completed",
@@ -585,7 +640,7 @@ def test_identify_job_service_cancel_job_returns_terminal_job_without_rewriting_
         )
         db.commit()
 
-        canceled = service.cancel_job(db, "completed-job")
+        canceled = service.cancel_job(db, "completed-job", user_id="user-a")
 
     assert canceled.status == "completed"
     assert canceled.cancel_requested is False
@@ -600,7 +655,7 @@ def test_identify_job_service_cancel_job_raises_not_found() -> None:
 
     with session_factory() as db:
         try:
-            service.cancel_job(db, "missing")
+            service.cancel_job(db, "missing", user_id="user-a")
         except IdentifyJobNotFoundError:
             pass
         else:
@@ -617,13 +672,15 @@ def test_identify_job_service_marks_canceled_before_first_work() -> None:
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
-        service.cancel_job(db, job.job_id)
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
+        service.cancel_job(db, job.job_id, user_id="user-a")
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        canceled = service.get_job(db, job.job_id)
+        canceled = service.get_job(db, job.job_id, user_id="user-a")
 
     assert canceled.status == "canceled"
     assert canceled.message == "Identify canceled"
@@ -642,12 +699,14 @@ def test_identify_job_service_marks_canceled_mid_pipeline() -> None:
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        canceled = service.get_job(db, job.job_id)
+        canceled = service.get_job(db, job.job_id, user_id="user-a")
 
     assert canceled.status == "canceled"
     assert canceled.message == "Identify canceled"
@@ -666,12 +725,14 @@ def test_identify_job_service_discards_result_when_cancel_requested_before_compl
     )
 
     with session_factory() as db:
-        job = service.create_job(db, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+        job = service.create_job(
+            db, user_id="user-a", image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg"
+        )
 
     service.process_job(job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
 
     with session_factory() as db:
-        canceled = service.get_job(db, job.job_id)
+        canceled = service.get_job(db, job.job_id, user_id="user-a")
 
     assert canceled.status == "canceled"
     assert canceled.message == "Identify canceled"
@@ -691,7 +752,9 @@ class FailingValidationIdentifyService(SuccessfulIdentifyService):
 
 def _build_session_factory():
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
+    _seed_users(engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -701,5 +764,33 @@ def _build_threadsafe_session_factory():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    UserAccount.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
+    _seed_users(engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def _seed_users(engine) -> None:
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with session_factory() as db:
+        db.add_all(
+            [
+                UserAccount(
+                    id="user-a",
+                    email="user-a@example.com",
+                    password_hash="hash",
+                    normalized_email="user-a@example.com",
+                    password_hash_algorithm="argon2id",
+                    email_verified_at=None,
+                ),
+                UserAccount(
+                    id="user-b",
+                    email="user-b@example.com",
+                    password_hash="hash",
+                    normalized_email="user-b@example.com",
+                    password_hash_algorithm="argon2id",
+                    email_verified_at=None,
+                ),
+            ]
+        )
+        db.commit()
