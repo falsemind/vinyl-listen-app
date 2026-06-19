@@ -19,21 +19,27 @@ from app.services.collection_sync_job_service import CollectionSyncConfiguration
 class StubCollectionSyncJobService:
     def __init__(self) -> None:
         self.processed_job_ids: list[str] = []
+        self.create_user_ids: list[str] = []
+        self.get_user_ids: list[str] = []
+        self.active_user_ids: list[str] = []
         self.create_error: Exception | None = None
         self.get_error: Exception | None = None
         self.active_job: CollectionSyncJobStatusResponse | None = None
 
-    def create_job(self, _db) -> CollectionSyncJobStatusResponse:
+    def create_job(self, _db, *, user_id: str) -> CollectionSyncJobStatusResponse:
+        self.create_user_ids.append(user_id)
         if self.create_error is not None:
             raise self.create_error
         return _job_response()
 
-    def get_job(self, _db, _job_id: str) -> CollectionSyncJobStatusResponse:
+    def get_job(self, _db, _job_id: str, *, user_id: str) -> CollectionSyncJobStatusResponse:
+        self.get_user_ids.append(user_id)
         if self.get_error is not None:
             raise self.get_error
         return _job_response(status="running", step="fetching", message="Fetching collection data")
 
-    def get_active_job(self, _db) -> CollectionSyncJobStatusResponse | None:
+    def get_active_job(self, _db, *, user_id: str) -> CollectionSyncJobStatusResponse | None:
+        self.active_user_ids.append(user_id)
         return self.active_job
 
     def process_job(self, job_id: str) -> None:
@@ -44,11 +50,13 @@ class StubReleasesRepository:
     def __init__(self, releases: list[SimpleNamespace]) -> None:
         self.releases = releases
         self.calls: list[dict] = []
+        self.user_ids: list[str] = []
 
     def list_collection_releases(
         self,
         _db,
         *,
+        user_id: str,
         limit: int,
         offset: int,
         include_removed: bool = False,
@@ -57,6 +65,7 @@ class StubReleasesRepository:
         favorite: bool = False,
         folder_id: int | None = None,
     ):
+        self.user_ids.append(user_id)
         self.calls.append(
             {
                 "limit": limit,
@@ -75,16 +84,18 @@ class StubReleasesRepository:
         self,
         _db,
         *,
+        user_id: str,
         include_removed: bool = False,
         artist: str | None = None,
         label: str | None = None,
         favorite: bool = False,
         folder_id: int | None = None,
     ) -> int:
-        _ = include_removed, artist
+        _ = user_id, include_removed, artist
         return len(self._filtered_releases(label=label, favorite=favorite, folder_id=folder_id))
 
-    def has_favorite_collection_releases(self, _db) -> bool:
+    def has_favorite_collection_releases(self, _db, *, user_id: str) -> bool:
+        _ = user_id
         return any(release.in_collection and release.is_favorite for release in self.releases)
 
     def _filtered_releases(
@@ -109,6 +120,7 @@ class StubReleasesRepository:
         self,
         _db,
         *,
+        user_id: str,
         artist: str | None = None,
         title: str | None = None,
         catalog: str | None = None,
@@ -117,6 +129,7 @@ class StubReleasesRepository:
         limit: int,
         offset: int,
     ):
+        self.user_ids.append(user_id)
         self.calls.append(
             {
                 "artist": artist,
@@ -150,8 +163,10 @@ class StubCollectionSettingsRepository:
 class StubCollectionFoldersRepository:
     def __init__(self, folders: list[SimpleNamespace]) -> None:
         self.folders = folders
+        self.user_ids: list[str] = []
 
-    def list_folders(self, _db):
+    def list_folders(self, _db, *, user_id: str):
+        self.user_ids.append(user_id)
         return self.folders
 
 

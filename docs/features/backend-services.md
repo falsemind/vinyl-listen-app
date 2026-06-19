@@ -294,29 +294,30 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 
 ## CollectionSyncService
 
-`CollectionSyncService` powers manual Discogs collection imports and keeps local
-collection membership compatible with the selected source of truth.
+`CollectionSyncService` powers manual Discogs collection imports and keeps the
+authenticated user's local collection membership compatible with that user's
+selected source of truth. Release metadata stays shared catalog data.
 
 ### Sync flow
 
-1. Resolve the source of truth from `CollectionSettingsRepository`.
-2. Fetch the default Discogs collection folder through `DiscogsService`.
+1. Resolve the source of truth from `CollectionSettingsRepository` for `user_id`.
+2. Fetch the default Discogs collection folder through the user's saved Discogs token.
 3. Collapse duplicate Discogs instances to one representative release per
    Discogs release id.
 4. Map each representative item with `release_mapper.py`.
 5. Upsert release metadata through `ReleasesRepository`.
-6. Activate imported releases when the source of truth is `DISCOGS`, when the
-   row is new, or when an app-owned first import has no prior collection
-   membership history.
-7. In `DISCOGS` mode only, mark missing active local releases as removed.
+6. Activate imported releases in `release_collection_memberships` when the source of truth is `DISCOGS`, when the
+   shared release row is new, or when an app-owned first import has no prior
+   user membership history.
+7. In `DISCOGS` mode only, mark the user's missing active local releases as removed.
 8. Fetch Discogs folder metadata and persist folder memberships through
    `CollectionFoldersRepository`.
 
-Folder memberships are stored separately from release metadata, so a release can
-belong to multiple Discogs folders without duplicate `releases` rows. Folder
-filters always query active local collection membership; removed records remain
-available to analytics/history but do not appear in folder-filtered Collection
-results.
+Folder memberships are stored separately from release metadata and include
+`user_id`, so different accounts can have different folders for the same shared
+release row. Folder filters always query the user's active local collection
+membership; removed records remain available to analytics/history but do not
+appear in folder-filtered Collection results.
 
 ## ReleaseImportService
 
@@ -335,10 +336,11 @@ results.
 ### Import-to-collection flow
 
 `import_release_to_collection` reuses the token-backed import flow, then calls
-`ReleasesRepository.mark_in_collection` with no Discogs collection instance id.
-It activates or reactivates the release, clears `collection_removed_at`, and
-updates the collection sync timestamp. This route is for server-owned Discogs
-fetches that can use a saved backend token.
+`ReleasesRepository.mark_in_collection` for the authenticated user's membership
+with no Discogs collection instance id. It activates or reactivates the release,
+clears the membership `collection_removed_at`, and updates the membership sync
+timestamp. This route is for server-owned Discogs fetches that can use a saved
+backend token.
 
 ### Client-provided import flow
 

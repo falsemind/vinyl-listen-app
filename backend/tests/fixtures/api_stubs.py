@@ -183,6 +183,7 @@ class StubReleaseImportService:
             updated_at=datetime(2026, 4, 19, tzinfo=UTC),
         )
         self.import_result = ReleaseImportResult(release=self.release, created=True)
+        self.membership: SimpleNamespace | None = None
         self.import_error: Exception | None = None
         self.import_calls: list[tuple[int, bool]] = []
         self.collection_import_error: Exception | None = None
@@ -216,7 +217,15 @@ class StubReleaseImportService:
             ReleaseArtistData(name="Boards of Canada", discogs_artist_id=194),
         ]
 
-    def import_release(self, _db, discogs_release_id: int, *, force_refresh: bool = False) -> ReleaseImportResult:
+    def import_release(
+        self,
+        _db,
+        discogs_release_id: int,
+        *,
+        user_id: str | None = None,
+        force_refresh: bool = False,
+    ) -> ReleaseImportResult:
+        _ = user_id
         self.import_calls.append((discogs_release_id, force_refresh))
         if self.import_error is not None:
             raise self.import_error
@@ -227,8 +236,10 @@ class StubReleaseImportService:
         _db,
         discogs_release_id: int,
         *,
+        user_id: str,
         force_refresh: bool = False,
     ) -> ReleaseImportResult:
+        _ = user_id
         self.collection_import_calls.append((discogs_release_id, force_refresh))
         if self.collection_import_error is not None:
             raise self.collection_import_error
@@ -249,7 +260,8 @@ class StubReleaseImportService:
             return self.release
         return None
 
-    def refresh_release(self, db, release_id: str) -> ReleaseImportResult | None:
+    def refresh_release(self, db, release_id: str, *, user_id: str | None = None) -> ReleaseImportResult | None:
+        _ = user_id
         self.refresh_calls.append(release_id)
         release = self.get_release(db, release_id)
         if release is None:
@@ -279,23 +291,47 @@ class StubReleaseImportService:
             return self.artists
         return []
 
-    def set_favorite(self, _db, release: ReleaseStub, *, is_favorite: bool) -> ReleaseStub:
+    def set_favorite(self, _db, release: ReleaseStub, *, user_id: str, is_favorite: bool):
+        _ = user_id
         self.favorite_calls.append((release.id, is_favorite))
         release.is_favorite = is_favorite
-        return release
+        self.membership = _membership_from_release(release)
+        self.membership.is_favorite = is_favorite
+        return self.membership
 
-    def deactivate_collection_membership(self, _db, release: ReleaseStub, *, removed_at: datetime) -> ReleaseStub:
+    def deactivate_collection_membership(self, _db, release: ReleaseStub, *, user_id: str, removed_at: datetime):
+        _ = user_id
         self.deactivate_calls.append(release.id)
         release.in_collection = False
         release.collection_removed_at = removed_at
-        return release
+        self.membership = _membership_from_release(release)
+        return self.membership
 
-    def reactivate_collection_membership(self, _db, release: ReleaseStub, *, added_at: datetime) -> ReleaseStub:
+    def reactivate_collection_membership(self, _db, release: ReleaseStub, *, user_id: str, added_at: datetime):
+        _ = user_id
         self.reactivate_calls.append(release.id)
         release.in_collection = True
         release.collection_added_at = added_at
         release.collection_removed_at = None
-        return release
+        self.membership = _membership_from_release(release)
+        return self.membership
+
+    def get_collection_membership(self, _db, *, release_id: str, user_id: str):
+        _ = user_id
+        if release_id != self.release.id:
+            return None
+        return self.membership
+
+
+def _membership_from_release(release: ReleaseStub) -> SimpleNamespace:
+    return SimpleNamespace(
+        in_collection=release.in_collection,
+        collection_added_at=release.collection_added_at,
+        collection_removed_at=release.collection_removed_at,
+        last_discogs_sync_at=release.last_discogs_sync_at,
+        discogs_instance_id=release.discogs_instance_id,
+        is_favorite=release.is_favorite,
+    )
 
 
 class StubDiscogsSearchService:
@@ -815,10 +851,11 @@ def override_identify_job_service() -> Callable[[StubIdentifyJobService], None]:
 @pytest.fixture
 def override_release_import_service() -> Callable[[StubReleaseImportService], None]:
     def _override(service: StubReleaseImportService) -> None:
-        from app.api.routes.releases import get_release_import_service
+        from app.api.routes.releases import get_release_import_service, get_releases_repository
         from app.main import app
 
         app.dependency_overrides[get_release_import_service] = lambda: service
+        app.dependency_overrides[get_releases_repository] = lambda: service
 
     return _override
 

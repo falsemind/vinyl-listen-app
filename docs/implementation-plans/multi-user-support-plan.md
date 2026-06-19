@@ -148,11 +148,13 @@ These records must be scoped to `user_id`:
 
 - Provider integrations and encrypted tokens.
 - Collection settings.
-- Collection membership and source-of-truth state.
+- Collection membership, favorite state, Discogs folder membership, and source-of-truth state.
 - Listening sessions and session groups.
 - Ratings, moods, styles, notes, and analytics inputs.
 - AI chat history, insight summaries, and imported listening-history files.
 - Identify jobs that include user uploads, cached results, or user-specific rate limits.
+- Collection sync jobs and background progress state.
+- Spotify listening imports, rollups, matches, and AI tool inputs.
 - Usage counters and future entitlements.
 
 ### Shared Or Catalog Data
@@ -212,6 +214,7 @@ Later account-management endpoints:
 - Queries must filter by `user_id` before returning collection, sessions, analytics, integrations, AI history, or usage data.
 - Cross-user access attempts return `404` or `403` consistently.
 - Background jobs must store and run with the owning `user_id`.
+- Job status, cancel, active-job, and progress endpoints must filter by owner before returning job metadata.
 
 ### Security
 
@@ -310,13 +313,38 @@ Later account-management endpoints:
 
 ### Phase 5: User Scoping And Data Ownership
 
-- Scope provider integrations, collection settings, collection membership, sessions, analytics, AI history, identify jobs, and usage counters by `user_id`.
+Phase 5 is split into explicit backend slices so early session/auth scoping does not imply full multi-user isolation.
+
+#### Phase 5a: Settings, Integrations, Sessions, And Analytics
+
+- Scope provider integrations, collection settings, sessions, session groups, release listening history, home summary, and analytics reads by `user_id`.
 - Add nullable `user_id` ownership columns for legacy compatibility, set `user_id` on all new writes, and avoid hardcoded owner id/email assumptions.
 - Treat concurrent or cross-account session-group access as not found/inactive by filtering group validation with the authenticated `user_id`.
-- Split user-specific collection/session state from shared Discogs/catalog metadata.
+- Done when User A cannot read or mutate User B integrations, collection settings, sessions, session groups, or session-backed analytics.
+
+#### Phase 5b: Collection Ownership And Sync Jobs
+
+- Split user-specific collection state from shared release/catalog metadata.
+- Move `in_collection`, favorite state, collection added/removed timestamps, Discogs instance id, and per-user collection status out of shared `releases` rows.
+- Add user-owned collection membership rows keyed by `user_id` and shared release/catalog id.
+- Add user-owned folder metadata and release-folder membership for Discogs collection folders.
+- Scope `GET /collection/releases`, release favorite updates, collection deactivate/reactivate, folder filters, and collection source-of-truth behavior to the authenticated user.
+- Add `user_id` to collection sync jobs, active-job lookup, status lookup, progress updates, and stale-job expiry.
+- Run collection sync with the owning user's saved Discogs token and collection settings.
+- Done when User A cannot see, mutate, sync, favorite, remove, reactivate, or poll User B collection state or sync jobs.
+
+Implementation note: this slice keeps Discogs/catalog release metadata shared, stores active collection state in `release_collection_memberships`, and scopes folder/sync-job tables by account. Legacy membership columns remain on `releases` for migration compatibility but are not the source of truth for new multi-user collection reads or writes.
+
+#### Phase 5c: Async Jobs, AI History, Spotify Data, And Usage Inputs
+
+- Add `user_id` to identify jobs and filter create/status/cancel by authenticated user.
+- Use `user_id` rather than only client/IP keys for identify job ownership, while keeping client/IP keys for rate limiting where useful.
+- Scope AI chat sessions/messages by `user_id`; the default local conversation id must not collide across accounts.
+- Scope AI insight tools to user-owned sessions, analytics, collection membership, and imported Spotify data.
+- Add `user_id` to Spotify import batches, events, rollups, artist/album stats, and vinyl match tables, or keep Spotify import disabled/admin-only until ownership is implemented.
 - Keep manual releases user-owned and separate from shared Discogs/catalog releases.
 - Add optional user-owned association rows for later manual-to-Discogs "keep both" flows.
-- Done when User A cannot read, mutate, sync, analyze, or delete User B data in focused API/service tests.
+- Done when User A cannot read, mutate, cancel, analyze, export, or delete User B async jobs, AI history, Spotify imports, manual releases, or usage inputs.
 
 ### Phase 6: Account Management And Deletion
 
@@ -417,8 +445,11 @@ Later account-management endpoints:
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | User-specific state remains on shared release rows | Cross-user data leakage | Split catalog metadata from collection membership before launch |
+| Future async job tables remain global | One user can see or overwrite another user's background progress | Store `user_id` on job rows and run work with owner credentials |
+| Identify jobs remain keyed only by client/IP | Job result or cancellation can cross accounts | Store `user_id` on identify jobs and filter status/cancel by owner |
+| AI chat or Spotify imports remain global | User-specific insight context leaks between accounts | Scope chat history, Spotify imports, rollups, and insight tools by `user_id` |
 | Refresh tokens behave like permanent passwords | Account takeover window grows | Use rotation, hashing, inactivity expiry, and revocation |
 | Email verification/reset leaks account existence | Privacy issue | Use generic responses and rate limits |
 | Account deletion misses derived analytics or AI history | Privacy and trust issue | Maintain a deletion checklist backed by integration tests |
 | Subscription logic spreads into UI/API conditionals | Hard future migration | Centralize backend capability checks and structured gated errors |
-| Multi-user migration breaks existing dev data | Lost testing baseline | Add a deterministic legacy-owner migration path |
+| Multi-user migration breaks existing dev data | Lost testing baseline | For local development, allow a clean data reset until production migration rules are defined |

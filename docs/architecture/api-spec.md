@@ -749,7 +749,7 @@ Restores an existing release to the active collection without creating a duplica
 
 # 5. Collection Management
 
-Endpoints used by the Records Collection screen to load local collection records, start manual Discogs metadata sync, and manage the collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich metadata but must not remove, deactivate, or re-add local collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
+Endpoints used by the Records Collection screen to load the authenticated user's collection records, start manual Discogs metadata sync, and manage that user's collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich shared release metadata but must not remove, deactivate, or re-add the user's collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.
 
 ## GET /collection/settings
 
@@ -791,15 +791,15 @@ Same response shape as `GET /collection/settings`.
 
 ## POST /collection/sync
 
-Starts a manual background collection sync job and returns immediately. Requires
-a saved Discogs integration token. The backend uses the username returned by
+Starts a manual background collection sync job for the authenticated user and returns immediately. Requires
+that user's saved Discogs integration token. The backend uses the username returned by
 Discogs identity validation, not a username from backend configuration.
 
 Sync behavior depends on `source_of_truth`:
 
 | Source | Behavior |
 | --- | --- |
-| `APP` | Preserve local `in_collection` state. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
+| `APP` | Preserve the user's local `in_collection` membership. Missing or empty Discogs collection responses do not remove, deactivate, or re-add records. |
 | `DISCOGS` | Treat Discogs as the collection source of truth. Releases missing from the Discogs collection can be marked inactive locally while metadata, sessions, analytics, and cached payloads remain stored. |
 
 ### Response
@@ -823,7 +823,7 @@ Returns `202 Accepted`.
 
 ## GET /collection/sync/active
 
-Returns the most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
+Returns the authenticated user's most recent queued or running collection sync job so Android can reattach to an import after navigation or screen recreation.
 
 Queued or running jobs left behind by a previous backend process are marked `expired` and are not returned as active.
 
@@ -831,7 +831,7 @@ Returns `204 No Content` when no collection sync is active.
 
 ## GET /collection/sync/{job_id}
 
-Returns progress for a collection sync job. Android polls this endpoint while showing collection import status.
+Returns progress for one of the authenticated user's collection sync jobs. Android polls this endpoint while showing collection import status.
 
 Status values are `queued`, `running`, `succeeded`, `failed`, and `expired`. `expired` means a queued or running job was orphaned by a backend restart or exceeded its lifetime.
 
@@ -856,7 +856,7 @@ Terminal statuses are `succeeded` and `failed`. Missing jobs return `404` with `
 
 ## GET /collection/releases
 
-Returns active collection records ordered by Discogs collection add date, newest first.
+Returns the authenticated user's active collection records ordered by Discogs collection add date, newest first. Release metadata is shared catalog data; `in_collection`, `collection_added_at`, and `is_favorite` come from that user's collection membership row.
 
 ### Query Parameters
 
@@ -866,8 +866,8 @@ Returns active collection records ordered by Discogs collection add date, newest
 | `offset` | integer | Number of active collection records to skip. |
 | `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
 | `label` | string | Optional label-name filter, 1..255 characters. Matches the release label field and cached Discogs release data so multi-label releases can be shown from Record Details. |
-| `favorite` | boolean | Optional flag. When `true`, returns only records marked as personal favorites. |
-| `folder_id` | integer | Optional Discogs collection folder id. When present, returns active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
+| `favorite` | boolean | Optional flag. When `true`, returns only records marked as the user's personal favorites. |
+| `folder_id` | integer | Optional Discogs collection folder id. When present, returns the user's active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
 
 ### Response
 
@@ -902,7 +902,7 @@ Returns active collection records ordered by Discogs collection add date, newest
 
 ## GET /collection/folders
 
-Returns persisted Discogs collection folders for the Collection action menu.
+Returns the authenticated user's persisted Discogs collection folders for the Collection action menu.
 When Discogs credentials are missing or inactive, the endpoint returns a safe
 not-configured response so Android can hide folder controls without surfacing an
 error. Default-only Discogs collections return `has_extra_folders=false`; Android

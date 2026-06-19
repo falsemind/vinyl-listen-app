@@ -8,7 +8,7 @@ from app.models.auth import (
     UserAccount,
     UserEntitlement,
 )
-from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder
+from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder, ReleaseCollectionMembership
 from app.models.collection_settings import CollectionSettings
 from app.models.collection_sync_job import CollectionSyncJob
 from app.models.discogs_release_cache import DiscogsReleaseCache
@@ -37,6 +37,7 @@ __all__ = [
     "ConsumedRefreshToken",
     "CollectionFolder",
     "ReleaseCollectionFolder",
+    "ReleaseCollectionMembership",
     "CollectionSettings",
     "CollectionSyncJob",
     "DiscogsReleaseCache",

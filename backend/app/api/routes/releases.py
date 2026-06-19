@@ -183,6 +183,7 @@ def import_release(
     payload: ReleaseImportRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
 ):
     logger.info("Importing Discogs release %s", payload.discogs_release_id)
@@ -191,6 +192,7 @@ def import_release(
         result = service.import_release(
             db,
             payload.discogs_release_id,
+            user_id=current_user.account.id,
             force_refresh=payload.force_refresh,
         )
     except DiscogsConfigurationError as error:
@@ -218,6 +220,7 @@ def import_release_to_collection(
     payload: ReleaseImportRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
 ):
     logger.info("Importing Discogs release %s to collection", payload.discogs_release_id)
@@ -226,6 +229,7 @@ def import_release_to_collection(
         result = service.import_release_to_collection(
             db,
             payload.discogs_release_id,
+            user_id=current_user.account.id,
             force_refresh=payload.force_refresh,
         )
     except DiscogsConfigurationError as error:
@@ -274,7 +278,9 @@ def import_client_discogs_release(
 def get_release(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
@@ -283,7 +289,7 @@ def get_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    return _release_response(db, service, release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.patch("/{release_id}/favorite", response_model=ReleaseResponse)
@@ -291,6 +297,7 @@ def update_release_favorite(
     release_id: str,
     payload: ReleaseFavoriteRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -301,14 +308,15 @@ def update_release_favorite(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.set_favorite(db, release, is_favorite=payload.is_favorite)
-    return _release_response(db, service, updated_release)
+    repository.set_favorite(db, release, user_id=current_user.account.id, is_favorite=payload.is_favorite)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/collection/deactivate", response_model=ReleaseResponse)
 def deactivate_release_collection_membership(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -319,18 +327,20 @@ def deactivate_release_collection_membership(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.deactivate_collection_membership(
+    repository.deactivate_collection_membership(
         db,
         release,
+        user_id=current_user.account.id,
         removed_at=datetime.now(UTC),
     )
-    return _release_response(db, service, updated_release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/collection/reactivate", response_model=ReleaseResponse)
 def reactivate_release_collection_membership(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
@@ -341,22 +351,25 @@ def reactivate_release_collection_membership(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    updated_release = repository.reactivate_collection_membership(
+    repository.reactivate_collection_membership(
         db,
         release,
+        user_id=current_user.account.id,
         added_at=datetime.now(UTC),
     )
-    return _release_response(db, service, updated_release)
+    return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
 
 @router.post("/{release_id}/refresh", response_model=ReleaseResponse)
 def refresh_release(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
+    repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
 ):
     try:
-        result = service.refresh_release(db, release_id)
+        result = service.refresh_release(db, release_id, user_id=current_user.account.id)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     except DiscogsClientError as error:
@@ -370,26 +383,45 @@ def refresh_release(
             detail=f"Release '{release_id}' was not found.",
         )
 
-    return _release_response(db, service, result.release)
+    return _release_response(db, service, result.release, user_id=current_user.account.id, repository=repository)
 
 
-def _release_response(db: Session, service: ReleaseImportService, release) -> ReleaseResponse:
+def _release_response(
+    db: Session,
+    service: ReleaseImportService,
+    release,
+    *,
+    user_id: str,
+    repository: ReleasesRepository,
+) -> ReleaseResponse:
     available_side_options = service.get_available_side_options(db, release.discogs_release_id)
     available_sides = []
     for option in available_side_options:
         if option.side not in available_sides:
             available_sides.append(option.side)
 
-    return ReleaseResponse.model_validate(release).model_copy(
-        update={
-            "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
-            "label": clean_discogs_label_name(release.label),
-            "available_sides": available_sides,
-            "available_side_options": available_side_options,
-            "tracklist": service.get_tracklist(db, release.discogs_release_id),
-            "discogs_artists": service.get_artists(db, release.discogs_release_id),
-        }
-    )
+    update_data = {
+        "has_full_discogs_info": service.has_full_discogs_info(db, release.discogs_release_id),
+        "label": clean_discogs_label_name(release.label),
+        "available_sides": available_sides,
+        "available_side_options": available_side_options,
+        "tracklist": service.get_tracklist(db, release.discogs_release_id),
+        "discogs_artists": service.get_artists(db, release.discogs_release_id),
+    }
+    membership = repository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+    if membership is not None:
+        update_data.update(
+            {
+                "in_collection": membership.in_collection,
+                "collection_added_at": membership.collection_added_at,
+                "collection_removed_at": membership.collection_removed_at,
+                "last_discogs_sync_at": membership.last_discogs_sync_at,
+                "discogs_instance_id": membership.discogs_instance_id,
+                "is_favorite": membership.is_favorite,
+            }
+        )
+
+    return ReleaseResponse.model_validate(release).model_copy(update=update_data)
 
 
 @router.get(

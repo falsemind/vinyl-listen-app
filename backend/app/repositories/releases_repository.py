@@ -1,13 +1,25 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
-from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder
+from app.models.collection_folders import CollectionFolder, ReleaseCollectionFolder, ReleaseCollectionMembership
 from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.models.releases import Releases
 from app.services.release_mapper import InternalReleaseData
+
+
+@dataclass(frozen=True)
+class CollectionReleaseRecord:
+    release: Releases
+    membership: ReleaseCollectionMembership
+
+    def __getattr__(self, name: str):
+        if hasattr(self.membership, name):
+            return getattr(self.membership, name)
+        return getattr(self.release, name)
 
 
 class ReleasesRepository:
@@ -120,43 +132,54 @@ class ReleasesRepository:
         db: Session,
         release: Releases,
         *,
+        user_id: str,
         discogs_instance_id: int | None,
         collection_added_at: datetime | None,
         synced_at: datetime,
         commit: bool = True,
-    ) -> Releases:
-        release.in_collection = True
-        release.discogs_instance_id = discogs_instance_id
-        release.collection_added_at = collection_added_at
-        release.collection_removed_at = None
-        release.last_discogs_sync_at = synced_at
+    ) -> ReleaseCollectionMembership:
+        membership = ReleasesRepository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+        if membership is None:
+            membership = ReleaseCollectionMembership(user_id=user_id, release_id=release.id)
 
-        db.add(release)
+        membership.in_collection = True
+        membership.discogs_instance_id = discogs_instance_id
+        membership.collection_added_at = collection_added_at
+        membership.collection_removed_at = None
+        membership.last_discogs_sync_at = synced_at
+
+        db.add(membership)
         if commit:
             db.commit()
-            db.refresh(release)
+            db.refresh(membership)
         else:
             db.flush()
-        return release
+        return membership
 
     @staticmethod
     def mark_missing_collection_releases_removed(
         db: Session,
         active_discogs_release_ids: set[int],
         *,
+        user_id: str,
         removed_at: datetime,
         commit: bool = True,
     ) -> int:
-        query = db.query(Releases).filter(Releases.in_collection.is_(True))
+        query = (
+            db.query(ReleaseCollectionMembership)
+            .join(Releases, Releases.id == ReleaseCollectionMembership.release_id)
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+            .filter(ReleaseCollectionMembership.in_collection.is_(True))
+        )
         if active_discogs_release_ids:
             query = query.filter(~Releases.discogs_release_id.in_(active_discogs_release_ids))
 
         removed_count = 0
-        for release in query.all():
-            release.in_collection = False
-            release.collection_removed_at = removed_at
-            release.last_discogs_sync_at = removed_at
-            db.add(release)
+        for membership in query.all():
+            membership.in_collection = False
+            membership.collection_removed_at = removed_at
+            membership.last_discogs_sync_at = removed_at
+            db.add(membership)
             removed_count += 1
 
         if removed_count and commit:
@@ -171,44 +194,55 @@ class ReleasesRepository:
         db: Session,
         release: Releases,
         *,
+        user_id: str,
         removed_at: datetime,
         commit: bool = True,
-    ) -> Releases:
-        release.in_collection = False
-        release.collection_removed_at = removed_at
+    ) -> ReleaseCollectionMembership:
+        membership = ReleasesRepository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+        if membership is None:
+            membership = ReleaseCollectionMembership(user_id=user_id, release_id=release.id)
 
-        db.add(release)
+        membership.in_collection = False
+        membership.collection_removed_at = removed_at
+
+        db.add(membership)
         if commit:
             db.commit()
-            db.refresh(release)
+            db.refresh(membership)
         else:
             db.flush()
-        return release
+        return membership
 
     @staticmethod
     def reactivate_collection_membership(
         db: Session,
         release: Releases,
         *,
+        user_id: str,
         added_at: datetime,
         commit: bool = True,
-    ) -> Releases:
-        release.in_collection = True
-        release.collection_added_at = added_at
-        release.collection_removed_at = None
+    ) -> ReleaseCollectionMembership:
+        membership = ReleasesRepository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+        if membership is None:
+            membership = ReleaseCollectionMembership(user_id=user_id, release_id=release.id)
 
-        db.add(release)
+        membership.in_collection = True
+        membership.collection_added_at = added_at
+        membership.collection_removed_at = None
+
+        db.add(membership)
         if commit:
             db.commit()
-            db.refresh(release)
+            db.refresh(membership)
         else:
             db.flush()
-        return release
+        return membership
 
     @staticmethod
     def list_collection_releases(
         db: Session,
         *,
+        user_id: str,
         limit: int,
         offset: int,
         include_removed: bool = False,
@@ -216,9 +250,10 @@ class ReleasesRepository:
         label: str | None = None,
         favorite: bool = False,
         folder_id: int | None = None,
-    ) -> Sequence[Releases]:
+    ) -> Sequence[CollectionReleaseRecord]:
         query = ReleasesRepository._collection_releases_query(
             db,
+            user_id=user_id,
             include_removed=include_removed,
             artist=artist,
             label=label,
@@ -226,9 +261,9 @@ class ReleasesRepository:
             folder_id=folder_id,
         )
 
-        return (
+        rows = (
             query.order_by(
-                Releases.collection_added_at.desc().nullslast(),
+                ReleaseCollectionMembership.collection_added_at.desc().nullslast(),
                 Releases.artist.asc(),
                 Releases.title.asc(),
             )
@@ -236,11 +271,13 @@ class ReleasesRepository:
             .limit(limit)
             .all()
         )
+        return [CollectionReleaseRecord(release=release, membership=membership) for release, membership in rows]
 
     @staticmethod
     def count_collection_releases(
         db: Session,
         *,
+        user_id: str,
         include_removed: bool = False,
         artist: str | None = None,
         label: str | None = None,
@@ -249,6 +286,7 @@ class ReleasesRepository:
     ) -> int:
         return ReleasesRepository._collection_releases_query(
             db,
+            user_id=user_id,
             include_removed=include_removed,
             artist=artist,
             label=label,
@@ -259,24 +297,31 @@ class ReleasesRepository:
     def _collection_releases_query(
         db: Session,
         *,
+        user_id: str,
         include_removed: bool = False,
         artist: str | None = None,
         label: str | None = None,
         favorite: bool = False,
         folder_id: int | None = None,
     ):
-        query = db.query(Releases)
+        query = (
+            db.query(Releases, ReleaseCollectionMembership)
+            .join(ReleaseCollectionMembership, ReleaseCollectionMembership.release_id == Releases.id)
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+        )
         if not include_removed:
-            query = query.filter(Releases.in_collection.is_(True))
+            query = query.filter(ReleaseCollectionMembership.in_collection.is_(True))
         if folder_id is not None:
             query = (
                 query.join(ReleaseCollectionFolder, ReleaseCollectionFolder.release_id == Releases.id)
                 .join(CollectionFolder, CollectionFolder.id == ReleaseCollectionFolder.collection_folder_id)
+                .filter(ReleaseCollectionFolder.user_id == user_id)
+                .filter(CollectionFolder.user_id == user_id)
                 .filter(CollectionFolder.discogs_folder_id == folder_id)
-                .filter(Releases.in_collection.is_(True))
+                .filter(ReleaseCollectionMembership.in_collection.is_(True))
             )
         if favorite:
-            query = query.filter(Releases.is_favorite.is_(True))
+            query = query.filter(ReleaseCollectionMembership.is_favorite.is_(True))
         if (artist and artist.strip()) or (label and label.strip()):
             query = query.outerjoin(
                 DiscogsReleaseCache,
@@ -305,25 +350,31 @@ class ReleasesRepository:
         db: Session,
         release: Releases,
         *,
+        user_id: str,
         is_favorite: bool,
         commit: bool = True,
-    ) -> Releases:
-        release.is_favorite = is_favorite
+    ) -> ReleaseCollectionMembership:
+        membership = ReleasesRepository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+        if membership is None:
+            membership = ReleaseCollectionMembership(user_id=user_id, release_id=release.id, in_collection=False)
 
-        db.add(release)
+        membership.is_favorite = is_favorite
+
+        db.add(membership)
         if commit:
             db.commit()
-            db.refresh(release)
+            db.refresh(membership)
         else:
             db.flush()
-        return release
+        return membership
 
     @staticmethod
-    def has_favorite_collection_releases(db: Session) -> bool:
+    def has_favorite_collection_releases(db: Session, *, user_id: str) -> bool:
         return (
-            db.query(Releases.id)
-            .filter(Releases.in_collection.is_(True))
-            .filter(Releases.is_favorite.is_(True))
+            db.query(ReleaseCollectionMembership.id)
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+            .filter(ReleaseCollectionMembership.in_collection.is_(True))
+            .filter(ReleaseCollectionMembership.is_favorite.is_(True))
             .first()
             is not None
         )
@@ -332,6 +383,7 @@ class ReleasesRepository:
     def search_collection_releases(
         db: Session,
         *,
+        user_id: str,
         artist: str | None = None,
         title: str | None = None,
         catalog: str | None = None,
@@ -362,11 +414,13 @@ class ReleasesRepository:
 
         return (
             db.query(Releases)
+            .join(ReleaseCollectionMembership, ReleaseCollectionMembership.release_id == Releases.id)
             .outerjoin(
                 DiscogsReleaseCache,
                 DiscogsReleaseCache.discogs_release_id == Releases.discogs_release_id,
             )
-            .filter(Releases.in_collection.is_(True))
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+            .filter(ReleaseCollectionMembership.in_collection.is_(True))
             .filter(*filters)
             .order_by(
                 Releases.artist.asc(),
@@ -376,4 +430,30 @@ class ReleasesRepository:
             .offset(offset)
             .limit(limit)
             .all()
+        )
+
+    @staticmethod
+    def get_collection_membership(
+        db: Session,
+        *,
+        release_id: str,
+        user_id: str,
+    ) -> ReleaseCollectionMembership | None:
+        return (
+            db.query(ReleaseCollectionMembership)
+            .filter(ReleaseCollectionMembership.user_id == user_id)
+            .filter(ReleaseCollectionMembership.release_id == release_id)
+            .one_or_none()
+        )
+
+    @staticmethod
+    def has_collection_membership_history(db: Session, *, release: Releases, user_id: str) -> bool:
+        membership = ReleasesRepository.get_collection_membership(db, release_id=release.id, user_id=user_id)
+        if membership is None:
+            return False
+        return (
+            membership.in_collection
+            or membership.collection_added_at is not None
+            or membership.collection_removed_at is not None
+            or membership.discogs_instance_id is not None
         )

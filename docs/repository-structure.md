@@ -191,7 +191,7 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage foundations, releases, collection settings, Discogs collection folders, release-folder membership, provider integrations, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
 | `services/` | Business workflows: auth account/token/email/password handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
@@ -222,9 +222,9 @@ All routes are nested under `/api/v1`.
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/active` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
-| `GET /collection/folders` | `api/routes/collection.py` | `CollectionFoldersRepository` plus Discogs integration state. |
-| `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`; supports artist, label, favorites, and Discogs folder filters. |
-| `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
+| `GET /collection/folders` | `api/routes/collection.py` | User-scoped `CollectionFoldersRepository` plus Discogs integration state. |
+| `GET /collection/releases` | `api/routes/collection.py` | User-scoped `ReleasesRepository` membership query; supports artist, label, favorites, and Discogs folder filters. |
+| `GET /collection/search` | `api/routes/collection.py` | User-scoped collection-only internal release search. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `DELETE /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |

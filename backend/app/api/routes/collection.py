@@ -87,7 +87,7 @@ def list_collection_folders(
             count=folder.item_count,
             is_default=folder.is_default,
         )
-        for folder in folder_repository.list_folders(db)
+        for folder in folder_repository.list_folders(db, user_id=current_user.account.id)
     ]
     return CollectionFoldersResponse(
         discogs_configured=True,
@@ -126,10 +126,11 @@ def update_collection_settings(
 def create_collection_sync_job(
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ):
     try:
-        job = job_service.create_job(db)
+        job = job_service.create_job(db, user_id=current_user.account.id)
     except CollectionSyncConfigurationError as error:
         return _error_response(status_code=error.status_code, code=error.code, message=error.message)
 
@@ -144,9 +145,10 @@ def create_collection_sync_job(
 )
 def get_active_collection_sync_job(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ) -> CollectionSyncJobStatusResponse | Response:
-    job = job_service.get_active_job(db)
+    job = job_service.get_active_job(db, user_id=current_user.account.id)
     if job is None:
         return Response(status_code=204)
     return job
@@ -160,10 +162,11 @@ def get_active_collection_sync_job(
 def get_collection_sync_job(
     job_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     job_service: Annotated[CollectionSyncJobService, Depends(get_collection_sync_job_service)],
 ):
     try:
-        return job_service.get_job(db, job_id)
+        return job_service.get_job(db, job_id, user_id=current_user.account.id)
     except CollectionSyncJobNotFoundError:
         return _error_response(
             status_code=404,
@@ -175,6 +178,7 @@ def get_collection_sync_job(
 @router.get("/releases", response_model=CollectionReleasesResponse)
 def list_collection_releases(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -186,6 +190,7 @@ def list_collection_releases(
 ) -> CollectionReleasesResponse:
     total = repository.count_collection_releases(
         db,
+        user_id=current_user.account.id,
         include_removed=include_removed,
         artist=artist,
         label=label,
@@ -194,6 +199,7 @@ def list_collection_releases(
     )
     releases = repository.list_collection_releases(
         db,
+        user_id=current_user.account.id,
         limit=limit + 1,
         offset=offset,
         include_removed=include_removed,
@@ -209,13 +215,14 @@ def list_collection_releases(
         offset=offset,
         total=total,
         has_more=offset + len(visible_releases) < total,
-        has_favorites=repository.has_favorite_collection_releases(db),
+        has_favorites=repository.has_favorite_collection_releases(db, user_id=current_user.account.id),
     )
 
 
 @router.get("/search", response_model=ReleaseSearchResponse)
 def search_collection_releases(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     title: Annotated[str | None, Query(min_length=1)] = None,
@@ -227,6 +234,7 @@ def search_collection_releases(
 ) -> ReleaseSearchResponse:
     releases = repository.search_collection_releases(
         db,
+        user_id=current_user.account.id,
         artist=artist,
         title=title,
         catalog=catalog,

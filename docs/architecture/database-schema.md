@@ -253,7 +253,7 @@ Append-only foundation for future feature usage limits, starting with OCR/identi
 
 # Table: releases
 
-Represents a **vinyl release imported from Discogs** and stored internally for session tracking and analytics.
+Represents shared **vinyl release/catalog metadata imported from Discogs** and stored internally for session tracking and analytics. Per-user collection state lives in `release_collection_memberships`.
 
 ## Columns
 
@@ -272,11 +272,11 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
 | styles             | TEXT[]    | Discogs styles (e.g. Techno, Dub Techno) |
 | thumbnail_url      | TEXT      | Cached Discogs thumbnail image           |
 | cover_image_url    | TEXT      | Cached Discogs image                     |
-| in_collection      | BOOLEAN   | Current local collection membership      |
-| collection_added_at | TIMESTAMP | Representative time the release entered the local collection |
-| collection_removed_at | TIMESTAMP | Time the release was removed from the active local collection |
-| last_discogs_sync_at | TIMESTAMP | Last Discogs sync that touched metadata or membership |
-| discogs_instance_id | BIGINT   | Representative Discogs instance id       |
+| in_collection      | BOOLEAN   | Legacy single-user membership column; new collection reads use `release_collection_memberships` |
+| collection_added_at | TIMESTAMP | Legacy single-user membership timestamp |
+| collection_removed_at | TIMESTAMP | Legacy single-user removal timestamp |
+| last_discogs_sync_at | TIMESTAMP | Legacy single-user sync timestamp |
+| discogs_instance_id | BIGINT   | Legacy single-user Discogs instance id |
 | created_at         | TIMESTAMP | Record creation time                     |
 | updated_at         | TIMESTAMP | Last metadata update                     |
 
@@ -296,11 +296,11 @@ Represents a **vinyl release imported from Discogs** and stored internally for s
   "styles": ["Techno", "Dub Techno"],
   "thumbnail_url": "https://discogs.com/thumb.jpg",
   "cover_image_url": "https://discogs.com/image.jpg",
-  "in_collection": true,
-  "collection_added_at": "2021-10-05T12:32:40-07:00",
+  "in_collection": false,
+  "collection_added_at": null,
   "collection_removed_at": null,
-  "last_discogs_sync_at": "2026-06-04T12:00:00Z",
-  "discogs_instance_id": 824195512
+  "last_discogs_sync_at": null,
+  "discogs_instance_id": null
 }
 ```
 
@@ -324,6 +324,39 @@ USING GIN (styles);
 
 INDEX (in_collection)
 INDEX (collection_added_at)
+```
+
+---
+
+# Table: release_collection_memberships
+
+Stores per-account collection state for shared release metadata. Account deletion cascades these rows without deleting shared Discogs/catalog release rows.
+
+## Columns
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | INTEGER | Primary key |
+| user_id | UUID | Foreign key to `user_accounts.id` |
+| release_id | UUID | Foreign key to `releases.id` |
+| in_collection | BOOLEAN | Current active membership for this account |
+| collection_added_at | TIMESTAMP | Representative time the account added the release |
+| collection_removed_at | TIMESTAMP | Time the account removed the release from active collection |
+| last_discogs_sync_at | TIMESTAMP | Last Discogs sync touching this account's membership |
+| discogs_instance_id | BIGINT | Representative Discogs collection instance id for this account |
+| is_favorite | BOOLEAN | Account-owned favorite flag |
+| created_at | TIMESTAMP | Row creation time |
+| updated_at | TIMESTAMP | Last membership update |
+
+## Constraints and Indexes
+
+```sql
+UNIQUE (user_id, release_id)
+FOREIGN KEY (user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
+INDEX (user_id, in_collection)
+INDEX (user_id, is_favorite)
+INDEX (user_id, collection_added_at)
 ```
 
 ## Why Arrays Work Well Here
@@ -359,7 +392,7 @@ WHERE 'Techno' = ANY(styles);
 
 # Table: collection_folders
 
-Stores Discogs collection folder metadata imported during collection sync.
+Stores per-account Discogs collection folder metadata imported during collection sync.
 Folder rows power Collection screen filters only; they do not change source of
 truth or sync scope.
 
@@ -368,7 +401,8 @@ truth or sync scope.
 | Column              | Type      | Notes                                      |
 | ------------------- | --------- | ------------------------------------------ |
 | id                  | INTEGER   | Primary key                                |
-| discogs_folder_id   | BIGINT    | Stable Discogs folder id; unique           |
+| user_id             | UUID      | Foreign key to `user_accounts.id`          |
+| discogs_folder_id   | BIGINT    | Stable Discogs folder id unique per account |
 | name                | TEXT      | Discogs folder display name                |
 | item_count          | INTEGER   | Raw Discogs folder count, if provided      |
 | is_default          | BOOLEAN   | `true` for Discogs default folder `0`      |
@@ -379,16 +413,17 @@ truth or sync scope.
 ## Indexes
 
 ```sql
-UNIQUE (discogs_folder_id)
-INDEX (discogs_folder_id)
-INDEX (is_default)
+UNIQUE (user_id, discogs_folder_id)
+FOREIGN KEY (user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+INDEX (user_id, discogs_folder_id)
+INDEX (user_id, is_default)
 ```
 
 ---
 
 # Table: release_collection_folders
 
-Join table linking local releases to Discogs collection folders without
+Join table linking an account's local releases to Discogs collection folders without
 duplicating release metadata. Sync replaces memberships for each imported folder.
 Collection folder filters always return active local collection records.
 
@@ -397,6 +432,7 @@ Collection folder filters always return active local collection records.
 | Column              | Type      | Notes                                      |
 | ------------------- | --------- | ------------------------------------------ |
 | id                  | INTEGER   | Primary key                                |
+| user_id             | UUID      | Foreign key to `user_accounts.id`          |
 | release_id          | UUID      | Foreign key to `releases.id`               |
 | collection_folder_id | INTEGER  | Foreign key to `collection_folders.id`     |
 | discogs_instance_id | BIGINT    | Discogs collection instance id for that folder membership |
@@ -408,24 +444,26 @@ Collection folder filters always return active local collection records.
 ## Constraints and Indexes
 
 ```sql
-UNIQUE (release_id, collection_folder_id)
+UNIQUE (user_id, release_id, collection_folder_id)
+FOREIGN KEY (user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
 FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
 FOREIGN KEY (collection_folder_id) REFERENCES collection_folders(id) ON DELETE CASCADE
-INDEX (release_id)
-INDEX (collection_folder_id)
+INDEX (user_id, release_id)
+INDEX (user_id, collection_folder_id)
 ```
 
 ---
 
 # Table: collection_sync_jobs
 
-Stores short-lived progress state for manual Discogs collection sync jobs.
+Stores short-lived per-account progress state for manual Discogs collection sync jobs.
 
 ## Columns
 
 | Column          | Type      | Notes                                       |
 | --------------- | --------- | ------------------------------------------- |
 | id              | UUID      | Primary key                                 |
+| user_id         | UUID      | Foreign key to `user_accounts.id`           |
 | status          | TEXT      | queued, running, succeeded, failed, or expired |
 | step            | TEXT      | fetching, importing, loading, or finalizing |
 | message         | TEXT      | User-facing progress message                |
@@ -443,6 +481,7 @@ Stores short-lived progress state for manual Discogs collection sync jobs.
 
 ```sql
 INDEX (status)
+INDEX (user_id, status)
 INDEX (status, updated_at)
 INDEX (expires_at)
 ```
@@ -469,7 +508,7 @@ Stores the collection source-of-truth setting for one account. Legacy rows may h
 CHECK (source_of_truth IN ('APP', 'DISCOGS'))
 ```
 
-`APP` means local collection membership is authoritative. Discogs sync may enrich metadata but must not remove, deactivate, or re-add local releases. `DISCOGS` is persisted for future explicit mirror behavior.
+`APP` means the authenticated user's local collection membership is authoritative. Discogs sync may enrich shared release metadata but must not remove, deactivate, or re-add that user's releases. `DISCOGS` is persisted for future explicit mirror behavior.
 
 ---
 
@@ -1011,13 +1050,13 @@ read a Discogs username from backend environment variables.
 
 ```
 deactivate release
-   → set releases.in_collection = false
-   → set releases.collection_removed_at
+   → set release_collection_memberships.in_collection = false
+   → set release_collection_memberships.collection_removed_at
    → keep release metadata, sessions, analytics, and cached Discogs payloads
 
 reactivate release
-   → set releases.in_collection = true
-   → clear releases.collection_removed_at
+   → set release_collection_memberships.in_collection = true
+   → clear release_collection_memberships.collection_removed_at
    → reuse the existing release row
 ```
 
@@ -1122,7 +1161,7 @@ discogs_release_id
 identify_jobs.status
 identify_jobs.status + identify_jobs.updated_at
 identify_jobs.expires_at
-releases.in_collection
+release_collection_memberships.user_id + in_collection
 ```
 
 will ensure fast analytics queries.

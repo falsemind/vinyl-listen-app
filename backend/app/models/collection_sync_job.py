@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -16,11 +16,13 @@ class CollectionSyncJob(Base):
     __tablename__ = "collection_sync_jobs"
     __table_args__ = (
         Index("idx_collection_sync_jobs_status", "status"),
+        Index("idx_collection_sync_jobs_user_status", "user_id", "status"),
         Index("idx_collection_sync_jobs_status_updated_at", "status", "updated_at"),
         Index("idx_collection_sync_jobs_expires_at", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     step: Mapped[str | None] = mapped_column(String(40), nullable=True)
     message: Mapped[str] = mapped_column(String(255), nullable=False)
