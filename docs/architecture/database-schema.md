@@ -690,7 +690,7 @@ INDEX (track_position)
 
 # Table: session_moods
 
-Stores custom mood options shown on the Log Session screen.
+Stores account-owned custom mood options shown on the Log Session screen. Shared reference rows may use `user_id = NULL`, but custom moods created from the app are tied to the authenticated account.
 
 Logged sessions keep the selected mood text in `sessions.mood`, so deleting a custom mood option does not rewrite historical session rows or remove analytics history. The service canonicalizes mood names case-insensitively before storing new sessions and analytics groups case variants together.
 
@@ -699,7 +699,8 @@ Logged sessions keep the selected mood text in `sessions.mood`, so deleting a cu
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID|Primary key|
-|name|TEXT|Unique mood label|
+|user_id|UUID|Nullable FK -> `user_accounts.id`; null means shared reference data|
+|name|TEXT|Mood label unique per account|
 |is_custom|BOOLEAN|User-defined mood option|
 |created_at|TIMESTAMP|Creation time|
 
@@ -708,7 +709,9 @@ Logged sessions keep the selected mood text in `sessions.mood`, so deleting a cu
 ```
 PRIMARY KEY (id)
 
-UNIQUE (name)
+UNIQUE (user_id, name)
+INDEX (user_id, is_custom)
+FOREIGN KEY (user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
 ```
 
 ---

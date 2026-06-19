@@ -1336,11 +1336,11 @@ Inactive groups return `409` with `session_group_inactive`. `ended_at` before `s
 
 # 9. Session Moods
 
-Used by the **Log Session screen** to load, create, and delete custom mood chips. Saved moods live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
+Used by the **Log Session screen** to load, create, and delete the authenticated user's custom mood chips. Saved mood options live in `session_moods`; logged sessions still store the selected mood text on `sessions.mood` so analytics can count historical usage.
 
 ## GET /sessions/moods
 
-Returns custom mood options.
+Returns the authenticated user's custom mood options.
 
 ```json
 {
@@ -1355,7 +1355,7 @@ Returns custom mood options.
 
 ## POST /sessions/moods
 
-Creates a custom mood option. Names are compared case-insensitively.
+Creates a custom mood option for the authenticated user. Names are compared case-insensitively within that account.
 
 ### Request
 
@@ -1386,7 +1386,7 @@ Validation rules:
 name must be 3-20 characters
 name may contain only letters, numbers, and spaces
 name must not match a built-in mood
-name must not match an existing custom mood
+name must not match an existing custom mood for the same account
 ```
 
 Duplicate names return `409 Conflict` with `duplicate_mood`.
@@ -1395,7 +1395,7 @@ If a deleted custom mood still exists in historical session rows, the backend re
 
 ## DELETE /sessions/moods/{mood_name}
 
-Deletes a custom mood option. Existing listening sessions keep their saved `mood` value for analytics history.
+Deletes one of the authenticated user's custom mood options. Existing listening sessions keep their saved `mood` value for analytics history.
 
 Response:
 

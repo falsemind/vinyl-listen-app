@@ -367,9 +367,10 @@ def get_home_summary(
 )
 def list_custom_moods(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
-    moods = service.list_custom_moods(db)
+    moods = service.list_custom_moods(db, user_id=current_user.account.id)
     return SessionMoodsResponse(
         moods=[SessionMoodItem(name=mood.name, is_custom=mood.is_custom) for mood in moods],
     )
@@ -384,10 +385,11 @@ def list_custom_moods(
 def create_custom_mood(
     payload: CreateSessionMoodRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
-        mood = service.create_custom_mood(db, payload.name)
+        mood = service.create_custom_mood(db, payload.name, user_id=current_user.account.id)
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -410,10 +412,11 @@ def create_custom_mood(
 def delete_custom_mood(
     mood_name: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
 ):
     try:
-        service.delete_custom_mood(db, mood_name)
+        service.delete_custom_mood(db, mood_name, user_id=current_user.account.id)
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -565,6 +565,7 @@ def test_get_custom_moods_endpoint_returns_saved_moods(
             {"name": "Late Night", "is_custom": True},
         ]
     }
+    assert service.user_id_calls == ["test-user"]
 
 
 def test_create_custom_mood_endpoint_returns_created_mood(
@@ -579,7 +580,7 @@ def test_create_custom_mood_endpoint_returns_created_mood(
 
     assert response.status_code == 201
     assert response.json() == {"mood": {"name": "Dubby", "is_custom": True}}
-    assert service.create_mood_calls == ["Dubby"]
+    assert service.create_mood_calls == [("Dubby", "test-user")]
 
 
 def test_create_custom_mood_endpoint_returns_validation_error(
@@ -633,7 +634,7 @@ def test_delete_custom_mood_endpoint_deletes_saved_mood(
         response = client.delete("/api/v1/sessions/moods/Dubby")
 
     assert response.status_code == 204
-    assert service.delete_mood_calls == ["Dubby"]
+    assert service.delete_mood_calls == [("Dubby", "test-user")]
 
 
 def test_get_release_sessions_endpoint_returns_paginated_history(

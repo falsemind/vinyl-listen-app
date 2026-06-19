@@ -434,8 +434,8 @@ The service validates:
 - If Discogs track positions are available, requested side must exist on the release.
 - `track_positions` are optional; when provided, each selected track must exist on the selected side in cached full Discogs release data.
 - `session_group_id` is optional; when provided, it must point to an active timed session group.
-- Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods`; session analytics still reads the selected text from `sessions.mood`.
-- Mood names are canonicalized case-insensitively from built-in moods, active custom mood options, or historical session rows before a session is stored.
+- Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods` and scoped to the authenticated user; session analytics still reads the selected text from `sessions.mood`.
+- Mood names are canonicalized case-insensitively from built-in moods, the authenticated user's active custom mood options, or that user's historical session rows before a session is stored.
 - Session edits are allowed only during the backend-controlled 15-minute window after `created_at`.
 
 Errors are typed:

@@ -24,6 +24,7 @@ from app.models.identify_job import IdentifyJob
 from app.models.provider_integration import ProviderIntegration
 from app.models.releases import Releases
 from app.models.sessions import SessionGroups, Sessions, SessionTracks
+from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import SpotifyArtistStats, SpotifyListeningImportBatch
 from app.repositories.auth_repository import AuthRepository
 from app.services.auth_account_service import (
@@ -67,6 +68,7 @@ ACCOUNT_DELETE_TABLES = [
     SessionGroups.__table__,
     Sessions.__table__,
     SessionTracks.__table__,
+    SessionsMoods.__table__,
 ]
 
 _ = Releases.__table__
@@ -504,6 +506,7 @@ def test_delete_account_requires_password_and_hard_deletes_owned_data(
             SessionTracks,
             Sessions,
             SessionGroups,
+            SessionsMoods,
             UsageEvent,
             UserEntitlement,
             EmailVerificationCode,
@@ -656,6 +659,7 @@ def _seed_account_owned_data(db_session: Session, *, repository: AuthRepository,
             session_group,
             listening_session,
             SessionTracks(session_id=listening_session.id, track_position="A1", track_title="Track"),
+            SessionsMoods(name="Late Night", user_id=user_id, is_custom=True),
         ]
     )
     db_session.flush()

@@ -21,6 +21,7 @@ from app.models.collection_sync_job import CollectionSyncJob
 from app.models.identify_job import IdentifyJob
 from app.models.provider_integration import ProviderIntegration
 from app.models.sessions import SessionGroups, Sessions, SessionTracks
+from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import (
     SpotifyAlbumStats,
     SpotifyArtistStats,
@@ -471,6 +472,7 @@ class AuthRepository:
             CollectionFolder,
             CollectionSyncJob,
             IdentifyJob,
+            SessionsMoods,
             SpotifyVinylReleaseMatch,
             SpotifyVinylArtistMatch,
             SpotifySkipStats,

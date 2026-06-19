@@ -141,22 +141,25 @@ class InMemorySessionsMoodsRepository:
     def __init__(self) -> None:
         self.moods: list[SessionsMoods] = []
 
-    def get_custom(self, _db) -> list[SessionsMoods]:
-        return sorted([mood for mood in self.moods if mood.is_custom], key=lambda mood: mood.name)
+    def get_custom(self, _db, *, user_id: str) -> list[SessionsMoods]:
+        return sorted(
+            [mood for mood in self.moods if mood.is_custom and mood.user_id == user_id],
+            key=lambda mood: mood.name,
+        )
 
-    def get_by_name(self, _db, name: str) -> SessionsMoods | None:
+    def get_by_name(self, _db, name: str, *, user_id: str | None = None) -> SessionsMoods | None:
         for mood in self.moods:
-            if mood.name.lower() == name.lower():
+            if mood.name.lower() == name.lower() and (mood.user_id == user_id or mood.user_id is None):
                 return mood
         return None
 
-    def create_custom(self, _db, name: str) -> SessionsMoods:
-        mood = SessionsMoods(name=name, is_custom=True)
+    def create_custom(self, _db, name: str, *, user_id: str) -> SessionsMoods:
+        mood = SessionsMoods(name=name, user_id=user_id, is_custom=True)
         self.moods.append(mood)
         return mood
 
-    def delete_custom(self, _db, name: str) -> bool:
-        mood = self.get_by_name(_db, name)
+    def delete_custom(self, _db, name: str, *, user_id: str) -> bool:
+        mood = self.get_by_name(_db, name, user_id=user_id)
         if mood is None or not mood.is_custom:
             return False
         self.moods.remove(mood)

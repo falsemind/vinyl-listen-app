@@ -532,8 +532,8 @@ class StubSessionsService:
         self.list_calls: list[tuple[str, int, int]] = []
         self.summary_calls: list[tuple[int, int]] = []
         self.flow_calls: list[tuple[str, int, str]] = []
-        self.create_mood_calls: list[str] = []
-        self.delete_mood_calls: list[str] = []
+        self.create_mood_calls: list[tuple[str, str | None]] = []
+        self.delete_mood_calls: list[tuple[str, str | None]] = []
         self.user_id_calls: list[str | None] = []
         self.custom_moods = [
             SimpleNamespace(name="Dubby", is_custom=True),
@@ -762,21 +762,24 @@ class StubSessionsService:
             raise self.list_error
         return self.flow_insights
 
-    def list_custom_moods(self, _db):
+    def list_custom_moods(self, _db, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
         if self.mood_error is not None:
             raise self.mood_error
         return self.custom_moods
 
-    def create_custom_mood(self, _db, name: str):
-        self.create_mood_calls.append(name)
+    def create_custom_mood(self, _db, name: str, *, user_id: str | None = None):
+        self.user_id_calls.append(user_id)
+        self.create_mood_calls.append((name, user_id))
         if self.mood_error is not None:
             raise self.mood_error
         mood = SimpleNamespace(name=name.strip(), is_custom=True)
         self.custom_moods.append(mood)
         return mood
 
-    def delete_custom_mood(self, _db, name: str) -> None:
-        self.delete_mood_calls.append(name)
+    def delete_custom_mood(self, _db, name: str, *, user_id: str | None = None) -> None:
+        self.user_id_calls.append(user_id)
+        self.delete_mood_calls.append((name, user_id))
         if self.mood_error is not None:
             raise self.mood_error
         self.custom_moods = [mood for mood in self.custom_moods if mood.name != name]

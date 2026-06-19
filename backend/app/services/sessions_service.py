@@ -624,20 +624,22 @@ class SessionsService:
             top_records=top_records,
         )
 
-    def list_custom_moods(self, db: Session) -> list[SessionsMoods]:
-        return self._moods_repository.get_custom(db)
+    def list_custom_moods(self, db: Session, *, user_id: str) -> list[SessionsMoods]:
+        return self._moods_repository.get_custom(db, user_id=user_id)
 
-    def create_custom_mood(self, db: Session, name: str) -> SessionsMoods:
+    def create_custom_mood(self, db: Session, name: str, *, user_id: str) -> SessionsMoods:
         normalized_name = self._normalize_custom_mood_name(name)
-        existing_mood = self._moods_repository.get_by_name(db, normalized_name)
+        existing_mood = self._moods_repository.get_by_name(db, normalized_name, user_id=user_id)
         if existing_mood is not None:
             raise SessionMoodAlreadyExistsError(normalized_name)
-        canonical_name = self._sessions_repository.get_mood_by_name(db, normalized_name) or normalized_name
-        return self._moods_repository.create_custom(db, canonical_name)
+        canonical_name = (
+            self._sessions_repository.get_mood_by_name(db, normalized_name, user_id=user_id) or normalized_name
+        )
+        return self._moods_repository.create_custom(db, canonical_name, user_id=user_id)
 
-    def delete_custom_mood(self, db: Session, name: str) -> None:
+    def delete_custom_mood(self, db: Session, name: str, *, user_id: str) -> None:
         normalized_name = self._normalize_custom_mood_name(name)
-        self._moods_repository.delete_custom(db, normalized_name)
+        self._moods_repository.delete_custom(db, normalized_name, user_id=user_id)
 
     def _validate_create_input(
         self,
@@ -958,7 +960,7 @@ class SessionsService:
         if built_in_mood is not None:
             return built_in_mood
 
-        custom_mood = self._moods_repository.get_by_name(db, normalized)
+        custom_mood = self._moods_repository.get_by_name(db, normalized, user_id=user_id)
         if custom_mood is not None:
             return custom_mood.name
 
