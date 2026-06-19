@@ -332,6 +332,11 @@ INDEX (collection_added_at)
 
 Stores per-account collection state for shared release metadata. Account deletion cascades these rows without deleting shared Discogs/catalog release rows.
 
+During the multi-user upgrade, legacy single-user collection fields on `releases`
+are copied into this table. The migration uses the only active account when
+there is exactly one; otherwise `VINYL_LEGACY_OWNER_EMAIL` must identify the
+intended owner before upgrade.
+
 ## Columns
 
 | Column | Type | Notes |

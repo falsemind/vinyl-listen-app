@@ -335,6 +335,8 @@ Phase 5 is split into explicit backend slices so early session/auth scoping does
 
 Implementation note: this slice keeps Discogs/catalog release metadata shared, stores active collection state in `release_collection_memberships`, and scopes folder/sync-job tables by account. Legacy membership columns remain on `releases` for migration compatibility but are not the source of truth for new multi-user collection reads or writes.
 
+Legacy upgrade requirement: existing single-user collection rows must be backfilled into `release_collection_memberships`. If exactly one active account exists, migration can use that account. If multiple active accounts exist, set `VINYL_LEGACY_OWNER_EMAIL` to the intended owner email before upgrading. If legacy collection state exists but no active account can be resolved, the migration must fail loudly instead of silently emptying the collection.
+
 #### Phase 5c: Async Jobs, AI History, Spotify Data, And Usage Inputs
 
 - Add `user_id` to identify jobs and filter create/status/cancel by authenticated user.
