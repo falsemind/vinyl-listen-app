@@ -14,6 +14,7 @@ from app.database.session import get_db
 from app.main import app
 from app.models.auth import (
     AccountDeletionAudit,
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -31,6 +32,7 @@ from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashCo
 AUTH_TABLES = [
     UserAccount.__table__,
     AccountDeletionAudit.__table__,
+    AuthAuditEvent.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,

@@ -278,6 +278,7 @@ Add versioned endpoints for:
 - Add user/account tables with email, verification state, password hash metadata, timestamps, and deletion state.
 - Add auth session/device table with refresh token hash, last activity, expiry, revoked state, and device label.
 - Add email verification and password reset code tables with hashed code, expiry, single-use state, and rate-limit metadata.
+- Add structured auth audit events for sensitive account/session/security operations, without storing plaintext emails, tokens, passwords, or auth codes.
 - Add entitlement and usage-counter foundation tables without billing integration.
 - Add migration strategy for existing single-user data, with local/dev reset allowed if simpler.
 - Done when migrations apply cleanly and model/repository tests cover create, lookup, revoke, expiry, and unique email behavior.

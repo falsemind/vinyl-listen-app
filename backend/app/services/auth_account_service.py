@@ -23,6 +23,14 @@ from app.services.password_hashing import Argon2idPasswordHasher
 EMAIL_VERIFICATION_PURPOSE = "email_verification"
 PASSWORD_RESET_PURPOSE = "password_reset"
 PASSWORD_CHANGE_NOTIFICATION_PURPOSE = "password_change_notification"
+AUTH_AUDIT_ACCOUNT_REGISTERED = "account_registered"
+AUTH_AUDIT_EMAIL_VERIFIED = "email_verified"
+AUTH_AUDIT_EMAIL_VERIFICATION_RESENT = "email_verification_resent"
+AUTH_AUDIT_PASSWORD_RESET_REQUESTED = "password_reset_requested"
+AUTH_AUDIT_PASSWORD_RESET_CONFIRMED = "password_reset_confirmed"
+AUTH_AUDIT_SIGN_IN = "sign_in"
+AUTH_AUDIT_PASSWORD_CHANGED = "password_changed"
+AUTH_AUDIT_ACCOUNT_DELETED = "account_deleted"
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +183,15 @@ class AuthAccountService:
                 commit=False,
             )
             code, verification_code = self._create_email_verification_code(db, user=user, resend_count=0)
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_ACCOUNT_REGISTERED,
+                outcome="success",
+                occurred_at=self._now_provider(),
+                event_details={"email_verification_required": True},
+                commit=False,
+            )
             db.commit()
         except IntegrityError as exc:
             db.rollback()
@@ -204,6 +221,14 @@ class AuthAccountService:
 
         self._repository.consume_email_verification_code(db, code=verification_code, consumed_at=now, commit=False)
         self._repository.mark_email_verified(db, user=user, verified_at=now, commit=False)
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type=AUTH_AUDIT_EMAIL_VERIFIED,
+            outcome="success",
+            occurred_at=now,
+            commit=False,
+        )
         db.commit()
         db.refresh(user)
         return user
@@ -224,6 +249,15 @@ class AuthAccountService:
 
         resend_count = 0 if latest_code is None else latest_code.resend_count + 1
         code, verification_code = self._create_email_verification_code(db, user=user, resend_count=resend_count)
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type=AUTH_AUDIT_EMAIL_VERIFICATION_RESENT,
+            outcome="success",
+            occurred_at=now,
+            event_details={"resend_count": resend_count},
+            commit=False,
+        )
         db.commit()
 
         self._send_email_verification_code(user.email, code)
@@ -255,6 +289,14 @@ class AuthAccountService:
             commit=False,
         )
         code, reset_code = self._create_password_reset_code(db, user=user)
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type=AUTH_AUDIT_PASSWORD_RESET_REQUESTED,
+            outcome="success",
+            occurred_at=now,
+            commit=False,
+        )
         db.commit()
 
         self._send_password_reset_code(user.email, code, reset_code.expires_at)
@@ -263,8 +305,16 @@ class AuthAccountService:
     def sign_in_with_password(self, db: Session, *, email: str, password: str) -> SignInResult:
         user = self._repository.get_user_by_normalized_email(db, email)
         if user is None or user.deleted_at is not None or not user.is_active:
+            self._repository.record_auth_audit_event(
+                db,
+                event_type=AUTH_AUDIT_SIGN_IN,
+                outcome="failure",
+                occurred_at=self._now_provider(),
+                event_details={"reason": "invalid_credentials"},
+            )
             raise SignInInvalidCredentialsError("email or password is invalid.")
 
+        now = self._now_provider()
         verification = self._password_hasher.verify_password(
             password=password,
             password_hash=user.password_hash,
@@ -273,8 +323,24 @@ class AuthAccountService:
             params=user.password_hash_params,
         )
         if not verification.is_valid:
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_SIGN_IN,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "invalid_credentials"},
+            )
             raise SignInInvalidCredentialsError("email or password is invalid.")
         if user.email_verified_at is None:
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_SIGN_IN,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "email_not_verified"},
+            )
             raise SignInEmailNotVerifiedError("email must be verified before signing in.")
 
         if verification.needs_rehash:
@@ -291,6 +357,13 @@ class AuthAccountService:
             db.commit()
             db.refresh(user)
 
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type=AUTH_AUDIT_SIGN_IN,
+            outcome="success",
+            occurred_at=now,
+        )
         return SignInResult(user=user)
 
     def confirm_password_reset(self, db: Session, *, email: str, code: str, new_password: str) -> UserAccount:
@@ -329,6 +402,14 @@ class AuthAccountService:
             reason="password_reset",
             commit=False,
         )
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type=AUTH_AUDIT_PASSWORD_RESET_CONFIRMED,
+            outcome="success",
+            occurred_at=now,
+            commit=False,
+        )
         db.commit()
         db.refresh(user)
         return user
@@ -344,6 +425,15 @@ class AuthAccountService:
         sign_out_everywhere: bool = False,
     ) -> PasswordChangeResult:
         if not self._verify_password(user=user, password=current_password):
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                session_id=current_session_id,
+                event_type=AUTH_AUDIT_PASSWORD_CHANGED,
+                outcome="failure",
+                occurred_at=self._now_provider(),
+                event_details={"reason": "invalid_current_password"},
+            )
             raise PasswordChangeInvalidCurrentPasswordError("current password is invalid.")
 
         now = self._now_provider()
@@ -365,6 +455,16 @@ class AuthAccountService:
             except_session_id=None if sign_out_everywhere else current_session_id,
             commit=False,
         )
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            session_id=current_session_id,
+            event_type=AUTH_AUDIT_PASSWORD_CHANGED,
+            outcome="success",
+            occurred_at=now,
+            event_details={"revoked_sessions": revoked_sessions, "sign_out_everywhere": sign_out_everywhere},
+            commit=False,
+        )
         db.commit()
         db.refresh(user)
         self._send_password_change_notification(user.email, changed_at=now)
@@ -378,6 +478,14 @@ class AuthAccountService:
         password: str,
     ) -> DeleteAccountResult:
         if not self._verify_password(user=user, password=password):
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_ACCOUNT_DELETED,
+                outcome="failure",
+                occurred_at=self._now_provider(),
+                event_details={"reason": "invalid_password"},
+            )
             raise DeleteAccountInvalidPasswordError("password is invalid.")
 
         now = self._now_provider()
@@ -390,6 +498,14 @@ class AuthAccountService:
         )
         deletion_receipt_id = audit.id
         deleted_at = audit.deleted_at
+        self._repository.record_auth_audit_event(
+            db,
+            event_type=AUTH_AUDIT_ACCOUNT_DELETED,
+            outcome="success",
+            occurred_at=now,
+            event_details={"deletion_receipt_id": deletion_receipt_id},
+            commit=False,
+        )
         db.commit()
         return DeleteAccountResult(deletion_receipt_id=deletion_receipt_id, deleted_at=deleted_at)
 

@@ -18,6 +18,9 @@ from app.repositories.auth_repository import AuthRepository
 ACCESS_TOKEN_VERSION = "v1"
 ACCESS_TOKEN_ALGORITHM = "HS256"
 REFRESH_TOKEN_BYTES = 48
+AUTH_AUDIT_SESSION_CREATED = "auth_session_created"
+AUTH_AUDIT_REFRESH_ROTATED = "refresh_token_rotated"
+AUTH_AUDIT_REFRESH_REJECTED = "refresh_token_rejected"
 
 
 class AuthTokenConfigurationError(Exception):
@@ -191,7 +194,20 @@ class AuthTokenLifecycleService:
             last_activity_at=now,
             expires_at=refresh_expires_at,
             device_label=device_label,
+            commit=False,
         )
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user_id,
+            session_id=auth_session.id,
+            event_type=AUTH_AUDIT_SESSION_CREATED,
+            outcome="success",
+            occurred_at=now,
+            event_details={"has_device_label": device_label is not None},
+            commit=False,
+        )
+        db.commit()
+        db.refresh(auth_session)
         access_token, access_expires_at = self._access_token_service.issue(
             user_id=user_id,
             session_id=auth_session.id,
@@ -235,6 +251,15 @@ class AuthTokenLifecycleService:
                 expires_at=next_refresh_expires_at,
                 commit=False,
             )
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=auth_session.user_id,
+                session_id=auth_session.id,
+                event_type=AUTH_AUDIT_REFRESH_ROTATED,
+                outcome="success",
+                occurred_at=now,
+                commit=False,
+            )
             db.commit()
             db.refresh(auth_session)
         except IntegrityError:
@@ -257,6 +282,13 @@ class AuthTokenLifecycleService:
     def _handle_missing_refresh_token(self, db: Session, *, refresh_token_hash: str, now: datetime) -> NoReturn:
         consumed_token = self._repository.get_consumed_refresh_token_by_hash(db, refresh_token_hash)
         if consumed_token is None:
+            self._repository.record_auth_audit_event(
+                db,
+                event_type=AUTH_AUDIT_REFRESH_REJECTED,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "invalid_refresh_token"},
+            )
             raise RefreshTokenInvalidError("refresh token is invalid.")
 
         auth_session = self._repository.get_auth_session_by_id(db, consumed_token.session_id)
@@ -267,10 +299,28 @@ class AuthTokenLifecycleService:
                 revoked_at=now,
                 reason="refresh_token_reuse",
             )
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=consumed_token.user_id,
+            session_id=consumed_token.session_id,
+            event_type=AUTH_AUDIT_REFRESH_REJECTED,
+            outcome="failure",
+            occurred_at=now,
+            event_details={"reason": "refresh_token_reuse"},
+        )
         raise RefreshTokenReuseDetectedError("refresh token reuse detected.")
 
     def _validate_refreshable_session(self, db: Session, *, auth_session: AuthSession, now: datetime) -> None:
         if auth_session.revoked_at is not None:
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=auth_session.user_id,
+                session_id=auth_session.id,
+                event_type=AUTH_AUDIT_REFRESH_REJECTED,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "refresh_token_revoked"},
+            )
             raise RefreshTokenRevokedError("refresh token session is revoked.")
 
         if _ensure_utc(auth_session.expires_at) <= now:
@@ -280,6 +330,15 @@ class AuthTokenLifecycleService:
                 revoked_at=now,
                 reason="refresh_token_expired",
             )
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=auth_session.user_id,
+                session_id=auth_session.id,
+                event_type=AUTH_AUDIT_REFRESH_REJECTED,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "refresh_token_expired"},
+            )
             raise RefreshTokenExpiredError("refresh token is expired.")
 
         if _ensure_utc(auth_session.last_activity_at) <= now - self._inactivity_window:
@@ -288,6 +347,15 @@ class AuthTokenLifecycleService:
                 auth_session=auth_session,
                 revoked_at=now,
                 reason="inactivity_reauth_required",
+            )
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=auth_session.user_id,
+                session_id=auth_session.id,
+                event_type=AUTH_AUDIT_REFRESH_REJECTED,
+                outcome="failure",
+                occurred_at=now,
+                event_details={"reason": "inactivity_reauth_required"},
             )
             raise InactivityReauthRequiredError("password re-entry is required after inactivity.")
 

@@ -52,6 +52,34 @@ class AccountDeletionAudit(Base):
     )
 
 
+class AuthAuditEvent(Base):
+    """Structured audit event for auth-sensitive operations."""
+
+    __tablename__ = "auth_audit_events"
+    __table_args__ = (
+        Index("idx_auth_audit_events_user_time", "user_id", "occurred_at"),
+        Index("idx_auth_audit_events_event_type_time", "event_type", "occurred_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(40), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    event_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class AuthSession(Base):
     """Refresh-token backed session for one account/device."""
 

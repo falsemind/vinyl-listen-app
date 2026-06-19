@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.auth import (
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -28,6 +29,7 @@ from app.services.auth_token_service import (
 
 AUTH_TABLES = [
     UserAccount.__table__,
+    AuthAuditEvent.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
@@ -115,6 +117,11 @@ def test_create_session_persists_hashed_refresh_token_and_access_token(
     assert auth_session.user_id == "user-1"
     assert auth_session.device_label == "Pixel"
     assert auth_session.expires_at == _sqlite_datetime(token_pair.refresh_expires_at)
+    audit_event = db_session.query(AuthAuditEvent).filter_by(event_type="auth_session_created").one()
+    assert audit_event.user_id == "user-1"
+    assert audit_event.session_id == token_pair.session_id
+    assert audit_event.outcome == "success"
+    assert audit_event.event_details == {"has_device_label": True}
 
     claims = _access_service().verify(token_pair.access_token, now=clock.now())
     assert claims.user_id == "user-1"
@@ -155,6 +162,10 @@ def test_refresh_session_rotates_refresh_token_and_records_consumed_hash(
         )
         is not None
     )
+    audit_event = db_session.query(AuthAuditEvent).filter_by(event_type="refresh_token_rotated").one()
+    assert audit_event.user_id == "user-1"
+    assert audit_event.session_id == second_pair.session_id
+    assert audit_event.outcome == "success"
 
 
 def test_reusing_consumed_refresh_token_revokes_session(
@@ -178,6 +189,11 @@ def test_reusing_consumed_refresh_token_revokes_session(
     assert auth_session is not None
     assert auth_session.revoked_at == _sqlite_datetime(clock.now())
     assert auth_session.revoke_reason == "refresh_token_reuse"
+    audit_event = db_session.query(AuthAuditEvent).filter_by(event_type="refresh_token_rejected").one()
+    assert audit_event.user_id == "user-1"
+    assert audit_event.session_id == second_pair.session_id
+    assert audit_event.outcome == "failure"
+    assert audit_event.event_details == {"reason": "refresh_token_reuse"}
 
 
 def test_duplicate_consumed_hash_during_refresh_is_treated_as_reuse(

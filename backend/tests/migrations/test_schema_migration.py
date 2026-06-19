@@ -94,6 +94,9 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "CREATE INDEX idx_usage_events_user_capability_time" in sql
     assert "CREATE TABLE account_deletion_audits" in sql
     assert "CREATE INDEX idx_account_deletion_audits_deleted_at" in sql
+    assert "CREATE TABLE auth_audit_events" in sql
+    assert "CREATE INDEX idx_auth_audit_events_user_time" in sql
+    assert "CREATE INDEX idx_auth_audit_events_event_type_time" in sql
     assert "ALTER TABLE session_moods ADD COLUMN user_id VARCHAR(36)" in sql
     assert "uq_session_moods_user_name" in sql
     assert "CREATE INDEX idx_session_moods_user_custom" in sql

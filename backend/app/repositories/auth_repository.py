@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
     AccountDeletionAudit,
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -74,6 +75,30 @@ class AuthRepository:
 
     def get_user_by_normalized_email(self, db: Session, email: str) -> UserAccount | None:
         return db.query(UserAccount).filter(UserAccount.normalized_email == normalize_email(email)).one_or_none()
+
+    def record_auth_audit_event(
+        self,
+        db: Session,
+        *,
+        event_type: str,
+        outcome: str,
+        occurred_at: datetime,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        event_details: dict | None = None,
+        event_id: str | None = None,
+        commit: bool = True,
+    ) -> AuthAuditEvent:
+        event = AuthAuditEvent(
+            id=event_id or _new_id(),
+            user_id=user_id,
+            session_id=session_id,
+            event_type=event_type,
+            outcome=outcome,
+            occurred_at=occurred_at,
+            event_details=event_details,
+        )
+        return _persist(db, event, commit=commit)
 
     def mark_email_verified(
         self,

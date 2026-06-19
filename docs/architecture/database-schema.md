@@ -132,7 +132,7 @@ spotify_listening_import_batches
 
 # Auth Tables
 
-Auth tables support account bootstrap, email verification, password reset, token-backed sessions, account deletion receipts, and future entitlement/usage gates. Some user-owned data has nullable owner columns for legacy compatibility, but active multi-user flows must filter by the authenticated owner.
+Auth tables support account bootstrap, email verification, password reset, token-backed sessions, structured auth audit events, account deletion receipts, and future entitlement/usage gates. Some user-owned data has nullable owner columns for legacy compatibility, but active multi-user flows must filter by the authenticated owner.
 
 ## Table: user_accounts
 
@@ -195,6 +195,23 @@ Stores rotated refresh token hashes long enough to detect reuse.
 | consumed_at | TIMESTAMP | Rotation time |
 | expires_at | TIMESTAMP | Original refresh token expiry |
 | created_at | TIMESTAMP | Row creation time |
+
+## Table: auth_audit_events
+
+Structured audit trail for auth-sensitive operations. Rows intentionally avoid storing plaintext emails, passwords, verification/reset codes, provider tokens, or refresh/access tokens.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Nullable foreign key to `user_accounts.id`; set null if the account is deleted |
+| session_id | UUID | Optional auth session id context, not a foreign key because sessions can be deleted |
+| event_type | VARCHAR | Event key such as `sign_in`, `password_changed`, or `refresh_token_rejected` |
+| outcome | VARCHAR | `success` or `failure` |
+| occurred_at | TIMESTAMP | Event time |
+| event_details | JSONB | Optional non-secret structured metadata |
+| created_at | TIMESTAMP | Row creation time |
+
+Indexes include `idx_auth_audit_events_user_time` and `idx_auth_audit_events_event_type_time` for account and event-type investigations.
 
 ## Table: email_verification_codes
 

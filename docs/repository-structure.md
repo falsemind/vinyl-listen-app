@@ -191,7 +191,7 @@ backend/app/
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/deletion-audit foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/audit/deletion-audit foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
 | `services/` | Business workflows: auth account/token/email/password/deletion handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |

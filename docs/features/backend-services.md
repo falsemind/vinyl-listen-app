@@ -43,12 +43,15 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 6. `change_password` verifies the current password, stores a fresh Argon2id hash, revokes other active sessions unless sign-out-everywhere is requested, and sends a best-effort security notification email after the DB commit succeeds.
 7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state, and retains only a minimal deletion audit receipt.
 
+`AuthRepository.record_auth_audit_event` stores structured audit rows for auth-sensitive operations. Current event coverage includes account registration, email verification/resend, sign-in success/failure, password reset request/confirmation, password change success/failure, account deletion success/failure, auth session creation, refresh-token rotation/rejection, logout, and logout-all. Audit event details must stay non-secret: no plaintext emails, passwords, verification/reset codes, provider tokens, access tokens, or refresh tokens.
+
 `AuthTokenLifecycleService` owns session tokens:
 
 - Access tokens are short-lived HMAC-signed bearer tokens with minimal `sub`, `sid`, `iat`, and `exp` claims.
 - Refresh tokens are opaque, stored as hashes, and rotated on every refresh.
 - Consumed refresh token hashes are kept so token reuse can be detected and the owning session revoked.
 - Sessions that exceed the inactivity window return `inactivity_reauth_required`; clients should ask for the password again.
+- Session creation, successful refresh rotation, and rejected refresh attempts are written to `auth_audit_events`.
 
 Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, auth emails are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
 

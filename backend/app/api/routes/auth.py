@@ -60,6 +60,8 @@ from app.services.auth_token_service import (
 )
 
 router = APIRouter()
+AUTH_AUDIT_LOGOUT = "logout"
+AUTH_AUDIT_LOGOUT_ALL = "logout_all"
 
 
 def get_auth_account_service() -> AuthAccountService:
@@ -251,12 +253,24 @@ def logout(
 ) -> LogoutResponse:
     auth_session = repository.get_auth_session_by_id(db, current_user.claims.session_id)
     if auth_session is not None and auth_session.revoked_at is None:
+        now = datetime.now(UTC)
         repository.revoke_auth_session(
             db,
             auth_session=auth_session,
-            revoked_at=datetime.now(UTC),
+            revoked_at=now,
             reason="logout",
+            commit=False,
         )
+        repository.record_auth_audit_event(
+            db,
+            user_id=current_user.account.id,
+            session_id=current_user.claims.session_id,
+            event_type=AUTH_AUDIT_LOGOUT,
+            outcome="success",
+            occurred_at=now,
+            commit=False,
+        )
+        db.commit()
     return LogoutResponse(revoked=True)
 
 
@@ -269,12 +283,25 @@ def logout_all(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[AuthRepository, Depends(get_auth_repository)],
 ) -> LogoutAllResponse:
+    now = datetime.now(UTC)
     revoked_sessions = repository.revoke_user_sessions(
         db,
         user_id=current_user.account.id,
-        revoked_at=datetime.now(UTC),
+        revoked_at=now,
         reason="logout_all",
+        commit=False,
     )
+    repository.record_auth_audit_event(
+        db,
+        user_id=current_user.account.id,
+        session_id=current_user.claims.session_id,
+        event_type=AUTH_AUDIT_LOGOUT_ALL,
+        outcome="success",
+        occurred_at=now,
+        event_details={"revoked_sessions": revoked_sessions},
+        commit=False,
+    )
+    db.commit()
     return LogoutAllResponse(revoked_sessions=revoked_sessions)
 
 

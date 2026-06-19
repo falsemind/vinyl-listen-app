@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
     AccountDeletionAudit,
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -50,6 +51,7 @@ from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashCo
 AUTH_TABLES = [
     UserAccount.__table__,
     AccountDeletionAudit.__table__,
+    AuthAuditEvent.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
@@ -165,6 +167,10 @@ def test_register_account_stores_unverified_user_and_sends_local_code(
     assert account.normalized_email == "alex@example.com"
     assert account.email_verified_at is None
     assert result.verification_expires_at == datetime(2026, 6, 18, 12, 15)
+    audit_event = db_session.query(AuthAuditEvent).filter_by(event_type="account_registered").one()
+    assert audit_event.user_id == result.user_id
+    assert audit_event.outcome == "success"
+    assert audit_event.event_details == {"email_verification_required": True}
     assert len(email_sender.messages) == 1
     assert email_sender.messages[0].purpose == "email_verification"
     assert email_sender.messages[0].to_email == "Alex@Example.COM"
@@ -429,6 +435,11 @@ def test_change_password_updates_hash_and_revokes_other_sessions(
     assert current_session.revoked_at is None
     assert other_session.revoked_at == datetime(2026, 6, 18, 12, 2)
     assert other_session.revoke_reason == "password_change"
+    audit_event = db_session.query(AuthAuditEvent).filter_by(event_type="password_changed").one()
+    assert audit_event.user_id == user.id
+    assert audit_event.session_id == "session-current"
+    assert audit_event.outcome == "success"
+    assert audit_event.event_details == {"revoked_sessions": 1, "sign_out_everywhere": False}
     assert email_sender.messages[-1].purpose == "password_change_notification"
     assert email_sender.messages[-1].to_email == "alex@example.com"
     assert email_sender.messages[-1].code is None
@@ -477,6 +488,9 @@ def test_change_password_can_sign_out_everywhere_and_rejects_wrong_current_passw
     assert result.revoked_sessions == 1
     assert auth_session.revoked_at == datetime(2026, 6, 18, 12, 3)
     assert auth_session.revoke_reason == "password_change"
+    failed_event = db_session.query(AuthAuditEvent).filter_by(event_type="password_changed", outcome="failure").one()
+    assert failed_event.user_id == user.id
+    assert failed_event.event_details == {"reason": "invalid_current_password"}
     assert [message.purpose for message in email_sender.messages] == [
         "email_verification",
         "password_change_notification",

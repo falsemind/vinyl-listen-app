@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.auth import (
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -19,6 +20,7 @@ from app.repositories.auth_repository import AuthRepository, normalize_email
 
 AUTH_TABLES = [
     UserAccount.__table__,
+    AuthAuditEvent.__table__,
     AuthSession.__table__,
     ConsumedRefreshToken.__table__,
     EmailVerificationCode.__table__,
@@ -81,6 +83,37 @@ def test_mark_email_verified_sets_verification_timestamp(db_session: Session) ->
     repository.mark_email_verified(db_session, user=account, verified_at=verified_at)
 
     assert repository.get_user_by_id(db_session, "user-1").email_verified_at == verified_at
+
+
+def test_record_auth_audit_event_stores_structured_non_secret_details(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+    occurred_at = datetime(2026, 6, 17, 12)
+
+    event = repository.record_auth_audit_event(
+        db_session,
+        event_id="audit-1",
+        user_id="user-1",
+        session_id="session-1",
+        event_type="password_changed",
+        outcome="success",
+        occurred_at=occurred_at,
+        event_details={"revoked_sessions": 1},
+    )
+
+    assert event.id == "audit-1"
+    assert event.user_id == "user-1"
+    assert event.session_id == "session-1"
+    assert event.event_type == "password_changed"
+    assert event.outcome == "success"
+    assert event.occurred_at == occurred_at
+    assert event.event_details == {"revoked_sessions": 1}
 
 
 def test_create_touch_and_revoke_auth_session(db_session: Session) -> None:

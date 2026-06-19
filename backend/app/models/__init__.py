@@ -1,6 +1,7 @@
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 from app.models.auth import (
     AccountDeletionAudit,
+    AuthAuditEvent,
     AuthSession,
     ConsumedRefreshToken,
     EmailVerificationCode,
@@ -35,6 +36,7 @@ __all__ = [
     "AiChatMessageRecord",
     "AiChatSession",
     "AccountDeletionAudit",
+    "AuthAuditEvent",
     "AuthSession",
     "ConsumedRefreshToken",
     "CollectionFolder",
