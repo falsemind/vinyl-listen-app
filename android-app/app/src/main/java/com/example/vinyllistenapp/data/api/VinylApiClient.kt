@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.data.api
 import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.data.auth.AuthTokenPair
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
 import com.example.vinyllistenapp.domain.AnalyticsPagination
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
@@ -55,6 +56,18 @@ class VinylApiClient(
     private val retryJitterMillis: () -> Long = { Random.nextLong(0, retryPolicy.jitterMaxMillis + 1) },
     private val retryDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
+    private var accessToken: String? = null
+
+    fun setAccessToken(token: String?) {
+        accessToken = token?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun refreshAuthSession(refreshToken: String): AuthTokenPair =
+        apiCall {
+            val body = JSONObject().put("refresh_token", refreshToken)
+            postJson("auth/refresh", body).toAuthTokenPair()
+        }
+
     suspend fun identifyImage(
         context: Context,
         imageUri: Uri,
@@ -816,6 +829,7 @@ class VinylApiClient(
                 connectTimeout = 15_000
                 readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
+                accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
             }
         }
 
@@ -845,6 +859,7 @@ class VinylApiClient(
             throw ApiException(
                 message = apiErrorMessage(status, code, rawMessage, retryAfterMillis),
                 kind = kind,
+                code = code,
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
             )
@@ -887,6 +902,7 @@ enum class ApiErrorKind {
 class ApiException(
     message: String,
     val kind: ApiErrorKind = ApiErrorKind.Unknown,
+    val code: String? = null,
     val failedStep: String? = null,
     val statusCode: Int? = null,
     val retryAfterMillis: Long? = null,
@@ -1356,6 +1372,16 @@ private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) nu
 private fun JSONObject.optNullableLong(name: String): Long? = if (isNull(name)) null else optLong(name).takeIf { it > 0 }
 
 private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
+
+private fun JSONObject.toAuthTokenPair(): AuthTokenPair =
+    AuthTokenPair(
+        accessToken = getString("access_token"),
+        accessExpiresAt = getString("access_expires_at"),
+        refreshToken = getString("refresh_token"),
+        refreshExpiresAt = getString("refresh_expires_at"),
+        tokenType = optString("token_type", "Bearer"),
+        sessionId = getString("session_id"),
+    )
 
 private fun Int.toApiErrorKind(): ApiErrorKind =
     when (this) {
