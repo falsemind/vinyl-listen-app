@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models.auth import UserAccount
+from app.models.auth import UsageEvent, UserAccount, UserEntitlement
 from app.models.identify_job import IdentifyJob
 from app.pipelines.identification import IdentifyCandidate
 from app.repositories.identify_job_repository import IdentifyJobRepository
@@ -157,6 +157,29 @@ class CompletionCancelingIdentifyService(SuccessfulIdentifyService):
         )
 
 
+class StubEntitlementService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def consume_usage(
+        self,
+        _db,
+        *,
+        user_id: str,
+        capability: str,
+        units: int = 1,
+        event_metadata: dict | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "capability": capability,
+                "units": units,
+                "event_metadata": event_metadata,
+            }
+        )
+
+
 def test_identify_job_service_completes_job() -> None:
     session_factory = _build_session_factory()
     service = IdentifyJobService(
@@ -249,8 +272,10 @@ def test_identify_job_service_rejects_invalid_upload_before_job_creation() -> No
 
 def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> None:
     session_factory = _build_session_factory()
+    entitlement_service = StubEntitlementService()
     service = IdentifyJobService(
         identify_service=SuccessfulIdentifyService(),
+        entitlement_service=entitlement_service,
         admission_controller=IdentifyAdmissionController(max_concurrent_jobs=2),
         session_factory=session_factory,
         max_active_jobs_per_client=1,
@@ -281,6 +306,43 @@ def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> N
             raise AssertionError("Expected IdentifyCapacityExceededError")
 
     service.process_job(first_job.job_id, image_bytes=b"image", filename="cover.jpg", content_type="image/jpeg")
+    assert entitlement_service.calls == [
+        {
+            "user_id": "user-a",
+            "capability": "ocr_identify",
+            "units": 1,
+            "event_metadata": {"source": "async_identify"},
+        }
+    ]
+
+
+def test_identify_job_service_records_usage_after_admission() -> None:
+    session_factory = _build_session_factory()
+    entitlement_service = StubEntitlementService()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        entitlement_service=entitlement_service,
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        service.create_job(
+            db,
+            user_id="user-a",
+            image_bytes=b"image",
+            filename="cover.jpg",
+            content_type="image/jpeg",
+            client_key="client-a",
+        )
+
+    assert entitlement_service.calls == [
+        {
+            "user_id": "user-a",
+            "capability": "ocr_identify",
+            "units": 1,
+            "event_metadata": {"source": "async_identify"},
+        }
+    ]
 
 
 def test_identify_job_service_scopes_job_access_by_user() -> None:
@@ -753,6 +815,8 @@ class FailingValidationIdentifyService(SuccessfulIdentifyService):
 def _build_session_factory():
     engine = create_engine("sqlite:///:memory:")
     UserAccount.__table__.create(engine)
+    UserEntitlement.__table__.create(engine)
+    UsageEvent.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     _seed_users(engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -765,6 +829,8 @@ def _build_threadsafe_session_factory():
         poolclass=StaticPool,
     )
     UserAccount.__table__.create(engine)
+    UserEntitlement.__table__.create(engine)
+    UsageEvent.__table__.create(engine)
     IdentifyJob.__table__.create(engine)
     _seed_users(engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)

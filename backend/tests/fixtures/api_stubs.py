@@ -52,6 +52,11 @@ class StubIdentifyService:
         )
         self.error: IdentifyValidationError | None = None
 
+    def validate_upload(self, *, image_bytes: bytes, filename: str, content_type: str) -> None:
+        _ = (image_bytes, filename, content_type)
+        if self.error is not None:
+            raise self.error
+
     def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str) -> IdentifyResult:
         self.calls.append(
             {
@@ -142,6 +147,32 @@ class StubIdentifyJobService:
             raise self.cancel_error
         response = self.cancel_response or self.response.model_copy(update={"cancel_requested": True})
         return response.model_copy(update={"job_id": job_id})
+
+
+class StubEntitlementService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.error: Exception | None = None
+
+    def consume_usage(
+        self,
+        _db,
+        *,
+        user_id: str,
+        capability: str,
+        units: int = 1,
+        event_metadata: dict | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "capability": capability,
+                "units": units,
+                "event_metadata": event_metadata,
+            }
+        )
+        if self.error is not None:
+            raise self.error
 
 
 @dataclass
@@ -851,6 +882,25 @@ def override_identify_job_service() -> Callable[[StubIdentifyJobService], None]:
         from app.main import app
 
         app.dependency_overrides[get_identify_job_service] = lambda: service
+
+    return _override
+
+
+@pytest.fixture
+def build_stub_entitlement_service() -> Callable[[], StubEntitlementService]:
+    def _factory() -> StubEntitlementService:
+        return StubEntitlementService()
+
+    return _factory
+
+
+@pytest.fixture
+def override_entitlement_service() -> Callable[[StubEntitlementService], None]:
+    def _override(service: StubEntitlementService) -> None:
+        from app.api.routes.identify import get_entitlement_service
+        from app.main import app
+
+        app.dependency_overrides[get_entitlement_service] = lambda: service
 
     return _override
 

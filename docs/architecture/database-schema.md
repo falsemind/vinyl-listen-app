@@ -249,6 +249,8 @@ Append-only foundation for future feature usage limits, starting with OCR/identi
 | event_metadata | JSONB | Optional structured metadata |
 | created_at | TIMESTAMP | Row creation time |
 
+Indexes include `idx_usage_events_user_capability_time` for per-user rolling-window capability counters.
+
 ## Table: account_deletion_audits
 
 Minimal receipt table retained after hard account deletion. It intentionally does not store email, provider tokens, collection contents, listening history, prompts, analytics inputs, or other user-owned payloads.

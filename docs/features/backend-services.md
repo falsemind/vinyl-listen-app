@@ -13,8 +13,9 @@ description: This document explains the backend service layer in `backend/app/se
 | `auth_token_service.py` | Issue access tokens, rotate refresh tokens, detect refresh-token reuse, and enforce inactivity re-auth. | `AuthRepository`, `AccessTokenService`, `consumed_refresh_tokens`. |
 | `auth_email_delivery.py` | Send auth verification/reset messages through local JSONL outbox or Mailgun Provider API. | Auth account service, Mailgun configuration, local outbox path. |
 | `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
+| `entitlement_service.py` | Check capability access and record user-scoped usage events for future gated features. | `AuthRepository`, `user_entitlements`, `usage_events`. |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
-| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
+| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission and usage limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller. |
 | `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
 | `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
 | `discogs_service.py` | Call Discogs search/release/collection APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
@@ -50,6 +51,18 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 - Sessions that exceed the inactivity window return `inactivity_reauth_required`; clients should ask for the password again.
 
 Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, codes are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
+
+## EntitlementService
+
+`EntitlementService` is the backend foundation for future paid or limited features. It checks capability keys such as `ocr_identify` against the authenticated user's entitlement row, sums usage events inside the configured rolling window, and records accepted usage events.
+
+Current behavior:
+
+- Missing entitlement rows are treated as `FREE` and are created when accepted usage is recorded.
+- `FREE` and `TRIAL` OCR/identify limits are configurable; `PLUS` and `PRO` are represented as unlimited in the default rule set.
+- Sync identify and accepted async identify jobs each record one `ocr_identify` usage unit.
+- Validation errors, capacity rejections, and over-limit denials do not record usage.
+- Over-limit denials raise `FeatureGateError`, which API routes map to `402 feature_usage_limit_exceeded`.
 
 ## AI Insights and Spotify Tools
 
@@ -111,6 +124,7 @@ Identify work has two protection layers:
 
 - Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses. The default backend is in-memory. Set `inbound_rate_limit_backend=redis` with `inbound_rate_limit_redis_url` to share general API limits across backend workers or instances.
 - `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local or configured DB-backed capacity is full.
+- `EntitlementService` gates the `ocr_identify` capability and records usage for accepted sync identify calls and accepted async identify jobs.
 
 The Redis limiter uses token-bucket state with expiring keys and a short socket/connect timeout from `inbound_rate_limit_redis_timeout_seconds`. MVP behavior is fail-open by default: Redis limiter errors are logged and the request is allowed, so Redis outages do not make the API unavailable. Set `inbound_rate_limit_redis_fail_open=false` before public launch if strict protection is more important than availability during Redis outages.
 
@@ -164,9 +178,11 @@ The ranker adds:
 `create_job(db, image_bytes, filename, content_type)`:
 
 1. Validates the upload through `IdentifyService.validate_upload`.
-2. Creates an `identify_jobs` row with `status="upload_received"`.
-3. Sets `expires_at` to the current time plus the job TTL.
-4. Returns an `IdentifyJobStatusResponse` immediately.
+2. Runs stale-job and active-capacity admission checks.
+3. Records one `ocr_identify` usage unit after the job is admitted.
+4. Creates an `identify_jobs` row with `status="upload_received"`.
+5. Sets `expires_at` to the current time plus the job TTL.
+6. Returns an `IdentifyJobStatusResponse` immediately.
 
 The current job TTL is 24 hours.
 

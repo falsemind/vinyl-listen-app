@@ -224,6 +224,64 @@ def test_create_and_consume_password_reset_code(db_session: Session) -> None:
     assert code.consumed_at == consumed_at
 
 
+def test_sum_usage_units_filters_by_user_capability_and_window(db_session: Session) -> None:
+    repository = AuthRepository()
+    repository.create_user_account(
+        db_session,
+        user_id="user-1",
+        email="alex@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+    repository.create_user_account(
+        db_session,
+        user_id="user-2",
+        email="sam@example.com",
+        password_hash="hash",
+        password_hash_algorithm="argon2id",
+    )
+    now = datetime(2026, 6, 19, 12)
+    repository.record_usage_event(
+        db_session,
+        user_id="user-1",
+        capability="ocr_identify",
+        units=2,
+        occurred_at=now - timedelta(minutes=5),
+    )
+    repository.record_usage_event(
+        db_session,
+        user_id="user-1",
+        capability="ocr_identify",
+        units=3,
+        occurred_at=now - timedelta(days=2),
+    )
+    repository.record_usage_event(
+        db_session,
+        user_id="user-1",
+        capability="ai_chat",
+        units=4,
+        occurred_at=now,
+    )
+    repository.record_usage_event(
+        db_session,
+        user_id="user-2",
+        capability="ocr_identify",
+        units=5,
+        occurred_at=now,
+    )
+
+    assert repository.sum_usage_units(db_session, user_id="user-1", capability="ocr_identify") == 5
+    assert (
+        repository.sum_usage_units(
+            db_session,
+            user_id="user-1",
+            capability="ocr_identify",
+            since=now - timedelta(days=1),
+        )
+        == 2
+    )
+
+
 def test_get_latest_password_reset_code_orders_by_issue_time(db_session: Session) -> None:
     repository = AuthRepository()
     repository.create_user_account(

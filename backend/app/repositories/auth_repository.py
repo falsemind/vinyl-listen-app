@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
@@ -398,6 +398,22 @@ class AuthRepository:
             event_metadata=event_metadata,
         )
         return _persist(db, event, commit=commit)
+
+    def sum_usage_units(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        capability: str,
+        since: datetime | None = None,
+    ) -> int:
+        query = db.query(func.coalesce(func.sum(UsageEvent.units), 0)).filter(
+            UsageEvent.user_id == user_id,
+            UsageEvent.capability == capability,
+        )
+        if since is not None:
+            query = query.filter(UsageEvent.occurred_at >= since)
+        return int(query.scalar() or 0)
 
     def create_account_deletion_audit(
         self,

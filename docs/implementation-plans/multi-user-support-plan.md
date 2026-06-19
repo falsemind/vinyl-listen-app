@@ -362,11 +362,15 @@ Implementation note: the Phase 5c migration backfills legacy async/AI/Spotify ro
 
 ### Phase 7: Entitlement And Usage-Counter Foundation
 
+Status: implemented for backend OCR/identify usage counting and deterministic gated responses.
+
 - Add backend capability checks using capability names rather than hard-coded plan names.
 - Add usage event/counter recording for OCR/identify first.
 - Add structured gated-feature errors that Android can map to upgrade messaging later.
 - Leave billing/subscription provider integration out of scope.
 - Done when OCR/identify usage can be counted per user and gated responses are deterministic in tests.
+
+Implementation note: `EntitlementService` currently gates the `ocr_identify` capability for sync identify and accepted async identify jobs. Free/trial limits and the rolling window are configurable, paid plans can be represented as unlimited plan limits, and denied requests return `402 feature_usage_limit_exceeded` without recording an extra usage event. Billing provider synchronization, subscription webhooks, and Android upgrade messaging remain future work.
 
 ## Android Implementation Phases
 

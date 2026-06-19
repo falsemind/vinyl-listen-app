@@ -21,6 +21,7 @@ from app.schemas.identify import (
     IdentifyResponse,
 )
 from app.services.discogs_service import DiscogsClientError
+from app.services.entitlement_service import OCR_IDENTIFY_CAPABILITY, EntitlementService
 from app.services.identify_service import (
     IdentifyCanceledError,
     IdentifyResult,
@@ -153,6 +154,7 @@ class IdentifyJobService:
         *,
         identify_service: IdentifyService | None = None,
         repository: IdentifyJobRepository | None = None,
+        entitlement_service: EntitlementService | None = None,
         admission_controller: IdentifyAdmissionController | None = None,
         session_factory: Callable[[], Session] = SessionLocal,
         now_provider: Callable[[], datetime] | None = None,
@@ -163,6 +165,7 @@ class IdentifyJobService:
     ) -> None:
         self._identify_service = identify_service or IdentifyService()
         self._repository = repository or IdentifyJobRepository()
+        self._entitlement_service = entitlement_service or EntitlementService()
         self._admission_controller = admission_controller or IdentifyAdmissionController(
             max_concurrent_jobs=settings.identify_max_concurrent_jobs,
         )
@@ -231,6 +234,12 @@ class IdentifyJobService:
             admission_ticket = self._admission_controller.acquire_global_slot()
             job_id = str(uuid4())
             try:
+                self._entitlement_service.consume_usage(
+                    db,
+                    user_id=user_id,
+                    capability=OCR_IDENTIFY_CAPABILITY,
+                    event_metadata={"source": "async_identify"},
+                )
                 job = self._repository.create(
                     db,
                     job_id=job_id,

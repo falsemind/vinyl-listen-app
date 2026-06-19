@@ -189,6 +189,7 @@ class UsageEvent(Base):
     """User-scoped usage event for future feature limits."""
 
     __tablename__ = "usage_events"
+    __table_args__ = (Index("idx_usage_events_user_capability_time", "user_id", "capability", "occurred_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(

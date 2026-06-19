@@ -9,6 +9,11 @@ from app.core.config import settings
 from app.database.session import get_db
 from app.schemas.identify import IdentifyCandidateResponse, IdentifyJobStatusResponse, IdentifyResponse
 from app.schemas.sessions import ErrorResponse
+from app.services.entitlement_service import (
+    OCR_IDENTIFY_CAPABILITY,
+    EntitlementService,
+    FeatureGateError,
+)
 from app.services.identify_job_service import (
     IdentifyCapacityExceededError,
     IdentifyJobExpiredError,
@@ -21,6 +26,7 @@ router = APIRouter()
 UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
 _identify_service: IdentifyService | None = None
 _identify_job_service: IdentifyJobService | None = None
+_entitlement_service: EntitlementService | None = None
 
 
 def get_identify_service() -> IdentifyService:
@@ -37,10 +43,22 @@ def get_identify_job_service() -> IdentifyJobService:
     return _identify_job_service
 
 
+def get_entitlement_service() -> EntitlementService:
+    global _entitlement_service  # noqa: PLW0603
+    if _entitlement_service is None:
+        _entitlement_service = EntitlementService()
+    return _entitlement_service
+
+
 @router.post(
     "",
     response_model=IdentifyResponse,
-    responses={413: {"model": ErrorResponse}, 415: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    responses={
+        402: {"description": "Feature usage limit exceeded."},
+        413: {"model": ErrorResponse},
+        415: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
 )
 async def identify_release(
     image: Annotated[UploadFile, File(...)],
@@ -49,8 +67,9 @@ async def identify_release(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[IdentifyService, Depends(get_identify_service)],
     job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
+    entitlement_service: Annotated[EntitlementService, Depends(get_entitlement_service)],
 ):
-    _ = request, current_user
+    _ = request
     try:
         admission_ticket = job_service.acquire_sync_identify_slot()
     except IdentifyCapacityExceededError as error:
@@ -58,17 +77,28 @@ async def identify_release(
 
     try:
         image_bytes = await _read_image_bytes(image)
+        filename = image.filename or ""
+        content_type = image.content_type or ""
+        service.validate_upload(image_bytes=image_bytes, filename=filename, content_type=content_type)
+        entitlement_service.consume_usage(
+            db,
+            user_id=current_user.account.id,
+            capability=OCR_IDENTIFY_CAPABILITY,
+            event_metadata={"source": "sync_identify"},
+        )
         result = service.identify(
             db,
             image_bytes=image_bytes,
-            filename=image.filename or "",
-            content_type=image.content_type or "",
+            filename=filename,
+            content_type=content_type,
         )
     except IdentifyValidationError as error:
         return JSONResponse(
             status_code=error.status_code,
             content={"error": {"code": error.code, "message": error.message}},
         )
+    except FeatureGateError as error:
+        return _feature_gate_error_response(error)
     finally:
         admission_ticket.release()
 
@@ -98,7 +128,12 @@ async def identify_release(
     "/jobs",
     response_model=IdentifyJobStatusResponse,
     status_code=202,
-    responses={413: {"model": ErrorResponse}, 415: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    responses={
+        402: {"description": "Feature usage limit exceeded."},
+        413: {"model": ErrorResponse},
+        415: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
 )
 async def create_identify_job(
     image: Annotated[UploadFile, File(...)],
@@ -123,6 +158,8 @@ async def create_identify_job(
         )
     except IdentifyValidationError as error:
         return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+    except FeatureGateError as error:
+        return _feature_gate_error_response(error)
     except IdentifyCapacityExceededError as error:
         return _capacity_error_response(error)
 
@@ -219,3 +256,20 @@ def _capacity_error_response(error: IdentifyCapacityExceededError) -> JSONRespon
         content={"error": {"code": error.code, "message": error.message}},
         headers={"Retry-After": str(retry_after_seconds)},
     )
+
+
+def _feature_gate_error_response(error: FeatureGateError) -> JSONResponse:
+    payload: dict[str, object] = {
+        "code": error.code,
+        "message": error.message,
+        "capability": error.capability,
+    }
+    if error.plan is not None:
+        payload["plan"] = error.plan
+    if error.limit is not None:
+        payload["limit"] = error.limit
+    if error.used is not None:
+        payload["used"] = error.used
+    if error.reset_at is not None:
+        payload["reset_at"] = error.reset_at.isoformat()
+    return JSONResponse(status_code=402, content={"error": payload})

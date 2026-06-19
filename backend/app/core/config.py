@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     mailgun_api_key: str | None = None
     mailgun_domain: str | None = None
 
+    entitlement_ocr_identify_free_limit: int = Field(default=25, ge=0)
+    entitlement_ocr_identify_trial_limit: int = Field(default=100, ge=0)
+    entitlement_ocr_identify_window_days: int = Field(default=30, ge=1)
+
     ai_chat_enabled: bool = False
     ai_chat_base_url: str | None = None
     ai_chat_endpoint_path: str = "/api/v1/chat"

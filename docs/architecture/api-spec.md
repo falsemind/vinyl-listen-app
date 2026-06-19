@@ -362,6 +362,22 @@ Notes:
 * Candidates from Discogs may have `release_id: null`.
 * If `release_id` is null, the client imports the selected Discogs release before logging a session.
 * Collection add uses the same candidate shape. Android no-token collection add fetches the selected full Discogs release from the device, imports it through `POST /releases/import/client-discogs`, then calls `POST /releases/{release_id}/collection/reactivate` before opening Record Details.
+* Accepted sync identify calls record one `ocr_identify` usage unit for the authenticated user.
+* If the user's plan exceeds the configured OCR/identify allowance, the endpoint returns `402`:
+
+```json
+{
+  "error": {
+    "code": "feature_usage_limit_exceeded",
+    "message": "Usage limit reached for this feature.",
+    "capability": "ocr_identify",
+    "plan": "FREE",
+    "limit": 25,
+    "used": 25,
+    "reset_at": "2026-07-19T12:00:00+00:00"
+  }
+}
+```
 
 ## POST /identify/jobs
 
@@ -403,6 +419,8 @@ Fields:
 ```
 
 Upload validation errors use the same structured error format and status codes as `POST /identify`.
+
+Accepted async identify jobs record one `ocr_identify` usage unit for the authenticated user. Feature-gated responses use the same `402 feature_usage_limit_exceeded` shape as `POST /identify`; validation and capacity rejections do not consume usage.
 
 If the client already has too many active identify jobs, or local identify capacity is full, the endpoint returns `429` with a `Retry-After` header:
 
