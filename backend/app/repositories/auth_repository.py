@@ -1,7 +1,9 @@
+import hashlib
+import struct
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, func, inspect, select
+from sqlalchemy import delete, func, inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.models.ai_chat import AiChatMessageRecord, AiChatSession
@@ -399,6 +401,16 @@ class AuthRepository:
         )
         return _persist(db, event, commit=commit)
 
+    def lock_usage_counter(self, db: Session, *, user_id: str, capability: str) -> None:
+        if db.get_bind().dialect.name != "postgresql":
+            return
+
+        key_1, key_2 = _usage_advisory_lock_keys(user_id=user_id, capability=capability)
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:key_1, :key_2)"),
+            {"key_1": key_1, "key_2": key_2},
+        )
+
     def sum_usage_units(
         self,
         db: Session,
@@ -511,6 +523,11 @@ class AuthRepository:
 
 def _new_id() -> str:
     return str(uuid4())
+
+
+def _usage_advisory_lock_keys(*, user_id: str, capability: str) -> tuple[int, int]:
+    digest = hashlib.blake2b(f"usage:{user_id}:{capability}".encode(), digest_size=8).digest()
+    return struct.unpack("!ii", digest)
 
 
 def _existing_table_names(db: Session) -> set[str]:

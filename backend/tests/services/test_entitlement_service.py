@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.auth import UsageEvent, UserAccount, UserEntitlement
+from app.repositories.auth_repository import AuthRepository
 from app.services.entitlement_service import (
     OCR_IDENTIFY_CAPABILITY,
     CapabilityRule,
@@ -134,6 +135,55 @@ def test_expired_entitlement_blocks_usage_without_recording_event(db_session: Se
     assert db_session.query(UsageEvent).count() == 0
 
 
+def test_consume_usage_locks_counter_before_reading_usage() -> None:
+    now = datetime(2026, 6, 19, 12, 0, 0, tzinfo=UTC)
+    repository = _OrderingRepository()
+    service = EntitlementService(
+        repository=repository,
+        now_provider=lambda: now,
+        rules={
+            OCR_IDENTIFY_CAPABILITY: CapabilityRule(
+                capability=OCR_IDENTIFY_CAPABILITY,
+                window=timedelta(days=1),
+                plan_limits={"FREE": 25},
+                default_limit=25,
+            )
+        },
+    )
+    db_session = _FakeSession()
+
+    service.consume_usage(db_session, user_id="user-a", capability=OCR_IDENTIFY_CAPABILITY)
+
+    assert repository.events == ["lock", "get_entitlement", "sum", "get_entitlement", "record"]
+    assert db_session.commits == 1
+    assert db_session.rollbacks == 0
+
+
+def test_consume_usage_rolls_back_when_limit_is_denied() -> None:
+    now = datetime(2026, 6, 19, 12, 0, 0, tzinfo=UTC)
+    repository = _OrderingRepository(used_units=25)
+    service = EntitlementService(
+        repository=repository,
+        now_provider=lambda: now,
+        rules={
+            OCR_IDENTIFY_CAPABILITY: CapabilityRule(
+                capability=OCR_IDENTIFY_CAPABILITY,
+                window=timedelta(days=1),
+                plan_limits={"FREE": 25},
+                default_limit=25,
+            )
+        },
+    )
+    db_session = _FakeSession()
+
+    with pytest.raises(FeatureGateError):
+        service.consume_usage(db_session, user_id="user-a", capability=OCR_IDENTIFY_CAPABILITY)
+
+    assert repository.events == ["lock", "get_entitlement", "sum"]
+    assert db_session.commits == 0
+    assert db_session.rollbacks == 1
+
+
 def _build_service(*, now: datetime) -> EntitlementService:
     return EntitlementService(
         now_provider=lambda: now,
@@ -146,3 +196,66 @@ def _build_service(*, now: datetime) -> EntitlementService:
             )
         },
     )
+
+
+class _OrderingRepository(AuthRepository):
+    def __init__(self, *, used_units: int = 24) -> None:
+        self.events: list[str] = []
+        self.used_units = used_units
+        self.entitlement = UserEntitlement(user_id="user-a", plan="FREE", status="ACTIVE")
+
+    def lock_usage_counter(self, db: Session, *, user_id: str, capability: str) -> None:
+        _ = (db, user_id, capability)
+        self.events.append("lock")
+
+    def get_entitlement(self, db: Session, user_id: str) -> UserEntitlement | None:
+        _ = (db, user_id)
+        self.events.append("get_entitlement")
+        return self.entitlement
+
+    def sum_usage_units(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        capability: str,
+        since: datetime | None = None,
+    ) -> int:
+        _ = (db, user_id, capability, since)
+        assert self.events[0] == "lock"
+        self.events.append("sum")
+        return self.used_units
+
+    def record_usage_event(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        capability: str,
+        occurred_at: datetime,
+        units: int = 1,
+        event_metadata: dict | None = None,
+        event_id: str | None = None,
+        commit: bool = True,
+    ) -> UsageEvent:
+        _ = (db, user_id, capability, occurred_at, event_metadata, event_id, commit)
+        self.events.append("record")
+        return UsageEvent(
+            id="usage-1",
+            user_id=user_id,
+            capability=capability,
+            units=units,
+            occurred_at=occurred_at,
+        )
+
+
+class _FakeSession:
+    def __init__(self) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1

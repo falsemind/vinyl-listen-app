@@ -366,11 +366,12 @@ Status: implemented for backend OCR/identify usage counting and deterministic ga
 
 - Add backend capability checks using capability names rather than hard-coded plan names.
 - Add usage event/counter recording for OCR/identify first.
+- Serialize usage check-and-record per `(user_id, capability)` so concurrent requests cannot overshoot configured limits.
 - Add structured gated-feature errors that Android can map to upgrade messaging later.
 - Leave billing/subscription provider integration out of scope.
 - Done when OCR/identify usage can be counted per user and gated responses are deterministic in tests.
 
-Implementation note: `EntitlementService` currently gates the `ocr_identify` capability for sync identify and accepted async identify jobs. Free/trial limits and the rolling window are configurable, paid plans can be represented as unlimited plan limits, and denied requests return `402 feature_usage_limit_exceeded` without recording an extra usage event. Billing provider synchronization, subscription webhooks, and Android upgrade messaging remain future work.
+Implementation note: `EntitlementService` currently gates the `ocr_identify` capability for sync identify and accepted async identify jobs. Free/trial limits and the rolling window are configurable, paid plans can be represented as unlimited plan limits, and denied requests return `402 feature_usage_limit_exceeded` without recording an extra usage event. PostgreSQL deployments use a transaction-level advisory lock before summing and inserting usage events, which serializes concurrent usage consumption across backend workers for the same user/capability pair. Billing provider synchronization, subscription webhooks, and Android upgrade messaging remain future work.
 
 ## Android Implementation Phases
 

@@ -61,6 +61,7 @@ Current behavior:
 - Missing entitlement rows are treated as `FREE` and are created when accepted usage is recorded.
 - `FREE` and `TRIAL` OCR/identify limits are configurable; `PLUS` and `PRO` are represented as unlimited in the default rule set.
 - Sync identify and accepted async identify jobs each record one `ocr_identify` usage unit.
+- PostgreSQL deployments serialize `consume_usage` with a transaction-level advisory lock per `(user_id, capability)` before reading the current usage sum and inserting the new usage event.
 - Validation errors, capacity rejections, and over-limit denials do not record usage.
 - Over-limit denials raise `FeatureGateError`, which API routes map to `402 feature_usage_limit_exceeded`.
 

@@ -76,14 +76,22 @@ class EntitlementService:
         units: int = 1,
         event_metadata: dict | None = None,
     ) -> UsageGrant:
-        grant = self.check_usage(db, user_id=user_id, capability=capability, units=units)
-        self.record_usage(
-            db,
-            user_id=user_id,
-            capability=capability,
-            units=units,
-            event_metadata=event_metadata,
-        )
+        if units <= 0:
+            raise ValueError("usage units must be positive.")
+
+        self._repository.lock_usage_counter(db, user_id=user_id, capability=capability)
+        try:
+            grant = self.check_usage(db, user_id=user_id, capability=capability, units=units)
+            self.record_usage(
+                db,
+                user_id=user_id,
+                capability=capability,
+                units=units,
+                event_metadata=event_metadata,
+            )
+        except Exception:
+            db.rollback()
+            raise
         return grant
 
     def check_usage(

@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -353,5 +354,39 @@ def test_ensure_entitlement_upserts_plan_and_record_usage_event(db_session: Sess
     assert event.event_metadata == {"source": "test"}
 
 
+def test_lock_usage_counter_uses_postgres_transaction_advisory_lock() -> None:
+    repository = AuthRepository()
+    db_session = _FakeDialectSession("postgresql")
+
+    repository.lock_usage_counter(db_session, user_id="user-1", capability="ocr_identify")
+
+    assert len(db_session.executed) == 1
+    statement, params = db_session.executed[0]
+    assert "pg_advisory_xact_lock" in statement
+    assert isinstance(params["key_1"], int)
+    assert isinstance(params["key_2"], int)
+
+
+def test_lock_usage_counter_is_noop_outside_postgres() -> None:
+    repository = AuthRepository()
+    db_session = _FakeDialectSession("sqlite")
+
+    repository.lock_usage_counter(db_session, user_id="user-1", capability="ocr_identify")
+
+    assert db_session.executed == []
+
+
 def test_normalize_email_trims_and_casefolds() -> None:
     assert normalize_email("  USER@Example.COM  ") == "user@example.com"
+
+
+class _FakeDialectSession:
+    def __init__(self, dialect_name: str) -> None:
+        self._bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect_name))
+        self.executed: list[tuple[str, dict]] = []
+
+    def get_bind(self):
+        return self._bind
+
+    def execute(self, statement, params: dict) -> None:
+        self.executed.append((str(statement), params))
