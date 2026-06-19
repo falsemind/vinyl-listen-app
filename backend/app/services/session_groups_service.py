@@ -98,6 +98,7 @@ class SessionGroupsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         title: str | None,
         started_at: str | None = None,
         style_focus: str | None = None,
@@ -105,12 +106,17 @@ class SessionGroupsService:
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroups:
-        active_group = self._expire_if_inactive(db, self._session_groups_repository.get_active(db))
+        active_group = self._expire_if_inactive(
+            db,
+            self._session_groups_repository.get_active(db, user_id=user_id),
+            user_id=user_id,
+        )
         if active_group is not None:
             raise SessionGroupAlreadyActiveError(active_group.id)
 
         return self._session_groups_repository.create(
             db,
+            user_id=user_id,
             title=self._normalize_title(title),
             style_focus=self._normalize_metadata_value(
                 "style_focus",
@@ -131,34 +137,45 @@ class SessionGroupsService:
             started_at=self._parse_optional_datetime(started_at, field_name="started_at") or self._current_time(),
         )
 
-    def get_active_session_group(self, db: Session) -> SessionGroups | None:
-        return self._expire_if_inactive(db, self._session_groups_repository.get_active(db))
+    def get_active_session_group(self, db: Session, *, user_id: str | None = None) -> SessionGroups | None:
+        return self._expire_if_inactive(
+            db,
+            self._session_groups_repository.get_active(db, user_id=user_id),
+            user_id=user_id,
+        )
 
-    def get_session_group(self, db: Session, session_group_id: str) -> SessionGroups:
-        session_group = self._session_groups_repository.get_by_id(db, session_group_id)
+    def get_session_group(self, db: Session, session_group_id: str, *, user_id: str | None = None) -> SessionGroups:
+        session_group = self._session_groups_repository.get_by_id(db, session_group_id, user_id=user_id)
         if session_group is None:
             raise SessionGroupNotFoundError(session_group_id)
         return session_group
 
-    def get_session_groups_by_ids(self, db: Session, session_group_ids: list[str]) -> list[SessionGroups]:
+    def get_session_groups_by_ids(
+        self,
+        db: Session,
+        session_group_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> list[SessionGroups]:
         unique_ids = list(dict.fromkeys(session_group_ids))
-        return self._session_groups_repository.get_by_ids(db, unique_ids)
+        return self._session_groups_repository.get_by_ids(db, unique_ids, user_id=user_id)
 
     def finish_session_group(
         self,
         db: Session,
         session_group_id: str,
         *,
+        user_id: str | None = None,
         ended_at: str | None = None,
         style_focus: str | None = None,
         mood_direction: str | None = None,
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroups:
-        session_group = self.get_session_group(db, session_group_id)
+        session_group = self.get_session_group(db, session_group_id, user_id=user_id)
         if session_group.status != "active":
             raise SessionGroupInactiveError(session_group_id)
-        if self._expire_if_inactive(db, session_group) is None:
+        if self._expire_if_inactive(db, session_group, user_id=user_id) is None:
             raise SessionGroupInactiveError(session_group_id)
 
         normalized_ended_at = self._parse_optional_datetime(ended_at, field_name="ended_at") or self._current_time()
@@ -179,14 +196,20 @@ class SessionGroupsService:
             ),
         )
 
-    def validate_active_session_group(self, db: Session, session_group_id: str | None) -> str | None:
+    def validate_active_session_group(
+        self,
+        db: Session,
+        session_group_id: str | None,
+        *,
+        user_id: str | None = None,
+    ) -> str | None:
         if session_group_id is None:
             return None
 
-        session_group = self.get_session_group(db, session_group_id)
+        session_group = self.get_session_group(db, session_group_id, user_id=user_id)
         if session_group.status != "active":
             raise SessionGroupInactiveError(session_group_id)
-        if self._expire_if_inactive(db, session_group) is None:
+        if self._expire_if_inactive(db, session_group, user_id=user_id) is None:
             raise SessionGroupInactiveError(session_group_id)
         return session_group.id
 
@@ -195,9 +218,10 @@ class SessionGroupsService:
         db: Session,
         session_group_id: str,
         *,
+        user_id: str | None = None,
         fields: dict,
     ) -> SessionGroups:
-        session_group = self.get_session_group(db, session_group_id)
+        session_group = self.get_session_group(db, session_group_id, user_id=user_id)
         if not self.can_edit_session_group(session_group):
             raise SessionGroupEditWindowExpiredError(session_group_id)
 
@@ -218,12 +242,22 @@ class SessionGroupsService:
             return None
         return self._as_aware_utc(session_group.ended_at) + SESSION_GROUP_EDIT_WINDOW
 
-    def _expire_if_inactive(self, db: Session, session_group: SessionGroups | None) -> SessionGroups | None:
+    def _expire_if_inactive(
+        self,
+        db: Session,
+        session_group: SessionGroups | None,
+        *,
+        user_id: str | None = None,
+    ) -> SessionGroups | None:
         if session_group is None or session_group.status != "active":
             return session_group
 
         last_activity_at = (
-            self._sessions_repository.get_latest_created_at_by_session_group_id(db, session_group.id)
+            self._sessions_repository.get_latest_created_at_by_session_group_id(
+                db,
+                session_group.id,
+                user_id=user_id,
+            )
             or session_group.started_at
         )
         expires_at = self._as_aware_utc(last_activity_at) + SESSION_GROUP_INACTIVITY_TIMEOUT

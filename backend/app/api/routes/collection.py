@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.collection_folders_repository import CollectionFoldersRepository
@@ -61,19 +62,21 @@ def get_provider_integration_repository() -> ProviderIntegrationRepository:
 @router.get("/settings", response_model=CollectionSettingsResponse)
 def get_collection_settings(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
 ) -> CollectionSettingsResponse:
-    settings_record = repository.get_or_create(db)
+    settings_record = repository.get_or_create(db, user_id=current_user.account.id)
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 
 @router.get("/folders", response_model=CollectionFoldersResponse)
 def list_collection_folders(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     folder_repository: Annotated[CollectionFoldersRepository, Depends(get_collection_folders_repository)],
     integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
 ) -> CollectionFoldersResponse:
-    integration = integration_repository.get_discogs(db)
+    integration = integration_repository.get_discogs(db, user_id=current_user.account.id)
     if not _has_configured_discogs_collection(integration):
         return CollectionFoldersResponse(discogs_configured=False, folders=[], has_extra_folders=False)
 
@@ -97,11 +100,12 @@ def list_collection_folders(
 def update_collection_settings(
     payload: CollectionSettingsRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[CollectionSettingsRepository, Depends(get_collection_settings_repository)],
     integration_repository: Annotated[ProviderIntegrationRepository, Depends(get_provider_integration_repository)],
 ) -> CollectionSettingsResponse | JSONResponse:
     if payload.source_of_truth == CollectionSourceOfTruth.DISCOGS:
-        integration = integration_repository.get_discogs(db)
+        integration = integration_repository.get_discogs(db, user_id=current_user.account.id)
         if not _has_configured_discogs_collection(integration):
             return _error_response(
                 status_code=400,
@@ -109,7 +113,7 @@ def update_collection_settings(
                 message="Discogs access token is required before using Discogs as source of truth.",
             )
 
-    settings_record = repository.set_source_of_truth(db, payload.source_of_truth)
+    settings_record = repository.set_source_of_truth(db, payload.source_of_truth, user_id=current_user.account.id)
     return CollectionSettingsResponse(source_of_truth=settings_record.source_of_truth)
 
 

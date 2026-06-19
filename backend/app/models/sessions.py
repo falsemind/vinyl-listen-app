@@ -12,6 +12,8 @@ class SessionGroups(Base):
 
     __tablename__ = "session_groups"
     __table_args__ = (
+        Index("idx_session_groups_user_id", "user_id"),
+        Index("idx_session_groups_user_status", "user_id", "status"),
         Index("idx_session_groups_status", "status"),
         Index("idx_session_groups_started_at", "started_at"),
     )
@@ -22,6 +24,11 @@ class SessionGroups(Base):
         default=lambda: str(uuid4()),
     )
     title: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active")
     style_focus: Mapped[str] = mapped_column(String, nullable=False, default="mixed", server_default="mixed")
     mood_direction: Mapped[str] = mapped_column(
@@ -53,6 +60,9 @@ class Sessions(Base):
 
     __tablename__ = "sessions"
     __table_args__ = (
+        Index("idx_sessions_user_id", "user_id"),
+        Index("idx_sessions_user_release_id", "user_id", "release_id"),
+        Index("idx_sessions_user_played_at", "user_id", "played_at"),
         Index("idx_sessions_release_id", "release_id"),
         Index("idx_sessions_played_at", "played_at"),
         Index("idx_sessions_session_group_id", "session_group_id"),
@@ -67,6 +77,13 @@ class Sessions(Base):
 
     # Foreign key to releases table.
     release_id: Mapped[str] = mapped_column(String, ForeignKey("releases.id"), nullable=False)
+
+    # Owner account for multi-user data isolation. Nullable only for legacy rows before backfill.
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
 
     # Optional parent timed listening session group.
     session_group_id: Mapped[str | None] = mapped_column(

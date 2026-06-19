@@ -358,6 +358,7 @@ class StubSessionGroupsService:
         self.start_error: Exception | None = None
         self.get_error: Exception | None = None
         self.finish_error: Exception | None = None
+        self.user_id_calls: list[str | None] = []
         self.start_calls: list[dict] = []
         self.get_calls: list[str] = []
         self.get_by_ids_calls: list[list[str]] = []
@@ -368,6 +369,7 @@ class StubSessionGroupsService:
         self,
         _db,
         *,
+        user_id: str | None = None,
         title: str | None,
         started_at: str | None = None,
         style_focus: str | None = None,
@@ -375,6 +377,7 @@ class StubSessionGroupsService:
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.start_calls.append(
             {
                 "title": title,
@@ -397,22 +400,39 @@ class StubSessionGroupsService:
             self.group.notes = notes
         return self.group
 
-    def get_active_session_group(self, _db) -> SessionGroupStub | None:
+    def get_active_session_group(self, _db, *, user_id: str | None = None) -> SessionGroupStub | None:
+        self.user_id_calls.append(user_id)
         return self.active_group
 
-    def get_session_group(self, _db, session_group_id: str) -> SessionGroupStub:
+    def get_session_group(self, _db, session_group_id: str, *, user_id: str | None = None) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.get_calls.append(session_group_id)
         if self.get_error is not None:
             raise self.get_error
         return self.group
 
-    def get_session_groups_by_ids(self, _db, session_group_ids: list[str]) -> list[SessionGroupStub]:
+    def get_session_groups_by_ids(
+        self,
+        _db,
+        session_group_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> list[SessionGroupStub]:
+        self.user_id_calls.append(user_id)
         self.get_by_ids_calls.append(session_group_ids)
         if self.get_error is not None:
             raise self.get_error
         return [self.group] if self.group.id in session_group_ids else []
 
-    def update_session_group(self, _db, session_group_id: str, *, fields: dict) -> SessionGroupStub:
+    def update_session_group(
+        self,
+        _db,
+        session_group_id: str,
+        *,
+        user_id: str | None = None,
+        fields: dict,
+    ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.update_calls.append((session_group_id, fields))
         if self.get_error is not None:
             raise self.get_error
@@ -425,12 +445,14 @@ class StubSessionGroupsService:
         _db,
         session_group_id: str,
         *,
+        user_id: str | None = None,
         ended_at: str | None = None,
         style_focus: str | None = None,
         mood_direction: str | None = None,
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroupStub:
+        self.user_id_calls.append(user_id)
         self.finish_calls.append((session_group_id, ended_at, style_focus, mood_direction, session_type, notes))
         if self.finish_error is not None:
             raise self.finish_error
@@ -472,6 +494,7 @@ class StubSessionsService:
         self.flow_calls: list[tuple[str, int, str]] = []
         self.create_mood_calls: list[str] = []
         self.delete_mood_calls: list[str] = []
+        self.user_id_calls: list[str | None] = []
         self.custom_moods = [
             SimpleNamespace(name="Dubby", is_custom=True),
             SimpleNamespace(name="Late Night", is_custom=True),
@@ -585,18 +608,21 @@ class StubSessionsService:
         )
 
     def create_session(self, _db, **kwargs) -> CreateSessionResult:
+        self.user_id_calls.append(kwargs.pop("user_id", None))
         self.create_calls.append(kwargs)
         if self.create_error is not None:
             raise self.create_error
         return self.created_result
 
-    def get_session(self, _db, session_id: str) -> SessionStub:
+    def get_session(self, _db, session_id: str, *, user_id: str | None = None) -> SessionStub:
+        self.user_id_calls.append(user_id)
         self.get_calls.append(session_id)
         if self.get_error is not None:
             raise self.get_error
         return self.session
 
-    def update_session(self, _db, *, session_id: str, fields: dict) -> SessionStub:
+    def update_session(self, _db, *, session_id: str, fields: dict, user_id: str | None = None) -> SessionStub:
+        self.user_id_calls.append(user_id)
         self.update_calls.append((session_id, fields))
         if self.update_error is not None:
             raise self.update_error
@@ -643,13 +669,30 @@ class StubSessionsService:
     def get_tracks_by_session_ids_for_releases(self, _db, session_releases: list[tuple[str, object]]):
         return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id, _release in session_releases}
 
-    def get_sessions_by_release(self, _db, release_id: str, *, limit: int, offset: int) -> list[SessionStub]:
+    def get_sessions_by_release(
+        self,
+        _db,
+        release_id: str,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ) -> list[SessionStub]:
+        self.user_id_calls.append(user_id)
         self.list_calls.append((release_id, limit, offset))
         if self.list_error is not None:
             raise self.list_error
         return self.release_sessions[offset : offset + limit]
 
-    def get_home_summary(self, _db, *, recent_limit: int, top_limit: int) -> HomeSummary:
+    def get_home_summary(
+        self,
+        _db,
+        *,
+        recent_limit: int,
+        top_limit: int,
+        user_id: str | None = None,
+    ) -> HomeSummary:
+        self.user_id_calls.append(user_id)
         self.summary_calls.append((recent_limit, top_limit))
         if self.summary_error is not None:
             raise self.summary_error
@@ -669,9 +712,11 @@ class StubSessionsService:
         _db,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int = 5,
         period: str = "3m",
     ) -> RecordFlowInsights:
+        self.user_id_calls.append(user_id)
         self.flow_calls.append((release_id, limit, period))
         if self.list_error is not None:
             raise self.list_error

@@ -964,9 +964,9 @@ Same response shape as `GET /releases/search`, with `release_id` populated for d
 
 # 6. Integrations
 
-Endpoints used by Settings to manage optional provider integrations. The current
-implementation supports a single app-wide Discogs integration; `user_id` storage
-is nullable so the schema can evolve toward multi-user ownership later.
+Endpoints used by Settings to manage optional provider integrations. Discogs
+integration state is scoped to the authenticated user; legacy rows may remain
+unowned only until local data is reset or a future migration assigns ownership.
 
 ## GET /integrations/discogs
 

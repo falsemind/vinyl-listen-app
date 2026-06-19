@@ -16,7 +16,8 @@ def test_releases_route_is_versioned() -> None:
 
 def test_sessions_route_is_versioned() -> None:
     class StubSessionsService:
-        def get_session(self, _db, _session_id: str):
+        def get_session(self, _db, _session_id: str, *, user_id: str | None = None):
+            _ = user_id
             raise SessionNotFoundError("missing-session")
 
     app.dependency_overrides[get_sessions_service] = lambda: StubSessionsService()
@@ -28,7 +29,8 @@ def test_sessions_route_is_versioned() -> None:
 
 def test_analytics_route_is_versioned() -> None:
     class StubAnalyticsService:
-        def get_monthly_plays(self, _db):
+        def get_monthly_plays(self, _db, *, user_id: str | None = None):
+            _ = user_id
             return []
 
     from app.api.routes.analytics import get_analytics_service

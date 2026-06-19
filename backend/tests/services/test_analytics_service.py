@@ -40,42 +40,83 @@ class StubAnalyticsRepository:
             )
         ]
 
-    def get_monthly_play_counts(self, _db):
+    def get_monthly_play_counts(self, _db, *, user_id: str | None = None):
+        _ = user_id
         return [("2026-01", 2), ("2026-02", 3)]
 
-    def get_top_records(self, _db, *, limit: int):
+    def get_top_records(self, _db, *, limit: int, user_id: str | None = None):
+        _ = user_id
         self.top_limit = limit
         return [(self.release, 4, 4.25, "Roygbiv", "Focused")]
 
-    def get_sessions_for_month(self, _db, *, month: str, limit: int, offset: int):
+    def get_sessions_for_month(
+        self,
+        _db,
+        *,
+        month: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.month_calls.append((month, limit, offset))
         return [(self.session, self.release)]
 
-    def count_sessions_for_month(self, _db, *, month: str):
+    def count_sessions_for_month(self, _db, *, month: str, user_id: str | None = None):
+        _ = user_id
         return 12 if month == "2026-05" else 0
 
     def get_tracks_by_session_ids(self, _db, session_ids: list[str]):
         return {session_id: self.tracks for session_id in session_ids}
 
-    def get_records_for_rating(self, _db, *, rating: int, limit: int, offset: int):
+    def get_records_for_rating(
+        self,
+        _db,
+        *,
+        rating: int,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.rating_calls.append((rating, limit, offset))
         return [(self.release, 3)]
 
-    def count_records_for_rating(self, _db, *, rating: int):
+    def count_records_for_rating(self, _db, *, rating: int, user_id: str | None = None):
+        _ = user_id
         return 8 if rating == 5 else 0
 
-    def get_records_for_mood(self, _db, *, mood: str, limit: int, offset: int):
+    def get_records_for_mood(
+        self,
+        _db,
+        *,
+        mood: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.mood_calls.append((mood, limit, offset))
         return [(self.release, 2)]
 
-    def count_records_for_mood(self, _db, *, mood: str):
+    def count_records_for_mood(self, _db, *, mood: str, user_id: str | None = None):
+        _ = user_id
         return 6 if mood == "Focused" else 0
 
     def get_records_for_style(self, _db, *, style: str, limit: int, offset: int):
         self.style_calls.append((style, limit, offset))
         return [(self.release, 4)]
 
-    def get_records_for_style_page(self, _db, *, style: str, limit: int, offset: int):
+    def get_records_for_style_page(
+        self,
+        _db,
+        *,
+        style: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.style_page_calls.append((style, limit, offset))
         return ([(self.release, 4)], 9 if style == "Dub Techno" else 0)
 
@@ -83,30 +124,53 @@ class StubAnalyticsRepository:
         self.style_count_calls.append(style)
         return 9 if style == "Dub Techno" else 0
 
-    def get_rating_distribution(self, _db):
+    def get_rating_distribution(self, _db, *, user_id: str | None = None):
+        _ = user_id
         return [(2, 1), (5, 3)]
 
-    def get_mood_distribution(self, _db):
+    def get_mood_distribution(self, _db, *, user_id: str | None = None):
+        _ = user_id
         return [("Calm", 3), ("", 2), (None, 1)]
 
-    def get_style_distribution(self, _db):
+    def get_style_distribution(self, _db, *, user_id: str | None = None):
+        _ = user_id
         return [("Dub Techno", 4), ("", 2), (None, 1)]
 
 
 class EmptyAnalyticsRepository(StubAnalyticsRepository):
-    def get_sessions_for_month(self, _db, *, month: str, limit: int, offset: int):
+    def get_sessions_for_month(
+        self,
+        _db,
+        *,
+        month: str,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.month_calls.append((month, limit, offset))
         return []
 
-    def count_sessions_for_month(self, _db, *, month: str):
+    def count_sessions_for_month(self, _db, *, month: str, user_id: str | None = None):
+        _ = user_id
         _ = month
         return 0
 
-    def get_records_for_rating(self, _db, *, rating: int, limit: int, offset: int):
+    def get_records_for_rating(
+        self,
+        _db,
+        *,
+        rating: int,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ):
+        _ = user_id
         self.rating_calls.append((rating, limit, offset))
         return []
 
-    def count_records_for_rating(self, _db, *, rating: int):
+    def count_records_for_rating(self, _db, *, rating: int, user_id: str | None = None):
+        _ = user_id
         _ = rating
         return 0
 

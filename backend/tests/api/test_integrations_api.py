@@ -18,14 +18,16 @@ class StubDiscogsIntegrationService:
         )
         self.save_error: Exception | None = None
         self.saved_tokens: list[str] = []
-        self.delete_calls = 0
+        self.seen_user_ids: list[str] = []
 
-    def get_status(self, _db):
+    def get_status(self, _db, *, user_id: str | None = None):
+        self.seen_user_ids.append(user_id or "")
         return self.status
 
-    def save_access_token(self, _db, *, access_token: str):
+    def save_access_token(self, _db, *, access_token: str, user_id: str | None = None):
         if self.save_error is not None:
             raise self.save_error
+        self.seen_user_ids.append(user_id or "")
         self.saved_tokens.append(access_token)
         self.status = DiscogsIntegrationStatusResponse(
             access_token_saved=True,
@@ -36,8 +38,8 @@ class StubDiscogsIntegrationService:
         )
         return self.status
 
-    def delete_access_token(self, _db):
-        self.delete_calls += 1
+    def delete_access_token(self, _db, *, user_id: str | None = None):
+        self.seen_user_ids.append(user_id or "")
         self.status = DiscogsIntegrationStatusResponse(
             access_token_saved=False,
             source_of_truth=CollectionSourceOfTruth.APP,
@@ -65,6 +67,7 @@ def test_get_discogs_integration_status_returns_sanitized_unsaved_state() -> Non
         "source_of_truth": "APP",
         "backend_identify_enabled": False,
     }
+    assert service.seen_user_ids == ["test-user"]
 
 
 def test_save_discogs_token_returns_saved_status_without_raw_token() -> None:
@@ -88,6 +91,7 @@ def test_save_discogs_token_returns_saved_status_without_raw_token() -> None:
     }
     assert "secret-token" not in response.text
     assert service.saved_tokens == ["secret-token"]
+    assert service.seen_user_ids == ["test-user"]
 
 
 def test_save_discogs_token_returns_validation_error() -> None:
@@ -156,7 +160,7 @@ def test_delete_discogs_token_returns_unsaved_app_status() -> None:
         "source_of_truth": "APP",
         "backend_identify_enabled": False,
     }
-    assert service.delete_calls == 1
+    assert service.seen_user_ids == ["test-user"]
 
 
 def _override_db() -> None:

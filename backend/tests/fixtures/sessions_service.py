@@ -21,9 +21,10 @@ class InMemorySessionsRepository:
         self.flow_insight_since_calls: list[datetime | None] = []
 
     def create(self, _db, **kwargs) -> Sessions:
-        self.created_payload = kwargs
+        self.created_payload = {key: value for key, value in kwargs.items() if key != "user_id" or value is not None}
         session = Sessions(
             id="session-123",
+            user_id=kwargs.get("user_id"),
             release_id=kwargs["release_id"],
             session_group_id=kwargs.get("session_group_id"),
             rating=kwargs["rating"],
@@ -37,9 +38,9 @@ class InMemorySessionsRepository:
         self.sessions.append(session)
         return session
 
-    def get_by_id(self, _db, session_id: str) -> Sessions | None:
+    def get_by_id(self, _db, session_id: str, *, user_id: str | None = None) -> Sessions | None:
         for session in self.sessions:
-            if session.id == session_id:
+            if session.id == session_id and (user_id is None or session.user_id == user_id):
                 return session
         return None
 
@@ -74,20 +75,42 @@ class InMemorySessionsRepository:
     def get_tracks_by_session_ids(self, _db, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
         return {session_id: self.tracks_by_session_id.get(session_id, []) for session_id in session_ids}
 
-    def get_by_release_id(self, _db, release_id: str, *, limit: int, offset: int) -> list[Sessions]:
-        matching = [session for session in self.sessions if session.release_id == release_id]
+    def get_by_release_id(
+        self,
+        _db,
+        release_id: str,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ) -> list[Sessions]:
+        matching = [
+            session
+            for session in self.sessions
+            if session.release_id == release_id and (user_id is None or session.user_id == user_id)
+        ]
         return matching[offset : offset + limit]
 
-    def get_flow_insight_sessions(self, _db, *, since: datetime | None = None) -> list[Sessions]:
+    def get_flow_insight_sessions(
+        self,
+        _db,
+        *,
+        since: datetime | None = None,
+        user_id: str | None = None,
+    ) -> list[Sessions]:
         self.flow_insight_since_calls.append(since)
-        sessions = self.sessions
+        sessions = [session for session in self.sessions if user_id is None or session.user_id == user_id]
         if since is not None:
             sessions = [session for session in sessions if (session.played_at or session.created_at) >= since]
         return sorted(sessions, key=lambda session: session.played_at or session.created_at)
 
-    def get_mood_by_name(self, _db, name: str) -> str | None:
+    def get_mood_by_name(self, _db, name: str, *, user_id: str | None = None) -> str | None:
         for session in sorted(self.sessions, key=lambda item: item.created_at):
-            if session.mood is not None and session.mood.lower() == name.lower():
+            if (
+                session.mood is not None
+                and session.mood.lower() == name.lower()
+                and (user_id is None or session.user_id == user_id)
+            ):
                 return session.mood
         return None
 

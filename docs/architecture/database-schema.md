@@ -132,7 +132,7 @@ spotify_listening_import_batches
 
 # Auth Tables
 
-Auth tables support account bootstrap, email verification, password reset, token-backed sessions, and future entitlement/usage gates. User-owned collection/session data is still split in a later multi-user phase; these tables establish the account and session foundation.
+Auth tables support account bootstrap, email verification, password reset, token-backed sessions, and future entitlement/usage gates. Some user-owned data now has nullable owner columns for legacy compatibility; the full collection-membership split remains a later multi-user phase.
 
 ## Table: user_accounts
 
@@ -451,13 +451,14 @@ INDEX (expires_at)
 
 # Table: collection_settings
 
-Stores the app-wide collection source-of-truth setting.
+Stores the collection source-of-truth setting for one account. Legacy rows may have a null owner until backfilled.
 
 ## Columns
 
 | Column          | Type      | Notes                                      |
 | --------------- | --------- | ------------------------------------------ |
-| id              | INTEGER   | Primary key; current implementation uses row `1` |
+| id              | INTEGER   | Primary key |
+| user_id         | VARCHAR   | Nullable owner id; null means legacy unassigned settings |
 | source_of_truth | TEXT      | `APP` or `DISCOGS`; defaults to `APP`      |
 | created_at      | TIMESTAMP | Row creation time                          |
 | updated_at      | TIMESTAMP | Last settings update time                  |
@@ -475,8 +476,8 @@ CHECK (source_of_truth IN ('APP', 'DISCOGS'))
 # Table: provider_integrations
 
 Stores optional external provider integration state. The current implementation
-uses this table for the app-wide Discogs token, while nullable `user_id` keeps
-the schema ready for future multi-user ownership.
+uses this table for per-user Discogs tokens. Legacy rows may have a null
+`user_id` until local data is reset or a future migration assigns ownership.
 
 ## Columns
 
@@ -484,7 +485,7 @@ the schema ready for future multi-user ownership.
 | ----------------------- | --------- | ----- |
 | id                      | INTEGER   | Primary key |
 | provider                | VARCHAR   | Provider key, currently `DISCOGS` |
-| user_id                 | VARCHAR   | Nullable future owner id; null means app-wide single-user integration |
+| user_id                 | VARCHAR   | Nullable owner id; null means legacy unassigned integration |
 | access_token_ciphertext | TEXT      | Encrypted provider access token |
 | external_user_id        | VARCHAR   | Provider account id returned by identity validation |
 | external_username       | VARCHAR   | Provider username returned by identity validation |
@@ -520,6 +521,7 @@ Sessions can optionally belong to a timed listening session group. Existing and 
 |---|---|---|
 |id|UUID|Primary key|
 |release_id|UUID|FK → releases.id|
+|user_id|UUID|Nullable FK -> user_accounts.id; null means legacy unassigned session|
 |session_group_id|UUID|Nullable FK -> session_groups.id|
 |rating|INTEGER|1–5 rating|
 |mood|TEXT|User selected mood|
@@ -532,6 +534,7 @@ Sessions can optionally belong to a timed listening session group. Existing and 
 
 ```
 release_id → releases.id
+user_id -> user_accounts.id ON DELETE CASCADE
 session_group_id -> session_groups.id ON DELETE SET NULL
 ```
 
@@ -541,6 +544,12 @@ session_group_id -> session_groups.id ON DELETE SET NULL
 PRIMARY KEY (id)
 
 INDEX (release_id)
+
+INDEX (user_id)
+
+INDEX (user_id, release_id)
+
+INDEX (user_id, played_at)
 
 INDEX (played_at)
 
@@ -560,6 +569,7 @@ Only one group should be active at a time. This invariant is currently enforced 
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID|Primary key|
+|user_id|UUID|Nullable FK -> user_accounts.id; null means legacy unassigned group|
 |title|TEXT|Optional user title|
 |status|TEXT|`active` or `completed`|
 |style_focus|TEXT|Timed-session style intent: `one_style`, `mixed`, or `random`; defaults to `mixed`|
@@ -577,6 +587,10 @@ Only one group should be active at a time. This invariant is currently enforced 
 PRIMARY KEY (id)
 
 INDEX (status)
+
+INDEX (user_id)
+
+INDEX (user_id, status)
 
 INDEX (started_at)
 ```

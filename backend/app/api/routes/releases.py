@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.releases import (
@@ -45,10 +46,11 @@ def get_discogs_integration_service() -> DiscogsIntegrationService:
 
 def get_discogs_service(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     integration_service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
 ) -> DiscogsService:
     try:
-        return integration_service.build_discogs_service(db)
+        return integration_service.build_discogs_service(db, user_id=current_user.account.id)
     except DiscogsConfigurationError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -398,12 +400,19 @@ def _release_response(db: Session, service: ReleaseImportService, release) -> Re
 def get_release_flow_insights(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
     limit: int = Query(default=5, ge=1, le=10),
     period: str = Query(default="3m"),
 ):
     try:
-        insights = service.get_record_flow_insights(db, release_id, limit=limit, period=period)
+        insights = service.get_record_flow_insights(
+            db,
+            release_id,
+            user_id=current_user.account.id,
+            limit=limit,
+            period=period,
+        )
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -458,12 +467,19 @@ def _record_flow_release_response(summary) -> RecordFlowReleaseSummaryResponse:
 def get_release_sessions(
     release_id: str,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
     limit: int = Query(default=20),
     offset: int = Query(default=0),
 ):
     try:
-        sessions = service.get_sessions_by_release(db, release_id, limit=limit, offset=offset)
+        sessions = service.get_sessions_by_release(
+            db,
+            release_id,
+            user_id=current_user.account.id,
+            limit=limit,
+            offset=offset,
+        )
     except SessionValidationError as error:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

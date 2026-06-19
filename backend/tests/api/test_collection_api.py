@@ -134,13 +134,15 @@ class StubReleasesRepository:
 class StubCollectionSettingsRepository:
     def __init__(self, source_of_truth: CollectionSourceOfTruth = CollectionSourceOfTruth.APP) -> None:
         self.source_of_truth = source_of_truth
-        self.update_calls: list[CollectionSourceOfTruth] = []
+        self.update_calls: list[tuple[CollectionSourceOfTruth, str | None]] = []
+        self.get_user_ids: list[str | None] = []
 
-    def get_or_create(self, _db):
+    def get_or_create(self, _db, *, user_id: str | None = None):
+        self.get_user_ids.append(user_id)
         return SimpleNamespace(source_of_truth=self.source_of_truth)
 
-    def set_source_of_truth(self, _db, source_of_truth: CollectionSourceOfTruth):
-        self.update_calls.append(source_of_truth)
+    def set_source_of_truth(self, _db, source_of_truth: CollectionSourceOfTruth, *, user_id: str | None = None):
+        self.update_calls.append((source_of_truth, user_id))
         self.source_of_truth = source_of_truth
         return SimpleNamespace(source_of_truth=source_of_truth)
 
@@ -156,8 +158,10 @@ class StubCollectionFoldersRepository:
 class StubProviderIntegrationRepository:
     def __init__(self, *, has_saved_token: bool) -> None:
         self.has_saved_token = has_saved_token
+        self.user_ids: list[str | None] = []
 
-    def get_discogs(self, _db):
+    def get_discogs(self, _db, *, user_id: str | None = None):
+        self.user_ids.append(user_id)
         if not self.has_saved_token:
             return None
         return SimpleNamespace(
@@ -180,6 +184,7 @@ def test_get_collection_settings_defaults_to_app_source_of_truth() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"source_of_truth": "APP"}
+    assert repository.get_user_ids == ["test-user"]
 
 
 def test_update_collection_settings_persists_discogs_source_of_truth() -> None:
@@ -196,7 +201,8 @@ def test_update_collection_settings_persists_discogs_source_of_truth() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"source_of_truth": "DISCOGS"}
-    assert repository.update_calls == [CollectionSourceOfTruth.DISCOGS]
+    assert repository.update_calls == [(CollectionSourceOfTruth.DISCOGS, "test-user")]
+    assert integration_repository.user_ids == ["test-user"]
 
 
 def test_update_collection_settings_rejects_discogs_without_saved_token() -> None:
@@ -219,6 +225,7 @@ def test_update_collection_settings_rejects_discogs_without_saved_token() -> Non
         }
     }
     assert repository.update_calls == []
+    assert integration_repository.user_ids == ["test-user"]
 
 
 def test_update_collection_settings_rejects_unknown_source_of_truth() -> None:
@@ -249,6 +256,7 @@ def test_list_collection_folders_returns_not_configured_without_discogs_token() 
 
     assert response.status_code == 200
     assert response.json() == {"discogs_configured": False, "folders": [], "has_extra_folders": False}
+    assert integration_repository.user_ids == ["test-user"]
 
 
 def test_list_collection_folders_returns_configured_folders() -> None:
@@ -277,6 +285,7 @@ def test_list_collection_folders_returns_configured_folders() -> None:
         ],
         "has_extra_folders": True,
     }
+    assert integration_repository.user_ids == ["test-user"]
 
 
 def test_create_collection_sync_job_returns_accepted_status() -> None:

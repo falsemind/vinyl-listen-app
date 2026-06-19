@@ -232,6 +232,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         release_id: str,
         rating: int | None,
         mood: str | None,
@@ -244,6 +245,7 @@ class SessionsService:
         logger.info("Creating session release_id=%s played_at=%s", release_id, played_at)
         validated = self._validate_create_input(
             db,
+            user_id=user_id,
             release_id=release_id,
             rating=rating,
             mood=mood,
@@ -255,6 +257,7 @@ class SessionsService:
         )
         session = self._sessions_repository.create(
             db,
+            user_id=user_id,
             release_id=validated.release_id,
             session_group_id=validated.session_group_id,
             rating=validated.rating,
@@ -276,9 +279,9 @@ class SessionsService:
             session_group_id=session.session_group_id,
         )
 
-    def get_session(self, db: Session, session_id: str) -> Sessions:
+    def get_session(self, db: Session, session_id: str, *, user_id: str | None = None) -> Sessions:
         logger.info("Loading session session_id=%s", session_id)
-        session = self._sessions_repository.get_by_id(db, session_id)
+        session = self._sessions_repository.get_by_id(db, session_id, user_id=user_id)
         if session is None:
             logger.info("Session not found session_id=%s", session_id)
             raise SessionNotFoundError(session_id)
@@ -288,6 +291,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         session_id: str,
         fields: dict[str, Any],
     ) -> Sessions:
@@ -303,7 +307,7 @@ class SessionsService:
                 "Only side, track_positions, rating, mood, and notes can be edited.",
             )
 
-        session = self._sessions_repository.get_by_id(db, session_id)
+        session = self._sessions_repository.get_by_id(db, session_id, user_id=user_id)
         if session is None:
             logger.info("Session not found during update session_id=%s", session_id)
             raise SessionNotFoundError(session_id)
@@ -311,7 +315,7 @@ class SessionsService:
             logger.info("Rejecting session update expired_edit_window session_id=%s", session_id)
             raise SessionEditWindowExpiredError(session_id)
 
-        validated = self._validate_update_input(db, session=session, fields=fields)
+        validated = self._validate_update_input(db, session=session, user_id=user_id, fields=fields)
         updated_session = self._sessions_repository.update(
             db,
             session,
@@ -339,6 +343,7 @@ class SessionsService:
         db: Session,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int,
         offset: int,
     ) -> list[Sessions]:
@@ -358,6 +363,7 @@ class SessionsService:
         return self._sessions_repository.get_by_release_id(
             db,
             release_id,
+            user_id=user_id,
             limit=limit,
             offset=offset,
         )
@@ -411,6 +417,7 @@ class SessionsService:
         db: Session,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int = 5,
         period: str = "3m",
     ) -> RecordFlowInsights:
@@ -423,7 +430,7 @@ class SessionsService:
             logger.info("Release not found during flow insights lookup release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
-        sessions = self._sessions_repository.get_flow_insight_sessions(db, since=since)
+        sessions = self._sessions_repository.get_flow_insight_sessions(db, user_id=user_id, since=since)
         releases = {
             release.id: release
             for release in self._releases_repository.get_by_ids(
@@ -570,6 +577,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         recent_limit: int = 5,
         top_limit: int = 3,
     ) -> HomeSummary:
@@ -587,7 +595,11 @@ class SessionsService:
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         recent_sessions = [
             SessionReleaseSummary(session=session, release=release)
-            for session, release in self._sessions_repository.get_recent_with_releases(db, limit=recent_limit)
+            for session, release in self._sessions_repository.get_recent_with_releases(
+                db,
+                user_id=user_id,
+                limit=recent_limit,
+            )
         ]
         top_records = [
             TopReleaseSummary(
@@ -595,12 +607,20 @@ class SessionsService:
                 plays=int(plays),
                 average_rating=float(average_rating) if average_rating else None,
             )
-            for release, plays, average_rating in self._sessions_repository.get_top_release_stats(db, limit=top_limit)
+            for release, plays, average_rating in self._sessions_repository.get_top_release_stats(
+                db,
+                user_id=user_id,
+                limit=top_limit,
+            )
         ]
         return HomeSummary(
             recent_sessions=recent_sessions,
-            total_sessions=self._sessions_repository.count_all(db),
-            records_this_month=self._sessions_repository.count_distinct_releases_since(db, since=month_start),
+            total_sessions=self._sessions_repository.count_all(db, user_id=user_id),
+            records_this_month=self._sessions_repository.count_distinct_releases_since(
+                db,
+                user_id=user_id,
+                since=month_start,
+            ),
             top_records=top_records,
         )
 
@@ -623,6 +643,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         release_id: str,
         rating: int | None,
         mood: str | None,
@@ -638,7 +659,7 @@ class SessionsService:
 
         normalized_played_at = self._parse_played_at(played_at)
         normalized_side = self._normalize_side(side)
-        normalized_mood = self._canonicalize_session_mood(db, mood)
+        normalized_mood = self._canonicalize_session_mood(db, mood, user_id=user_id)
         normalized_notes = self._normalize_optional_text(notes)
 
         release = self._releases_repository.get_by_id(db, release_id)
@@ -653,7 +674,11 @@ class SessionsService:
             )
 
         self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
-        normalized_session_group_id = self._session_groups_service.validate_active_session_group(db, session_group_id)
+        normalized_session_group_id = self._session_groups_service.validate_active_session_group(
+            db,
+            session_group_id,
+            user_id=user_id,
+        )
         tracks = self._validate_track_selection(
             db,
             release=release,
@@ -677,6 +702,7 @@ class SessionsService:
         db: Session,
         *,
         session: Sessions,
+        user_id: str | None = None,
         fields: dict[str, Any],
     ) -> UpdateSessionData:
         rating = fields.get("rating", session.rating)
@@ -685,7 +711,9 @@ class SessionsService:
             raise SessionValidationError("invalid_rating", "Rating must be between 1 and 5.")
 
         normalized_side = self._normalize_side(fields["side"]) if "side" in fields else session.vinyl_side
-        normalized_mood = self._canonicalize_session_mood(db, fields["mood"]) if "mood" in fields else session.mood
+        normalized_mood = (
+            self._canonicalize_session_mood(db, fields["mood"], user_id=user_id) if "mood" in fields else session.mood
+        )
         normalized_notes = self._normalize_optional_text(fields["notes"]) if "notes" in fields else session.notes
 
         release = self._releases_repository.get_by_id(db, session.release_id)
@@ -921,7 +949,7 @@ class SessionsService:
             raise SessionValidationError("invalid_mood", "Mood name already exists as a built-in mood.")
         return normalized
 
-    def _canonicalize_session_mood(self, db: Session, value: str | None) -> str | None:
+    def _canonicalize_session_mood(self, db: Session, value: str | None, *, user_id: str | None = None) -> str | None:
         normalized = self._normalize_optional_text(value)
         if normalized is None:
             return None
@@ -934,7 +962,7 @@ class SessionsService:
         if custom_mood is not None:
             return custom_mood.name
 
-        historical_mood = self._sessions_repository.get_mood_by_name(db, normalized)
+        historical_mood = self._sessions_repository.get_mood_by_name(db, normalized, user_id=user_id)
         return historical_mood or normalized
 
     def _built_in_mood_name(self, value: str) -> str | None:

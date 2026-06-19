@@ -19,7 +19,14 @@ class StubSessionGroupsService:
         self.error = error
         self.calls: list[str | None] = []
 
-    def validate_active_session_group(self, _db, session_group_id: str | None) -> str | None:
+    def validate_active_session_group(
+        self,
+        _db,
+        session_group_id: str | None,
+        *,
+        user_id: str | None = None,
+    ) -> str | None:
+        _ = user_id
         self.calls.append(session_group_id)
         if self.error is not None:
             raise self.error
@@ -31,11 +38,13 @@ def _session(
     release_id: str,
     played_at: datetime,
     *,
+    user_id: str | None = None,
     session_group_id: str | None = None,
     mood: str | None = None,
 ) -> Sessions:
     return Sessions(
         id=session_id,
+        user_id=user_id,
         release_id=release_id,
         session_group_id=session_group_id,
         rating=None,

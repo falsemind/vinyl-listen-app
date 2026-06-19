@@ -254,9 +254,8 @@ Later account-management endpoints:
 ## Migration Requirements
 
 - Existing single-user data needs an owner before multi-user becomes mandatory.
-- Development/staging can use a migration-created legacy owner for current data.
-- Because the project is still early, local development may also accept a full data reset if that is simpler for a clean multi-user migration test.
-- Production rollout should define whether the first registered account claims existing unowned data or whether existing data is migrated through an admin script.
+- Because the project is still early, local development can use a full data reset for a clean multi-user migration test.
+- Production rollout should define whether the first registered account claims existing unowned data or whether existing data is migrated through a future admin process.
 - Unowned provider integration rows should be assigned to the migrated owner or rejected until resolved.
 - Migration must preserve collection membership, listening history, analytics, and Discogs settings.
 
@@ -312,6 +311,8 @@ Later account-management endpoints:
 ### Phase 5: User Scoping And Data Ownership
 
 - Scope provider integrations, collection settings, collection membership, sessions, analytics, AI history, identify jobs, and usage counters by `user_id`.
+- Add nullable `user_id` ownership columns for legacy compatibility, set `user_id` on all new writes, and avoid hardcoded owner id/email assumptions.
+- Treat concurrent or cross-account session-group access as not found/inactive by filtering group validation with the authenticated `user_id`.
 - Split user-specific collection/session state from shared Discogs/catalog metadata.
 - Keep manual releases user-owned and separate from shared Discogs/catalog releases.
 - Add optional user-owned association rows for later manual-to-Discogs "keep both" flows.

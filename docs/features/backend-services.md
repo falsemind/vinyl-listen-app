@@ -446,7 +446,7 @@ Errors are typed:
 ### Read behavior
 
 - `get_session` returns one session by ID or raises `SessionNotFoundError`.
-- `get_sessions_by_release` validates the release ID, confirms the release exists, and returns all sessions for that release.
+- `get_session` and `get_sessions_by_release` can be scoped by authenticated `user_id` so one account cannot read another account's listening history.
 - Home and release session responses include `can_edit` and `editable_until` so clients can show edit affordances without owning the rule.
 
 ## SessionGroupsService
@@ -466,9 +466,9 @@ The one-active-group rule is enforced in this service layer, not by a database u
 
 ### Active and finish behavior
 
-- `get_active_session_group` returns the active group or `None`.
+- `get_active_session_group` returns the active group or `None` for the current authenticated user.
 - `finish_session_group` marks an active group as `completed` and sets `ended_at`.
-- `validate_active_session_group` is used during session creation before a child session is linked.
+- `validate_active_session_group` is used during session creation before a child session is linked and filters by owner.
 - Inactivity is measured from the latest child session `created_at`; if there are no child sessions, it uses `session_groups.started_at`.
 - Auto-expiry sets `ended_at` to `last_activity + 30 minutes`.
 
@@ -483,7 +483,7 @@ Typed errors:
 
 `AnalyticsService` owns dashboard aggregations used by the Android Analytics screens.
 
-Analytics endpoints read from persisted releases and sessions:
+Analytics endpoints read from persisted releases and sessions scoped to the authenticated user:
 
 - `GET /api/v1/analytics/plays/monthly` groups logged sessions by month.
 - `GET /api/v1/analytics/top-records` ranks releases by session count and average rating.

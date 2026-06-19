@@ -73,7 +73,7 @@ class DiscogsIntegrationService:
 
     def get_status(self, db: Session, *, user_id: str | None = None) -> DiscogsIntegrationStatusResponse:
         integration = self._integration_repository.get_discogs(db, user_id=user_id)
-        source_of_truth = self._collection_settings_repository.get_source_of_truth(db)
+        source_of_truth = self._collection_settings_repository.get_source_of_truth(db, user_id=user_id)
         access_token_saved = bool(
             integration
             and integration.is_active
@@ -119,7 +119,7 @@ class DiscogsIntegrationService:
         user_id: str | None = None,
     ) -> DiscogsIntegrationStatusResponse:
         self._integration_repository.delete_discogs_token(db, user_id=user_id)
-        self._collection_settings_repository.set_source_of_truth(db, CollectionSourceOfTruth.APP)
+        self._collection_settings_repository.set_source_of_truth(db, CollectionSourceOfTruth.APP, user_id=user_id)
         return self.get_status(db, user_id=user_id)
 
     def get_saved_credentials(self, db: Session, *, user_id: str | None = None) -> SavedDiscogsCredentials:

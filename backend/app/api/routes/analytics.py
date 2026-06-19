@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
 from app.schemas.analytics import (
     AnalyticsPagination,
@@ -45,9 +46,10 @@ def get_sessions_service() -> SessionsService:
 @router.get("/plays/monthly", response_model=MonthlyPlaysResponse)
 def get_monthly_plays(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
 ):
-    plays = service.get_monthly_plays(db)
+    plays = service.get_monthly_plays(db, user_id=current_user.account.id)
     return MonthlyPlaysResponse(
         data=[
             MonthlyPlayItem(
@@ -66,11 +68,12 @@ def get_monthly_plays(
 )
 def get_top_records(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     limit: int = Query(default=10),
 ):
     try:
-        records = service.get_top_records(db, limit=limit)
+        records = service.get_top_records(db, user_id=current_user.account.id, limit=limit)
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
@@ -99,6 +102,7 @@ def get_top_records(
 )
 def get_sessions_for_month(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     session_groups_service: Annotated[SessionGroupsService, Depends(get_session_groups_service)],
     sessions_service: Annotated[SessionsService, Depends(get_sessions_service)],
@@ -107,7 +111,13 @@ def get_sessions_for_month(
     offset: int = Query(default=0),
 ):
     try:
-        page = service.get_sessions_for_month(db, month=month, limit=limit, offset=offset)
+        page = service.get_sessions_for_month(
+            db,
+            user_id=current_user.account.id,
+            month=month,
+            limit=limit,
+            offset=offset,
+        )
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
@@ -116,7 +126,11 @@ def get_sessions_for_month(
     ]
     session_groups_by_id = {
         session_group.id: session_group
-        for session_group in session_groups_service.get_session_groups_by_ids(db, session_group_ids)
+        for session_group in session_groups_service.get_session_groups_by_ids(
+            db,
+            session_group_ids,
+            user_id=current_user.account.id,
+        )
     }
     tracks_by_session_id = sessions_service.get_tracks_by_session_ids_for_releases(
         db,
@@ -144,13 +158,20 @@ def get_sessions_for_month(
 )
 def get_records_for_rating(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     rating: int = Query(...),
     limit: int = Query(default=10),
     offset: int = Query(default=0),
 ):
     try:
-        page = service.get_records_for_rating(db, rating=rating, limit=limit, offset=offset)
+        page = service.get_records_for_rating(
+            db,
+            user_id=current_user.account.id,
+            rating=rating,
+            limit=limit,
+            offset=offset,
+        )
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
@@ -167,13 +188,20 @@ def get_records_for_rating(
 )
 def get_records_for_mood(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     mood: str = Query(...),
     limit: int = Query(default=10),
     offset: int = Query(default=0),
 ):
     try:
-        page = service.get_records_for_mood(db, mood=mood, limit=limit, offset=offset)
+        page = service.get_records_for_mood(
+            db,
+            user_id=current_user.account.id,
+            mood=mood,
+            limit=limit,
+            offset=offset,
+        )
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
@@ -190,13 +218,20 @@ def get_records_for_mood(
 )
 def get_records_for_style(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
     style: str = Query(...),
     limit: int = Query(default=10),
     offset: int = Query(default=0),
 ):
     try:
-        page = service.get_records_for_style(db, style=style, limit=limit, offset=offset)
+        page = service.get_records_for_style(
+            db,
+            user_id=current_user.account.id,
+            style=style,
+            limit=limit,
+            offset=offset,
+        )
     except AnalyticsValidationError as error:
         return _analytics_validation_error_response(error)
 
@@ -209,25 +244,28 @@ def get_records_for_style(
 @router.get("/rating-distribution", response_model=RatingDistributionResponse)
 def get_rating_distribution(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
 ):
-    return RatingDistributionResponse(ratings=service.get_rating_distribution(db))
+    return RatingDistributionResponse(ratings=service.get_rating_distribution(db, user_id=current_user.account.id))
 
 
 @router.get("/mood-distribution", response_model=MoodDistributionResponse)
 def get_mood_distribution(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
 ):
-    return MoodDistributionResponse(moods=service.get_mood_distribution(db))
+    return MoodDistributionResponse(moods=service.get_mood_distribution(db, user_id=current_user.account.id))
 
 
 @router.get("/style-distribution", response_model=StyleDistributionResponse)
 def get_style_distribution(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[AnalyticsService, Depends(get_analytics_service)],
 ):
-    return StyleDistributionResponse(styles=service.get_style_distribution(db))
+    return StyleDistributionResponse(styles=service.get_style_distribution(db, user_id=current_user.account.id))
 
 
 def _analytics_validation_error_response(error: AnalyticsValidationError) -> JSONResponse:
