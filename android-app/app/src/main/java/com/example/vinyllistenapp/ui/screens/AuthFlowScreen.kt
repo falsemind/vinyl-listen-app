@@ -176,13 +176,13 @@ fun AuthFlowScreen(
         if (
             isSubmitting ||
             !resetEmail.isValidEmail() ||
-            resetCode.trim().isBlank() ||
+            resetCode.length != RESET_CODE_LENGTH ||
             resetPassword.length < MIN_PASSWORD_LENGTH ||
             resetPassword != resetConfirmPassword
         ) {
             return
         }
-        val submittedCode = resetCode.trim()
+        val submittedCode = resetCode
         val submittedPassword = resetPassword
         resetCode = ""
         resetPassword = ""
@@ -285,7 +285,7 @@ fun AuthFlowScreen(
                         password = resetPassword,
                         confirmPassword = resetConfirmPassword,
                         isSubmitting = isSubmitting,
-                        onCodeChange = { resetCode = it },
+                        onCodeChange = { resetCode = it.toResetCodeInput() },
                         onPasswordChange = { resetPassword = it },
                         onConfirmPasswordChange = { resetConfirmPassword = it },
                         onSubmit = ::submitResetConfirm,
@@ -565,7 +565,7 @@ private fun ResetPasswordFields(
         onClick = onSubmit,
         enabled =
             !isSubmitting &&
-                code.trim().isNotBlank() &&
+                code.length == RESET_CODE_LENGTH &&
                 password.length >= MIN_PASSWORD_LENGTH &&
                 password == confirmPassword,
         modifier = Modifier.fillMaxWidth(),
@@ -651,7 +651,10 @@ private enum class AuthFlowMode {
 
 private fun String.isValidEmail(): Boolean = trim().length >= 3 && "@" in this
 
+private fun String.toResetCodeInput(): String = filter { it.isDigit() }.take(RESET_CODE_LENGTH)
+
 private fun Throwable.authMessage(fallback: String): String = message?.takeIf { it.isNotBlank() } ?: fallback
 
 private const val EMAIL_NOT_VERIFIED = "email_not_verified"
 private const val MIN_PASSWORD_LENGTH = 8
+private const val RESET_CODE_LENGTH = 6

@@ -21,6 +21,7 @@ import com.example.vinyllistenapp.data.auth.AuthStartupResult
 import com.example.vinyllistenapp.data.auth.AuthTokenRefreshCoordinator
 import com.example.vinyllistenapp.data.auth.EncryptedAuthSessionStore
 import com.example.vinyllistenapp.navigation.VinylNavHost
+import com.example.vinyllistenapp.navigation.VinylRoutes
 import com.example.vinyllistenapp.ui.screens.AuthFlowScreen
 import com.example.vinyllistenapp.ui.screens.AuthSplashScreen
 import com.example.vinyllistenapp.ui.screens.PasswordReentryRequiredScreen
@@ -38,6 +39,24 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
     var retryCount by rememberSaveable { mutableIntStateOf(0) }
     var isPasswordReentrySubmitting by remember { mutableStateOf(false) }
     var passwordReentryError by remember { mutableStateOf<String?>(null) }
+
+    fun resetMainNavigationToHome() {
+        runCatching {
+            navController.navigate(VinylRoutes.HOME) {
+                popUpTo(navController.graph.startDestinationId) {
+                    inclusive = false
+                }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    fun requireAuthFromSignedOutState() {
+        resetMainNavigationToHome()
+        passwordReentryError = null
+        authState = AuthGateUiState.NeedsAuth
+    }
+
     val tokenRefreshCoordinator =
         remember(apiClient, sessionStore, coroutineScope) {
             AuthTokenRefreshCoordinator(
@@ -46,8 +65,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 onAccessTokenChanged = apiClient::setAccessToken,
                 onSessionCleared = {
                     coroutineScope.launch {
-                        passwordReentryError = null
-                        authState = AuthGateUiState.NeedsAuth
+                        requireAuthFromSignedOutState()
                     }
                 },
                 onPasswordReentryRequired = {
@@ -75,7 +93,13 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 resendVerificationRequest = apiClient::resendEmailVerification,
                 loginRequest = apiClient::login,
                 passwordResetRequest = apiClient::requestPasswordReset,
+                currentPasswordResetRequest = apiClient::requestCurrentAccountPasswordReset,
                 passwordResetConfirmRequest = apiClient::confirmPasswordReset,
+                currentPasswordResetConfirmRequest = apiClient::confirmCurrentAccountPasswordReset,
+                passwordChangeRequest = apiClient::changePassword,
+                logoutRequest = apiClient::logout,
+                logoutAllRequest = apiClient::logoutAll,
+                deleteAccountRequest = apiClient::deleteAccount,
                 onAccessTokenChanged = apiClient::setAccessToken,
                 deviceLabelProvider = ::androidDeviceLabel,
             )
@@ -107,12 +131,18 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
             VinylNavHost(
                 navController = navController,
                 apiClient = apiClient,
+                authAccountRepository = authAccountRepository,
+                onAuthSessionEnded = ::requireAuthFromSignedOutState,
+                onAccountDeleted = ::requireAuthFromSignedOutState,
                 modifier = modifier,
             )
         AuthGateUiState.NeedsAuth ->
             AuthFlowScreen(
                 authRepository = authAccountRepository,
-                onAuthenticated = { authState = AuthGateUiState.Ready },
+                onAuthenticated = {
+                    resetMainNavigationToHome()
+                    authState = AuthGateUiState.Ready
+                },
                 modifier = modifier,
             )
         AuthGateUiState.NeedsPasswordReentry ->
@@ -138,8 +168,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 },
                 onUseDifferentAccount = {
                     tokenRefreshCoordinator.clearSession()
-                    passwordReentryError = null
-                    authState = AuthGateUiState.NeedsAuth
+                    requireAuthFromSignedOutState()
                 },
                 modifier = modifier,
             )

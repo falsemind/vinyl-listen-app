@@ -7,7 +7,13 @@ class AuthAccountRepository(
     private val resendVerificationRequest: suspend (String) -> AuthVerificationResendResult,
     private val loginRequest: suspend (String, String, String?) -> AuthTokenPair,
     private val passwordResetRequest: suspend (String) -> AuthPasswordResetRequestResult,
+    private val currentPasswordResetRequest: suspend () -> AuthPasswordResetRequestResult,
     private val passwordResetConfirmRequest: suspend (String, String, String) -> AuthAccountSummary,
+    private val currentPasswordResetConfirmRequest: suspend (String, String) -> AuthAccountSummary,
+    private val passwordChangeRequest: suspend (String, String, Boolean) -> AuthPasswordChangeResult,
+    private val logoutRequest: suspend () -> Boolean,
+    private val logoutAllRequest: suspend () -> AuthLogoutAllResult,
+    private val deleteAccountRequest: suspend (String) -> AuthDeleteAccountResult,
     private val onAccessTokenChanged: (String?) -> Unit,
     private val deviceLabelProvider: () -> String?,
 ) {
@@ -36,9 +42,55 @@ class AuthAccountRepository(
 
     suspend fun requestPasswordReset(email: String): AuthPasswordResetRequestResult = passwordResetRequest(email.trim())
 
+    suspend fun requestCurrentAccountPasswordReset(): AuthPasswordResetRequestResult = currentPasswordResetRequest()
+
     suspend fun confirmPasswordReset(
         email: String,
         code: String,
         newPassword: String,
     ): AuthAccountSummary = passwordResetConfirmRequest(email.trim(), code.trim(), newPassword)
+
+    suspend fun confirmCurrentAccountPasswordReset(
+        code: String,
+        newPassword: String,
+    ): AuthAccountSummary = currentPasswordResetConfirmRequest(code.trim(), newPassword)
+
+    fun currentAccountEmail(): String? = sessionStore.loadAccountEmail()
+
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        signOutEverywhere: Boolean,
+    ): AuthPasswordChangeResult {
+        val result = passwordChangeRequest(currentPassword, newPassword, signOutEverywhere)
+        if (signOutEverywhere) {
+            clearLocalSession()
+        }
+        return result
+    }
+
+    suspend fun logout(): Boolean {
+        try {
+            return logoutRequest()
+        } finally {
+            clearLocalSession()
+        }
+    }
+
+    suspend fun logoutAll(): AuthLogoutAllResult {
+        val result = logoutAllRequest()
+        clearLocalSession()
+        return result
+    }
+
+    suspend fun deleteAccount(password: String): AuthDeleteAccountResult {
+        val result = deleteAccountRequest(password)
+        clearLocalSession()
+        return result
+    }
+
+    fun clearLocalSession() {
+        sessionStore.clear()
+        onAccessTokenChanged(null)
+    }
 }

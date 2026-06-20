@@ -229,9 +229,17 @@ Protected endpoint. Returns the current authenticated account summary.
 
 Accepts an email address and sends a reset code when the account exists. Unknown emails still return a generic accepted response. Delivery failures are logged and still return the same accepted response so callers cannot distinguish existing accounts by email-provider errors.
 
+## POST /auth/password-reset/request-current
+
+Protected endpoint for signed-in account settings. Sends a reset code to the authenticated account email address. The client does not provide an email address.
+
 ## POST /auth/password-reset/confirm
 
 Consumes a reset code, updates the password hash, and revokes existing sessions for that account. Repeated wrong-code attempts for the same account return `429 password_reset_attempts_rate_limited`.
+
+## POST /auth/password-reset/confirm-current
+
+Protected endpoint for signed-in account settings. Consumes a reset code for the authenticated account email address, updates the password hash, and revokes existing sessions. The client sends only the reset code and new password.
 
 ## POST /auth/password/change
 

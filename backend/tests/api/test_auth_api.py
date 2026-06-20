@@ -283,6 +283,41 @@ def test_password_change_and_logout_all_manage_sessions(auth_api: AuthApiContext
 
 
 @pytest.mark.real_auth
+def test_current_password_reset_uses_authenticated_account_email(auth_api: AuthApiContext) -> None:
+    token_payload = _verified_login(auth_api, email="alex@example.com", password="old-password")
+
+    unauthenticated_response = auth_api.client.post("/api/v1/auth/password-reset/request-current")
+    request_response = auth_api.client.post(
+        "/api/v1/auth/password-reset/request-current",
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    reset_code = auth_api.email_sender.messages[-1].code
+    short_code_response = auth_api.client.post(
+        "/api/v1/auth/password-reset/confirm-current",
+        json={"code": reset_code[:5], "new_password": "new-password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    confirm_response = auth_api.client.post(
+        "/api/v1/auth/password-reset/confirm-current",
+        json={"code": reset_code, "new_password": "new-password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    login_response = auth_api.client.post(
+        "/api/v1/auth/login",
+        json={"email": "alex@example.com", "password": "new-password"},
+    )
+
+    assert unauthenticated_response.status_code == 401
+    assert request_response.status_code == 200
+    assert request_response.json() == {"accepted": True, "email": "alex@example.com"}
+    assert auth_api.email_sender.messages[-1].to_email == "alex@example.com"
+    assert short_code_response.status_code == 422
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["email"] == "alex@example.com"
+    assert login_response.status_code == 200
+
+
+@pytest.mark.real_auth
 def test_delete_account_requires_password_and_invalidates_access(auth_api: AuthApiContext) -> None:
     token_payload = _verified_login(auth_api, email="alex@example.com", password="password")
 

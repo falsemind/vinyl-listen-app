@@ -33,6 +33,21 @@ data class AuthPasswordResetRequestResult(
     val email: String,
 )
 
+data class AuthPasswordChangeResult(
+    val changed: Boolean,
+    val revokedSessions: Int,
+)
+
+data class AuthLogoutAllResult(
+    val revokedSessions: Int,
+)
+
+data class AuthDeleteAccountResult(
+    val deleted: Boolean,
+    val deletionReceiptId: String,
+    val deletedAt: String,
+)
+
 sealed interface AuthStartupResult {
     data object Ready : AuthStartupResult
 

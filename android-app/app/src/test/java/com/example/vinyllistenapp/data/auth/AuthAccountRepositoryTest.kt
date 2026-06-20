@@ -67,6 +67,22 @@ class AuthAccountRepositoryTest {
         }
 
     @Test
+    fun requestCurrentAccountPasswordResetDoesNotRequireEmailInput() =
+        runBlocking {
+            val repository =
+                repository(
+                    requestCurrentPasswordReset = {
+                        AuthPasswordResetRequestResult(accepted = true, email = "alex@example.com")
+                    },
+                )
+
+            val result = repository.requestCurrentAccountPasswordReset()
+
+            assertEquals(true, result.accepted)
+            assertEquals("alex@example.com", result.email)
+        }
+
+    @Test
     fun confirmPasswordResetTrimsEmailAndCodeBeforeSubmitting() =
         runBlocking {
             val repository =
@@ -89,6 +105,115 @@ class AuthAccountRepositoryTest {
             assertEquals("alex@example.com", result.email)
         }
 
+    @Test
+    fun logoutClearsLocalSessionAndPublishedAccessToken() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            var publishedAccessToken: String? = "access"
+            val repository =
+                repository(
+                    store = store,
+                    logout = { true },
+                    onAccessTokenChanged = { publishedAccessToken = it },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            val revoked = repository.logout()
+
+            assertEquals(true, revoked)
+            assertEquals(null, store.refreshToken)
+            assertEquals(null, store.accountEmail)
+            assertEquals(null, publishedAccessToken)
+        }
+
+    @Test
+    fun failedLogoutStillClearsLocalSession() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            val repository =
+                repository(
+                    store = store,
+                    logout = { error("logout failed") },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            runCatching { repository.logout() }
+
+            assertEquals(null, store.refreshToken)
+            assertEquals(null, store.accountEmail)
+        }
+
+    @Test
+    fun logoutAllClearsLocalSession() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            val repository =
+                repository(
+                    store = store,
+                    logoutAll = { AuthLogoutAllResult(revokedSessions = 2) },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            val result = repository.logoutAll()
+
+            assertEquals(2, result.revokedSessions)
+            assertEquals(null, store.refreshToken)
+            assertEquals(null, store.accountEmail)
+        }
+
+    @Test
+    fun deleteAccountClearsLocalSession() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            val repository =
+                repository(
+                    store = store,
+                    deleteAccount = { password ->
+                        assertEquals("password", password)
+                        AuthDeleteAccountResult(
+                            deleted = true,
+                            deletionReceiptId = "receipt-1",
+                            deletedAt = "2026-06-19T12:00:00Z",
+                        )
+                    },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            val result = repository.deleteAccount("password")
+
+            assertEquals(true, result.deleted)
+            assertEquals(null, store.refreshToken)
+            assertEquals(null, store.accountEmail)
+        }
+
+    @Test
+    fun changePasswordClearsLocalSessionWhenSigningOutEverywhere() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            val repository =
+                repository(
+                    store = store,
+                    changePassword = { currentPassword, newPassword, signOutEverywhere ->
+                        assertEquals("old-password", currentPassword)
+                        assertEquals("new-password", newPassword)
+                        assertEquals(true, signOutEverywhere)
+                        AuthPasswordChangeResult(changed = true, revokedSessions = 1)
+                    },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            val result =
+                repository.changePassword(
+                    currentPassword = "old-password",
+                    newPassword = "new-password",
+                    signOutEverywhere = true,
+                )
+
+            assertEquals(true, result.changed)
+            assertEquals(null, store.refreshToken)
+            assertEquals(null, store.accountEmail)
+        }
+
     private fun repository(
         store: AuthSessionStore = FakeAuthSessionStore(),
         registerAccount: suspend (String, String) -> AuthRegistrationResult = { email, _ -> registrationResult(email) },
@@ -98,8 +223,26 @@ class AuthAccountRepositoryTest {
         requestPasswordReset: suspend (String) -> AuthPasswordResetRequestResult = { email ->
             AuthPasswordResetRequestResult(accepted = true, email = email)
         },
+        requestCurrentPasswordReset: suspend () -> AuthPasswordResetRequestResult = {
+            AuthPasswordResetRequestResult(accepted = true, email = "alex@example.com")
+        },
         confirmPasswordReset: suspend (String, String, String) -> AuthAccountSummary = { email, _, _ ->
             accountSummary(email)
+        },
+        confirmCurrentPasswordReset: suspend (String, String) -> AuthAccountSummary = { _, _ ->
+            accountSummary("alex@example.com")
+        },
+        changePassword: suspend (String, String, Boolean) -> AuthPasswordChangeResult = { _, _, _ ->
+            AuthPasswordChangeResult(changed = true, revokedSessions = 0)
+        },
+        logout: suspend () -> Boolean = { true },
+        logoutAll: suspend () -> AuthLogoutAllResult = { AuthLogoutAllResult(revokedSessions = 1) },
+        deleteAccount: suspend (String) -> AuthDeleteAccountResult = {
+            AuthDeleteAccountResult(
+                deleted = true,
+                deletionReceiptId = "receipt-1",
+                deletedAt = "2026-06-19T12:00:00Z",
+            )
         },
         onAccessTokenChanged: (String?) -> Unit = {},
     ): AuthAccountRepository =
@@ -110,7 +253,13 @@ class AuthAccountRepositoryTest {
             resendVerificationRequest = resendVerification,
             loginRequest = login,
             passwordResetRequest = requestPasswordReset,
+            currentPasswordResetRequest = requestCurrentPasswordReset,
             passwordResetConfirmRequest = confirmPasswordReset,
+            currentPasswordResetConfirmRequest = confirmCurrentPasswordReset,
+            passwordChangeRequest = changePassword,
+            logoutRequest = logout,
+            logoutAllRequest = logoutAll,
+            deleteAccountRequest = deleteAccount,
             onAccessTokenChanged = onAccessTokenChanged,
             deviceLabelProvider = { "Pixel 9" },
         )

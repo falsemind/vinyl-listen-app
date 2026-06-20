@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
 import com.example.vinyllistenapp.data.auth.AuthAccountSummary
+import com.example.vinyllistenapp.data.auth.AuthDeleteAccountResult
+import com.example.vinyllistenapp.data.auth.AuthLogoutAllResult
+import com.example.vinyllistenapp.data.auth.AuthPasswordChangeResult
 import com.example.vinyllistenapp.data.auth.AuthPasswordResetRequestResult
 import com.example.vinyllistenapp.data.auth.AuthRegistrationResult
 import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
@@ -129,6 +132,11 @@ class VinylApiClient(
             postJson("auth/password-reset/request", body).toAuthPasswordResetRequestResult()
         }
 
+    suspend fun requestCurrentAccountPasswordReset(): AuthPasswordResetRequestResult =
+        apiCall {
+            postJson("auth/password-reset/request-current", JSONObject()).toAuthPasswordResetRequestResult()
+        }
+
     suspend fun confirmPasswordReset(
         email: String,
         code: String,
@@ -141,6 +149,48 @@ class VinylApiClient(
                     .put("code", code)
                     .put("new_password", newPassword)
             postJson("auth/password-reset/confirm", body).toAuthAccountSummary()
+        }
+
+    suspend fun confirmCurrentAccountPasswordReset(
+        code: String,
+        newPassword: String,
+    ): AuthAccountSummary =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("code", code)
+                    .put("new_password", newPassword)
+            postJson("auth/password-reset/confirm-current", body).toAuthAccountSummary()
+        }
+
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        signOutEverywhere: Boolean,
+    ): AuthPasswordChangeResult =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("current_password", currentPassword)
+                    .put("new_password", newPassword)
+                    .put("sign_out_everywhere", signOutEverywhere)
+            postJson("auth/password/change", body).toAuthPasswordChangeResult()
+        }
+
+    suspend fun logout(): Boolean =
+        apiCall {
+            postJson("auth/logout", JSONObject()).optBoolean("revoked", false)
+        }
+
+    suspend fun logoutAll(): AuthLogoutAllResult =
+        apiCall {
+            postJson("auth/logout-all", JSONObject()).toAuthLogoutAllResult()
+        }
+
+    suspend fun deleteAccount(password: String): AuthDeleteAccountResult =
+        apiCall {
+            val body = JSONObject().put("password", password)
+            deleteJson("auth/account", body).toAuthDeleteAccountResult()
         }
 
     suspend fun identifyImage(
@@ -939,6 +989,18 @@ class VinylApiClient(
         return readJsonResponse(connection)
     }
 
+    private fun deleteJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "DELETE"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
     private fun openConnection(path: String): HttpURLConnection =
         URL("${baseUrl.trimEnd('/')}/${path.trimStart('/')}").openConnection().let { connection ->
             (connection as HttpURLConnection).apply {
@@ -1530,6 +1592,24 @@ private fun JSONObject.toAuthPasswordResetRequestResult(): AuthPasswordResetRequ
     AuthPasswordResetRequestResult(
         accepted = optBoolean("accepted", false),
         email = getString("email"),
+    )
+
+private fun JSONObject.toAuthPasswordChangeResult(): AuthPasswordChangeResult =
+    AuthPasswordChangeResult(
+        changed = optBoolean("changed", false),
+        revokedSessions = optInt("revoked_sessions", 0),
+    )
+
+private fun JSONObject.toAuthLogoutAllResult(): AuthLogoutAllResult =
+    AuthLogoutAllResult(
+        revokedSessions = optInt("revoked_sessions", 0),
+    )
+
+private fun JSONObject.toAuthDeleteAccountResult(): AuthDeleteAccountResult =
+    AuthDeleteAccountResult(
+        deleted = optBoolean("deleted", false),
+        deletionReceiptId = getString("deletion_receipt_id"),
+        deletedAt = getString("deleted_at"),
     )
 
 private fun Int.toApiErrorKind(): ApiErrorKind =

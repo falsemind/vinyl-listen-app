@@ -70,7 +70,12 @@ class PasswordResetRequestResponse(BaseModel):
 
 class PasswordResetConfirmRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
-    code: str = Field(min_length=1, max_length=32)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=8, max_length=1024)
+
+
+class PasswordResetConfirmCurrentRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     new_password: str = Field(min_length=8, max_length=1024)
 
 

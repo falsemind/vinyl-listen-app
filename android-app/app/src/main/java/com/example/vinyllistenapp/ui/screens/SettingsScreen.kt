@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
@@ -52,13 +53,16 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
+import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import com.example.vinyllistenapp.domain.DiscogsIntegrationStatus
 import com.example.vinyllistenapp.ui.components.BottomNavBar
@@ -73,11 +77,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TOKEN_REVEAL_MILLIS = 1_000L
+private const val MIN_ACCOUNT_PASSWORD_LENGTH = 8
+private const val RESET_CODE_LENGTH = 6
 
 @Composable
 fun SettingsScreen(
     apiClient: VinylApiClient,
+    authAccountRepository: AuthAccountRepository? = null,
     message: String,
+    onAuthSessionEnded: () -> Unit = {},
+    onAccountDeleted: () -> Unit = {},
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
@@ -94,7 +103,28 @@ fun SettingsScreen(
     var tokenManageMode by rememberSaveable { mutableStateOf(false) }
     var showDiscogsConfirmation by rememberSaveable { mutableStateOf(false) }
     var showDeleteTokenConfirmation by rememberSaveable { mutableStateOf(false) }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmNewPassword by remember { mutableStateOf("") }
+    var signOutEverywhereOnPasswordChange by rememberSaveable { mutableStateOf(false) }
+    var resetCode by remember { mutableStateOf("") }
+    var resetPassword by remember { mutableStateOf("") }
+    var resetConfirmPassword by remember { mutableStateOf("") }
+    var deleteAccountPassword by remember { mutableStateOf("") }
+    var accountMessage by remember { mutableStateOf<String?>(null) }
+    var accountErrorMessage by remember { mutableStateOf<String?>(null) }
+    var isChangingPassword by remember { mutableStateOf(false) }
+    var isRequestingReset by remember { mutableStateOf(false) }
+    var isConfirmingReset by remember { mutableStateOf(false) }
+    var isLoggingOut by remember { mutableStateOf(false) }
+    var isLoggingOutEverywhere by remember { mutableStateOf(false) }
+    var isDeletingAccount by remember { mutableStateOf(false) }
+    var showResetCodeConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showLogoutConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showLogoutAllConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showDeleteAccountConfirmation by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val accountEmail = authAccountRepository?.currentAccountEmail()
 
     fun loadIntegrationStatus() {
         isLoading = true
@@ -170,6 +200,137 @@ fun SettingsScreen(
         }
     }
 
+    fun clearPasswordChangeFields() {
+        currentPassword = ""
+        newPassword = ""
+        confirmNewPassword = ""
+    }
+
+    fun clearResetFields() {
+        resetCode = ""
+        resetPassword = ""
+        resetConfirmPassword = ""
+    }
+
+    fun changePassword() {
+        val repository = authAccountRepository ?: return
+        if (
+            isChangingPassword ||
+            currentPassword.isBlank() ||
+            newPassword.length < MIN_ACCOUNT_PASSWORD_LENGTH ||
+            newPassword != confirmNewPassword
+        ) {
+            return
+        }
+        isChangingPassword = true
+        accountMessage = null
+        accountErrorMessage = null
+        scope.launch {
+            runCatching {
+                repository.changePassword(
+                    currentPassword = currentPassword,
+                    newPassword = newPassword,
+                    signOutEverywhere = signOutEverywhereOnPasswordChange,
+                )
+            }.onSuccess { result ->
+                clearPasswordChangeFields()
+                accountMessage = "Password changed. Revoked sessions: ${result.revokedSessions}."
+                if (signOutEverywhereOnPasswordChange) {
+                    onAuthSessionEnded()
+                }
+            }.onFailure { error ->
+                accountErrorMessage = error.toUserMessage("Could not change password.")
+            }
+            isChangingPassword = false
+        }
+    }
+
+    fun requestPasswordReset() {
+        val repository = authAccountRepository ?: return
+        if (isRequestingReset) return
+        isRequestingReset = true
+        accountMessage = null
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.requestCurrentAccountPasswordReset() }
+                .onSuccess {
+                    accountMessage = "Reset code requested. Check your email."
+                }.onFailure { error ->
+                    accountErrorMessage = error.toUserMessage("Could not request a reset code.")
+                }
+            isRequestingReset = false
+        }
+    }
+
+    fun confirmPasswordReset() {
+        val repository = authAccountRepository ?: return
+        if (
+            isConfirmingReset ||
+            resetCode.length != RESET_CODE_LENGTH ||
+            resetPassword.length < MIN_ACCOUNT_PASSWORD_LENGTH ||
+            resetPassword != resetConfirmPassword
+        ) {
+            return
+        }
+        isConfirmingReset = true
+        accountMessage = null
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.confirmCurrentAccountPasswordReset(resetCode, resetPassword) }
+                .onSuccess {
+                    clearResetFields()
+                    repository.clearLocalSession()
+                    onAuthSessionEnded()
+                }.onFailure { error ->
+                    accountErrorMessage = error.toUserMessage("Could not reset password.")
+                }
+            isConfirmingReset = false
+        }
+    }
+
+    fun logout() {
+        val repository = authAccountRepository ?: return
+        if (isLoggingOut) return
+        isLoggingOut = true
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.logout() }
+                .onSuccess { onAuthSessionEnded() }
+                .onFailure { onAuthSessionEnded() }
+            isLoggingOut = false
+        }
+    }
+
+    fun logoutAll() {
+        val repository = authAccountRepository ?: return
+        if (isLoggingOutEverywhere) return
+        isLoggingOutEverywhere = true
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.logoutAll() }
+                .onSuccess { onAuthSessionEnded() }
+                .onFailure { error -> accountErrorMessage = error.toUserMessage("Could not sign out everywhere.") }
+            isLoggingOutEverywhere = false
+        }
+    }
+
+    fun deleteAccount() {
+        val repository = authAccountRepository ?: return
+        if (isDeletingAccount || deleteAccountPassword.isBlank()) return
+        isDeletingAccount = true
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.deleteAccount(deleteAccountPassword) }
+                .onSuccess {
+                    deleteAccountPassword = ""
+                    onAccountDeleted()
+                }.onFailure { error ->
+                    accountErrorMessage = error.toUserMessage("Could not delete account.")
+                }
+            isDeletingAccount = false
+        }
+    }
+
     Scaffold(
         containerColor = VinylColors.AppBackground,
         bottomBar = {
@@ -196,6 +357,23 @@ fun SettingsScreen(
             isSavingToken = isSavingToken,
             isDeletingToken = isDeletingToken,
             isUpdatingSource = isUpdatingSource,
+            authAvailable = authAccountRepository != null,
+            accountEmail = accountEmail,
+            currentPassword = currentPassword,
+            newPassword = newPassword,
+            confirmNewPassword = confirmNewPassword,
+            signOutEverywhereOnPasswordChange = signOutEverywhereOnPasswordChange,
+            resetCode = resetCode,
+            resetPassword = resetPassword,
+            resetConfirmPassword = resetConfirmPassword,
+            accountMessage = accountMessage,
+            accountErrorMessage = accountErrorMessage,
+            isChangingPassword = isChangingPassword,
+            isRequestingReset = isRequestingReset,
+            isConfirmingReset = isConfirmingReset,
+            isLoggingOut = isLoggingOut,
+            isLoggingOutEverywhere = isLoggingOutEverywhere,
+            isDeletingAccount = isDeletingAccount,
             tokenInput = tokenInput,
             tokenEditMode = tokenEditMode,
             tokenManageMode = tokenManageMode,
@@ -221,6 +399,19 @@ fun SettingsScreen(
                     updateSourceOfTruth(CollectionSourceOfTruth.App)
                 }
             },
+            onCurrentPasswordChange = { currentPassword = it },
+            onNewPasswordChange = { newPassword = it },
+            onConfirmNewPasswordChange = { confirmNewPassword = it },
+            onSignOutEverywhereOnPasswordChange = { signOutEverywhereOnPasswordChange = it },
+            onChangePassword = ::changePassword,
+            onResetCodeChange = { resetCode = it.toResetCodeInput() },
+            onResetPasswordChange = { resetPassword = it },
+            onResetConfirmPasswordChange = { resetConfirmPassword = it },
+            onRequestPasswordReset = { showResetCodeConfirmation = true },
+            onConfirmPasswordReset = ::confirmPasswordReset,
+            onLogoutClick = { showLogoutConfirmation = true },
+            onLogoutAllClick = { showLogoutAllConfirmation = true },
+            onDeleteAccountClick = { showDeleteAccountConfirmation = true },
             innerPadding = innerPadding,
         )
     }
@@ -281,6 +472,118 @@ fun SettingsScreen(
             },
         )
     }
+    if (showResetCodeConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetCodeConfirmation = false },
+            title = { Text("Send reset code") },
+            text = {
+                Text(
+                    "This will send a password reset code to the email address on your account. " +
+                        "Confirm to continue.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isRequestingReset,
+                    onClick = {
+                        showResetCodeConfirmation = false
+                        requestPasswordReset()
+                    },
+                ) {
+                    Text("Send code")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetCodeConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+    if (showLogoutConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmation = false },
+            title = { Text("Log out") },
+            text = { Text("You will return to the sign-in screen on this device.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isLoggingOut,
+                    onClick = {
+                        showLogoutConfirmation = false
+                        logout()
+                    },
+                ) {
+                    Text("Log out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+    if (showLogoutAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showLogoutAllConfirmation = false },
+            title = { Text("Sign out everywhere") },
+            text = { Text("All active sessions for this account will be revoked, including this device.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isLoggingOutEverywhere,
+                    onClick = {
+                        showLogoutAllConfirmation = false
+                        logoutAll()
+                    },
+                ) {
+                    Text("Sign out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutAllConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+    if (showDeleteAccountConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountConfirmation = false },
+            title = { Text("Delete account") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                    Text("This permanently deletes your account and user data. This cannot be undone.")
+                    PasswordTextField(
+                        value = deleteAccountPassword,
+                        onValueChange = { deleteAccountPassword = it },
+                        label = "Password",
+                        enabled = !isDeletingAccount,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeletingAccount && deleteAccountPassword.isNotBlank(),
+                    onClick = {
+                        showDeleteAccountConfirmation = false
+                        deleteAccount()
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountConfirmation = false
+                        deleteAccountPassword = ""
+                    },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -291,6 +594,23 @@ private fun SettingsContent(
     isSavingToken: Boolean,
     isDeletingToken: Boolean,
     isUpdatingSource: Boolean,
+    authAvailable: Boolean,
+    accountEmail: String?,
+    currentPassword: String,
+    newPassword: String,
+    confirmNewPassword: String,
+    signOutEverywhereOnPasswordChange: Boolean,
+    resetCode: String,
+    resetPassword: String,
+    resetConfirmPassword: String,
+    accountMessage: String?,
+    accountErrorMessage: String?,
+    isChangingPassword: Boolean,
+    isRequestingReset: Boolean,
+    isConfirmingReset: Boolean,
+    isLoggingOut: Boolean,
+    isLoggingOutEverywhere: Boolean,
+    isDeletingAccount: Boolean,
     tokenInput: String,
     tokenEditMode: Boolean,
     tokenManageMode: Boolean,
@@ -303,6 +623,19 @@ private fun SettingsContent(
     onTokenUpdateClick: () -> Unit,
     onTokenDeleteClick: () -> Unit,
     onSourceOfTruthChanged: (CollectionSourceOfTruth) -> Unit,
+    onCurrentPasswordChange: (String) -> Unit,
+    onNewPasswordChange: (String) -> Unit,
+    onConfirmNewPasswordChange: (String) -> Unit,
+    onSignOutEverywhereOnPasswordChange: (Boolean) -> Unit,
+    onChangePassword: () -> Unit,
+    onResetCodeChange: (String) -> Unit,
+    onResetPasswordChange: (String) -> Unit,
+    onResetConfirmPasswordChange: (String) -> Unit,
+    onRequestPasswordReset: () -> Unit,
+    onConfirmPasswordReset: () -> Unit,
+    onLogoutClick: () -> Unit,
+    onLogoutAllClick: () -> Unit,
+    onDeleteAccountClick: () -> Unit,
     innerPadding: PaddingValues = PaddingValues(),
 ) {
     ScreenContent(title = "Settings", subtitle = message, innerPadding = innerPadding) {
@@ -326,7 +659,374 @@ private fun SettingsContent(
             onTokenDeleteClick = onTokenDeleteClick,
             onSourceOfTruthChanged = onSourceOfTruthChanged,
         )
+
+        SectionTitle("Account management")
+        AccountManagementCard(
+            authAvailable = authAvailable,
+            accountEmail = accountEmail,
+            currentPassword = currentPassword,
+            newPassword = newPassword,
+            confirmNewPassword = confirmNewPassword,
+            signOutEverywhereOnPasswordChange = signOutEverywhereOnPasswordChange,
+            resetCode = resetCode,
+            resetPassword = resetPassword,
+            resetConfirmPassword = resetConfirmPassword,
+            message = accountMessage,
+            errorMessage = accountErrorMessage,
+            isChangingPassword = isChangingPassword,
+            isRequestingReset = isRequestingReset,
+            isConfirmingReset = isConfirmingReset,
+            isLoggingOut = isLoggingOut,
+            isLoggingOutEverywhere = isLoggingOutEverywhere,
+            isDeletingAccount = isDeletingAccount,
+            onCurrentPasswordChange = onCurrentPasswordChange,
+            onNewPasswordChange = onNewPasswordChange,
+            onConfirmNewPasswordChange = onConfirmNewPasswordChange,
+            onSignOutEverywhereOnPasswordChange = onSignOutEverywhereOnPasswordChange,
+            onChangePassword = onChangePassword,
+            onResetCodeChange = onResetCodeChange,
+            onResetPasswordChange = onResetPasswordChange,
+            onResetConfirmPasswordChange = onResetConfirmPasswordChange,
+            onRequestPasswordReset = onRequestPasswordReset,
+            onConfirmPasswordReset = onConfirmPasswordReset,
+            onLogoutClick = onLogoutClick,
+            onLogoutAllClick = onLogoutAllClick,
+            onDeleteAccountClick = onDeleteAccountClick,
+        )
     }
+}
+
+@Composable
+private fun AccountManagementCard(
+    authAvailable: Boolean,
+    accountEmail: String?,
+    currentPassword: String,
+    newPassword: String,
+    confirmNewPassword: String,
+    signOutEverywhereOnPasswordChange: Boolean,
+    resetCode: String,
+    resetPassword: String,
+    resetConfirmPassword: String,
+    message: String?,
+    errorMessage: String?,
+    isChangingPassword: Boolean,
+    isRequestingReset: Boolean,
+    isConfirmingReset: Boolean,
+    isLoggingOut: Boolean,
+    isLoggingOutEverywhere: Boolean,
+    isDeletingAccount: Boolean,
+    onCurrentPasswordChange: (String) -> Unit,
+    onNewPasswordChange: (String) -> Unit,
+    onConfirmNewPasswordChange: (String) -> Unit,
+    onSignOutEverywhereOnPasswordChange: (Boolean) -> Unit,
+    onChangePassword: () -> Unit,
+    onResetCodeChange: (String) -> Unit,
+    onResetPasswordChange: (String) -> Unit,
+    onResetConfirmPasswordChange: (String) -> Unit,
+    onRequestPasswordReset: () -> Unit,
+    onConfirmPasswordReset: () -> Unit,
+    onLogoutClick: () -> Unit,
+    onLogoutAllClick: () -> Unit,
+    onDeleteAccountClick: () -> Unit,
+) {
+    var isPasswordChangeExpanded by rememberSaveable { mutableStateOf(false) }
+    var isPasswordResetExpanded by rememberSaveable { mutableStateOf(false) }
+    val passwordChangeEnabled =
+        authAvailable &&
+            !isChangingPassword &&
+            currentPassword.isNotBlank() &&
+            newPassword.length >= MIN_ACCOUNT_PASSWORD_LENGTH &&
+            newPassword == confirmNewPassword
+    val passwordResetEnabled =
+        authAvailable &&
+            !isConfirmingReset &&
+            resetCode.length == RESET_CODE_LENGTH &&
+            resetPassword.length >= MIN_ACCOUNT_PASSWORD_LENGTH &&
+            resetPassword == resetConfirmPassword
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary)
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .padding(VinylSpacing.SpaceLg),
+    ) {
+        CardTopAccentLine(
+            accentColor = VinylColors.AccentOrange,
+            alpha = 0.30f,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
+            Text(
+                text = accountEmail?.takeIf { it.isNotBlank() } ?: "Signed-in account",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(VinylColors.BorderDefault),
+            )
+            if (!authAvailable) {
+                Text(
+                    text = "Account actions are unavailable in preview mode.",
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            AccountActionHeader(
+                title = "Change password",
+                expanded = isPasswordChangeExpanded,
+                onClick = { isPasswordChangeExpanded = !isPasswordChangeExpanded },
+            )
+            if (isPasswordChangeExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                    PasswordTextField(
+                        value = currentPassword,
+                        onValueChange = onCurrentPasswordChange,
+                        label = "Current password",
+                        enabled = !isChangingPassword,
+                    )
+                    PasswordTextField(
+                        value = newPassword,
+                        onValueChange = onNewPasswordChange,
+                        label = "New password",
+                        enabled = !isChangingPassword,
+                    )
+                    PasswordTextField(
+                        value = confirmNewPassword,
+                        onValueChange = onConfirmNewPasswordChange,
+                        label = "Confirm new password",
+                        enabled = !isChangingPassword,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f).padding(end = VinylSpacing.SpaceMd),
+                            text = "Sign out everywhere",
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Switch(
+                            checked = signOutEverywhereOnPasswordChange,
+                            enabled = !isChangingPassword,
+                            onCheckedChange = onSignOutEverywhereOnPasswordChange,
+                        )
+                    }
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = passwordChangeEnabled,
+                        shape = VinylShapes.Button,
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = VinylColors.AccentGreen,
+                                contentColor = VinylColors.TextOnAccent,
+                            ),
+                        onClick = onChangePassword,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                            text = if (isChangingPassword) "Saving" else "Save password",
+                        )
+                    }
+                }
+            }
+
+            AccountActionHeader(
+                title = "Reset with email code",
+                expanded = isPasswordResetExpanded,
+                onClick = { isPasswordResetExpanded = !isPasswordResetExpanded },
+            )
+            if (isPasswordResetExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = authAvailable && !isRequestingReset,
+                        shape = VinylShapes.Button,
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = VinylColors.SurfaceSecondary,
+                                contentColor = VinylColors.TextPrimary,
+                            ),
+                        onClick = onRequestPasswordReset,
+                    ) {
+                        Text(if (isRequestingReset) "Sending code" else "Send reset code")
+                    }
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = resetCode,
+                        onValueChange = onResetCodeChange,
+                        enabled = !isConfirmingReset,
+                        singleLine = true,
+                        label = { Text("Reset code") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    PasswordTextField(
+                        value = resetPassword,
+                        onValueChange = onResetPasswordChange,
+                        label = "New password",
+                        enabled = !isConfirmingReset,
+                    )
+                    PasswordTextField(
+                        value = resetConfirmPassword,
+                        onValueChange = onResetConfirmPasswordChange,
+                        label = "Confirm new password",
+                        enabled = !isConfirmingReset,
+                    )
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = passwordResetEnabled,
+                        shape = VinylShapes.Button,
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = VinylColors.AccentGreen,
+                                contentColor = VinylColors.TextOnAccent,
+                            ),
+                        onClick = onConfirmPasswordReset,
+                    ) {
+                        Text(if (isConfirmingReset) "Resetting" else "Reset password")
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = authAvailable && !isLoggingOut,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.SurfaceSecondary,
+                            contentColor = VinylColors.TextPrimary,
+                        ),
+                    onClick = onLogoutClick,
+                ) {
+                    Icon(imageVector = Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(modifier = Modifier.padding(start = VinylSpacing.SpaceXs), text = if (isLoggingOut) "Logging out" else "Log out")
+                }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = authAvailable && !isLoggingOutEverywhere,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.SurfaceSecondary,
+                            contentColor = VinylColors.TextSecondary,
+                        ),
+                    onClick = onLogoutAllClick,
+                ) {
+                    Text(if (isLoggingOutEverywhere) "Signing out" else "All devices")
+                }
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = authAvailable && !isDeletingAccount,
+                shape = VinylShapes.Button,
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = VinylColors.SurfaceSecondary,
+                        contentColor = VinylColors.AccentOrange,
+                    ),
+                onClick = onDeleteAccountClick,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                    text = if (isDeletingAccount) "Deleting" else "Delete account",
+                )
+            }
+            message?.let {
+                Text(text = it, color = VinylColors.AccentGreen, style = MaterialTheme.typography.bodyMedium)
+            }
+            errorMessage?.let {
+                Text(text = it, color = VinylColors.AccentOrange, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountActionHeader(
+    title: String,
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "$title accountActionArrow",
+    )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (expanded) "Collapse $title" else "Expand $title",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier = Modifier.weight(1f).padding(end = VinylSpacing.SpaceSm),
+            text = title,
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = null,
+            tint = VinylColors.TextSecondary,
+            modifier =
+                Modifier
+                    .size(24.dp)
+                    .graphicsLayer(rotationZ = arrowRotation),
+        )
+    }
+}
+
+@Composable
+private fun PasswordTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    enabled: Boolean,
+) {
+    OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
+        value = value,
+        onValueChange = onValueChange,
+        enabled = enabled,
+        singleLine = true,
+        label = { Text(label) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+    )
 }
 
 @Composable
@@ -761,3 +1461,5 @@ private fun CollectionSourceOfTruth.displayName(): String =
         CollectionSourceOfTruth.App -> "App"
         CollectionSourceOfTruth.Discogs -> "Discogs"
     }
+
+private fun String.toResetCodeInput(): String = filter { it.isDigit() }.take(RESET_CODE_LENGTH)

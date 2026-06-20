@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.TimedSessionGroup
@@ -69,6 +70,9 @@ fun VinylNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
     apiClient: VinylApiClient? = null,
+    authAccountRepository: AuthAccountRepository? = null,
+    onAuthSessionEnded: () -> Unit = {},
+    onAccountDeleted: () -> Unit = {},
 ) {
     val activeApiClient = apiClient ?: remember { VinylApiClient() }
     val aiInsightsState = rememberAiInsightsScreenState()
@@ -710,7 +714,10 @@ fun VinylNavHost(
             composable(VinylRoutes.SETTINGS) {
                 SettingsScreen(
                     apiClient = activeApiClient,
+                    authAccountRepository = authAccountRepository,
                     message = "Application settings",
+                    onAuthSessionEnded = onAuthSessionEnded,
+                    onAccountDeleted = onAccountDeleted,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
