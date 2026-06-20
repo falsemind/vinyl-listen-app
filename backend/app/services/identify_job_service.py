@@ -332,6 +332,7 @@ class IdentifyJobService:
                         image_bytes=image_bytes,
                         filename=filename,
                         content_type=content_type,
+                        user_id=job.user_id,
                         progress_reporter=progress_reporter,
                         cancellation_checker=cancellation_token.is_cancel_requested,
                     )
