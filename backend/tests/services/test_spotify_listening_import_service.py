@@ -3,6 +3,7 @@ import json
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.models.auth import UserAccount
 from app.models.spotify_listening import (
     SpotifyAlbumStats,
     SpotifyArtistStats,
@@ -20,10 +21,19 @@ from app.services.spotify_listening_import_service import SpotifyListeningImport
 
 def _db_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
+    UserAccount.__table__.create(engine)
     with engine.begin() as connection:
         connection.execute(
             text("CREATE TABLE releases (id VARCHAR PRIMARY KEY, artist VARCHAR NOT NULL, title VARCHAR NOT NULL)")
         )
+        connection.execute(text("""
+                CREATE TABLE release_collection_memberships (
+                    id INTEGER PRIMARY KEY,
+                    user_id VARCHAR NOT NULL,
+                    release_id VARCHAR NOT NULL,
+                    in_collection BOOLEAN NOT NULL
+                )
+                """))
     SpotifyListeningImportBatch.__table__.create(engine)
     SpotifyListeningEvent.__table__.create(engine)
     SpotifyArtistStats.__table__.create(engine)
@@ -35,7 +45,19 @@ def _db_session() -> Session:
     SpotifyVinylArtistMatch.__table__.create(engine)
     SpotifyVinylReleaseMatch.__table__.create(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    return session_factory()
+    session = session_factory()
+    session.add(
+        UserAccount(
+            id="user-a",
+            email="user-a@example.com",
+            password_hash="hash",
+            normalized_email="user-a@example.com",
+            password_hash_algorithm="argon2id",
+            email_verified_at=None,
+        )
+    )
+    session.commit()
+    return session
 
 
 def test_import_files_filters_spotify_export_fields_and_dedupes_events(tmp_path) -> None:
@@ -69,7 +91,7 @@ def test_import_files_filters_spotify_export_fields_and_dedupes_events(tmp_path)
     spotify_file.write_text(json.dumps([valid_song, valid_song, podcast_item]), encoding="utf-8")
 
     with _db_session() as db:
-        result = SpotifyListeningImportService().import_files(db, [spotify_file], batch_size=1)
+        result = SpotifyListeningImportService().import_files(db, [spotify_file], user_id="user-a", batch_size=1)
 
         assert result.total_items == 3
         assert result.imported_count == 1
@@ -78,6 +100,7 @@ def test_import_files_filters_spotify_export_fields_and_dedupes_events(tmp_path)
         assert result.error_count == 0
 
         event = db.query(SpotifyListeningEvent).one()
+        assert event.user_id == "user-a"
         assert event.track_name == "Roygbiv"
         assert event.artist_name == "Boards of Canada"
         assert event.normalized_artist_name == "boards of canada"
@@ -95,6 +118,7 @@ def test_import_files_filters_spotify_export_fields_and_dedupes_events(tmp_path)
 
         batch = db.get(SpotifyListeningImportBatch, result.batch_id)
         assert batch is not None
+        assert batch.user_id == "user-a"
         assert batch.status == "completed"
         assert batch.source_paths == [str(spotify_file)]
         assert db.query(SpotifyArtistStats).count() == 1
@@ -128,7 +152,7 @@ def test_import_files_records_item_errors_without_stopping_import(tmp_path) -> N
     )
 
     with _db_session() as db:
-        result = SpotifyListeningImportService().import_files(db, [spotify_file])
+        result = SpotifyListeningImportService().import_files(db, [spotify_file], user_id="user-a")
 
         assert result.total_items == 2
         assert result.imported_count == 1

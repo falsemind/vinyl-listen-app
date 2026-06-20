@@ -1,5 +1,6 @@
 from app.pipelines.identification import ExtractedIdentifiers, OcrRoleEvidence
-from app.services.identify_service import IdentifyCanceledError, IdentifyValidationError
+from app.services.identify_service import IdentifyCanceledError, IdentifyService, IdentifyValidationError
+from tests.fixtures.identify_service import StubIdentifierExtractor, StubImageProcessor
 
 
 class RecordingProgressReporter:
@@ -8,6 +9,16 @@ class RecordingProgressReporter:
 
     def update(self, status: str, message: str) -> None:
         self.updates.append((status, message))
+
+
+class RecordingDiscogsIntegrationService:
+    def __init__(self, discogs_service) -> None:
+        self._discogs_service = discogs_service
+        self.user_ids: list[str | None] = []
+
+    def build_discogs_service(self, _db, *, user_id: str | None = None):
+        self.user_ids.append(user_id)
+        return self._discogs_service
 
 
 def test_identify_service_returns_local_match_before_discogs_lookup(
@@ -130,6 +141,50 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order(
     assert result.candidates[0].matched_on == ("catalog_number", "artist", "title")
     assert discogs_service.search_by_barcode_calls == [("724384497818", 5)]
     assert discogs_service.search_release_calls == []
+
+
+def test_identify_service_builds_discogs_with_user_id(
+    releases_repository_factory,
+    discogs_service_factory,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
+        payload={
+            "results": [
+                {
+                    "id": 456,
+                    "title": "Air - Moon Safari",
+                    "year": "1998",
+                    "label": ["Source"],
+                    "catno": "7243 8 44978 1 8",
+                }
+            ]
+        }
+    )
+    integration_service = RecordingDiscogsIntegrationService(discogs_service)
+    service = IdentifyService(
+        repository=repository,
+        discogs_integration_service=integration_service,
+        image_processor=StubImageProcessor(),
+        identifier_extractor=StubIdentifierExtractor(
+            ExtractedIdentifiers(
+                barcodes=("724384497818",),
+                artist="Air",
+                title="Moon Safari",
+            )
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="cover.jpg",
+        content_type="image/jpeg",
+        user_id="user-a",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert integration_service.user_ids == ["user-a"]
 
 
 def test_identify_service_rejects_unsupported_image_type(build_identify_service) -> None:

@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.models.auth import UserAccount
 from app.models.collection_sync_job import CollectionSyncJob
 from app.schemas.collection import CollectionSourceOfTruth
 from app.schemas.integrations import DiscogsIntegrationStatusResponse
@@ -13,7 +14,8 @@ from app.services.collection_sync_service import CollectionSyncError, Collection
 
 
 class SuccessfulCollectionSyncService:
-    def sync_collection(self, _db, *, progress_reporter=None) -> CollectionSyncResult:
+    def sync_collection(self, _db, *, user_id: str, progress_reporter=None) -> CollectionSyncResult:
+        _ = user_id
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
             progress_reporter(step="importing", message="Importing data", total_items=3, processed_items=1)
@@ -34,7 +36,8 @@ class SuccessfulCollectionSyncService:
 
 
 class FailingCollectionSyncService:
-    def sync_collection(self, _db, *, progress_reporter=None) -> CollectionSyncResult:
+    def sync_collection(self, _db, *, user_id: str, progress_reporter=None) -> CollectionSyncResult:
+        _ = user_id
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
         raise CollectionSyncError("Collection item is missing metadata.")
@@ -44,7 +47,8 @@ class FakeDiscogsIntegrationService:
     def __init__(self, *, access_token_saved: bool) -> None:
         self.access_token_saved = access_token_saved
 
-    def get_status(self, _db) -> DiscogsIntegrationStatusResponse:
+    def get_status(self, _db, *, user_id: str | None = None) -> DiscogsIntegrationStatusResponse:
+        _ = user_id
         return DiscogsIntegrationStatusResponse(
             access_token_saved=self.access_token_saved,
             source_of_truth=CollectionSourceOfTruth.APP,
@@ -61,7 +65,7 @@ def test_collection_sync_job_service_rejects_job_without_saved_discogs_token() -
     )
 
     with SessionFactory() as db, pytest.raises(CollectionSyncConfigurationError):
-        service.create_job(db)
+        service.create_job(db, user_id="user-a")
 
 
 def test_collection_sync_job_service_allows_job_with_saved_discogs_token() -> None:
@@ -75,7 +79,7 @@ def test_collection_sync_job_service_allows_job_with_saved_discogs_token() -> No
     )
 
     with SessionFactory() as db:
-        job = service.create_job(db)
+        job = service.create_job(db, user_id="user-a")
 
     assert job.status == "queued"
 
@@ -91,12 +95,12 @@ def test_collection_sync_job_service_completes_job() -> None:
     )
 
     with SessionFactory() as db:
-        job = service.create_job(db)
+        job = service.create_job(db, user_id="user-a")
 
     service.process_job(job.job_id)
 
     with SessionFactory() as db:
-        completed = service.get_job(db, job.job_id)
+        completed = service.get_job(db, job.job_id, user_id="user-a")
 
     assert completed.status == "succeeded"
     assert completed.step == "loading"
@@ -120,12 +124,12 @@ def test_collection_sync_job_service_persists_sync_failure() -> None:
     )
 
     with SessionFactory() as db:
-        job = service.create_job(db)
+        job = service.create_job(db, user_id="user-a")
 
     service.process_job(job.job_id)
 
     with SessionFactory() as db:
-        failed = service.get_job(db, job.job_id)
+        failed = service.get_job(db, job.job_id, user_id="user-a")
 
     assert failed.status == "failed"
     assert failed.error is not None
@@ -149,6 +153,7 @@ def test_collection_sync_job_service_expires_orphaned_active_job_after_restart()
         db.add(
             CollectionSyncJob(
                 id="orphaned-job",
+                user_id="user-a",
                 status="running",
                 step="fetching",
                 message="Fetching collection data",
@@ -159,7 +164,7 @@ def test_collection_sync_job_service_expires_orphaned_active_job_after_restart()
         )
         db.commit()
 
-        active_job = service.get_active_job(db)
+        active_job = service.get_active_job(db, user_id="user-a")
         stale_job = db.get(CollectionSyncJob, "orphaned-job")
 
     assert active_job is None
@@ -184,6 +189,7 @@ def test_collection_sync_job_service_returns_expired_when_polling_orphaned_job()
         db.add(
             CollectionSyncJob(
                 id="orphaned-job",
+                user_id="user-a",
                 status="running",
                 step="fetching",
                 message="Fetching collection data",
@@ -194,7 +200,7 @@ def test_collection_sync_job_service_returns_expired_when_polling_orphaned_job()
         )
         db.commit()
 
-        expired_job = service.get_job(db, "orphaned-job")
+        expired_job = service.get_job(db, "orphaned-job", user_id="user-a")
 
     assert expired_job.status == "expired"
     assert expired_job.error is not None
@@ -208,5 +214,6 @@ def _build_session_factory():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    UserAccount.__table__.create(engine)
     CollectionSyncJob.__table__.create(engine)
     return sessionmaker(bind=engine)

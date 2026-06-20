@@ -9,24 +9,29 @@ from app.models.sessions import Sessions, SessionTracks
 
 class AnalyticsRepository:
     @staticmethod
-    def get_monthly_play_counts(db: Session):
+    def get_monthly_play_counts(db: Session, *, user_id: str | None = None):
         month = AnalyticsRepository._month_expression(db)
         plays = func.count(Sessions.id).label("plays")
-        return db.query(month, plays).filter(Sessions.played_at.isnot(None)).group_by(month).order_by(month.asc()).all()
+        query = db.query(month, plays).filter(Sessions.played_at.isnot(None))
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.group_by(month).order_by(month.asc()).all()
 
     @staticmethod
     def get_sessions_for_month(
         db: Session,
         *,
+        user_id: str | None = None,
         month: str,
         limit: int,
         offset: int,
     ) -> list[tuple[Sessions, Releases]]:
         month_expression = AnalyticsRepository._month_expression(db)
+        query = db.query(Sessions, Releases).join(Releases, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         return (
-            db.query(Sessions, Releases)
-            .join(Releases, Sessions.release_id == Releases.id)
-            .filter(Sessions.played_at.isnot(None))
+            query.filter(Sessions.played_at.isnot(None))
             .filter(month_expression == month)
             .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
             .offset(offset)
@@ -55,24 +60,22 @@ class AnalyticsRepository:
         return tracks_by_session_id
 
     @staticmethod
-    def count_sessions_for_month(db: Session, *, month: str) -> int:
+    def count_sessions_for_month(db: Session, *, month: str, user_id: str | None = None) -> int:
         month_expression = AnalyticsRepository._month_expression(db)
-        return (
-            db.query(func.count(Sessions.id))
-            .filter(Sessions.played_at.isnot(None))
-            .filter(month_expression == month)
-            .scalar()
-            or 0
-        )
+        query = db.query(func.count(Sessions.id)).filter(Sessions.played_at.isnot(None))
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.filter(month_expression == month).scalar() or 0
 
     @staticmethod
-    def get_top_records(db: Session, *, limit: int):
+    def get_top_records(db: Session, *, limit: int, user_id: str | None = None):
         plays = func.count(Sessions.id).label("plays")
         average_rating = func.avg(Sessions.rating).label("average_rating")
+        query = db.query(Releases, plays, average_rating).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         rows = (
-            db.query(Releases, plays, average_rating)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .group_by(Releases.id)
+            query.group_by(Releases.id)
             .order_by(
                 plays.desc(), func.coalesce(average_rating, 0).desc(), Releases.artist.asc(), Releases.title.asc()
             )
@@ -80,8 +83,8 @@ class AnalyticsRepository:
             .all()
         )
         release_ids = [release.id for release, _plays, _average_rating in rows]
-        top_tracks = AnalyticsRepository._get_top_tracks_by_release(db, release_ids)
-        top_moods = AnalyticsRepository._get_top_moods_by_release(db, release_ids)
+        top_tracks = AnalyticsRepository._get_top_tracks_by_release(db, release_ids, user_id=user_id)
+        top_moods = AnalyticsRepository._get_top_moods_by_release(db, release_ids, user_id=user_id)
         return [
             (release, plays, average_rating, top_tracks.get(release.id), top_moods.get(release.id))
             for release, plays, average_rating in rows
@@ -91,15 +94,17 @@ class AnalyticsRepository:
     def get_records_for_rating(
         db: Session,
         *,
+        user_id: str | None = None,
         rating: int,
         limit: int,
         offset: int,
     ) -> list[tuple[Releases, int]]:
         count = func.count(Sessions.id).label("count")
+        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         return (
-            db.query(Releases, count)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Sessions.rating == rating)
+            query.filter(Sessions.rating == rating)
             .group_by(Releases.id)
             .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
             .offset(offset)
@@ -108,40 +113,36 @@ class AnalyticsRepository:
         )
 
     @staticmethod
-    def count_records_for_rating(db: Session, *, rating: int) -> int:
-        return (
-            db.query(Releases.id)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Sessions.rating == rating)
-            .group_by(Releases.id)
-            .count()
-        )
+    def count_records_for_rating(db: Session, *, rating: int, user_id: str | None = None) -> int:
+        query = db.query(Releases.id).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.filter(Sessions.rating == rating).group_by(Releases.id).count()
 
     @staticmethod
-    def get_rating_distribution(db: Session):
+    def get_rating_distribution(db: Session, *, user_id: str | None = None):
         plays = func.count(Sessions.id).label("plays")
-        return (
-            db.query(Sessions.rating, plays)
-            .filter(Sessions.rating.isnot(None))
-            .group_by(Sessions.rating)
-            .order_by(Sessions.rating.asc())
-            .all()
-        )
+        query = db.query(Sessions.rating, plays).filter(Sessions.rating.isnot(None))
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.group_by(Sessions.rating).order_by(Sessions.rating.asc()).all()
 
     @staticmethod
     def get_records_for_mood(
         db: Session,
         *,
+        user_id: str | None = None,
         mood: str,
         limit: int,
         offset: int,
     ) -> list[tuple[Releases, int]]:
         count = func.count(Sessions.id).label("count")
         normalized_mood = AnalyticsRepository._normalized_label(mood)
+        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         return (
-            db.query(Releases, count)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Sessions.mood.isnot(None))
+            query.filter(Sessions.mood.isnot(None))
             .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
             .group_by(Releases.id)
             .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
@@ -151,20 +152,24 @@ class AnalyticsRepository:
         )
 
     @staticmethod
-    def count_records_for_mood(db: Session, *, mood: str) -> int:
+    def count_records_for_mood(db: Session, *, mood: str, user_id: str | None = None) -> int:
         normalized_mood = AnalyticsRepository._normalized_label(mood)
+        query = db.query(Releases.id).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         return (
-            db.query(Releases.id)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Sessions.mood.isnot(None))
+            query.filter(Sessions.mood.isnot(None))
             .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
             .group_by(Releases.id)
             .count()
         )
 
     @staticmethod
-    def get_mood_distribution(db: Session):
-        mood_rows = db.query(Sessions.mood).filter(Sessions.mood.isnot(None)).filter(Sessions.mood != "").all()
+    def get_mood_distribution(db: Session, *, user_id: str | None = None):
+        query = db.query(Sessions.mood).filter(Sessions.mood.isnot(None)).filter(Sessions.mood != "")
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        mood_rows = query.all()
         mood_counts: dict[str, tuple[str, int]] = {}
         for (mood,) in mood_rows:
             canonical_mood = mood.strip()
@@ -179,12 +184,14 @@ class AnalyticsRepository:
     def get_records_for_style(
         db: Session,
         *,
+        user_id: str | None = None,
         style: str,
         limit: int,
         offset: int,
     ) -> list[tuple[Releases, int]]:
         records, _total = AnalyticsRepository.get_records_for_style_page(
             db,
+            user_id=user_id,
             style=style,
             limit=limit,
             offset=offset,
@@ -195,25 +202,24 @@ class AnalyticsRepository:
     def get_records_for_style_page(
         db: Session,
         *,
+        user_id: str | None = None,
         style: str,
         limit: int,
         offset: int,
     ) -> tuple[list[tuple[Releases, int]], int]:
-        records = AnalyticsRepository._get_style_record_counts(db, style=style)
+        records = AnalyticsRepository._get_style_record_counts(db, style=style, user_id=user_id)
         return records[offset : offset + limit], len(records)
 
     @staticmethod
-    def count_records_for_style(db: Session, *, style: str) -> int:
-        return len(AnalyticsRepository._get_style_record_counts(db, style=style))
+    def count_records_for_style(db: Session, *, style: str, user_id: str | None = None) -> int:
+        return len(AnalyticsRepository._get_style_record_counts(db, style=style, user_id=user_id))
 
     @staticmethod
-    def get_style_distribution(db: Session):
-        style_rows = (
-            db.query(Releases.styles)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Releases.styles.isnot(None))
-            .all()
-        )
+    def get_style_distribution(db: Session, *, user_id: str | None = None):
+        query = db.query(Releases.styles).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        style_rows = query.filter(Releases.styles.isnot(None)).all()
         style_counts: dict[str, tuple[str, int]] = {}
         for (styles,) in style_rows:
             for style in AnalyticsRepository._release_styles(styles):
@@ -231,17 +237,20 @@ class AnalyticsRepository:
         return func.to_char(Sessions.played_at, "YYYY-MM").label("month")
 
     @staticmethod
-    def _get_style_record_counts(db: Session, *, style: str) -> list[tuple[Releases, int]]:
+    def _get_style_record_counts(
+        db: Session,
+        *,
+        style: str,
+        user_id: str | None = None,
+    ) -> list[tuple[Releases, int]]:
         target_style = AnalyticsRepository._normalized_label(style)
         if not target_style:
             return []
 
-        style_rows = (
-            db.query(Releases, Sessions.id)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .filter(Releases.styles.isnot(None))
-            .all()
-        )
+        query = db.query(Releases, Sessions.id).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        style_rows = query.filter(Releases.styles.isnot(None)).all()
         release_counts: dict[str, tuple[Releases, int]] = {}
         for release, _session_id in style_rows:
             if not AnalyticsRepository._styles_include(release.styles, target_style):
@@ -255,14 +264,23 @@ class AnalyticsRepository:
         )
 
     @staticmethod
-    def _get_top_tracks_by_release(db: Session, release_ids: list[str]) -> dict[str, str]:
+    def _get_top_tracks_by_release(
+        db: Session,
+        release_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, str]:
         if not release_ids:
             return {}
 
+        query = db.query(Sessions.release_id, SessionTracks.track_title).join(
+            SessionTracks,
+            SessionTracks.session_id == Sessions.id,
+        )
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         rows = (
-            db.query(Sessions.release_id, SessionTracks.track_title)
-            .join(SessionTracks, SessionTracks.session_id == Sessions.id)
-            .filter(Sessions.release_id.in_(release_ids))
+            query.filter(Sessions.release_id.in_(release_ids))
             .filter(SessionTracks.track_title.isnot(None))
             .filter(func.trim(SessionTracks.track_title) != "")
             .all()
@@ -284,13 +302,20 @@ class AnalyticsRepository:
         }
 
     @staticmethod
-    def _get_top_moods_by_release(db: Session, release_ids: list[str]) -> dict[str, str]:
+    def _get_top_moods_by_release(
+        db: Session,
+        release_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, str]:
         if not release_ids:
             return {}
 
+        query = db.query(Sessions.release_id, Sessions.mood)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         rows = (
-            db.query(Sessions.release_id, Sessions.mood)
-            .filter(Sessions.release_id.in_(release_ids))
+            query.filter(Sessions.release_id.in_(release_ids))
             .filter(Sessions.mood.isnot(None))
             .filter(func.trim(Sessions.mood) != "")
             .all()

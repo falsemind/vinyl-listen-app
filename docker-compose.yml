@@ -73,6 +73,14 @@ services:
       DATABASE_COLLECTION_URL: postgresql://vinyl:vinyl@postgres:5432/vinyl_collection
       DISCOGS_BASE_URL: ${DISCOGS_BASE_URL:-https://api.discogs.com}
       DISCOGS_TOKEN_ENCRYPTION_KEY: ${DISCOGS_TOKEN_ENCRYPTION_KEY:-}
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:-local-dev-access-token-secret-change-before-production-please}
+      AUTH_CODE_HASH_SECRET: ${AUTH_CODE_HASH_SECRET:-local-dev-code-hash-secret-change-before-production-please}
+      AUTH_EMAIL_DELIVERY_BACKEND: ${AUTH_EMAIL_DELIVERY_BACKEND:-local}
+      AUTH_LOCAL_EMAIL_OUTBOX_PATH: ${AUTH_LOCAL_EMAIL_OUTBOX_PATH:-/app/backend/auth-local-email-outbox/auth-local-email-outbox.jsonl}
+      AUTH_EMAIL_FROM_ADDRESS: ${AUTH_EMAIL_FROM_ADDRESS:-noreply@vinyl-listen.local}
+      MAILGUN_API_BASE_URL: ${MAILGUN_API_BASE_URL:-https://api.mailgun.net}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
       AI_CHAT_ENABLED: ${AI_CHAT_ENABLED:-false}
       AI_CHAT_BASE_URL: ${AI_CHAT_BASE_URL:-http://host.docker.internal:1234}
       AI_CHAT_ENDPOINT_PATH: ${AI_CHAT_ENDPOINT_PATH:-/api/v1/chat}
@@ -102,6 +110,7 @@ services:
       INBOUND_RATE_LIMIT_REDIS_FAIL_OPEN: ${INBOUND_RATE_LIMIT_REDIS_FAIL_OPEN:-true}
       INBOUND_RATE_LIMIT_REDIS_TIMEOUT_SECONDS: ${INBOUND_RATE_LIMIT_REDIS_TIMEOUT_SECONDS:-0.25}
     volumes:
+      - ./backend/auth-local-email-outbox:/app/backend/auth-local-email-outbox
       - ./backend/identify_ocr_images:/app/backend/identify_ocr_images
       - ./spotify_import:/app/backend/spotify_import
     ports:

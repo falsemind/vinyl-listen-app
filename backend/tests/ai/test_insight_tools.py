@@ -10,7 +10,7 @@ def test_tool_runner_returns_grounded_collection_context() -> None:
     _create_collection_tables(engine)
 
     with session_factory() as db:
-        results = AiInsightToolRunner().run(db, message="What style did I play most lately?")
+        results = AiInsightToolRunner().run(db, user_id="user-a", message="What style did I play most lately?")
 
     assert [result.name for result in results] == [
         "get_listening_summary",
@@ -30,7 +30,7 @@ def test_tool_runner_selects_mood_and_rating_tools() -> None:
     _create_collection_tables(engine)
 
     with session_factory() as db:
-        results = AiInsightToolRunner().run(db, message="How are my mood and rating patterns?")
+        results = AiInsightToolRunner().run(db, user_id="user-a", message="How are my mood and rating patterns?")
 
     assert [result.name for result in results] == [
         "get_listening_summary",
@@ -48,7 +48,9 @@ def test_tool_runner_prioritizes_session_notes_for_recommendations() -> None:
     _create_collection_tables(engine)
 
     with session_factory() as db:
-        results = AiInsightToolRunner().run(db, message="Recommend something special based on my notes")
+        results = AiInsightToolRunner().run(
+            db, user_id="user-a", message="Recommend something special based on my notes"
+        )
 
     assert [result.name for result in results] == [
         "get_listening_summary",
@@ -70,6 +72,7 @@ def test_tool_runner_uses_spotify_overlap_and_time_patterns() -> None:
     with session_factory() as db:
         results = AiInsightToolRunner().run(
             db,
+            user_id="user-a",
             message="How does my Spotify streaming overlap with my vinyl collection at night?",
         )
 
@@ -92,7 +95,11 @@ def test_tool_runner_uses_spotify_collection_recommendation_signals() -> None:
     _create_spotify_rollup_tables(engine)
 
     with session_factory() as db:
-        results = AiInsightToolRunner().run(db, message="Recommend from my collection using Spotify history")
+        results = AiInsightToolRunner().run(
+            db,
+            user_id="user-a",
+            message="Recommend from my collection using Spotify history",
+        )
 
     result_names = [result.name for result in results]
     assert "get_spotify_collection_recommendation_signals" in result_names
@@ -109,13 +116,21 @@ def _create_collection_tables(engine) -> None:
                 discogs_release_id INTEGER NOT NULL,
                 artist TEXT NOT NULL,
                 title TEXT NOT NULL,
+                format TEXT,
                 label TEXT,
                 year INTEGER,
                 catalog_number TEXT,
                 barcode TEXT,
                 genres TEXT,
                 styles TEXT,
+                thumbnail_url TEXT,
                 cover_image_url TEXT,
+                in_collection BOOLEAN,
+                collection_added_at TIMESTAMP,
+                collection_removed_at TIMESTAMP,
+                last_discogs_sync_at TIMESTAMP,
+                discogs_instance_id INTEGER,
+                is_favorite BOOLEAN,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             )
@@ -123,12 +138,26 @@ def _create_collection_tables(engine) -> None:
         connection.exec_driver_sql("""
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 release_id TEXT NOT NULL,
+                session_group_id TEXT,
                 rating INTEGER,
                 mood TEXT,
                 notes TEXT,
                 played_at TIMESTAMP,
                 vinyl_side TEXT,
+                created_at TIMESTAMP
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE session_tracks (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                track_position TEXT NOT NULL,
+                track_artist TEXT,
+                track_title TEXT NOT NULL,
+                track_duration TEXT,
+                track_sequence INTEGER,
                 created_at TIMESTAMP
             )
             """)
@@ -141,15 +170,15 @@ def _create_collection_tables(engine) -> None:
                  '["House"]', '2026-01-01', '2026-01-01')
             """)
         connection.exec_driver_sql("""
-            INSERT INTO sessions (id, release_id, rating, mood, notes, played_at, vinyl_side, created_at)
+            INSERT INTO sessions (id, user_id, release_id, rating, mood, notes, played_at, vinyl_side, created_at)
             VALUES
-                ('session-1', 'release-1', 5, 'Focused',
+                ('session-1', 'user-a', 'release-1', 5, 'Focused',
                  'Huge low end, felt meditative after a long day.',
                  '2026-01-03T10:00:00+00:00', 'A', '2026-01-03T10:00:00+00:00'),
-                ('session-2', 'release-1', 4, 'Focused',
+                ('session-2', 'user-a', 'release-1', 4, 'Focused',
                  NULL,
                  '2026-01-02T10:00:00+00:00', 'B', '2026-01-02T10:00:00+00:00'),
-                ('session-3', 'release-2', 5, 'Late Night',
+                ('session-3', 'user-a', 'release-2', 5, 'Late Night',
                  'Warm and loose, best for late-night focus.',
                  '2026-01-01T10:00:00+00:00', 'A', '2026-01-01T10:00:00+00:00')
             """)
@@ -159,7 +188,9 @@ def _create_spotify_rollup_tables(engine) -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql("""
             CREATE TABLE spotify_artist_stats (
-                normalized_artist_name TEXT PRIMARY KEY,
+                stat_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                normalized_artist_name TEXT NOT NULL,
                 artist_name TEXT NOT NULL,
                 play_count INTEGER NOT NULL,
                 meaningful_play_count INTEGER NOT NULL,
@@ -171,7 +202,9 @@ def _create_spotify_rollup_tables(engine) -> None:
             """)
         connection.exec_driver_sql("""
             CREATE TABLE spotify_hourly_stats (
-                played_hour INTEGER PRIMARY KEY,
+                stat_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                played_hour INTEGER NOT NULL,
                 play_count INTEGER NOT NULL,
                 meaningful_play_count INTEGER NOT NULL,
                 skipped_count INTEGER NOT NULL,
@@ -181,6 +214,7 @@ def _create_spotify_rollup_tables(engine) -> None:
         connection.exec_driver_sql("""
             CREATE TABLE spotify_monthly_artist_stats (
                 stat_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
                 played_year_month TEXT NOT NULL,
                 normalized_artist_name TEXT NOT NULL,
                 artist_name TEXT NOT NULL,
@@ -192,7 +226,9 @@ def _create_spotify_rollup_tables(engine) -> None:
             """)
         connection.exec_driver_sql("""
             CREATE TABLE spotify_vinyl_artist_matches (
-                normalized_artist_name TEXT PRIMARY KEY,
+                match_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                normalized_artist_name TEXT NOT NULL,
                 artist_name TEXT NOT NULL,
                 release_ids TEXT NOT NULL,
                 release_count INTEGER NOT NULL,
@@ -204,6 +240,7 @@ def _create_spotify_rollup_tables(engine) -> None:
         connection.exec_driver_sql("""
             CREATE TABLE spotify_vinyl_release_matches (
                 match_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
                 release_id TEXT NOT NULL,
                 normalized_artist_name TEXT NOT NULL,
                 normalized_album_name TEXT NOT NULL,
@@ -218,6 +255,8 @@ def _create_spotify_rollup_tables(engine) -> None:
             """)
         connection.exec_driver_sql("""
             INSERT INTO spotify_artist_stats (
+                stat_key,
+                user_id,
                 normalized_artist_name,
                 artist_name,
                 play_count,
@@ -228,6 +267,8 @@ def _create_spotify_rollup_tables(engine) -> None:
                 last_played_at
             )
             VALUES (
+                'user-a:rhythm-sound',
+                'user-a',
                 'rhythm sound',
                 'Rhythm & Sound',
                 4,
@@ -240,6 +281,8 @@ def _create_spotify_rollup_tables(engine) -> None:
             """)
         connection.exec_driver_sql("""
             INSERT INTO spotify_hourly_stats (
+                stat_key,
+                user_id,
                 played_hour,
                 play_count,
                 meaningful_play_count,
@@ -247,13 +290,14 @@ def _create_spotify_rollup_tables(engine) -> None:
                 total_ms_played
             )
             VALUES
-                (4, 2, 2, 0, 360000),
-                (5, 1, 1, 0, 180000),
-                (18, 1, 0, 1, 45000)
+                ('user-a:4', 'user-a', 4, 2, 2, 0, 360000),
+                ('user-a:5', 'user-a', 5, 1, 1, 0, 180000),
+                ('user-a:18', 'user-a', 18, 1, 0, 1, 45000)
             """)
         connection.exec_driver_sql("""
             INSERT INTO spotify_monthly_artist_stats (
                 stat_key,
+                user_id,
                 played_year_month,
                 normalized_artist_name,
                 artist_name,
@@ -264,6 +308,7 @@ def _create_spotify_rollup_tables(engine) -> None:
             )
             VALUES (
                 '2020-01:rhythm-sound',
+                'user-a',
                 '2020-01',
                 'rhythm sound',
                 'Rhythm & Sound',
@@ -275,6 +320,8 @@ def _create_spotify_rollup_tables(engine) -> None:
             """)
         connection.exec_driver_sql("""
             INSERT INTO spotify_vinyl_artist_matches (
+                match_key,
+                user_id,
                 normalized_artist_name,
                 artist_name,
                 release_ids,
@@ -284,6 +331,8 @@ def _create_spotify_rollup_tables(engine) -> None:
                 explanation
             )
             VALUES (
+                'user-a:rhythm-sound',
+                'user-a',
                 'rhythm sound',
                 'Rhythm & Sound',
                 '["release-1"]',
@@ -296,6 +345,7 @@ def _create_spotify_rollup_tables(engine) -> None:
         connection.exec_driver_sql("""
             INSERT INTO spotify_vinyl_release_matches (
                 match_key,
+                user_id,
                 release_id,
                 normalized_artist_name,
                 normalized_album_name,
@@ -309,6 +359,7 @@ def _create_spotify_rollup_tables(engine) -> None:
             )
             VALUES (
                 'release-1:rhythm-sound:carrier',
+                'user-a',
                 'release-1',
                 'rhythm sound',
                 'carrier',

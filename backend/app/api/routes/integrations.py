@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
 from app.schemas.integrations import DiscogsIntegrationStatusResponse, DiscogsTokenRequest
 from app.schemas.sessions import ErrorResponse
@@ -28,9 +29,10 @@ def get_discogs_integration_service() -> DiscogsIntegrationService:
 @router.get("/discogs", response_model=DiscogsIntegrationStatusResponse)
 def get_discogs_integration_status(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
 ) -> DiscogsIntegrationStatusResponse:
-    return service.get_status(db)
+    return service.get_status(db, user_id=current_user.account.id)
 
 
 @router.put(
@@ -44,10 +46,11 @@ def get_discogs_integration_status(
 def save_discogs_access_token(
     payload: DiscogsTokenRequest,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
 ) -> DiscogsIntegrationStatusResponse | JSONResponse:
     try:
-        return service.save_access_token(db, access_token=payload.access_token)
+        return service.save_access_token(db, access_token=payload.access_token, user_id=current_user.account.id)
     except DiscogsTokenValidationError as error:
         return _error_response(
             status_code=400,
@@ -65,9 +68,10 @@ def save_discogs_access_token(
 @router.delete("/discogs/token", response_model=DiscogsIntegrationStatusResponse)
 def delete_discogs_access_token(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[DiscogsIntegrationService, Depends(get_discogs_integration_service)],
 ) -> DiscogsIntegrationStatusResponse:
-    return service.delete_access_token(db)
+    return service.delete_access_token(db, user_id=current_user.account.id)
 
 
 def _error_response(*, status_code: int, code: str, message: str) -> JSONResponse:

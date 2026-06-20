@@ -33,6 +33,7 @@ class StubAiInsightsService:
         self,
         *,
         db: object,
+        user_id: str,
         message: str,
         conversation_id: str | None = None,
         client_context: dict[str, str] | None = None,
@@ -40,6 +41,7 @@ class StubAiInsightsService:
         _ = db
         self.calls.append(
             {
+                "user_id": user_id,
                 "message": message,
                 "conversation_id": conversation_id,
                 "client_context": client_context,
@@ -57,9 +59,10 @@ class StubAiInsightsService:
         self,
         db: object,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsHistory:
-        _ = db
+        _ = db, user_id
         return AiInsightsHistory(
             conversation_id=conversation_id or "local-single-thread",
             messages=[
@@ -82,18 +85,20 @@ class StubAiInsightsService:
         self,
         db: object,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsClearResult:
-        _ = db
+        _ = db, user_id
         return AiInsightsClearResult(conversation_id=conversation_id or "local-single-thread", deleted_messages=2)
 
     def export_history(
         self,
         db: object,
         *,
+        user_id: str,
         conversation_id: str | None = None,
     ) -> AiInsightsHistory:
-        return self.get_history(db, conversation_id=conversation_id)
+        return self.get_history(db, user_id=user_id, conversation_id=conversation_id)
 
 
 class StubSpotifyListeningImportService:
@@ -105,6 +110,7 @@ class StubSpotifyListeningImportService:
         db: object,
         file_paths: list[Path],
         *,
+        user_id: str,
         batch_size: int,
         refresh_rollups: bool,
     ) -> SpotifyListeningImportResult:
@@ -112,6 +118,7 @@ class StubSpotifyListeningImportService:
         self.calls.append(
             {
                 "file_paths": file_paths,
+                "user_id": user_id,
                 "batch_size": batch_size,
                 "refresh_rollups": refresh_rollups,
             }
@@ -151,6 +158,7 @@ def test_chat_endpoint_returns_stub_response_and_forwards_request() -> None:
     }
     assert service.calls == [
         {
+            "user_id": "test-user",
             "message": "What style did I explore most this month?",
             "conversation_id": "conversation-123",
             "client_context": {"timezone": "America/Los_Angeles"},
@@ -282,6 +290,7 @@ def test_spotify_import_endpoint_returns_import_counts(monkeypatch, tmp_path) ->
     assert service.calls == [
         {
             "file_paths": [import_file],
+            "user_id": "test-user",
             "batch_size": 500,
             "refresh_rollups": True,
         }

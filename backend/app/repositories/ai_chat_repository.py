@@ -8,17 +8,27 @@ from app.models.ai_chat import AiChatMessageRecord, AiChatSession
 
 class AiChatRepository:
     @staticmethod
-    def get_session(db: Session, conversation_id: str) -> AiChatSession | None:
-        return db.get(AiChatSession, conversation_id)
+    def get_session(db: Session, *, user_id: str, conversation_id: str) -> AiChatSession | None:
+        return (
+            db.query(AiChatSession)
+            .filter(AiChatSession.user_id == user_id)
+            .filter(AiChatSession.public_conversation_id == conversation_id)
+            .one_or_none()
+        )
 
     @staticmethod
-    def get_or_create_session(db: Session, conversation_id: str) -> AiChatSession:
-        session = AiChatRepository.get_session(db, conversation_id)
+    def get_or_create_session(db: Session, *, user_id: str, conversation_id: str) -> AiChatSession:
+        session = AiChatRepository.get_session(db, user_id=user_id, conversation_id=conversation_id)
         if session is not None:
             return session
 
         now = datetime.now(UTC)
-        session = AiChatSession(id=conversation_id, created_at=now, updated_at=now)
+        session = AiChatSession(
+            user_id=user_id,
+            public_conversation_id=conversation_id,
+            created_at=now,
+            updated_at=now,
+        )
         db.add(session)
         db.flush()
         return session
@@ -28,11 +38,16 @@ class AiChatRepository:
         db: Session,
         conversation_id: str,
         *,
+        user_id: str,
         limit: int | None = None,
     ) -> list[AiChatMessageRecord]:
+        session = AiChatRepository.get_session(db, user_id=user_id, conversation_id=conversation_id)
+        if session is None:
+            return []
+
         query = (
             db.query(AiChatMessageRecord)
-            .filter(AiChatMessageRecord.conversation_id == conversation_id)
+            .filter(AiChatMessageRecord.conversation_id == session.id)
             .order_by(AiChatMessageRecord.created_at.asc(), AiChatMessageRecord.id.asc())
         )
         if limit is None:
@@ -40,7 +55,7 @@ class AiChatRepository:
 
         recent_messages = (
             db.query(AiChatMessageRecord)
-            .filter(AiChatMessageRecord.conversation_id == conversation_id)
+            .filter(AiChatMessageRecord.conversation_id == session.id)
             .order_by(AiChatMessageRecord.created_at.desc(), AiChatMessageRecord.id.desc())
             .limit(limit)
             .all()
@@ -51,17 +66,18 @@ class AiChatRepository:
     def append_turn(
         db: Session,
         *,
+        user_id: str,
         conversation_id: str,
         user_content: str,
         assistant_content: str,
         used_tools: list[str],
         client_context: dict[str, str] | None,
     ) -> tuple[AiChatMessageRecord, AiChatMessageRecord]:
-        session = AiChatRepository.get_or_create_session(db, conversation_id)
+        session = AiChatRepository.get_or_create_session(db, user_id=user_id, conversation_id=conversation_id)
         now = datetime.now(UTC)
         session.updated_at = now
         user_message = AiChatMessageRecord(
-            conversation_id=conversation_id,
+            conversation_id=session.id,
             role="user",
             content=user_content,
             used_tools=[],
@@ -69,7 +85,7 @@ class AiChatRepository:
             created_at=now,
         )
         assistant_message = AiChatMessageRecord(
-            conversation_id=conversation_id,
+            conversation_id=session.id,
             role="assistant",
             content=assistant_content,
             used_tools=used_tools,
@@ -83,14 +99,18 @@ class AiChatRepository:
         return user_message, assistant_message
 
     @staticmethod
-    def delete_conversation(db: Session, conversation_id: str) -> int:
+    def delete_conversation(db: Session, *, user_id: str, conversation_id: str) -> int:
+        session = AiChatRepository.get_session(db, user_id=user_id, conversation_id=conversation_id)
+        if session is None:
+            return 0
+
         deleted_messages = (
             db.query(func.count(AiChatMessageRecord.id))
-            .filter(AiChatMessageRecord.conversation_id == conversation_id)
+            .filter(AiChatMessageRecord.conversation_id == session.id)
             .scalar()
             or 0
         )
-        db.execute(delete(AiChatMessageRecord).where(AiChatMessageRecord.conversation_id == conversation_id))
-        db.execute(delete(AiChatSession).where(AiChatSession.id == conversation_id))
+        db.execute(delete(AiChatMessageRecord).where(AiChatMessageRecord.conversation_id == session.id))
+        db.execute(delete(AiChatSession).where(AiChatSession.id == session.id))
         db.commit()
         return deleted_messages

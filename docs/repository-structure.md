@@ -99,10 +99,12 @@ backend/app/
 │   ├── chat_adapter.py
 │   └── insight_tools.py
 ├── api/
+│   ├── auth_dependencies.py
 │   ├── router.py
 │   └── routes/
 │       ├── ai.py
 │       ├── analytics.py
+│       ├── auth.py
 │       ├── collection.py
 │       ├── health.py
 │       ├── identify.py
@@ -120,6 +122,7 @@ backend/app/
 │   └── session.py
 ├── models/
 │   ├── ai_chat.py
+│   ├── auth.py
 │   ├── collection_folders.py
 │   ├── collection_settings.py
 │   ├── collection_sync_job.py
@@ -135,6 +138,7 @@ backend/app/
 ├── repositories/
 │   ├── ai_chat_repository.py
 │   ├── analytics_repository.py
+│   ├── auth_repository.py
 │   ├── collection_folders_repository.py
 │   ├── collection_settings_repository.py
 │   ├── collection_sync_job_repository.py
@@ -149,6 +153,7 @@ backend/app/
 ├── schemas/
 │   ├── ai.py
 │   ├── analytics.py
+│   ├── auth.py
 │   ├── collection.py
 │   ├── identify.py
 │   ├── integrations.py
@@ -157,12 +162,16 @@ backend/app/
 ├── services/
 │   ├── ai_insights_service.py
 │   ├── analytics_service.py
+│   ├── auth_account_service.py
+│   ├── auth_email_delivery.py
+│   ├── auth_token_service.py
 │   ├── collection_sync_job_service.py
 │   ├── collection_sync_service.py
 │   ├── discogs_integration_service.py
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
 │   ├── identify_service.py
+│   ├── password_hashing.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
 │   ├── token_cipher.py
@@ -175,16 +184,17 @@ backend/app/
 
 | Layer | Responsibility |
 | --- | --- |
-| `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles validation errors, and logs runtime dependency status during startup. |
+| `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles auth/validation errors, and logs runtime dependency status during startup. |
 | `ai/` | AI runtime adapters owned by the backend, currently disabled fallback plus LM Studio native chat and OpenAI-compatible chat completions support. |
-| `api/router.py` | Registers versioned route modules under `/health`, `/identify`, `/releases`, `/collection`, `/integrations`, `/sessions`, `/analytics`, and `/ai`. |
+| `api/auth_dependencies.py` | Bearer token dependency for protected routes and current-user lookup. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/auth`, `/identify`, `/releases`, `/collection`, `/integrations`, `/sessions`, `/analytics`, and `/ai`; all non-health/non-auth application routers require auth by default. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for releases, collection settings, Discogs collection folders, release-folder membership, provider integrations, Discogs cache rows, identify jobs, collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/audit/deletion-audit foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: auth account/token/email/password/deletion handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -195,17 +205,29 @@ All routes are nested under `/api/v1`.
 | --- | --- | --- |
 | `GET /health` | `api/routes/health.py` | Runtime/database health checks. |
 | `GET /health/runtime` | `api/routes/health.py` | Optional dependency status. |
-| `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard. |
-| `POST /identify/jobs` | `api/routes/identify.py` | `IdentifyJobService` with per-client admission control. |
-| `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | `IdentifyJobService`. |
+| `POST /auth/register` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/verify-email` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/resend-verification` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/login` | `api/routes/auth.py` | `AuthAccountService` plus `AuthTokenLifecycleService`. |
+| `POST /auth/refresh` | `api/routes/auth.py` | `AuthTokenLifecycleService`. |
+| `POST /auth/logout` | `api/routes/auth.py` | Current auth session revocation. |
+| `POST /auth/logout-all` | `api/routes/auth.py` | All-session revocation for the current account. |
+| `GET /auth/me` | `api/routes/auth.py` | Current account summary. |
+| `POST /auth/password-reset/request` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/password-reset/confirm` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /auth/password/change` | `api/routes/auth.py` | `AuthAccountService`. |
+| `DELETE /auth/account` | `api/routes/auth.py` | `AuthAccountService`. |
+| `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard and `EntitlementService` usage gate. |
+| `POST /identify/jobs` | `api/routes/identify.py` | User-owned `IdentifyJobService` with per-user/client admission control and usage gate. |
+| `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | User-owned `IdentifyJobService`. |
 | `GET /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
 | `PUT /collection/settings` | `api/routes/collection.py` | `CollectionSettingsRepository`. |
 | `POST /collection/sync` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/active` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
-| `GET /collection/folders` | `api/routes/collection.py` | `CollectionFoldersRepository` plus Discogs integration state. |
-| `GET /collection/releases` | `api/routes/collection.py` | `ReleasesRepository`; supports artist, label, favorites, and Discogs folder filters. |
-| `GET /collection/search` | `api/routes/collection.py` | Collection-only internal release search. |
+| `GET /collection/folders` | `api/routes/collection.py` | User-scoped `CollectionFoldersRepository` plus Discogs integration state. |
+| `GET /collection/releases` | `api/routes/collection.py` | User-scoped `ReleasesRepository` membership query; supports artist, label, favorites, and Discogs folder filters. |
+| `GET /collection/search` | `api/routes/collection.py` | User-scoped collection-only internal release search. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `DELETE /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
@@ -234,8 +256,8 @@ All routes are nested under `/api/v1`.
 | `GET /analytics/records/by-rating` | `api/routes/analytics.py` | `AnalyticsService` rating drilldown with record counts. |
 | `GET /analytics/records/by-mood` | `api/routes/analytics.py` | `AnalyticsService` mood drilldown with record counts. |
 | `GET /analytics/records/by-style` | `api/routes/analytics.py` | `AnalyticsService` style drilldown with record counts. |
-| `POST /ai/chat` | `api/routes/ai.py` | `AiInsightsService` grounded chat service. |
-| `POST /ai/spotify/import` | `api/routes/ai.py` | `SpotifyListeningImportService`. |
+| `POST /ai/chat` | `api/routes/ai.py` | User-scoped `AiInsightsService` grounded chat service. |
+| `POST /ai/spotify/import` | `api/routes/ai.py` | User-scoped `SpotifyListeningImportService`. |
 
 ### Identification Pipeline Package
 
@@ -306,6 +328,7 @@ backend/alembic/
     ├── 4e2a1c9d8b70_add_spotify_listening_import.py
     ├── 8c1d2e3f4a5b_add_session_groups.py
     ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
+    ├── c8d9e0f1a2b3_scope_async_ai_spotify.py
     ├── ab12cd34ef56_add_provider_integrations.py
     └── eed6974773b8_init.py
 

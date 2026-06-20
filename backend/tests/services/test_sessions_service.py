@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.models.sessions import Sessions
+from app.models.sessions import Sessions, SessionTracks
 from app.services.session_groups_service import SessionGroupInactiveError
 from app.services.sessions_service import (
     ReleaseNotFoundError,
@@ -19,7 +19,14 @@ class StubSessionGroupsService:
         self.error = error
         self.calls: list[str | None] = []
 
-    def validate_active_session_group(self, _db, session_group_id: str | None) -> str | None:
+    def validate_active_session_group(
+        self,
+        _db,
+        session_group_id: str | None,
+        *,
+        user_id: str | None = None,
+    ) -> str | None:
+        _ = user_id
         self.calls.append(session_group_id)
         if self.error is not None:
             raise self.error
@@ -31,11 +38,13 @@ def _session(
     release_id: str,
     played_at: datetime,
     *,
+    user_id: str | None = None,
     session_group_id: str | None = None,
     mood: str | None = None,
 ) -> Sessions:
     return Sessions(
         id=session_id,
+        user_id=user_id,
         release_id=release_id,
         session_group_id=session_group_id,
         rating=None,
@@ -267,8 +276,20 @@ def test_create_session_saves_selected_tracks_for_side(
         payload_by_discogs_id={
             555123: {
                 "tracklist": [
-                    {"position": "A1", "type_": "track", "title": "Intro", "duration": "1:00"},
-                    {"position": "A2", "type_": "track", "title": "Main Tune", "duration": ""},
+                    {
+                        "position": "A1",
+                        "type_": "track",
+                        "artists": [{"name": "Pixl", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "Intro",
+                        "duration": "1:00",
+                    },
+                    {
+                        "position": "A2",
+                        "type_": "track",
+                        "artists": [{"name": "Equinox (3)", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "Main Tune",
+                        "duration": "",
+                    },
                     {"position": "B1", "type_": "track", "title": "Flip", "duration": "2:00"},
                 ]
             }
@@ -288,12 +309,54 @@ def test_create_session_saves_selected_tracks_for_side(
 
     tracks = repository.get_tracks_by_session_id(object(), "session-123")
     track_summaries = [
-        (track.track_position, track.track_title, track.track_duration, track.track_sequence) for track in tracks
+        (track.track_position, track.track_artist, track.track_title, track.track_duration, track.track_sequence)
+        for track in tracks
     ]
     assert track_summaries == [
-        ("A1", "Intro", "1:00", 1),
-        ("A2", "Main Tune", None, 2),
+        ("A1", "Pixl & Tim Reaper", "Intro", "1:00", 1),
+        ("A2", "Equinox & Tim Reaper", "Main Tune", None, 2),
     ]
+
+
+def test_response_tracks_enrich_missing_artists_from_cached_discogs(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+) -> None:
+    repository = sessions_repository_factory()
+    release = build_release("release-123", 555123)
+    repository.tracks_by_session_id["session-123"] = [
+        SessionTracks(
+            id="track-1",
+            session_id="session-123",
+            track_position="A1",
+            track_artist=None,
+            track_title="The Rush",
+            track_duration=None,
+            track_sequence=1,
+        )
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[release],
+        payload_by_discogs_id={
+            555123: {
+                "tracklist": [
+                    {
+                        "position": "A1",
+                        "type_": "track",
+                        "artists": [{"name": "Pixl", "join": "&"}, {"name": "Tim Reaper"}],
+                        "title": "The Rush",
+                    }
+                ]
+            }
+        },
+    )
+
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_releases(object(), [("session-123", release)])
+
+    assert tracks_by_session_id["session-123"][0].track_artist == "Pixl & Tim Reaper"
+    assert repository.tracks_by_session_id["session-123"][0].track_artist is None
 
 
 def test_create_session_rejects_track_from_another_side(build_sessions_service) -> None:
@@ -625,10 +688,11 @@ def test_custom_moods_are_persisted_and_listed(
     moods_repository = sessions_moods_repository_factory()
     service = build_sessions_service(moods_repository=moods_repository)
 
-    created = service.create_custom_mood(db=object(), name="  Late   Night  ")
+    created = service.create_custom_mood(db=object(), name="  Late   Night  ", user_id="user-1")
 
     assert created.name == "Late Night"
-    assert [mood.name for mood in service.list_custom_moods(db=object())] == ["Late Night"]
+    assert [mood.name for mood in service.list_custom_moods(db=object(), user_id="user-1")] == ["Late Night"]
+    assert service.list_custom_moods(db=object(), user_id="user-2") == []
 
 
 def test_create_custom_mood_reuses_historical_session_casing(
@@ -641,6 +705,7 @@ def test_create_custom_mood_reuses_historical_session_casing(
         Sessions(
             id="session-historical",
             release_id="release-123",
+            user_id="user-1",
             rating=5,
             mood="LateNight",
             notes=None,
@@ -654,7 +719,7 @@ def test_create_custom_mood_reuses_historical_session_casing(
         moods_repository=sessions_moods_repository_factory(),
     )
 
-    created = service.create_custom_mood(db=object(), name="latenight")
+    created = service.create_custom_mood(db=object(), name="latenight", user_id="user-1")
 
     assert created.name == "LateNight"
 
@@ -665,12 +730,15 @@ def test_create_custom_mood_rejects_duplicate_names(
 ) -> None:
     moods_repository = sessions_moods_repository_factory()
     service = build_sessions_service(moods_repository=moods_repository)
-    service.create_custom_mood(db=object(), name="Late Night")
+    service.create_custom_mood(db=object(), name="Late Night", user_id="user-1")
 
     with pytest.raises(SessionMoodAlreadyExistsError) as exc_info:
-        service.create_custom_mood(db=object(), name="late night")
+        service.create_custom_mood(db=object(), name="late night", user_id="user-1")
 
     assert exc_info.value.code == "duplicate_mood"
+
+    other_user_mood = service.create_custom_mood(db=object(), name="late night", user_id="user-2")
+    assert other_user_mood.name == "late night"
 
 
 @pytest.mark.parametrize("name", ["Lo", "This Mood Name Is Too Long", "Dreamy!", "calm"])
@@ -678,7 +746,7 @@ def test_create_custom_mood_rejects_invalid_names(name: str, build_sessions_serv
     service = build_sessions_service()
 
     with pytest.raises(SessionValidationError) as exc_info:
-        service.create_custom_mood(db=object(), name=name)
+        service.create_custom_mood(db=object(), name=name, user_id="user-1")
 
     assert exc_info.value.code == "invalid_mood"
 
@@ -692,6 +760,7 @@ def test_create_session_canonicalizes_mood_casing_from_history(
         Sessions(
             id="session-historical",
             release_id="release-123",
+            user_id="user-1",
             rating=5,
             mood="LateNight",
             notes=None,
@@ -704,6 +773,7 @@ def test_create_session_canonicalizes_mood_casing_from_history(
 
     service.create_session(
         db=object(),
+        user_id="user-1",
         release_id="release-123",
         rating=4,
         mood="latenight",
@@ -722,11 +792,11 @@ def test_delete_custom_mood_removes_saved_option(
 ) -> None:
     moods_repository = sessions_moods_repository_factory()
     service = build_sessions_service(moods_repository=moods_repository)
-    service.create_custom_mood(db=object(), name="Dubby")
+    service.create_custom_mood(db=object(), name="Dubby", user_id="user-1")
 
-    service.delete_custom_mood(db=object(), name="dubby")
+    service.delete_custom_mood(db=object(), name="dubby", user_id="user-1")
 
-    assert service.list_custom_moods(db=object()) == []
+    assert service.list_custom_moods(db=object(), user_id="user-1") == []
 
 
 def test_record_flow_insights_prefers_timed_sessions_and_one_hour_standalone_sequences(

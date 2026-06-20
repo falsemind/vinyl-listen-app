@@ -44,6 +44,9 @@ class AnalyticsSessionItem(BaseModel):
     session_group: HomeRecentSessionGroupItem | None = None
     artist: str
     title: str
+    year: int | None = None
+    label: str | None = None
+    catalog_number: str | None = None
     thumbnail_url: str | None = None
     date: str | None
     played_at: datetime | None = None

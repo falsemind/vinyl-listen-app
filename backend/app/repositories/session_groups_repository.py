@@ -12,6 +12,7 @@ class SessionGroupsRepository:
     def create(
         db: Session,
         *,
+        user_id: str | None,
         title: str | None,
         style_focus: str,
         mood_direction: str,
@@ -20,6 +21,7 @@ class SessionGroupsRepository:
         started_at: datetime,
     ) -> SessionGroups:
         session_group = SessionGroups(
+            user_id=user_id,
             title=title,
             style_focus=style_focus,
             mood_direction=mood_direction,
@@ -34,23 +36,32 @@ class SessionGroupsRepository:
         return session_group
 
     @staticmethod
-    def get_by_id(db: Session, session_group_id: str) -> SessionGroups | None:
-        return db.query(SessionGroups).filter(SessionGroups.id == session_group_id).first()
+    def get_by_id(db: Session, session_group_id: str, *, user_id: str | None = None) -> SessionGroups | None:
+        query = db.query(SessionGroups).filter(SessionGroups.id == session_group_id)
+        if user_id is not None:
+            query = query.filter(SessionGroups.user_id == user_id)
+        return query.first()
 
     @staticmethod
-    def get_by_ids(db: Session, session_group_ids: list[str]) -> list[SessionGroups]:
+    def get_by_ids(
+        db: Session,
+        session_group_ids: list[str],
+        *,
+        user_id: str | None = None,
+    ) -> list[SessionGroups]:
         if not session_group_ids:
             return []
-        return db.query(SessionGroups).filter(SessionGroups.id.in_(session_group_ids)).all()
+        query = db.query(SessionGroups).filter(SessionGroups.id.in_(session_group_ids))
+        if user_id is not None:
+            query = query.filter(SessionGroups.user_id == user_id)
+        return query.all()
 
     @staticmethod
-    def get_active(db: Session) -> SessionGroups | None:
-        return (
-            db.query(SessionGroups)
-            .filter(SessionGroups.status == "active")
-            .order_by(SessionGroups.started_at.desc(), SessionGroups.created_at.desc())
-            .first()
-        )
+    def get_active(db: Session, *, user_id: str | None = None) -> SessionGroups | None:
+        query = db.query(SessionGroups).filter(SessionGroups.status == "active")
+        if user_id is not None:
+            query = query.filter(SessionGroups.user_id == user_id)
+        return query.order_by(SessionGroups.started_at.desc(), SessionGroups.created_at.desc()).first()
 
     @staticmethod
     def finish(

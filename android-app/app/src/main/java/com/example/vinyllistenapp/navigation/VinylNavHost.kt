@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.TimedSessionGroup
@@ -49,6 +50,7 @@ import com.example.vinyllistenapp.ui.screens.MoodRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.ProcessingScreen
 import com.example.vinyllistenapp.ui.screens.RatingRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.RecentSessionsScreen
+import com.example.vinyllistenapp.ui.screens.RecordActionItemsScreen
 import com.example.vinyllistenapp.ui.screens.RecordDetailScreen
 import com.example.vinyllistenapp.ui.screens.SessionLoggingScreen
 import com.example.vinyllistenapp.ui.screens.SettingsScreen
@@ -67,8 +69,12 @@ private const val COLLECTION_MEMBERSHIP_REFRESH_KEY = "collectionMembershipRefre
 fun VinylNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
+    apiClient: VinylApiClient? = null,
+    authAccountRepository: AuthAccountRepository? = null,
+    onAuthSessionEnded: () -> Unit = {},
+    onAccountDeleted: () -> Unit = {},
 ) {
-    val apiClient = remember { VinylApiClient() }
+    val activeApiClient = apiClient ?: remember { VinylApiClient() }
     val aiInsightsState = rememberAiInsightsScreenState()
     val appScope = rememberCoroutineScope()
     val aiInsightsRequestScope = appScope
@@ -84,7 +90,7 @@ fun VinylNavHost(
     LockPortraitOrientation(enabled = currentRoute.isPortraitLockedOverflowRoute())
 
     suspend fun refreshTimedSession() {
-        runCatching { apiClient.getActiveSessionGroup() }
+        runCatching { activeApiClient.getActiveSessionGroup() }
             .onSuccess { activeTimedSession = it }
     }
 
@@ -111,7 +117,7 @@ fun VinylNavHost(
         isStartingTimedSession = true
         appScope.launch {
             runCatching {
-                apiClient.startSessionGroup(
+                activeApiClient.startSessionGroup(
                     styleFocus = styleFocus,
                     moodDirection = moodDirection,
                     sessionType = sessionType,
@@ -128,7 +134,7 @@ fun VinylNavHost(
         if (isStoppingTimedSession) return
         isStoppingTimedSession = true
         appScope.launch {
-            runCatching { apiClient.finishSessionGroup(sessionGroup.id) }
+            runCatching { activeApiClient.finishSessionGroup(sessionGroup.id) }
                 .onSuccess { activeTimedSession = null }
                 .onFailure { refreshTimedSession() }
             isStoppingTimedSession = false
@@ -176,7 +182,7 @@ fun VinylNavHost(
         ) {
             composable(VinylRoutes.HOME) {
                 HomeScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onLogSession = { navController.navigate(VinylRoutes.captureRecord()) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenAnalytics = { navController.navigate(VinylRoutes.ANALYTICS) },
@@ -196,7 +202,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.RECENT_SESSIONS) {
                 RecentSessionsScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
@@ -214,7 +220,7 @@ fun VinylNavHost(
             ) { backStackEntry ->
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 CaptureRecordScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
                     onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onBarcodeDetected = { barcode ->
@@ -294,7 +300,7 @@ fun VinylNavHost(
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 ProcessingScreen(
                     imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
                         navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
@@ -329,7 +335,7 @@ fun VinylNavHost(
                 val matchMode = flowMode.toMatchConfirmationMode()
                 MatchConfirmationScreen(
                     candidates = latestCandidates,
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     mode = matchMode,
                     onConfirm = { releaseId ->
                         if (matchMode == MatchConfirmationMode.CollectionAdd) {
@@ -369,7 +375,7 @@ fun VinylNavHost(
                     ),
             ) { backStackEntry ->
                 ManualSearchScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     initialBarcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty(),
                     onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onDismiss = {
@@ -381,7 +387,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.COLLECTION_MANUAL_SEARCH) {
                 ManualSearchScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     mode = ManualSearchMode.Collection,
                     onSelectRecord = { releaseId ->
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
@@ -409,7 +415,7 @@ fun VinylNavHost(
             ) { backStackEntry ->
                 SessionLoggingScreen(
                     releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onSave = { releaseId ->
                         appScope.launch { refreshTimedSession() }
                         val previousRoute = navController.previousBackStackEntry?.destination?.route
@@ -441,7 +447,7 @@ fun VinylNavHost(
             ) { backStackEntry ->
                 EditSessionScreen(
                     sessionId = backStackEntry.arguments?.getString(VinylRoutes.SESSION_ID),
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onSave = { releaseId ->
                         val previousRoute = navController.previousBackStackEntry?.destination?.route
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
@@ -461,13 +467,15 @@ fun VinylNavHost(
             ) { backStackEntry ->
                 RecordDetailScreen(
                     releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onAddSession = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onEditSession = { sessionId -> navController.navigate(VinylRoutes.sessionEdit(sessionId)) },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                     onOpenArtistCollection = { artist -> navController.navigate(VinylRoutes.collectionArtist(artist)) },
                     onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
-                    onOpenCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                    onOpenRecordActionItems = { releaseId, actionType ->
+                        navController.navigate(VinylRoutes.recordActionItems(releaseId, actionType))
+                    },
                     onCollectionMembershipChanged = {
                         val handle = navController.previousBackStackEntry?.savedStateHandle
                         handle?.set(
@@ -490,7 +498,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.ANALYTICS) {
                 AnalyticsScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -510,7 +518,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.AI_INSIGHTS) {
                 AiInsightsScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     state = aiInsightsState,
                     requestScope = aiInsightsRequestScope,
                     onHome = {
@@ -520,6 +528,31 @@ fun VinylNavHost(
                     },
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                )
+            }
+            composable(
+                route = VinylRoutes.RECORD_ACTION_ITEMS_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.RELEASE_ID) { type = NavType.StringType },
+                        navArgument(VinylRoutes.ACTION_TYPE) { type = NavType.StringType },
+                    ),
+            ) { backStackEntry ->
+                RecordActionItemsScreen(
+                    releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
+                    actionType = backStackEntry.arguments?.getString(VinylRoutes.ACTION_TYPE),
+                    apiClient = activeApiClient,
+                    onBack = { navController.popBackStack() },
+                    onOpenArtistCollection = { artist ->
+                        navController.navigate(VinylRoutes.collectionArtist(artist)) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
+                    onOpenLabelCollection = { label ->
+                        navController.navigate(VinylRoutes.collectionLabel(label)) {
+                            popUpTo(backStackEntry.destination.id) { inclusive = true }
+                        }
+                    },
                 )
             }
             composable(
@@ -563,7 +596,7 @@ fun VinylNavHost(
                         count = backStackEntry.arguments?.getString(VinylRoutes.FOLDER_COUNT),
                     )
                 CollectionScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     refreshKey = collectionRefreshKey,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
@@ -604,7 +637,7 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.ALL_DISCOGS_FOLDERS) {
                 AllDiscogsFoldersScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onBack = { navController.popBackStack() },
                     onOpenFolder = { folder ->
                         navController.navigate(VinylRoutes.collectionFolder(folder)) {
@@ -615,21 +648,21 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.TOP_RECORDS) {
                 TopRecordsScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
                 )
             }
             composable(VinylRoutes.MOOD_DISTRIBUTION) {
                 MoodDistributionScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onBack = { navController.popBackStack() },
                     onOpenMoodRecords = { mood -> navController.navigate(VinylRoutes.analyticsMoodRecords(mood)) },
                 )
             }
             composable(VinylRoutes.STYLE_DISTRIBUTION) {
                 StyleDistributionScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     onBack = { navController.popBackStack() },
                     onOpenStyleRecords = { style -> navController.navigate(VinylRoutes.analyticsStyleRecords(style)) },
                 )
@@ -639,7 +672,7 @@ fun VinylNavHost(
                 arguments = listOf(navArgument(VinylRoutes.MONTH) { type = NavType.StringType }),
             ) { backStackEntry ->
                 MonthSessionsDrilldownScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     month = backStackEntry.arguments?.getString(VinylRoutes.MONTH).orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
@@ -650,7 +683,7 @@ fun VinylNavHost(
                 arguments = listOf(navArgument(VinylRoutes.RATING) { type = NavType.IntType }),
             ) { backStackEntry ->
                 RatingRecordsDrilldownScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     rating = backStackEntry.arguments?.getInt(VinylRoutes.RATING) ?: 0,
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
@@ -661,7 +694,7 @@ fun VinylNavHost(
                 arguments = listOf(navArgument(VinylRoutes.MOOD) { type = NavType.StringType }),
             ) { backStackEntry ->
                 MoodRecordsDrilldownScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     mood = backStackEntry.arguments?.getString(VinylRoutes.MOOD).orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
@@ -672,7 +705,7 @@ fun VinylNavHost(
                 arguments = listOf(navArgument(VinylRoutes.STYLE) { type = NavType.StringType }),
             ) { backStackEntry ->
                 StyleRecordsDrilldownScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
                     style = backStackEntry.arguments?.getString(VinylRoutes.STYLE).orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenRecord = { releaseId -> navController.navigate(VinylRoutes.recordDetail(releaseId)) },
@@ -680,8 +713,11 @@ fun VinylNavHost(
             }
             composable(VinylRoutes.SETTINGS) {
                 SettingsScreen(
-                    apiClient = apiClient,
+                    apiClient = activeApiClient,
+                    authAccountRepository = authAccountRepository,
                     message = "Application settings",
+                    onAuthSessionEnded = onAuthSessionEnded,
+                    onAccountDeleted = onAccountDeleted,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -710,6 +746,8 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,
+            VinylRoutes.RECORD_ACTION_ITEMS_PATTERN,
+            VinylRoutes.ALL_DISCOGS_FOLDERS,
             VinylRoutes.AI_INSIGHTS,
         )
 

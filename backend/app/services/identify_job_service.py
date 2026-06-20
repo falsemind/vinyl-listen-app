@@ -21,6 +21,7 @@ from app.schemas.identify import (
     IdentifyResponse,
 )
 from app.services.discogs_service import DiscogsClientError
+from app.services.entitlement_service import OCR_IDENTIFY_CAPABILITY, EntitlementService
 from app.services.identify_service import (
     IdentifyCanceledError,
     IdentifyResult,
@@ -153,6 +154,7 @@ class IdentifyJobService:
         *,
         identify_service: IdentifyService | None = None,
         repository: IdentifyJobRepository | None = None,
+        entitlement_service: EntitlementService | None = None,
         admission_controller: IdentifyAdmissionController | None = None,
         session_factory: Callable[[], Session] = SessionLocal,
         now_provider: Callable[[], datetime] | None = None,
@@ -163,6 +165,7 @@ class IdentifyJobService:
     ) -> None:
         self._identify_service = identify_service or IdentifyService()
         self._repository = repository or IdentifyJobRepository()
+        self._entitlement_service = entitlement_service or EntitlementService()
         self._admission_controller = admission_controller or IdentifyAdmissionController(
             max_concurrent_jobs=settings.identify_max_concurrent_jobs,
         )
@@ -180,6 +183,7 @@ class IdentifyJobService:
         self,
         db: Session,
         *,
+        user_id: str,
         image_bytes: bytes,
         filename: str,
         content_type: str,
@@ -196,6 +200,7 @@ class IdentifyJobService:
 
             active_job_count = self._repository.count_active_by_client(
                 db,
+                user_id=user_id,
                 client_key=client_key,
                 active_statuses=ACTIVE_IDENTIFY_JOB_STATUSES,
             )
@@ -229,9 +234,16 @@ class IdentifyJobService:
             admission_ticket = self._admission_controller.acquire_global_slot()
             job_id = str(uuid4())
             try:
+                self._entitlement_service.consume_usage(
+                    db,
+                    user_id=user_id,
+                    capability=OCR_IDENTIFY_CAPABILITY,
+                    event_metadata={"source": "async_identify"},
+                )
                 job = self._repository.create(
                     db,
                     job_id=job_id,
+                    user_id=user_id,
                     status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
                     message="Image upload received",
                     client_key=client_key,
@@ -253,22 +265,22 @@ class IdentifyJobService:
             )
             return self._to_response(job)
 
-    def get_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
-        job = self._repository.get(db, job_id)
+    def get_job(self, db: Session, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        job = self._repository.get(db, job_id, user_id=user_id)
         if job is None:
             raise IdentifyJobNotFoundError(job_id)
         if _ensure_utc(job.expires_at) <= self._now_provider():
             raise IdentifyJobExpiredError(job_id)
         return self._to_response(job)
 
-    def cancel_job(self, db: Session, job_id: str) -> IdentifyJobStatusResponse:
-        existing_job = self._repository.get(db, job_id)
+    def cancel_job(self, db: Session, job_id: str, *, user_id: str) -> IdentifyJobStatusResponse:
+        existing_job = self._repository.get(db, job_id, user_id=user_id)
         if existing_job is None:
             raise IdentifyJobNotFoundError(job_id)
 
         was_terminal = existing_job.status in TERMINAL_IDENTIFY_JOB_STATUSES
         was_cancel_requested = existing_job.cancel_requested_at is not None
-        job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider())
+        job = self._repository.request_cancel(db, job_id, requested_at=self._now_provider(), user_id=user_id)
         if job is None:
             raise IdentifyJobNotFoundError(job_id)
         if was_terminal:
@@ -320,6 +332,7 @@ class IdentifyJobService:
                         image_bytes=image_bytes,
                         filename=filename,
                         content_type=content_type,
+                        user_id=job.user_id,
                         progress_reporter=progress_reporter,
                         cancellation_checker=cancellation_token.is_cancel_requested,
                     )

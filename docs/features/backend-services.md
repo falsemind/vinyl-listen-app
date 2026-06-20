@@ -9,8 +9,13 @@ description: This document explains the backend service layer in `backend/app/se
 
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
+| `auth_account_service.py` | Register accounts, verify email codes, sign in with password, resend verification, run password reset/change flows, and delete accounts after password re-authentication. | `AuthRepository`, `Argon2idPasswordHasher`, auth email sender. |
+| `auth_token_service.py` | Issue access tokens, rotate refresh tokens, detect refresh-token reuse, and enforce inactivity re-auth. | `AuthRepository`, `AccessTokenService`, `consumed_refresh_tokens`. |
+| `auth_email_delivery.py` | Send auth verification/reset messages through local JSONL outbox or Mailgun Provider API. | Auth account service, Mailgun configuration, local outbox path. |
+| `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
+| `entitlement_service.py` | Check capability access and record user-scoped usage events for future gated features. | `AuthRepository`, `user_entitlements`, `usage_events`. |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
-| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `SessionLocal`, admission controller. |
+| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission and usage limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller. |
 | `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
 | `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
 | `discogs_service.py` | Call Discogs search/release/collection APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
@@ -24,11 +29,52 @@ description: This document explains the backend service layer in `backend/app/se
 | `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
 | `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, and read-only tool context. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository. |
 
+## Auth Services
+
+Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependencies.py`. The route layer maps service errors to structured API errors such as `auth_required`, `invalid_access_token`, `email_code_expired`, `refresh_token_reuse_detected`, and `inactivity_reauth_required`.
+
+`AuthAccountService` owns account bootstrap and password flows:
+
+1. `register_account` creates an unverified `user_accounts` row, hashes the password with Argon2id, stores a hashed verification code, and sends the plaintext code through the configured email sender.
+2. `verify_email` consumes the latest matching single-use code and marks the account verified.
+3. `resend_email_verification` issues a new code after the configured cooldown.
+4. `sign_in_with_password` verifies the stored password hash and blocks sign-in until email verification is complete.
+5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions. Reset-request email delivery failures are logged and still return the generic accepted response.
+6. `change_password` verifies the current password, stores a fresh Argon2id hash, revokes other active sessions unless sign-out-everywhere is requested, and sends a best-effort security notification email after the DB commit succeeds.
+7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state including structured auth audit rows for that account, and retains only a minimal deletion audit receipt.
+
+Verification and reset confirmation track failed code attempts on the latest code row for the account. After the configured attempt limit, the flow returns a typed `429` until the lock window expires.
+
+`AuthRepository.record_auth_audit_event` stores structured audit rows for auth-sensitive operations. Current event coverage includes account registration, email verification/resend, sign-in success/failure, password reset request/confirmation, password change success/failure, account deletion rejection, auth session creation, refresh-token rotation/rejection, logout, and logout-all. Audit event details must stay non-secret: no plaintext emails, passwords, verification/reset codes, provider tokens, access tokens, or refresh tokens.
+
+`AuthTokenLifecycleService` owns session tokens:
+
+- Access tokens are short-lived HMAC-signed bearer tokens with minimal `sub`, `sid`, `iat`, and `exp` claims.
+- Refresh tokens are opaque, stored as hashes, and rotated on every refresh.
+- Consumed refresh token hashes are kept so token reuse can be detected and the owning session revoked.
+- Sessions that exceed the inactivity window return `inactivity_reauth_required`; clients should ask for the password again.
+- Session creation, successful refresh rotation, and rejected refresh attempts are written to `auth_audit_events`.
+
+Email delivery is local by default. With `AUTH_EMAIL_DELIVERY_BACKEND=local`, auth emails are written to `AUTH_LOCAL_EMAIL_OUTBOX_PATH` as JSONL for development testing. With `AUTH_EMAIL_DELIVERY_BACKEND=mailgun`, `MAILGUN_API_KEY` and `MAILGUN_DOMAIN` must be configured.
+
+## EntitlementService
+
+`EntitlementService` is the backend foundation for future paid or limited features. It checks capability keys such as `ocr_identify` against the authenticated user's entitlement row, sums usage events inside the configured rolling window, and records accepted usage events.
+
+Current behavior:
+
+- Missing entitlement rows are treated as `FREE` and are created when accepted usage is recorded.
+- `FREE` and `TRIAL` OCR/identify limits are configurable; `PLUS` and `PRO` are represented as unlimited in the default rule set.
+- Sync identify and accepted async identify jobs each record one `ocr_identify` usage unit.
+- PostgreSQL deployments serialize `consume_usage` with a transaction-level advisory lock per `(user_id, capability)` before reading the current usage sum and inserting the new usage event.
+- Validation errors, capacity rejections, and over-limit denials do not record usage.
+- Over-limit denials raise `FeatureGateError`, which API routes map to `402 feature_usage_limit_exceeded`.
+
 ## AI Insights and Spotify Tools
 
 `AiInsightsService` persists the single local chat thread, runs deterministic insight tools, and passes bounded context to the configured AI adapter. Collection tools cover listening summaries, recent sessions, top records, style/mood/rating distribution, and high-priority session notes.
 
-Spotify tools are included only for Spotify-specific prompts. They read precomputed rollups and exact collection-match tables, then return compact summaries such as overlap, listening-hour patterns, top artists by period, and known-release recommendation signals. They never expose raw Spotify event rows to the model and do not recommend outside the local collection.
+Spotify tools are included only for Spotify-specific prompts. They read the authenticated user's precomputed rollups and exact collection-match tables, then return compact summaries such as overlap, listening-hour patterns, top artists by period, and known-release recommendation signals. They never expose raw Spotify event rows to the model and do not recommend outside that user's collection.
 
 ## IdentifyService
 
@@ -84,10 +130,11 @@ Identify work has two protection layers:
 
 - Inbound API rate limiting in `app/core/rate_limit.py` throttles HTTP request volume and returns structured `429 rate_limited` responses. The default backend is in-memory. Set `inbound_rate_limit_backend=redis` with `inbound_rate_limit_redis_url` to share general API limits across backend workers or instances.
 - `IdentifyJobService` admission control protects OCR/search work. It rejects sync identify and async job creation with `429 identify_capacity_exceeded` when local or configured DB-backed capacity is full.
+- `EntitlementService` gates the `ocr_identify` capability and records usage for accepted sync identify calls and accepted async identify jobs.
 
 The Redis limiter uses token-bucket state with expiring keys and a short socket/connect timeout from `inbound_rate_limit_redis_timeout_seconds`. MVP behavior is fail-open by default: Redis limiter errors are logged and the request is allowed, so Redis outages do not make the API unavailable. Set `inbound_rate_limit_redis_fail_open=false` before public launch if strict protection is more important than availability during Redis outages.
 
-Async identify jobs store `client_key` in `identify_jobs`. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one client cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. Active rows older than the current service instance startup are also expired before admission, which handles backend restarts that leave orphaned `upload_received` or processing rows without an in-memory worker ticket. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds, fails, expires, or is acknowledged as canceled.
+Async identify jobs store both `user_id` and `client_key` in `identify_jobs`. `user_id` owns create/status/cancel access; `client_key` remains an admission-control signal within that owner. `IdentifyJobService` uses active job counts plus an in-process keyed client lock so one user/client pair cannot create more than the configured active job count within a backend process. It can also enforce a configured global active-job count from DB state. Stale active rows are marked `expired` before admission checks so crashed jobs do not block the same client forever. Active rows older than the current service instance startup are also expired before admission, which handles backend restarts that leave orphaned `upload_received` or processing rows without an in-memory worker ticket. A local semaphore caps total in-process identify work. Capacity is released in `finally` after background processing succeeds, fails, expires, or is acknowledged as canceled.
 
 Both generic rate-limit rejects and identify capacity rejects include `Retry-After` so clients can wait before retrying. Android should honor this header before using local exponential backoff with jitter.
 
@@ -137,9 +184,11 @@ The ranker adds:
 `create_job(db, image_bytes, filename, content_type)`:
 
 1. Validates the upload through `IdentifyService.validate_upload`.
-2. Creates an `identify_jobs` row with `status="upload_received"`.
-3. Sets `expires_at` to the current time plus the job TTL.
-4. Returns an `IdentifyJobStatusResponse` immediately.
+2. Runs stale-job and active-capacity admission checks.
+3. Records one `ocr_identify` usage unit after the job is admitted.
+4. Creates an `identify_jobs` row with `status="upload_received"`.
+5. Sets `expires_at` to the current time plus the job TTL.
+6. Returns an `IdentifyJobStatusResponse` immediately.
 
 The current job TTL is 24 hours.
 
@@ -269,29 +318,30 @@ The release cache preserves raw Discogs JSON. Mapping into local release fields 
 
 ## CollectionSyncService
 
-`CollectionSyncService` powers manual Discogs collection imports and keeps local
-collection membership compatible with the selected source of truth.
+`CollectionSyncService` powers manual Discogs collection imports and keeps the
+authenticated user's local collection membership compatible with that user's
+selected source of truth. Release metadata stays shared catalog data.
 
 ### Sync flow
 
-1. Resolve the source of truth from `CollectionSettingsRepository`.
-2. Fetch the default Discogs collection folder through `DiscogsService`.
+1. Resolve the source of truth from `CollectionSettingsRepository` for `user_id`.
+2. Fetch the default Discogs collection folder through the user's saved Discogs token.
 3. Collapse duplicate Discogs instances to one representative release per
    Discogs release id.
 4. Map each representative item with `release_mapper.py`.
 5. Upsert release metadata through `ReleasesRepository`.
-6. Activate imported releases when the source of truth is `DISCOGS`, when the
-   row is new, or when an app-owned first import has no prior collection
-   membership history.
-7. In `DISCOGS` mode only, mark missing active local releases as removed.
+6. Activate imported releases in `release_collection_memberships` when the source of truth is `DISCOGS`, when the
+   shared release row is new, or when an app-owned first import has no prior
+   user membership history.
+7. In `DISCOGS` mode only, mark the user's missing active local releases as removed.
 8. Fetch Discogs folder metadata and persist folder memberships through
    `CollectionFoldersRepository`.
 
-Folder memberships are stored separately from release metadata, so a release can
-belong to multiple Discogs folders without duplicate `releases` rows. Folder
-filters always query active local collection membership; removed records remain
-available to analytics/history but do not appear in folder-filtered Collection
-results.
+Folder memberships are stored separately from release metadata and include
+`user_id`, so different accounts can have different folders for the same shared
+release row. Folder filters always query the user's active local collection
+membership; removed records remain available to analytics/history but do not
+appear in folder-filtered Collection results.
 
 ## ReleaseImportService
 
@@ -310,10 +360,11 @@ results.
 ### Import-to-collection flow
 
 `import_release_to_collection` reuses the token-backed import flow, then calls
-`ReleasesRepository.mark_in_collection` with no Discogs collection instance id.
-It activates or reactivates the release, clears `collection_removed_at`, and
-updates the collection sync timestamp. This route is for server-owned Discogs
-fetches that can use a saved backend token.
+`ReleasesRepository.mark_in_collection` for the authenticated user's membership
+with no Discogs collection instance id. It activates or reactivates the release,
+clears the membership `collection_removed_at`, and updates the membership sync
+timestamp. This route is for server-owned Discogs fetches that can use a saved
+backend token.
 
 ### Client-provided import flow
 
@@ -380,7 +431,7 @@ The mapper handles common Discogs shapes:
 4. Optionally checks the raw Discogs release payload for valid side labels.
 5. Validates optional `session_group_id` through `SessionGroupsService`.
 6. Creates a session through `SessionsRepository`.
-7. Persists optional selected tracks through `session_tracks`.
+7. Persists optional selected tracks through `session_tracks`, including track-level Discogs artist snapshots when present. Response mapping enriches older track rows from cached Discogs tracklists when the stored artist snapshot is missing.
 8. Returns `CreateSessionResult` with session ID, timestamp, optional session group id, and success status.
 
 ### Edit flow
@@ -405,8 +456,8 @@ The service validates:
 - If Discogs track positions are available, requested side must exist on the release.
 - `track_positions` are optional; when provided, each selected track must exist on the selected side in cached full Discogs release data.
 - `session_group_id` is optional; when provided, it must point to an active timed session group.
-- Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods`; session analytics still reads the selected text from `sessions.mood`.
-- Mood names are canonicalized case-insensitively from built-in moods, active custom mood options, or historical session rows before a session is stored.
+- Custom mood options are stored in `session_moods` through `GET/POST/DELETE /api/v1/sessions/moods` and scoped to the authenticated user; session analytics still reads the selected text from `sessions.mood`.
+- Mood names are canonicalized case-insensitively from built-in moods, the authenticated user's active custom mood options, or that user's historical session rows before a session is stored.
 - Session edits are allowed only during the backend-controlled 15-minute window after `created_at`.
 
 Errors are typed:
@@ -421,7 +472,7 @@ Errors are typed:
 ### Read behavior
 
 - `get_session` returns one session by ID or raises `SessionNotFoundError`.
-- `get_sessions_by_release` validates the release ID, confirms the release exists, and returns all sessions for that release.
+- `get_session` and `get_sessions_by_release` can be scoped by authenticated `user_id` so one account cannot read another account's listening history.
 - Home and release session responses include `can_edit` and `editable_until` so clients can show edit affordances without owning the rule.
 
 ## SessionGroupsService
@@ -441,9 +492,9 @@ The one-active-group rule is enforced in this service layer, not by a database u
 
 ### Active and finish behavior
 
-- `get_active_session_group` returns the active group or `None`.
+- `get_active_session_group` returns the active group or `None` for the current authenticated user.
 - `finish_session_group` marks an active group as `completed` and sets `ended_at`.
-- `validate_active_session_group` is used during session creation before a child session is linked.
+- `validate_active_session_group` is used during session creation before a child session is linked and filters by owner.
 - Inactivity is measured from the latest child session `created_at`; if there are no child sessions, it uses `session_groups.started_at`.
 - Auto-expiry sets `ended_at` to `last_activity + 30 minutes`.
 
@@ -458,7 +509,7 @@ Typed errors:
 
 `AnalyticsService` owns dashboard aggregations used by the Android Analytics screens.
 
-Analytics endpoints read from persisted releases and sessions:
+Analytics endpoints read from persisted releases and sessions scoped to the authenticated user:
 
 - `GET /api/v1/analytics/plays/monthly` groups logged sessions by month.
 - `GET /api/v1/analytics/top-records` ranks releases by session count and average rating.

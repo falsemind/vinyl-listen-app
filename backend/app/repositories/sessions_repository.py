@@ -9,39 +9,48 @@ from app.models.sessions import Sessions, SessionTracks
 
 class SessionsRepository:
     @staticmethod
-    def get_by_id(db: Session, session_id: str) -> Sessions | None:
-        return db.query(Sessions).filter(Sessions.id == session_id).one_or_none()
+    def get_by_id(db: Session, session_id: str, *, user_id: str | None = None) -> Sessions | None:
+        query = db.query(Sessions).filter(Sessions.id == session_id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.one_or_none()
 
     @staticmethod
     def get_by_release_id(
         db: Session,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int,
         offset: int,
     ) -> list[Sessions]:
-        return (
-            db.query(Sessions)
-            .filter(Sessions.release_id == release_id)
-            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        query = db.query(Sessions).filter(Sessions.release_id == release_id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
-    def get_flow_insight_sessions(db: Session, *, since: datetime | None = None) -> list[Sessions]:
+    def get_flow_insight_sessions(
+        db: Session,
+        *,
+        user_id: str | None = None,
+        since: datetime | None = None,
+    ) -> list[Sessions]:
         played_time = func.coalesce(Sessions.played_at, Sessions.created_at)
         query = db.query(Sessions)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         if since is not None:
             query = query.filter(played_time >= since)
         return query.order_by(played_time.asc(), Sessions.created_at.asc()).all()
 
     @staticmethod
-    def get_mood_by_name(db: Session, name: str) -> str | None:
+    def get_mood_by_name(db: Session, name: str, *, user_id: str | None = None) -> str | None:
+        query = db.query(Sessions.mood)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         row = (
-            db.query(Sessions.mood)
-            .filter(Sessions.mood.isnot(None))
+            query.filter(Sessions.mood.isnot(None))
             .filter(Sessions.mood != "")
             .filter(func.lower(Sessions.mood) == name.lower())
             .order_by(Sessions.created_at.asc())
@@ -53,26 +62,26 @@ class SessionsRepository:
     def get_recent_with_releases(
         db: Session,
         *,
+        user_id: str | None = None,
         limit: int,
     ):
-        return (
-            db.query(Sessions, Releases)
-            .join(Releases, Sessions.release_id == Releases.id)
-            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        query = db.query(Sessions, Releases).join(Releases, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).limit(limit).all()
 
     @staticmethod
     def get_recent_notes_with_releases(
         db: Session,
         *,
+        user_id: str | None = None,
         limit: int,
     ):
+        query = db.query(Sessions, Releases).join(Releases, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
         return (
-            db.query(Sessions, Releases)
-            .join(Releases, Sessions.release_id == Releases.id)
-            .filter(Sessions.notes.isnot(None))
+            query.filter(Sessions.notes.isnot(None))
             .filter(Sessions.notes != "")
             .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
             .limit(limit)
@@ -80,44 +89,55 @@ class SessionsRepository:
         )
 
     @staticmethod
-    def count_all(db: Session) -> int:
-        return db.query(func.count(Sessions.id)).scalar() or 0
+    def count_all(db: Session, *, user_id: str | None = None) -> int:
+        query = db.query(func.count(Sessions.id))
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.scalar() or 0
 
     @staticmethod
-    def get_latest_created_at_by_session_group_id(db: Session, session_group_id: str) -> datetime | None:
-        return db.query(func.max(Sessions.created_at)).filter(Sessions.session_group_id == session_group_id).scalar()
+    def get_latest_created_at_by_session_group_id(
+        db: Session,
+        session_group_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> datetime | None:
+        query = db.query(func.max(Sessions.created_at)).filter(Sessions.session_group_id == session_group_id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.scalar()
 
     @staticmethod
     def count_distinct_releases_since(
         db: Session,
         *,
+        user_id: str | None = None,
         since: datetime,
     ) -> int:
-        return (
-            db.query(func.count(func.distinct(Sessions.release_id))).filter(Sessions.played_at >= since).scalar() or 0
-        )
+        query = db.query(func.count(func.distinct(Sessions.release_id))).filter(Sessions.played_at >= since)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.scalar() or 0
 
     @staticmethod
     def get_top_release_stats(
         db: Session,
         *,
+        user_id: str | None = None,
         limit: int,
     ):
         plays = func.count(Sessions.id).label("plays")
         average_rating = func.avg(Sessions.rating).label("average_rating")
-        return (
-            db.query(Releases, plays, average_rating)
-            .join(Sessions, Sessions.release_id == Releases.id)
-            .group_by(Releases.id)
-            .order_by(plays.desc(), average_rating.desc())
-            .limit(limit)
-            .all()
-        )
+        query = db.query(Releases, plays, average_rating).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.group_by(Releases.id).order_by(plays.desc(), average_rating.desc()).limit(limit).all()
 
     @staticmethod
     def create(
         db: Session,
         *,
+        user_id: str | None,
         release_id: str,
         session_group_id: str | None,
         rating: int | None,
@@ -127,6 +147,7 @@ class SessionsRepository:
         vinyl_side: str | None,
     ) -> Sessions:
         session = Sessions(
+            user_id=user_id,
             release_id=release_id,
             session_group_id=session_group_id,
             rating=rating,
@@ -171,6 +192,7 @@ class SessionsRepository:
             SessionTracks(
                 session_id=session_id,
                 track_position=track["position"],
+                track_artist=track.get("artist"),
                 track_title=track["title"],
                 track_duration=track.get("duration"),
                 track_sequence=track.get("sequence"),

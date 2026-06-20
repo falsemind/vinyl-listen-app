@@ -37,6 +37,33 @@ class Settings(BaseSettings):
     inbound_rate_limit_redis_fail_open: bool = True
     inbound_rate_limit_redis_timeout_seconds: float = 0.25
 
+    auth_access_token_secret: str | None = None
+    auth_access_token_lifetime_seconds: int = 900
+    auth_refresh_token_lifetime_days: int = 30
+    auth_inactivity_reauth_days: int = 7
+    auth_password_argon2_time_cost: int = 3
+    auth_password_argon2_memory_cost: int = 65536
+    auth_password_argon2_parallelism: int = 4
+    auth_password_argon2_hash_len: int = 32
+    auth_password_argon2_salt_len: int = 16
+    auth_code_hash_secret: str | None = None
+    auth_email_code_length: int = 6
+    auth_email_verification_code_ttl_minutes: int = 15
+    auth_password_reset_code_ttl_minutes: int = 15
+    auth_email_resend_cooldown_seconds: int = 60
+    auth_code_failed_attempt_limit: int = Field(default=5, ge=1)
+    auth_code_failed_attempt_lock_seconds: int = Field(default=300, ge=1)
+    auth_email_delivery_backend: Literal["local", "mailgun"] = "local"
+    auth_local_email_outbox_path: str = "auth-local-email-outbox.jsonl"
+    auth_email_from_address: str = "noreply@vinyl-listen.local"
+    mailgun_api_base_url: str = "https://api.mailgun.net"
+    mailgun_api_key: str | None = None
+    mailgun_domain: str | None = None
+
+    entitlement_ocr_identify_free_limit: int = Field(default=25, ge=0)
+    entitlement_ocr_identify_trial_limit: int = Field(default=100, ge=0)
+    entitlement_ocr_identify_window_days: int = Field(default=30, ge=1)
+
     ai_chat_enabled: bool = False
     ai_chat_base_url: str | None = None
     ai_chat_endpoint_path: str = "/api/v1/chat"

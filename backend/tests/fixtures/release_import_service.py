@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,7 +22,8 @@ class InMemoryReleasesRepository:
     def __init__(self, release: Releases | None = None) -> None:
         self.release = release
         self.saved_payloads: list[tuple[int, str]] = []
-        self.collection_mark_calls: list[tuple[str, int | None, datetime | None, datetime]] = []
+        self.collection_mark_calls: list[tuple[str, str, int | None, datetime | None, datetime]] = []
+        self.membership: SimpleNamespace | None = None
 
     def get_by_id(self, _db, release_id: str) -> Releases | None:
         if self.release and self.release.id == release_id:
@@ -71,17 +73,26 @@ class InMemoryReleasesRepository:
         _db,
         release: Releases,
         *,
+        user_id: str,
         discogs_instance_id: int | None,
         collection_added_at: datetime | None,
         synced_at: datetime,
-    ) -> Releases:
-        self.collection_mark_calls.append((release.id, discogs_instance_id, collection_added_at, synced_at))
+    ):
+        self.collection_mark_calls.append((release.id, user_id, discogs_instance_id, collection_added_at, synced_at))
         release.in_collection = True
         release.discogs_instance_id = discogs_instance_id
         release.collection_added_at = collection_added_at
         release.collection_removed_at = None
         release.last_discogs_sync_at = synced_at
-        return release
+        self.membership = SimpleNamespace(
+            in_collection=True,
+            collection_added_at=collection_added_at,
+            collection_removed_at=None,
+            last_discogs_sync_at=synced_at,
+            discogs_instance_id=discogs_instance_id,
+            is_favorite=release.is_favorite,
+        )
+        return self.membership
 
 
 class InMemoryDiscogsReleaseRepository:

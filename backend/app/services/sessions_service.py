@@ -14,7 +14,12 @@ from app.repositories.discogs_release_repository import DiscogsReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
-from app.services.release_mapper import ReleaseTrackData, extract_release_side_options, extract_release_tracklist
+from app.services.release_mapper import (
+    ReleaseTrackArtistData,
+    ReleaseTrackData,
+    extract_release_side_options,
+    extract_release_tracklist,
+)
 from app.services.session_groups_service import SessionGroupsService
 
 logger = logging.getLogger(__name__)
@@ -90,6 +95,7 @@ class ReleaseNotFoundError(SessionsServiceError):
 @dataclass(frozen=True)
 class SessionTrackSelection:
     position: str
+    artist: str | None
     title: str
     duration: str | None
     sequence: int
@@ -97,10 +103,20 @@ class SessionTrackSelection:
     def as_repository_payload(self) -> dict[str, object]:
         return {
             "position": self.position,
+            "artist": self.artist,
             "title": self.title,
             "duration": self.duration,
             "sequence": self.sequence,
         }
+
+
+@dataclass(frozen=True)
+class SessionTrackSnapshot:
+    track_position: str
+    track_artist: str | None
+    track_title: str
+    track_duration: str | None
+    track_sequence: int | None
 
 
 @dataclass(frozen=True)
@@ -216,6 +232,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         release_id: str,
         rating: int | None,
         mood: str | None,
@@ -228,6 +245,7 @@ class SessionsService:
         logger.info("Creating session release_id=%s played_at=%s", release_id, played_at)
         validated = self._validate_create_input(
             db,
+            user_id=user_id,
             release_id=release_id,
             rating=rating,
             mood=mood,
@@ -239,6 +257,7 @@ class SessionsService:
         )
         session = self._sessions_repository.create(
             db,
+            user_id=user_id,
             release_id=validated.release_id,
             session_group_id=validated.session_group_id,
             rating=validated.rating,
@@ -260,9 +279,9 @@ class SessionsService:
             session_group_id=session.session_group_id,
         )
 
-    def get_session(self, db: Session, session_id: str) -> Sessions:
+    def get_session(self, db: Session, session_id: str, *, user_id: str | None = None) -> Sessions:
         logger.info("Loading session session_id=%s", session_id)
-        session = self._sessions_repository.get_by_id(db, session_id)
+        session = self._sessions_repository.get_by_id(db, session_id, user_id=user_id)
         if session is None:
             logger.info("Session not found session_id=%s", session_id)
             raise SessionNotFoundError(session_id)
@@ -272,6 +291,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         session_id: str,
         fields: dict[str, Any],
     ) -> Sessions:
@@ -287,7 +307,7 @@ class SessionsService:
                 "Only side, track_positions, rating, mood, and notes can be edited.",
             )
 
-        session = self._sessions_repository.get_by_id(db, session_id)
+        session = self._sessions_repository.get_by_id(db, session_id, user_id=user_id)
         if session is None:
             logger.info("Session not found during update session_id=%s", session_id)
             raise SessionNotFoundError(session_id)
@@ -295,7 +315,7 @@ class SessionsService:
             logger.info("Rejecting session update expired_edit_window session_id=%s", session_id)
             raise SessionEditWindowExpiredError(session_id)
 
-        validated = self._validate_update_input(db, session=session, fields=fields)
+        validated = self._validate_update_input(db, session=session, user_id=user_id, fields=fields)
         updated_session = self._sessions_repository.update(
             db,
             session,
@@ -323,6 +343,7 @@ class SessionsService:
         db: Session,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int,
         offset: int,
     ) -> list[Sessions]:
@@ -342,6 +363,7 @@ class SessionsService:
         return self._sessions_repository.get_by_release_id(
             db,
             release_id,
+            user_id=user_id,
             limit=limit,
             offset=offset,
         )
@@ -352,11 +374,50 @@ class SessionsService:
     def get_tracks_by_session_ids(self, db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
         return self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
 
+    def get_session_tracks_for_response(self, db: Session, session: Sessions) -> list[SessionTrackSnapshot]:
+        tracks = self._sessions_repository.get_tracks_by_session_id(db, session.id)
+        release = self._releases_repository.get_by_id(db, session.release_id)
+        return self._enrich_track_artists(db, release, tracks)
+
+    def get_tracks_by_session_ids_for_release_id(
+        self,
+        db: Session,
+        *,
+        release_id: str,
+        session_ids: list[str],
+    ) -> dict[str, list[SessionTrackSnapshot]]:
+        tracks_by_session_id = self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+        release = self._releases_repository.get_by_id(db, release_id)
+        return {
+            session_id: self._enrich_track_artists(db, release, tracks)
+            for session_id, tracks in tracks_by_session_id.items()
+        }
+
+    def get_tracks_by_session_ids_for_releases(
+        self,
+        db: Session,
+        session_releases: list[tuple[str, Releases]],
+    ) -> dict[str, list[SessionTrackSnapshot]]:
+        session_ids = [session_id for session_id, _release in session_releases]
+        tracks_by_session_id = self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
+        release_by_session_id = dict(session_releases)
+        lookup_cache: dict[int, tuple[dict[tuple[str, str], str], dict[str, str]]] = {}
+        return {
+            session_id: self._enrich_track_artists(
+                db,
+                release_by_session_id.get(session_id),
+                tracks,
+                lookup_cache=lookup_cache,
+            )
+            for session_id, tracks in tracks_by_session_id.items()
+        }
+
     def get_record_flow_insights(
         self,
         db: Session,
         release_id: str,
         *,
+        user_id: str | None = None,
         limit: int = 5,
         period: str = "3m",
     ) -> RecordFlowInsights:
@@ -369,7 +430,7 @@ class SessionsService:
             logger.info("Release not found during flow insights lookup release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
-        sessions = self._sessions_repository.get_flow_insight_sessions(db, since=since)
+        sessions = self._sessions_repository.get_flow_insight_sessions(db, user_id=user_id, since=since)
         releases = {
             release.id: release
             for release in self._releases_repository.get_by_ids(
@@ -516,6 +577,7 @@ class SessionsService:
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         recent_limit: int = 5,
         top_limit: int = 3,
     ) -> HomeSummary:
@@ -533,7 +595,11 @@ class SessionsService:
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         recent_sessions = [
             SessionReleaseSummary(session=session, release=release)
-            for session, release in self._sessions_repository.get_recent_with_releases(db, limit=recent_limit)
+            for session, release in self._sessions_repository.get_recent_with_releases(
+                db,
+                user_id=user_id,
+                limit=recent_limit,
+            )
         ]
         top_records = [
             TopReleaseSummary(
@@ -541,34 +607,45 @@ class SessionsService:
                 plays=int(plays),
                 average_rating=float(average_rating) if average_rating else None,
             )
-            for release, plays, average_rating in self._sessions_repository.get_top_release_stats(db, limit=top_limit)
+            for release, plays, average_rating in self._sessions_repository.get_top_release_stats(
+                db,
+                user_id=user_id,
+                limit=top_limit,
+            )
         ]
         return HomeSummary(
             recent_sessions=recent_sessions,
-            total_sessions=self._sessions_repository.count_all(db),
-            records_this_month=self._sessions_repository.count_distinct_releases_since(db, since=month_start),
+            total_sessions=self._sessions_repository.count_all(db, user_id=user_id),
+            records_this_month=self._sessions_repository.count_distinct_releases_since(
+                db,
+                user_id=user_id,
+                since=month_start,
+            ),
             top_records=top_records,
         )
 
-    def list_custom_moods(self, db: Session) -> list[SessionsMoods]:
-        return self._moods_repository.get_custom(db)
+    def list_custom_moods(self, db: Session, *, user_id: str) -> list[SessionsMoods]:
+        return self._moods_repository.get_custom(db, user_id=user_id)
 
-    def create_custom_mood(self, db: Session, name: str) -> SessionsMoods:
+    def create_custom_mood(self, db: Session, name: str, *, user_id: str) -> SessionsMoods:
         normalized_name = self._normalize_custom_mood_name(name)
-        existing_mood = self._moods_repository.get_by_name(db, normalized_name)
+        existing_mood = self._moods_repository.get_by_name(db, normalized_name, user_id=user_id)
         if existing_mood is not None:
             raise SessionMoodAlreadyExistsError(normalized_name)
-        canonical_name = self._sessions_repository.get_mood_by_name(db, normalized_name) or normalized_name
-        return self._moods_repository.create_custom(db, canonical_name)
+        canonical_name = (
+            self._sessions_repository.get_mood_by_name(db, normalized_name, user_id=user_id) or normalized_name
+        )
+        return self._moods_repository.create_custom(db, canonical_name, user_id=user_id)
 
-    def delete_custom_mood(self, db: Session, name: str) -> None:
+    def delete_custom_mood(self, db: Session, name: str, *, user_id: str) -> None:
         normalized_name = self._normalize_custom_mood_name(name)
-        self._moods_repository.delete_custom(db, normalized_name)
+        self._moods_repository.delete_custom(db, normalized_name, user_id=user_id)
 
     def _validate_create_input(
         self,
         db: Session,
         *,
+        user_id: str | None = None,
         release_id: str,
         rating: int | None,
         mood: str | None,
@@ -584,7 +661,7 @@ class SessionsService:
 
         normalized_played_at = self._parse_played_at(played_at)
         normalized_side = self._normalize_side(side)
-        normalized_mood = self._canonicalize_session_mood(db, mood)
+        normalized_mood = self._canonicalize_session_mood(db, mood, user_id=user_id)
         normalized_notes = self._normalize_optional_text(notes)
 
         release = self._releases_repository.get_by_id(db, release_id)
@@ -599,7 +676,11 @@ class SessionsService:
             )
 
         self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
-        normalized_session_group_id = self._session_groups_service.validate_active_session_group(db, session_group_id)
+        normalized_session_group_id = self._session_groups_service.validate_active_session_group(
+            db,
+            session_group_id,
+            user_id=user_id,
+        )
         tracks = self._validate_track_selection(
             db,
             release=release,
@@ -623,6 +704,7 @@ class SessionsService:
         db: Session,
         *,
         session: Sessions,
+        user_id: str | None = None,
         fields: dict[str, Any],
     ) -> UpdateSessionData:
         rating = fields.get("rating", session.rating)
@@ -631,7 +713,9 @@ class SessionsService:
             raise SessionValidationError("invalid_rating", "Rating must be between 1 and 5.")
 
         normalized_side = self._normalize_side(fields["side"]) if "side" in fields else session.vinyl_side
-        normalized_mood = self._canonicalize_session_mood(db, fields["mood"]) if "mood" in fields else session.mood
+        normalized_mood = (
+            self._canonicalize_session_mood(db, fields["mood"], user_id=user_id) if "mood" in fields else session.mood
+        )
         normalized_notes = self._normalize_optional_text(fields["notes"]) if "notes" in fields else session.notes
 
         release = self._releases_repository.get_by_id(db, session.release_id)
@@ -729,6 +813,7 @@ class SessionsService:
             selected_tracks.append(
                 SessionTrackSelection(
                     position=track.position,
+                    artist=_display_track_artists(track.artists),
                     title=track.title,
                     duration=track.duration,
                     sequence=sequence,
@@ -760,6 +845,54 @@ class SessionsService:
     def _track_belongs_to_side(self, track_position: str, normalized_side: str) -> bool:
         expected_side = normalized_side.split(":")[-1]
         return self._track_side_prefix(track_position) == expected_side
+
+    def _enrich_track_artists(
+        self,
+        db: Session,
+        release: Releases | None,
+        tracks: list[SessionTracks],
+        *,
+        lookup_cache: dict[int, tuple[dict[tuple[str, str], str], dict[str, str]]] | None = None,
+    ) -> list[SessionTrackSnapshot]:
+        if release is None or all(track.track_artist for track in tracks):
+            return [_session_track_snapshot(track) for track in tracks]
+
+        cache = lookup_cache if lookup_cache is not None else {}
+        if release.discogs_release_id not in cache:
+            cache[release.discogs_release_id] = self._cached_track_artist_lookup(db, release.discogs_release_id)
+        artist_by_key, artist_by_position = cache[release.discogs_release_id]
+        return [
+            _session_track_snapshot(
+                track,
+                artist=(
+                    track.track_artist
+                    or artist_by_key.get(_track_artist_key(track.track_position, track.track_title))
+                    or artist_by_position.get(_normalize_track_position(track.track_position))
+                ),
+            )
+            for track in tracks
+        ]
+
+    def _cached_track_artist_lookup(
+        self,
+        db: Session,
+        discogs_release_id: int,
+    ) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
+        cache_entry = self._discogs_repository.get_by_discogs_release_id(db, discogs_release_id)
+        tracklist = extract_release_tracklist(cache_entry.raw_discogs_json if cache_entry is not None else None)
+        artist_by_key: dict[tuple[str, str], str] = {}
+        artists_by_position: dict[str, set[str]] = {}
+        for track in tracklist:
+            artist = _display_track_artists(track.artists)
+            if not artist:
+                continue
+            artist_by_key[_track_artist_key(track.position, track.title)] = artist
+            artists_by_position.setdefault(_normalize_track_position(track.position), set()).add(artist)
+
+        artist_by_position = {
+            position: next(iter(artists)) for position, artists in artists_by_position.items() if len(artists) == 1
+        }
+        return artist_by_key, artist_by_position
 
     def _track_side_prefix(self, track_position: str) -> str | None:
         letters: list[str] = []
@@ -818,7 +951,7 @@ class SessionsService:
             raise SessionValidationError("invalid_mood", "Mood name already exists as a built-in mood.")
         return normalized
 
-    def _canonicalize_session_mood(self, db: Session, value: str | None) -> str | None:
+    def _canonicalize_session_mood(self, db: Session, value: str | None, *, user_id: str | None = None) -> str | None:
         normalized = self._normalize_optional_text(value)
         if normalized is None:
             return None
@@ -827,11 +960,11 @@ class SessionsService:
         if built_in_mood is not None:
             return built_in_mood
 
-        custom_mood = self._moods_repository.get_by_name(db, normalized)
+        custom_mood = self._moods_repository.get_by_name(db, normalized, user_id=user_id)
         if custom_mood is not None:
             return custom_mood.name
 
-        historical_mood = self._sessions_repository.get_mood_by_name(db, normalized)
+        historical_mood = self._sessions_repository.get_mood_by_name(db, normalized, user_id=user_id)
         return historical_mood or normalized
 
     def _built_in_mood_name(self, value: str) -> str | None:
@@ -853,3 +986,34 @@ class SessionsService:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+
+def _display_track_artists(artists: list[ReleaseTrackArtistData]) -> str | None:
+    parts: list[str] = []
+    for index, artist in enumerate(artists):
+        name = artist.name.strip()
+        if not name:
+            continue
+        if index > 0:
+            join = artists[index - 1].join
+            parts.append(f" {join.strip()} " if join and join.strip() else ", ")
+        parts.append(name)
+    return "".join(parts).strip() or None
+
+
+def _session_track_snapshot(track: SessionTracks, *, artist: str | None = None) -> SessionTrackSnapshot:
+    return SessionTrackSnapshot(
+        track_position=track.track_position,
+        track_artist=artist if artist is not None else track.track_artist,
+        track_title=track.track_title,
+        track_duration=track.track_duration,
+        track_sequence=track.track_sequence,
+    )
+
+
+def _track_artist_key(position: str, title: str) -> tuple[str, str]:
+    return _normalize_track_position(position), " ".join(title.strip().casefold().split())
+
+
+def _normalize_track_position(position: str) -> str:
+    return position.strip().upper()

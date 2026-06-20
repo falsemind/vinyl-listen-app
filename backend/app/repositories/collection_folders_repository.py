@@ -25,9 +25,12 @@ class ReleaseFolderMembershipData:
 
 class CollectionFoldersRepository:
     @staticmethod
-    def list_folders(db: Session) -> Sequence[CollectionFolder]:
+    def list_folders(db: Session, *, user_id: str) -> Sequence[CollectionFolder]:
         return (
-            db.query(CollectionFolder).order_by(CollectionFolder.is_default.desc(), CollectionFolder.name.asc()).all()
+            db.query(CollectionFolder)
+            .filter(CollectionFolder.user_id == user_id)
+            .order_by(CollectionFolder.is_default.desc(), CollectionFolder.name.asc())
+            .all()
         )
 
     @staticmethod
@@ -35,12 +38,14 @@ class CollectionFoldersRepository:
         db: Session,
         folders: Sequence[CollectionFolderData],
         *,
+        user_id: str,
         synced_at: datetime,
         commit: bool = True,
     ) -> dict[int, CollectionFolder]:
         existing = {
             folder.discogs_folder_id: folder
             for folder in db.query(CollectionFolder)
+            .filter(CollectionFolder.user_id == user_id)
             .filter(CollectionFolder.discogs_folder_id.in_([folder.discogs_folder_id for folder in folders]))
             .all()
         }
@@ -49,7 +54,7 @@ class CollectionFoldersRepository:
         for folder_data in folders:
             folder = existing.get(folder_data.discogs_folder_id)
             if folder is None:
-                folder = CollectionFolder(discogs_folder_id=folder_data.discogs_folder_id)
+                folder = CollectionFolder(user_id=user_id, discogs_folder_id=folder_data.discogs_folder_id)
 
             folder.name = folder_data.name
             folder.item_count = folder_data.item_count
@@ -70,14 +75,15 @@ class CollectionFoldersRepository:
     def replace_folder_memberships(
         db: Session,
         *,
+        user_id: str,
         folder: CollectionFolder,
         memberships: Sequence[ReleaseFolderMembershipData],
         synced_at: datetime,
         commit: bool = True,
     ) -> int:
-        db.query(ReleaseCollectionFolder).filter(ReleaseCollectionFolder.collection_folder_id == folder.id).delete(
-            synchronize_session=False
-        )
+        db.query(ReleaseCollectionFolder).filter(ReleaseCollectionFolder.user_id == user_id).filter(
+            ReleaseCollectionFolder.collection_folder_id == folder.id
+        ).delete(synchronize_session=False)
 
         release_ids = {membership.discogs_release_id for membership in memberships}
         releases_by_discogs_id = {
@@ -93,6 +99,7 @@ class CollectionFoldersRepository:
 
             db.add(
                 ReleaseCollectionFolder(
+                    user_id=user_id,
                     release_id=release.id,
                     collection_folder_id=folder.id,
                     discogs_instance_id=membership.discogs_instance_id,

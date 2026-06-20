@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.api.routes.identify import get_identify_service
 from app.main import app
 from app.schemas.identify import IdentifyJobStatus
+from app.services.entitlement_service import FeatureGateError
 from app.services.identify_job_service import IdentifyCapacityExceededError, IdentifyJobNotFoundError
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
 
@@ -15,10 +16,14 @@ def test_identify_dependency_reuses_service_instance() -> None:
 
 
 def test_identify_endpoint_returns_ranked_candidates(
+    build_stub_entitlement_service,
     build_stub_identify_service,
+    override_entitlement_service,
     override_identify_service,
 ) -> None:
+    entitlement_service = build_stub_entitlement_service()
     service = build_stub_identify_service()
+    override_entitlement_service(entitlement_service)
     override_identify_service(service)
 
     with TestClient(app) as client:
@@ -47,19 +52,38 @@ def test_identify_endpoint_returns_ranked_candidates(
             }
         ]
     }
-    assert service.calls == [{"size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}]
+    assert service.calls == [
+        {
+            "size_bytes": 12,
+            "filename": "cover.jpg",
+            "content_type": "image/jpeg",
+            "user_id": "test-user",
+        }
+    ]
+    assert entitlement_service.calls == [
+        {
+            "user_id": "test-user",
+            "capability": "ocr_identify",
+            "units": 1,
+            "event_metadata": {"source": "sync_identify"},
+        }
+    ]
 
 
 def test_identify_endpoint_returns_structured_validation_errors(
+    build_stub_entitlement_service,
     build_stub_identify_service,
+    override_entitlement_service,
     override_identify_service,
 ) -> None:
+    entitlement_service = build_stub_entitlement_service()
     service = build_stub_identify_service()
     service.error = IdentifyValidationError(
         message="Unsupported image type. Supported types: image/jpeg, image/png, image/webp.",
         status_code=415,
         code="unsupported_image_type",
     )
+    override_entitlement_service(entitlement_service)
     override_identify_service(service)
 
     with TestClient(app) as client:
@@ -75,6 +99,46 @@ def test_identify_endpoint_returns_structured_validation_errors(
             "message": "Unsupported image type. Supported types: image/jpeg, image/png, image/webp.",
         }
     }
+    assert entitlement_service.calls == []
+
+
+def test_identify_endpoint_returns_feature_gate_errors(
+    build_stub_entitlement_service,
+    build_stub_identify_service,
+    override_entitlement_service,
+    override_identify_service,
+) -> None:
+    entitlement_service = build_stub_entitlement_service()
+    entitlement_service.error = FeatureGateError(
+        code="feature_usage_limit_exceeded",
+        message="Usage limit reached for this feature.",
+        capability="ocr_identify",
+        plan="FREE",
+        limit=25,
+        used=25,
+    )
+    service = build_stub_identify_service()
+    override_entitlement_service(entitlement_service)
+    override_identify_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify",
+            files={"image": ("cover.jpg", b"binary-image", "image/jpeg")},
+        )
+
+    assert response.status_code == 402
+    assert response.json() == {
+        "error": {
+            "code": "feature_usage_limit_exceeded",
+            "message": "Usage limit reached for this feature.",
+            "capability": "ocr_identify",
+            "plan": "FREE",
+            "limit": 25,
+            "used": 25,
+        }
+    }
+    assert service.calls == []
 
 
 def test_identify_endpoint_rejects_oversized_upload_before_service_call(
@@ -117,7 +181,14 @@ def test_identify_job_endpoint_returns_accepted_status(
     assert response.status_code == 202
     assert response.json()["job_id"] == "job-123"
     assert response.json()["status"] == "upload_received"
-    assert service.calls == [{"size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}]
+    assert service.calls == [
+        {
+            "user_id": "test-user",
+            "size_bytes": 12,
+            "filename": "cover.jpg",
+            "content_type": "image/jpeg",
+        }
+    ]
     assert service.process_calls == [
         {"job_id": "job-123", "size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}
     ]
@@ -177,14 +248,18 @@ def test_identify_job_endpoint_returns_capacity_errors(
 
 
 def test_sync_identify_endpoint_returns_capacity_errors(
+    build_stub_entitlement_service,
     build_stub_identify_service,
     build_stub_identify_job_service,
+    override_entitlement_service,
     override_identify_service,
     override_identify_job_service,
 ) -> None:
+    entitlement_service = build_stub_entitlement_service()
     identify_service = build_stub_identify_service()
     job_service = build_stub_identify_job_service()
     job_service.create_error = IdentifyCapacityExceededError()
+    override_entitlement_service(entitlement_service)
     override_identify_service(identify_service)
     override_identify_job_service(job_service)
 
@@ -203,6 +278,7 @@ def test_sync_identify_endpoint_returns_capacity_errors(
     }
     assert response.headers["Retry-After"] == "5"
     assert identify_service.calls == []
+    assert entitlement_service.calls == []
 
 
 def test_identify_job_status_endpoint_returns_job(

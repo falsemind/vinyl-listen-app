@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -15,9 +15,19 @@ class AiChatSession(Base):
     """Persisted AI chat conversation."""
 
     __tablename__ = "ai_chat_sessions"
-    __table_args__ = (Index("idx_ai_chat_sessions_updated_at", "updated_at"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "public_conversation_id", name="uq_ai_chat_sessions_user_public_id"),
+        Index("idx_ai_chat_sessions_user_updated_at", "user_id", "updated_at"),
+        Index("idx_ai_chat_sessions_updated_at", "updated_at"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    public_conversation_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
