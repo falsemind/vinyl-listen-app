@@ -6,6 +6,7 @@ import com.example.vinyllistenapp.BuildConfig
 import com.example.vinyllistenapp.data.auth.AuthAccountSummary
 import com.example.vinyllistenapp.data.auth.AuthPasswordResetRequestResult
 import com.example.vinyllistenapp.data.auth.AuthRegistrationResult
+import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
 import com.example.vinyllistenapp.data.auth.AuthTokenPair
 import com.example.vinyllistenapp.data.auth.AuthVerificationResendResult
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
@@ -60,14 +61,20 @@ class VinylApiClient(
     private val retryJitterMillis: () -> Long = { Random.nextLong(0, retryPolicy.jitterMaxMillis + 1) },
     private val retryDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
+    @Volatile
     private var accessToken: String? = null
+    private var refreshAccessToken: (suspend () -> AuthSessionRefreshResult)? = null
 
     fun setAccessToken(token: String?) {
         accessToken = token?.takeIf { it.isNotBlank() }
     }
 
+    fun setAuthSessionRefresher(refresher: (suspend () -> AuthSessionRefreshResult)?) {
+        refreshAccessToken = refresher
+    }
+
     suspend fun refreshAuthSession(refreshToken: String): AuthTokenPair =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body = JSONObject().put("refresh_token", refreshToken)
             postJson("auth/refresh", body).toAuthTokenPair()
         }
@@ -76,7 +83,7 @@ class VinylApiClient(
         email: String,
         password: String,
     ): AuthRegistrationResult =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body =
                 JSONObject()
                     .put("email", email)
@@ -88,7 +95,7 @@ class VinylApiClient(
         email: String,
         code: String,
     ): AuthAccountSummary =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body =
                 JSONObject()
                     .put("email", email)
@@ -97,7 +104,7 @@ class VinylApiClient(
         }
 
     suspend fun resendEmailVerification(email: String): AuthVerificationResendResult =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body = JSONObject().put("email", email)
             postJson("auth/resend-verification", body).toAuthVerificationResendResult()
         }
@@ -107,7 +114,7 @@ class VinylApiClient(
         password: String,
         deviceLabel: String?,
     ): AuthTokenPair =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body =
                 JSONObject()
                     .put("email", email)
@@ -117,7 +124,7 @@ class VinylApiClient(
         }
 
     suspend fun requestPasswordReset(email: String): AuthPasswordResetRequestResult =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body = JSONObject().put("email", email)
             postJson("auth/password-reset/request", body).toAuthPasswordResetRequestResult()
         }
@@ -127,7 +134,7 @@ class VinylApiClient(
         code: String,
         newPassword: String,
     ): AuthAccountSummary =
-        apiCall {
+        apiCall(allowAuthRefresh = false) {
             val body =
                 JSONObject()
                     .put("email", email)
@@ -750,11 +757,42 @@ class VinylApiClient(
             )
         }
 
-    private suspend fun <T> apiCall(block: suspend () -> T): T =
+    private suspend fun <T> apiCall(
+        allowAuthRefresh: Boolean = true,
+        block: suspend () -> T,
+    ): T =
         withContext(Dispatchers.IO) {
+            val requestAccessToken = accessToken
             try {
                 block()
             } catch (error: ApiException) {
+                if (allowAuthRefresh && error.shouldAttemptAccessRefresh()) {
+                    val refreshResult =
+                        if (accessToken != null && accessToken != requestAccessToken) {
+                            AuthSessionRefreshResult.Ready
+                        } else {
+                            refreshAccessToken?.invoke()
+                        }
+
+                    when (refreshResult) {
+                        AuthSessionRefreshResult.Ready -> return@withContext block()
+                        AuthSessionRefreshResult.NeedsPasswordReentry ->
+                            throw ApiException(
+                                message = "Password re-entry is required.",
+                                kind = ApiErrorKind.Unknown,
+                                code = INACTIVITY_REAUTH_REQUIRED,
+                                statusCode = 401,
+                            )
+                        AuthSessionRefreshResult.NeedsAuth ->
+                            throw ApiException(
+                                message = "Sign in again to continue.",
+                                kind = ApiErrorKind.Unknown,
+                                code = AUTH_REQUIRED,
+                                statusCode = 401,
+                            )
+                        null -> throw error
+                    }
+                }
                 throw error
             } catch (error: IOException) {
                 throw ApiException(
@@ -764,6 +802,16 @@ class VinylApiClient(
                 )
             }
         }
+
+    private fun ApiException.shouldAttemptAccessRefresh(): Boolean =
+        statusCode == 401 &&
+            code in
+            setOf(
+                AUTH_REQUIRED,
+                EXPIRED_ACCESS_TOKEN,
+                INVALID_ACCESS_TOKEN,
+                null,
+            )
 
     private suspend fun getJson(path: String): JSONObject =
         withRetry(ApiHttpMethod.Get) {
@@ -1011,6 +1059,11 @@ data class ReleaseSearchResultsPage(
 )
 
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
+
+private const val AUTH_REQUIRED = "auth_required"
+private const val EXPIRED_ACCESS_TOKEN = "expired_access_token"
+private const val INVALID_ACCESS_TOKEN = "invalid_access_token"
+private const val INACTIVITY_REAUTH_REQUIRED = "inactivity_reauth_required"
 
 private fun OutputStream.writeUtf8(value: String) {
     write(value.toByteArray(Charsets.UTF_8))

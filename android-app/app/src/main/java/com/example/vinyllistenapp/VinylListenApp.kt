@@ -2,6 +2,7 @@ package com.example.vinyllistenapp
 
 import android.os.Build
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -17,6 +18,7 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupResult
+import com.example.vinyllistenapp.data.auth.AuthTokenRefreshCoordinator
 import com.example.vinyllistenapp.data.auth.EncryptedAuthSessionStore
 import com.example.vinyllistenapp.navigation.VinylNavHost
 import com.example.vinyllistenapp.ui.screens.AuthFlowScreen
@@ -31,6 +33,31 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
     val appContext = remember(context) { context.applicationContext }
     val apiClient = remember { VinylApiClient() }
     val sessionStore = remember(appContext) { EncryptedAuthSessionStore(appContext) }
+    val coroutineScope = rememberCoroutineScope()
+    var authState by remember { mutableStateOf<AuthGateUiState>(AuthGateUiState.Checking) }
+    var retryCount by rememberSaveable { mutableIntStateOf(0) }
+    var isPasswordReentrySubmitting by remember { mutableStateOf(false) }
+    var passwordReentryError by remember { mutableStateOf<String?>(null) }
+    val tokenRefreshCoordinator =
+        remember(apiClient, sessionStore, coroutineScope) {
+            AuthTokenRefreshCoordinator(
+                sessionStore = sessionStore,
+                refreshSession = apiClient::refreshAuthSession,
+                onAccessTokenChanged = apiClient::setAccessToken,
+                onSessionCleared = {
+                    coroutineScope.launch {
+                        passwordReentryError = null
+                        authState = AuthGateUiState.NeedsAuth
+                    }
+                },
+                onPasswordReentryRequired = {
+                    coroutineScope.launch {
+                        passwordReentryError = null
+                        authState = AuthGateUiState.NeedsPasswordReentry
+                    }
+                },
+            )
+        }
     val authRepository =
         remember(apiClient, sessionStore) {
             AuthStartupRepository(
@@ -53,9 +80,11 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 deviceLabelProvider = ::androidDeviceLabel,
             )
         }
-    val coroutineScope = rememberCoroutineScope()
-    var authState by remember { mutableStateOf<AuthGateUiState>(AuthGateUiState.Checking) }
-    var retryCount by rememberSaveable { mutableIntStateOf(0) }
+
+    DisposableEffect(apiClient, tokenRefreshCoordinator) {
+        apiClient.setAuthSessionRefresher(tokenRefreshCoordinator::refreshAccessToken)
+        onDispose { apiClient.setAuthSessionRefresher(null) }
+    }
 
     suspend fun verifyStartupAuth() {
         authState = AuthGateUiState.Checking
@@ -88,8 +117,28 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
             )
         AuthGateUiState.NeedsPasswordReentry ->
             PasswordReentryRequiredScreen(
+                accountEmail = sessionStore.loadAccountEmail(),
+                isSubmitting = isPasswordReentrySubmitting,
+                errorMessage = passwordReentryError,
+                onSubmit = { email, password ->
+                    if (isPasswordReentrySubmitting) return@PasswordReentryRequiredScreen
+                    isPasswordReentrySubmitting = true
+                    passwordReentryError = null
+                    coroutineScope.launch {
+                        runCatching { authAccountRepository.signIn(email, password) }
+                            .onSuccess {
+                                authState = AuthGateUiState.Ready
+                            }.onFailure { error ->
+                                passwordReentryError =
+                                    error.message?.takeIf { it.isNotBlank() }
+                                        ?: "Could not verify your password."
+                            }
+                        isPasswordReentrySubmitting = false
+                    }
+                },
                 onUseDifferentAccount = {
-                    authRepository.clearSession()
+                    tokenRefreshCoordinator.clearSession()
+                    passwordReentryError = null
                     authState = AuthGateUiState.NeedsAuth
                 },
                 modifier = modifier,

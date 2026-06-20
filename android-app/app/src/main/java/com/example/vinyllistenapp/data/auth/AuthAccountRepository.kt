@@ -27,8 +27,9 @@ class AuthAccountRepository(
         email: String,
         password: String,
     ): AuthTokenPair {
-        val tokenPair = loginRequest(email.trim(), password, deviceLabelProvider())
-        sessionStore.saveTokenPair(tokenPair)
+        val normalizedEmail = email.trim()
+        val tokenPair = loginRequest(normalizedEmail, password, deviceLabelProvider())
+        sessionStore.saveTokenPair(tokenPair, accountEmail = normalizedEmail)
         onAccessTokenChanged(tokenPair.accessToken)
         return tokenPair
     }

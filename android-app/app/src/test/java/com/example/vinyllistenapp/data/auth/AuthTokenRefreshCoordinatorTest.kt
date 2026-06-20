@@ -8,106 +8,94 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class AuthStartupRepositoryTest {
+class AuthTokenRefreshCoordinatorTest {
     @Test
-    fun noStoredRefreshTokenNeedsAuthAndClearsAccessToken() =
+    fun refreshAccessTokenStoresRotatedRefreshTokenAndPublishesAccessToken() =
         runBlocking {
-            val store = FakeAuthSessionStore()
-            var accessToken: String? = "old-access"
-            val repository =
-                AuthStartupRepository(
-                    sessionStore = store,
-                    refreshSession = { error("refresh should not run") },
-                    onAccessTokenChanged = { accessToken = it },
-                )
-
-            val result = repository.resolveStartupState()
-
-            assertEquals(AuthStartupResult.NeedsAuth, result)
-            assertNull(accessToken)
-        }
-
-    @Test
-    fun validRefreshTokenStoresRotatedTokenPairAndMarksReady() =
-        runBlocking {
-            val store = FakeAuthSessionStore(refreshToken = "old-refresh")
-            var accessToken: String? = null
-            val repository =
-                AuthStartupRepository(
+            val store = FakeAuthSessionStore(refreshToken = "old-refresh", accountEmail = "alex@example.com")
+            var publishedAccessToken: String? = null
+            val coordinator =
+                AuthTokenRefreshCoordinator(
                     sessionStore = store,
                     refreshSession = { refreshToken ->
                         assertEquals("old-refresh", refreshToken)
                         tokenPair(accessToken = "new-access", refreshToken = "new-refresh")
                     },
-                    onAccessTokenChanged = { accessToken = it },
+                    onAccessTokenChanged = { publishedAccessToken = it },
                 )
 
-            val result = repository.resolveStartupState()
+            val result = coordinator.refreshAccessToken()
 
-            assertEquals(AuthStartupResult.Ready, result)
-            assertEquals("new-access", accessToken)
+            assertEquals(AuthSessionRefreshResult.Ready, result)
+            assertEquals("new-access", publishedAccessToken)
             assertEquals("new-refresh", store.refreshToken)
-            assertEquals("new-session", store.sessionId)
+            assertEquals("session-new", store.sessionId)
+            assertEquals("alex@example.com", store.accountEmail)
         }
 
     @Test
-    fun inactivityRequiredRoutesToPasswordReentryWithoutClearingToken() =
+    fun inactivityRequiredKeepsRefreshTokenAndRoutesToPasswordReentry() =
         runBlocking {
             val store = FakeAuthSessionStore(refreshToken = "stale-refresh")
-            val repository =
-                AuthStartupRepository(
+            var passwordReentryRequested = false
+            var publishedAccessToken: String? = "old-access"
+            val coordinator =
+                AuthTokenRefreshCoordinator(
                     sessionStore = store,
                     refreshSession = {
                         throw ApiException(
-                            message = "Password re-entry is required after inactivity.",
-                            kind = ApiErrorKind.Unknown,
+                            message = "Password re-entry is required.",
                             code = "inactivity_reauth_required",
                             statusCode = 401,
                         )
                     },
-                    onAccessTokenChanged = {},
+                    onAccessTokenChanged = { publishedAccessToken = it },
+                    onPasswordReentryRequired = { passwordReentryRequested = true },
                 )
 
-            val result = repository.resolveStartupState()
+            val result = coordinator.refreshAccessToken()
 
-            assertEquals(AuthStartupResult.NeedsPasswordReentry, result)
+            assertEquals(AuthSessionRefreshResult.NeedsPasswordReentry, result)
             assertEquals("stale-refresh", store.refreshToken)
+            assertNull(publishedAccessToken)
+            assertTrue(passwordReentryRequested)
             assertEquals(false, store.cleared)
         }
 
     @Test
-    fun invalidRefreshTokenClearsSessionAndNeedsAuth() =
+    fun invalidRefreshTokenClearsSessionAndRoutesToAuth() =
         runBlocking {
-            val store = FakeAuthSessionStore(refreshToken = "bad-refresh")
-            var accessToken: String? = "old-access"
-            val repository =
-                AuthStartupRepository(
+            val store = FakeAuthSessionStore(refreshToken = "bad-refresh", accountEmail = "alex@example.com")
+            var sessionCleared = false
+            val coordinator =
+                AuthTokenRefreshCoordinator(
                     sessionStore = store,
                     refreshSession = {
                         throw ApiException(
                             message = "Refresh token is invalid.",
-                            kind = ApiErrorKind.Unknown,
                             code = "invalid_refresh_token",
                             statusCode = 401,
                         )
                     },
-                    onAccessTokenChanged = { accessToken = it },
+                    onAccessTokenChanged = {},
+                    onSessionCleared = { sessionCleared = true },
                 )
 
-            val result = repository.resolveStartupState()
+            val result = coordinator.refreshAccessToken()
 
-            assertEquals(AuthStartupResult.NeedsAuth, result)
+            assertEquals(AuthSessionRefreshResult.NeedsAuth, result)
             assertNull(store.refreshToken)
-            assertNull(accessToken)
+            assertNull(store.accountEmail)
             assertTrue(store.cleared)
+            assertTrue(sessionCleared)
         }
 
     @Test
-    fun transientRefreshFailureIsRetryableAndKeepsSession() =
+    fun transientRefreshFailureIsRethrownAndKeepsSession() =
         runBlocking {
             val store = FakeAuthSessionStore(refreshToken = "retry-refresh")
-            val repository =
-                AuthStartupRepository(
+            val coordinator =
+                AuthTokenRefreshCoordinator(
                     sessionStore = store,
                     refreshSession = {
                         throw ApiException(
@@ -118,9 +106,9 @@ class AuthStartupRepositoryTest {
                     onAccessTokenChanged = {},
                 )
 
-            val result = repository.resolveStartupState()
+            val error = runCatching { coordinator.refreshAccessToken() }.exceptionOrNull()
 
-            assertTrue(result is AuthStartupResult.RetryableError)
+            assertTrue(error is ApiException)
             assertEquals("retry-refresh", store.refreshToken)
             assertEquals(false, store.cleared)
         }
@@ -135,18 +123,19 @@ class AuthStartupRepositoryTest {
             refreshToken = refreshToken,
             refreshExpiresAt = "2026-06-26T12:00:00Z",
             tokenType = "Bearer",
-            sessionId = "new-session",
+            sessionId = "session-new",
         )
 
     private class FakeAuthSessionStore(
         var refreshToken: String? = null,
+        var accountEmail: String? = null,
     ) : AuthSessionStore {
         var sessionId: String? = null
         var cleared: Boolean = false
 
         override fun loadRefreshToken(): String? = refreshToken
 
-        override fun loadAccountEmail(): String? = null
+        override fun loadAccountEmail(): String? = accountEmail
 
         override fun saveTokenPair(
             tokenPair: AuthTokenPair,
@@ -154,11 +143,13 @@ class AuthStartupRepositoryTest {
         ) {
             refreshToken = tokenPair.refreshToken
             sessionId = tokenPair.sessionId
+            accountEmail?.let { this.accountEmail = it }
             cleared = false
         }
 
         override fun clear() {
             refreshToken = null
+            accountEmail = null
             sessionId = null
             cleared = true
         }

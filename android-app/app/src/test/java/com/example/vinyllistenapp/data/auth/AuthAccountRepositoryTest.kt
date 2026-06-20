@@ -29,6 +29,7 @@ class AuthAccountRepositoryTest {
             assertEquals("access-new", publishedAccessToken)
             assertEquals("refresh-new", store.refreshToken)
             assertEquals("session-new", store.sessionId)
+            assertEquals("alex@example.com", store.accountEmail)
         }
 
     @Test
@@ -152,17 +153,25 @@ class AuthAccountRepositoryTest {
     private class FakeAuthSessionStore : AuthSessionStore {
         var refreshToken: String? = null
         var sessionId: String? = null
+        var accountEmail: String? = null
 
         override fun loadRefreshToken(): String? = refreshToken
 
-        override fun saveTokenPair(tokenPair: AuthTokenPair) {
+        override fun loadAccountEmail(): String? = accountEmail
+
+        override fun saveTokenPair(
+            tokenPair: AuthTokenPair,
+            accountEmail: String?,
+        ) {
             refreshToken = tokenPair.refreshToken
             sessionId = tokenPair.sessionId
+            accountEmail?.let { this.accountEmail = it }
         }
 
         override fun clear() {
             refreshToken = null
             sessionId = null
+            accountEmail = null
         }
     }
 }

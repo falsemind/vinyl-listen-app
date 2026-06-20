@@ -15,7 +15,12 @@ import javax.crypto.spec.GCMParameterSpec
 interface AuthSessionStore {
     fun loadRefreshToken(): String?
 
-    fun saveTokenPair(tokenPair: AuthTokenPair)
+    fun loadAccountEmail(): String?
+
+    fun saveTokenPair(
+        tokenPair: AuthTokenPair,
+        accountEmail: String? = null,
+    )
 
     fun clear()
 }
@@ -39,11 +44,24 @@ class EncryptedAuthSessionStore(
         return migratePlaintextRefreshToken()
     }
 
-    override fun saveTokenPair(tokenPair: AuthTokenPair) {
+    override fun loadAccountEmail(): String? =
+        preferences.getString(KEY_ACCOUNT_EMAIL_ENCRYPTED, null)?.let { encryptedEmail ->
+            runCatching { decrypt(encryptedEmail).takeIf { it.isNotBlank() } }
+                .getOrElse {
+                    clear()
+                    null
+                }
+        }
+
+    override fun saveTokenPair(
+        tokenPair: AuthTokenPair,
+        accountEmail: String?,
+    ) {
         saveEncryptedSession(
             refreshToken = tokenPair.refreshToken,
             refreshExpiresAt = tokenPair.refreshExpiresAt,
             sessionId = tokenPair.sessionId,
+            accountEmail = accountEmail,
         )
     }
 
@@ -75,16 +93,21 @@ class EncryptedAuthSessionStore(
         refreshToken: String,
         refreshExpiresAt: String?,
         sessionId: String?,
+        accountEmail: String? = null,
     ) {
-        preferences
-            .edit()
-            .putString(KEY_REFRESH_TOKEN_ENCRYPTED, encrypt(refreshToken))
-            .putEncryptedOptionalString(KEY_REFRESH_EXPIRES_AT_ENCRYPTED, refreshExpiresAt)
-            .putEncryptedOptionalString(KEY_SESSION_ID_ENCRYPTED, sessionId)
-            .remove(KEY_REFRESH_TOKEN)
-            .remove(KEY_REFRESH_EXPIRES_AT)
-            .remove(KEY_SESSION_ID)
-            .apply()
+        val editor =
+            preferences
+                .edit()
+                .putString(KEY_REFRESH_TOKEN_ENCRYPTED, encrypt(refreshToken))
+                .putEncryptedOptionalString(KEY_REFRESH_EXPIRES_AT_ENCRYPTED, refreshExpiresAt)
+                .putEncryptedOptionalString(KEY_SESSION_ID_ENCRYPTED, sessionId)
+                .remove(KEY_REFRESH_TOKEN)
+                .remove(KEY_REFRESH_EXPIRES_AT)
+                .remove(KEY_SESSION_ID)
+        accountEmail?.trim()?.takeIf { it.isNotBlank() }?.let { email ->
+            editor.putString(KEY_ACCOUNT_EMAIL_ENCRYPTED, encrypt(email))
+        }
+        editor.apply()
     }
 
     private fun SharedPreferences.Editor.putEncryptedOptionalString(
@@ -147,6 +170,7 @@ class EncryptedAuthSessionStore(
         const val KEY_REFRESH_TOKEN_ENCRYPTED = "refresh_token_encrypted"
         const val KEY_REFRESH_EXPIRES_AT_ENCRYPTED = "refresh_expires_at_encrypted"
         const val KEY_SESSION_ID_ENCRYPTED = "session_id_encrypted"
+        const val KEY_ACCOUNT_EMAIL_ENCRYPTED = "account_email_encrypted"
         const val KEY_REFRESH_TOKEN = "refresh_token"
         const val KEY_REFRESH_EXPIRES_AT = "refresh_expires_at"
         const val KEY_SESSION_ID = "session_id"

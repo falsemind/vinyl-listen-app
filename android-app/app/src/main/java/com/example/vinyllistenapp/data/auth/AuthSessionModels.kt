@@ -44,3 +44,11 @@ sealed interface AuthStartupResult {
         val message: String,
     ) : AuthStartupResult
 }
+
+sealed interface AuthSessionRefreshResult {
+    data object Ready : AuthSessionRefreshResult
+
+    data object NeedsAuth : AuthSessionRefreshResult
+
+    data object NeedsPasswordReentry : AuthSessionRefreshResult
+}

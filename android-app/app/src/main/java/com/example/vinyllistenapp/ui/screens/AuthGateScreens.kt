@@ -16,12 +16,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.ui.theme.VinylColors
@@ -103,18 +109,109 @@ fun AuthEntryScreen(
 
 @Composable
 fun PasswordReentryRequiredScreen(
+    accountEmail: String?,
+    isSubmitting: Boolean,
+    errorMessage: String?,
+    onSubmit: (String, String) -> Unit,
     onUseDifferentAccount: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    AuthGateActionScreen(
-        title = "Password required",
-        body = "Enter your password again to continue.",
-        primaryLabel = "Enter password",
-        secondaryLabel = "Use another account",
-        onPrimary = {},
-        onSecondary = onUseDifferentAccount,
-        modifier = modifier,
-    )
+    var email by remember(accountEmail) { mutableStateOf(accountEmail.orEmpty()) }
+    var password by remember { mutableStateOf("") }
+    val canSubmit = !isSubmitting && email.isValidEmail() && password.isNotBlank()
+
+    Box(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(VinylColors.AppBackground)
+                .padding(VinylSpacing.SpaceXl),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            VinylSplashLogo()
+            Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
+            Text(
+                text = "Password required",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(VinylSpacing.SpaceSm))
+            Text(
+                text = "Enter your password again to continue.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
+            if (accountEmail.isNullOrBlank()) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(VinylSpacing.SpaceMd))
+            } else {
+                Text(
+                    text = accountEmail,
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(VinylSpacing.SpaceMd))
+            }
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            errorMessage?.let { message ->
+                Spacer(modifier = Modifier.height(VinylSpacing.SpaceSm))
+                Text(
+                    text = message,
+                    color = VinylColors.AccentOrange,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                OutlinedButton(
+                    onClick = onUseDifferentAccount,
+                    enabled = !isSubmitting,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Use another account")
+                }
+                Button(
+                    onClick = {
+                        val submittedEmail = email
+                        val submittedPassword = password
+                        password = ""
+                        onSubmit(submittedEmail, submittedPassword)
+                    },
+                    enabled = canSubmit,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (isSubmitting) "Checking..." else "Continue")
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -190,3 +287,5 @@ private fun VinylSplashLogo(modifier: Modifier = Modifier) {
 }
 
 private const val RETRY_HINT_THRESHOLD = 3
+
+private fun String.isValidEmail(): Boolean = trim().contains("@") && trim().contains(".")
