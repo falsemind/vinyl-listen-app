@@ -401,6 +401,65 @@ def test_identifier_parser_does_not_promote_mix_versions_to_artist() -> None:
     )
 
 
+def test_identifier_parser_filters_credit_role_fragments_without_dropping_mix_titles() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "SABAB",
+                "OUT OF STEP",
+                "ARTIKAL",
+                "A. ORIGINAL MIX",
+                "B. QUASAR REMIX",
+                "WRITTEN AND PRODUCED",
+                "BY E. ZAIDAN",
+                "REMIX AND ADDITIONAL PRODUCTION",
+                "BY R. GALLET",
+                "MASTERED BY PRECISE MASTERING",
+                "ARTWORK BY BLINDDOG",
+                "DISTRIBUTED BY UNEARTHED SOUND",
+                "ARTKL058",
+                "WWW.ARTIKALMUSICUK.COM",
+                "2021",
+                "ORIGINAL MIX",
+                "REMIX AND ADDITIONAL PROD",
+                "MASTERED BY PRECISE MASTER",
+            ]
+        )
+    )
+
+    assert "ARTKL058" in identifiers.catalog_numbers
+    assert identifiers.text_fragments == ("ORIGINAL MIX", "QUASAR REMIX", "SABAB")
+
+    truncated_credit_identifiers = parser.parse(
+        "\n".join(
+            [
+                "A. ORIGINAL MIX",
+                "B. QUASAR REMIX",
+                "WRITTEN AND PRODUCED",
+                "BY E. ZAIDAN",
+                "REMIX AND ADDITIONAL PRODUCTION",
+                "BY R. GALLET",
+                "MASTERED BY PRECISE MASTERING",
+                "ARTWORK BY BLINDDOG",
+                "DISTRIBUTED BY UNEARTHED SOUNDS",
+                "ARTKL058",
+                "WWW.ARTIKALMUSICUK.COM",
+                "2021",
+                "ORIGINAL MIX",
+                "REMIX AND ADDITIONAL PRO",
+                "MASTERED BY PRECISE MASTERI",
+                "DISTRIBUTED BY UNEARTHED SOU",
+            ]
+        )
+    )
+
+    assert truncated_credit_identifiers.artist is None
+    assert truncated_credit_identifiers.title is None
+    assert truncated_credit_identifiers.text_fragments == ("ORIGINAL MIX", "QUASAR REMIX")
+
+
 def test_identifier_parser_reads_top_stacked_artist_title_before_side_tracks() -> None:
     parser = IdentifierParser()
 
