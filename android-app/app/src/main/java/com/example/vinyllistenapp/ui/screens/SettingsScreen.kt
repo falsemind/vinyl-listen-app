@@ -552,7 +552,11 @@ fun SettingsScreen(
             title = { Text("Delete account") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                    Text("This permanently deletes your account and user data. This cannot be undone.")
+                    Text(
+                        "This permanently deletes your account, collection, listening sessions, analytics, " +
+                            "insights history, saved provider tokens, and app-owned preferences. " +
+                            "This cannot be undone.",
+                    )
                     PasswordTextField(
                         value = deleteAccountPassword,
                         onValueChange = { deleteAccountPassword = it },

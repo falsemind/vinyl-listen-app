@@ -4,6 +4,7 @@ import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Test
 import java.net.InetSocketAddress
 
@@ -43,6 +44,57 @@ class VinylApiClientAuthRefreshTest {
                 assertEquals(false, folders.discogsConfigured)
                 assertEquals(1, refreshCount)
                 assertEquals(listOf("Bearer old-access", "Bearer new-access"), seenAuthorizationHeaders)
+            } finally {
+                server.stop(0)
+            }
+        }
+
+    @Test
+    fun featureUsageLimitErrorPreservesEntitlementMetadata() =
+        runBlocking {
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/api/v1/collection/folders") { exchange ->
+                exchange.respond(
+                    status = 402,
+                    body =
+                        """
+                        {
+                          "error": {
+                            "code": "feature_usage_limit_exceeded",
+                            "message": "Usage limit reached for this feature.",
+                            "capability": "ocr_identify",
+                            "plan": "FREE",
+                            "limit": 25,
+                            "used": 25,
+                            "reset_at": "2026-07-19T12:00:00+00:00"
+                          }
+                        }
+                        """.trimIndent(),
+                )
+            }
+            server.start()
+            try {
+                val client = VinylApiClient(baseUrl = "http://127.0.0.1:${server.address.port}/api/v1")
+
+                try {
+                    client.getCollectionFolders()
+                    fail("Expected feature-gated API error.")
+                } catch (error: ApiException) {
+                    assertEquals(ApiErrorKind.FeatureGated, error.kind)
+                    assertEquals("feature_usage_limit_exceeded", error.code)
+                    assertEquals(402, error.statusCode)
+                    assertEquals(
+                        "Identify allowance reached. Manual Search is still available. " +
+                            "Try again after 2026-07-19T12:00:00+00:00.",
+                        error.message,
+                    )
+                    val usageLimit = error.featureUsageLimit ?: throw AssertionError("Expected usage limit metadata.")
+                    assertEquals("ocr_identify", usageLimit.capability)
+                    assertEquals("FREE", usageLimit.plan)
+                    assertEquals(25, usageLimit.limit)
+                    assertEquals(25, usageLimit.used)
+                    assertEquals("2026-07-19T12:00:00+00:00", usageLimit.resetAt)
+                }
             } finally {
                 server.stop(0)
             }

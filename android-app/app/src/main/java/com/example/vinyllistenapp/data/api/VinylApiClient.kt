@@ -211,6 +211,7 @@ class VinylApiClient(
                 IdentifyJobStatus.Failed ->
                     throw ApiException(
                         message = job.error?.message ?: "Identify failed. Retry or use Manual Search.",
+                        code = job.error?.code,
                         failedStep = job.error?.failedStep,
                     )
                 IdentifyJobStatus.Expired ->
@@ -1029,17 +1030,21 @@ class VinylApiClient(
             val errorBody = runCatching { JSONObject(body) }.getOrNull()
             val errorObject = errorBody?.optJSONObject("error")
             val code = errorObject?.optNullableString("code")
+            val featureUsageLimit = errorObject?.toFeatureUsageLimit()
             val rawMessage =
                 errorObject?.optNullableString("message")
                     ?: errorBody?.optNullableString("detail")
                     ?: body.takeIf { it.isNotBlank() }
             val kind = status.toApiErrorKind()
             throw ApiException(
-                message = apiErrorMessage(status, code, rawMessage, retryAfterMillis),
-                kind = kind,
+                message =
+                    featureUsageLimit?.toUserMessage()
+                        ?: apiErrorMessage(status, code, rawMessage, retryAfterMillis),
+                kind = if (featureUsageLimit != null) ApiErrorKind.FeatureGated else kind,
                 code = code,
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
+                featureUsageLimit = featureUsageLimit,
             )
         }
         if (status == 204) {
@@ -1071,6 +1076,7 @@ class VinylApiClient(
 enum class ApiErrorKind {
     Offline,
     RateLimited,
+    FeatureGated,
     Validation,
     NotFound,
     Server,
@@ -1084,8 +1090,17 @@ class ApiException(
     val failedStep: String? = null,
     val statusCode: Int? = null,
     val retryAfterMillis: Long? = null,
+    val featureUsageLimit: FeatureUsageLimit? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+data class FeatureUsageLimit(
+    val capability: String,
+    val plan: String?,
+    val limit: Int?,
+    val used: Int?,
+    val resetAt: String?,
+)
 
 data class AiChatResponse(
     val conversationId: String,
@@ -1126,6 +1141,8 @@ private const val AUTH_REQUIRED = "auth_required"
 private const val EXPIRED_ACCESS_TOKEN = "expired_access_token"
 private const val INVALID_ACCESS_TOKEN = "invalid_access_token"
 private const val INACTIVITY_REAUTH_REQUIRED = "inactivity_reauth_required"
+private const val FEATURE_USAGE_LIMIT_EXCEEDED = "feature_usage_limit_exceeded"
+private const val OCR_IDENTIFY_CAPABILITY = "ocr_identify"
 
 private fun OutputStream.writeUtf8(value: String) {
     write(value.toByteArray(Charsets.UTF_8))
@@ -1614,12 +1631,34 @@ private fun JSONObject.toAuthDeleteAccountResult(): AuthDeleteAccountResult =
 
 private fun Int.toApiErrorKind(): ApiErrorKind =
     when (this) {
+        402 -> ApiErrorKind.FeatureGated
         429 -> ApiErrorKind.RateLimited
         404 -> ApiErrorKind.NotFound
         422 -> ApiErrorKind.Validation
         in 500..599 -> ApiErrorKind.Server
         else -> ApiErrorKind.Unknown
     }
+
+private fun JSONObject.toFeatureUsageLimit(): FeatureUsageLimit? {
+    val code = optNullableString("code")
+    if (code != FEATURE_USAGE_LIMIT_EXCEEDED) return null
+    return FeatureUsageLimit(
+        capability = optString("capability", ""),
+        plan = optNullableString("plan"),
+        limit = optNullableInt("limit"),
+        used = optNullableInt("used"),
+        resetAt = optNullableString("reset_at"),
+    )
+}
+
+private fun FeatureUsageLimit.toUserMessage(): String {
+    val base =
+        when (capability) {
+            OCR_IDENTIFY_CAPABILITY -> "Identify allowance reached. Manual Search is still available."
+            else -> "This feature's current allowance has been reached."
+        }
+    return resetAt?.let { "$base Try again after $it." } ?: base
+}
 
 private fun apiErrorMessage(
     status: Int,
