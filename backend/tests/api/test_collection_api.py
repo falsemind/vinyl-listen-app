@@ -476,6 +476,39 @@ def test_list_collection_releases_returns_paginated_active_records() -> None:
     ]
 
 
+def test_list_collection_releases_uses_release_id_when_membership_has_own_id() -> None:
+    release = _release("release-uuid", 101, "Imported")
+    membership = SimpleNamespace(
+        id=1,
+        collection_added_at=release.collection_added_at,
+        in_collection=True,
+        is_favorite=True,
+    )
+    repository = StubReleasesRepository(
+        [
+            SimpleNamespace(
+                release=release,
+                membership=membership,
+                in_collection=membership.in_collection,
+                is_favorite=membership.is_favorite,
+                label=release.label,
+                folder_ids=release.folder_ids,
+            )
+        ]
+    )
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "release-uuid"
+    assert response.json()["items"][0]["is_favorite"] is True
+
+
 def test_list_collection_releases_filters_by_artist() -> None:
     repository = StubReleasesRepository([_release("release-1", 101, "First")])
     _override_db()
@@ -775,7 +808,7 @@ def _job_response(
 
 
 def _release(
-    release_id: str,
+    release_id: str | int,
     discogs_release_id: int,
     title: str,
     *,
