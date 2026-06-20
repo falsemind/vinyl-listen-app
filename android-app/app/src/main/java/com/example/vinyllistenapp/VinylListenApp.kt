@@ -17,7 +17,7 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupRepository
 import com.example.vinyllistenapp.data.auth.AuthStartupResult
-import com.example.vinyllistenapp.data.auth.SharedPreferencesAuthSessionStore
+import com.example.vinyllistenapp.data.auth.EncryptedAuthSessionStore
 import com.example.vinyllistenapp.navigation.VinylNavHost
 import com.example.vinyllistenapp.ui.screens.AuthFlowScreen
 import com.example.vinyllistenapp.ui.screens.AuthSplashScreen
@@ -30,7 +30,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val appContext = remember(context) { context.applicationContext }
     val apiClient = remember { VinylApiClient() }
-    val sessionStore = remember(appContext) { SharedPreferencesAuthSessionStore(appContext) }
+    val sessionStore = remember(appContext) { EncryptedAuthSessionStore(appContext) }
     val authRepository =
         remember(apiClient, sessionStore) {
             AuthStartupRepository(

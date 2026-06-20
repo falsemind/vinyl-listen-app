@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,17 +47,16 @@ fun AuthFlowScreen(
     val coroutineScope = rememberCoroutineScope()
     var mode by rememberSaveable { mutableStateOf(AuthFlowMode.Register) }
     var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var verificationEmail by rememberSaveable { mutableStateOf("") }
-    var verificationPassword by rememberSaveable { mutableStateOf("") }
-    var verificationCode by rememberSaveable { mutableStateOf("") }
+    var verificationCode by remember { mutableStateOf("") }
     var verificationExpiresAt by rememberSaveable { mutableStateOf<String?>(null) }
     var resetEmail by rememberSaveable { mutableStateOf("") }
-    var resetCode by rememberSaveable { mutableStateOf("") }
-    var resetPassword by rememberSaveable { mutableStateOf("") }
-    var resetConfirmPassword by rememberSaveable { mutableStateOf("") }
-    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    var resetCode by remember { mutableStateOf("") }
+    var resetPassword by remember { mutableStateOf("") }
+    var resetConfirmPassword by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -67,13 +67,16 @@ fun AuthFlowScreen(
 
     fun submitRegister() {
         if (isSubmitting || !email.isValidEmail() || password.length < MIN_PASSWORD_LENGTH || password != confirmPassword) return
+        val submittedEmail = email.trim()
+        val submittedPassword = password
+        password = ""
+        confirmPassword = ""
         clearMessages()
         isSubmitting = true
         coroutineScope.launch {
-            runCatching { authRepository.register(email, password) }
+            runCatching { authRepository.register(submittedEmail, submittedPassword) }
                 .onSuccess { result ->
                     verificationEmail = result.email
-                    verificationPassword = password
                     verificationExpiresAt = result.verificationExpiresAt
                     verificationCode = ""
                     email = result.email
@@ -88,15 +91,17 @@ fun AuthFlowScreen(
 
     fun submitSignIn() {
         if (isSubmitting || !email.isValidEmail() || password.isBlank()) return
+        val submittedEmail = email.trim()
+        val submittedPassword = password
+        password = ""
         clearMessages()
         isSubmitting = true
         coroutineScope.launch {
-            runCatching { authRepository.signIn(email, password) }
+            runCatching { authRepository.signIn(submittedEmail, submittedPassword) }
                 .onSuccess { onAuthenticated() }
                 .onFailure { error ->
                     if ((error as? ApiException)?.code == EMAIL_NOT_VERIFIED) {
-                        verificationEmail = email.trim()
-                        verificationPassword = password
+                        verificationEmail = submittedEmail
                         verificationCode = ""
                         statusMessage = "Verify your email to continue."
                         mode = AuthFlowMode.Verify
@@ -110,22 +115,17 @@ fun AuthFlowScreen(
 
     fun submitVerification() {
         val targetEmail = verificationEmail.ifBlank { email }.trim()
-        val targetPassword = verificationPassword.ifBlank { password }
         if (isSubmitting || !targetEmail.isValidEmail() || verificationCode.trim().isBlank()) return
+        val submittedCode = verificationCode.trim()
+        verificationCode = ""
         clearMessages()
         isSubmitting = true
         coroutineScope.launch {
-            runCatching { authRepository.verifyEmail(targetEmail, verificationCode) }
+            runCatching { authRepository.verifyEmail(targetEmail, submittedCode) }
                 .onSuccess {
-                    runCatching { authRepository.signIn(targetEmail, targetPassword) }
-                        .onSuccess { onAuthenticated() }
-                        .onFailure { error ->
-                            mode = AuthFlowMode.SignIn
-                            email = targetEmail
-                            password = ""
-                            statusMessage = "Email verified. Sign in to continue."
-                            errorMessage = error.authMessage("Could not sign in.")
-                        }
+                    mode = AuthFlowMode.SignIn
+                    email = targetEmail
+                    statusMessage = "Email verified. Sign in to continue."
                 }.onFailure { error ->
                     errorMessage = error.authMessage("Code is invalid.")
                 }
@@ -143,6 +143,7 @@ fun AuthFlowScreen(
                 .onSuccess { result ->
                     verificationEmail = result.email
                     verificationExpiresAt = result.verificationExpiresAt
+                    verificationCode = ""
                     statusMessage = "New verification code sent."
                 }.onFailure { error ->
                     errorMessage = error.authMessage("Could not resend code.")
@@ -181,16 +182,18 @@ fun AuthFlowScreen(
         ) {
             return
         }
+        val submittedCode = resetCode.trim()
+        val submittedPassword = resetPassword
+        resetCode = ""
+        resetPassword = ""
+        resetConfirmPassword = ""
         clearMessages()
         isSubmitting = true
         coroutineScope.launch {
-            runCatching { authRepository.confirmPasswordReset(resetEmail, resetCode, resetPassword) }
+            runCatching { authRepository.confirmPasswordReset(resetEmail, submittedCode, submittedPassword) }
                 .onSuccess { result ->
                     email = result.email
                     password = ""
-                    resetCode = ""
-                    resetPassword = ""
-                    resetConfirmPassword = ""
                     statusMessage = "Password updated. Sign in with your new password."
                     mode = AuthFlowMode.SignIn
                 }.onFailure { error ->
