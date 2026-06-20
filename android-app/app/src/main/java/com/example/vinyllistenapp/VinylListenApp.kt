@@ -139,6 +139,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
         AuthGateUiState.NeedsAuth ->
             AuthFlowScreen(
                 authRepository = authAccountRepository,
+                apiClient = apiClient,
                 onAuthenticated = {
                     resetMainNavigationToHome()
                     authState = AuthGateUiState.Ready

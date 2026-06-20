@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,7 +34,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.example.vinyllistenapp.data.api.ApiException
+import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
+import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
@@ -43,6 +46,7 @@ fun AuthFlowScreen(
     authRepository: AuthAccountRepository,
     onAuthenticated: () -> Unit,
     modifier: Modifier = Modifier,
+    apiClient: VinylApiClient? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
     var mode by rememberSaveable { mutableStateOf(AuthFlowMode.Register) }
@@ -56,6 +60,9 @@ fun AuthFlowScreen(
     var resetCode by remember { mutableStateOf("") }
     var resetPassword by remember { mutableStateOf("") }
     var resetConfirmPassword by remember { mutableStateOf("") }
+    var optionalDiscogsToken by remember { mutableStateOf("") }
+    var optionalUseDiscogsSource by rememberSaveable { mutableStateOf(false) }
+    var shouldShowOptionalSetupAfterSignIn by rememberSaveable { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -65,13 +72,33 @@ fun AuthFlowScreen(
         statusMessage = null
     }
 
+    fun completeAuthentication() {
+        optionalDiscogsToken = ""
+        shouldShowOptionalSetupAfterSignIn = false
+        onAuthenticated()
+    }
+
     fun submitRegister() {
-        if (isSubmitting || !email.isValidEmail() || password.length < MIN_PASSWORD_LENGTH || password != confirmPassword) return
+        if (isSubmitting) return
+        clearMessages()
+        when {
+            !email.isValidEmail() -> {
+                errorMessage = "Enter a valid email address."
+                return
+            }
+            password.length < MIN_PASSWORD_LENGTH -> {
+                errorMessage = "Password must be at least $MIN_PASSWORD_LENGTH characters."
+                return
+            }
+            password != confirmPassword -> {
+                errorMessage = "Passwords do not match."
+                return
+            }
+        }
         val submittedEmail = email.trim()
         val submittedPassword = password
         password = ""
         confirmPassword = ""
-        clearMessages()
         isSubmitting = true
         coroutineScope.launch {
             runCatching { authRepository.register(submittedEmail, submittedPassword) }
@@ -98,8 +125,14 @@ fun AuthFlowScreen(
         isSubmitting = true
         coroutineScope.launch {
             runCatching { authRepository.signIn(submittedEmail, submittedPassword) }
-                .onSuccess { onAuthenticated() }
-                .onFailure { error ->
+                .onSuccess {
+                    if (shouldShowOptionalSetupAfterSignIn && apiClient != null) {
+                        mode = AuthFlowMode.OptionalSetup
+                        clearMessages()
+                    } else {
+                        completeAuthentication()
+                    }
+                }.onFailure { error ->
                     if ((error as? ApiException)?.code == EMAIL_NOT_VERIFIED) {
                         verificationEmail = submittedEmail
                         verificationCode = ""
@@ -125,10 +158,32 @@ fun AuthFlowScreen(
                 .onSuccess {
                     mode = AuthFlowMode.SignIn
                     email = targetEmail
+                    shouldShowOptionalSetupAfterSignIn = true
                     statusMessage = "Email verified. Sign in to continue."
                 }.onFailure { error ->
                     errorMessage = error.authMessage("Code is invalid.")
                 }
+            isSubmitting = false
+        }
+    }
+
+    fun submitOptionalSetup() {
+        val client = apiClient ?: return completeAuthentication()
+        val token = optionalDiscogsToken.trim()
+        if (isSubmitting || token.isBlank()) return
+        clearMessages()
+        isSubmitting = true
+        coroutineScope.launch {
+            runCatching {
+                client.saveDiscogsAccessToken(token)
+                if (optionalUseDiscogsSource) {
+                    client.updateCollectionSettings(CollectionSourceOfTruth.Discogs)
+                }
+            }.onSuccess {
+                completeAuthentication()
+            }.onFailure { error ->
+                errorMessage = error.authMessage("Could not save optional setup.")
+            }
             isSubmitting = false
         }
     }
@@ -294,6 +349,16 @@ fun AuthFlowScreen(
                             mode = AuthFlowMode.ForgotPassword
                         },
                     )
+                AuthFlowMode.OptionalSetup ->
+                    OptionalSetupFields(
+                        discogsToken = optionalDiscogsToken,
+                        useDiscogsSource = optionalUseDiscogsSource,
+                        isSubmitting = isSubmitting,
+                        onDiscogsTokenChange = { optionalDiscogsToken = it },
+                        onUseDiscogsSourceChange = { optionalUseDiscogsSource = it },
+                        onSubmit = ::submitOptionalSetup,
+                        onSkip = ::completeAuthentication,
+                    )
             }
             AuthFlowMessages(
                 errorMessage = errorMessage,
@@ -313,6 +378,7 @@ private fun AuthFlowHeader(mode: AuthFlowMode) {
                 AuthFlowMode.SignIn -> "Sign in"
                 AuthFlowMode.ForgotPassword -> "Reset password"
                 AuthFlowMode.ResetPassword -> "Enter reset code"
+                AuthFlowMode.OptionalSetup -> "Optional setup"
             },
         color = VinylColors.TextPrimary,
         style = MaterialTheme.typography.headlineSmall,
@@ -327,6 +393,7 @@ private fun AuthFlowHeader(mode: AuthFlowMode) {
                 AuthFlowMode.SignIn -> "Use your verified account."
                 AuthFlowMode.ForgotPassword -> "Request a reset code."
                 AuthFlowMode.ResetPassword -> "Choose a new password."
+                AuthFlowMode.OptionalSetup -> "Add Discogs now or skip."
             },
         color = VinylColors.TextSecondary,
         style = MaterialTheme.typography.bodyLarge,
@@ -361,7 +428,7 @@ private fun RegisterFields(
     Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
     Button(
         onClick = onSubmit,
-        enabled = !isSubmitting && email.isValidEmail() && password.length >= MIN_PASSWORD_LENGTH && password == confirmPassword,
+        enabled = !isSubmitting && email.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text(if (isSubmitting) "Creating..." else "Create account")
@@ -582,6 +649,65 @@ private fun ResetPasswordFields(
 }
 
 @Composable
+private fun OptionalSetupFields(
+    discogsToken: String,
+    useDiscogsSource: Boolean,
+    isSubmitting: Boolean,
+    onDiscogsTokenChange: (String) -> Unit,
+    onUseDiscogsSourceChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    OutlinedTextField(
+        value = discogsToken,
+        onValueChange = onDiscogsTokenChange,
+        enabled = !isSubmitting,
+        label = { Text("Discogs access token") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(modifier = Modifier.height(VinylSpacing.SpaceMd))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = "Use Discogs as collection source",
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Switch(
+            checked = useDiscogsSource,
+            enabled = !isSubmitting && discogsToken.isNotBlank(),
+            onCheckedChange = onUseDiscogsSourceChange,
+        )
+    }
+    Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
+    Button(
+        onClick = onSubmit,
+        enabled = !isSubmitting && discogsToken.isNotBlank(),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (isSubmitting) "Saving..." else "Save Discogs token")
+    }
+    TextButton(
+        onClick = onSkip,
+        enabled = !isSubmitting,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Skip")
+    }
+}
+
+@Composable
 private fun AuthEmailField(
     email: String,
     isSubmitting: Boolean,
@@ -647,6 +773,7 @@ private enum class AuthFlowMode {
     SignIn,
     ForgotPassword,
     ResetPassword,
+    OptionalSetup,
 }
 
 private fun String.isValidEmail(): Boolean = trim().length >= 3 && "@" in this
