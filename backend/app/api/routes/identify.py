@@ -91,6 +91,7 @@ async def identify_release(
             image_bytes=image_bytes,
             filename=filename,
             content_type=content_type,
+            user_id=current_user.account.id,
         )
     except IdentifyValidationError as error:
         return JSONResponse(

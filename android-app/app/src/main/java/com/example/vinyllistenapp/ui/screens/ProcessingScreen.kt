@@ -288,7 +288,13 @@ fun ProcessingScreen(
                 if (cancelRequested) {
                     onDismiss()
                 } else {
-                    state = IdentifyUiState.Error(error.toIdentifyErrorMessage())
+                    val gatedMessage = error.toIdentifyFeatureGatedMessage()
+                    state =
+                        if (gatedMessage != null) {
+                            IdentifyUiState.FeatureGated(gatedMessage)
+                        } else {
+                            IdentifyUiState.Error(error.toIdentifyErrorMessage())
+                        }
                 }
                 return@LaunchedEffect
             }
@@ -374,7 +380,7 @@ fun ProcessingScreen(
                         color = processingSubtitleColor(state),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
+                        maxLines = if (state is IdentifyUiState.FeatureGated) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     when (state) {
@@ -388,6 +394,12 @@ fun ProcessingScreen(
                             ProcessingRecoveryActions(
                                 onRetry = { retryKey += 1 },
                                 onManualSearch = onManualSearch,
+                            )
+
+                        is IdentifyUiState.FeatureGated ->
+                            ProcessingGatedActions(
+                                onManualSearch = onManualSearch,
+                                onClose = onDismiss,
                             )
 
                         IdentifyUiState.Canceled,
@@ -423,6 +435,10 @@ private sealed interface IdentifyUiState {
     data class Error(
         val message: String,
     ) : IdentifyUiState
+
+    data class FeatureGated(
+        val message: String,
+    ) : IdentifyUiState
 }
 
 private val IdentifyUiState.currentStatus: IdentifyJobStatus?
@@ -433,6 +449,7 @@ private val IdentifyUiState.currentStatus: IdentifyJobStatus?
             IdentifyUiState.Canceled,
             IdentifyUiState.Empty,
             is IdentifyUiState.Error,
+            is IdentifyUiState.FeatureGated,
             is IdentifyUiState.Success,
             -> null
         }
@@ -444,7 +461,12 @@ private val IdentifyUiState.isCancelable: Boolean
     get() = this is IdentifyUiState.Loading || this is IdentifyUiState.Canceling
 
 private val IdentifyUiState.showsTopLeftAction: Boolean
-    get() = isCancelable || this is IdentifyUiState.Error || this is IdentifyUiState.Empty || this is IdentifyUiState.Canceled
+    get() =
+        isCancelable ||
+            this is IdentifyUiState.Error ||
+            this is IdentifyUiState.FeatureGated ||
+            this is IdentifyUiState.Empty ||
+            this is IdentifyUiState.Canceled
 
 private fun processingSubtitle(state: IdentifyUiState): String =
     when (state) {
@@ -454,6 +476,7 @@ private fun processingSubtitle(state: IdentifyUiState): String =
         is IdentifyUiState.Success -> "Matches found"
         IdentifyUiState.Empty -> "No matches found"
         is IdentifyUiState.Error -> state.message
+        is IdentifyUiState.FeatureGated -> state.message
     }
 
 private sealed interface BarcodeProcessingUiState {
@@ -536,6 +559,17 @@ private fun Throwable.toIdentifyErrorMessage(): String {
     }
 }
 
+private fun Throwable.toIdentifyFeatureGatedMessage(): String? {
+    val apiError = this as? ApiException ?: return null
+    val usageLimit = apiError.featureUsageLimit
+    val isIdentifyLimit =
+        apiError.code == FEATURE_USAGE_LIMIT_EXCEEDED &&
+            (usageLimit?.capability.isNullOrBlank() || usageLimit?.capability == OCR_IDENTIFY_CAPABILITY)
+    if (apiError.kind != ApiErrorKind.FeatureGated && !isIdentifyLimit) return null
+    return usageLimit?.toIdentifyFeatureGatedMessage()
+        ?: "Identify allowance reached. Manual Search is still available."
+}
+
 @Composable
 private fun ProcessingStateIndicator(state: IdentifyUiState) {
     when (state) {
@@ -546,6 +580,7 @@ private fun ProcessingStateIndicator(state: IdentifyUiState) {
         IdentifyUiState.Canceled,
         IdentifyUiState.Empty,
         is IdentifyUiState.Error,
+        is IdentifyUiState.FeatureGated,
         is IdentifyUiState.Success,
         -> ProcessingSpinner(animated = false)
     }
@@ -558,6 +593,11 @@ private fun IdentifyJobState.toIdentifyErrorMessage(): String =
         else -> message.ifBlank { "The identify request could not finish" }
     }
 
+private fun com.example.vinyllistenapp.data.api.FeatureUsageLimit.toIdentifyFeatureGatedMessage(): String {
+    val base = "Identify allowance reached. Manual Search is still available."
+    return resetAt?.let { "$base Try again after $it." } ?: base
+}
+
 @Composable
 private fun ProcessingRecoveryActions(
     onRetry: () -> Unit,
@@ -569,6 +609,20 @@ private fun ProcessingRecoveryActions(
     ) {
         ProcessingActionText(label = "Retry", onClick = onRetry)
         ProcessingActionText(label = "Manual Search", onClick = onManualSearch)
+    }
+}
+
+@Composable
+private fun ProcessingGatedActions(
+    onManualSearch: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(32.dp),
+    ) {
+        ProcessingActionText(label = "Manual Search", onClick = onManualSearch)
+        ProcessingActionText(label = "Close", onClick = onClose)
     }
 }
 
@@ -632,3 +686,6 @@ private fun ProcessingSpinner(animated: Boolean) {
         )
     }
 }
+
+private const val FEATURE_USAGE_LIMIT_EXCEEDED = "feature_usage_limit_exceeded"
+private const val OCR_IDENTIFY_CAPABILITY = "ocr_identify"

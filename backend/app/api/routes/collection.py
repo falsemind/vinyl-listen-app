@@ -265,9 +265,12 @@ def search_collection_releases(
     )
 
 
-def _to_collection_release_response(release) -> CollectionReleaseResponse:
+def _to_collection_release_response(record) -> CollectionReleaseResponse:
+    release = getattr(record, "release", record)
+    membership = getattr(record, "membership", record)
+
     return CollectionReleaseResponse(
-        id=release.id,
+        id=str(release.id),
         discogs_release_id=release.discogs_release_id,
         title=release.title,
         artist=release.artist,
@@ -277,9 +280,9 @@ def _to_collection_release_response(release) -> CollectionReleaseResponse:
         catalog_number=release.catalog_number,
         styles=release.styles,
         thumb_url=release.thumbnail_url or release.cover_image_url,
-        collection_added_at=release.collection_added_at,
-        in_collection=release.in_collection,
-        is_favorite=release.is_favorite,
+        collection_added_at=membership.collection_added_at,
+        in_collection=membership.in_collection,
+        is_favorite=membership.is_favorite,
     )
 
 

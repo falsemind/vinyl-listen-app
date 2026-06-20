@@ -423,10 +423,14 @@ Implementation note: `EntitlementService` currently gates the `ocr_identify` cap
 
 ### Phase 7: Entitlement-Aware Client States
 
+Status: implemented for OCR/identify gated-feature client states.
+
 - Add client handling for structured gated-feature errors.
 - For the first slice, map gated OCR/identify responses to a neutral limit/upgrade placeholder.
 - Keep billing UI out of scope.
 - Done when Android can display a clear state for a backend-denied usage-limited feature without crashing or retry loops.
+
+Implementation note: Android now parses `feature_usage_limit_exceeded` responses into a feature-gated API error with usage metadata. The OCR/identify processing screen maps that backend denial to a stable limit-reached state with Manual Search and Close actions, and does not show Retry for deterministic entitlement denials. Billing and subscription upgrade UI remain out of scope.
 
 ## Validation Plan
 

@@ -3,6 +3,15 @@ package com.example.vinyllistenapp.data.api
 import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.data.auth.AuthAccountSummary
+import com.example.vinyllistenapp.data.auth.AuthDeleteAccountResult
+import com.example.vinyllistenapp.data.auth.AuthLogoutAllResult
+import com.example.vinyllistenapp.data.auth.AuthPasswordChangeResult
+import com.example.vinyllistenapp.data.auth.AuthPasswordResetRequestResult
+import com.example.vinyllistenapp.data.auth.AuthRegistrationResult
+import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
+import com.example.vinyllistenapp.data.auth.AuthTokenPair
+import com.example.vinyllistenapp.data.auth.AuthVerificationResendResult
 import com.example.vinyllistenapp.domain.AnalyticsDashboard
 import com.example.vinyllistenapp.domain.AnalyticsPagination
 import com.example.vinyllistenapp.domain.AnalyticsRecordCountItem
@@ -55,6 +64,135 @@ class VinylApiClient(
     private val retryJitterMillis: () -> Long = { Random.nextLong(0, retryPolicy.jitterMaxMillis + 1) },
     private val retryDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
+    @Volatile
+    private var accessToken: String? = null
+    private var refreshAccessToken: (suspend () -> AuthSessionRefreshResult)? = null
+
+    fun setAccessToken(token: String?) {
+        accessToken = token?.takeIf { it.isNotBlank() }
+    }
+
+    fun setAuthSessionRefresher(refresher: (suspend () -> AuthSessionRefreshResult)?) {
+        refreshAccessToken = refresher
+    }
+
+    suspend fun refreshAuthSession(refreshToken: String): AuthTokenPair =
+        apiCall(allowAuthRefresh = false) {
+            val body = JSONObject().put("refresh_token", refreshToken)
+            postJson("auth/refresh", body).toAuthTokenPair()
+        }
+
+    suspend fun registerAccount(
+        email: String,
+        password: String,
+    ): AuthRegistrationResult =
+        apiCall(allowAuthRefresh = false) {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("password", password)
+            postJson("auth/register", body).toAuthRegistrationResult()
+        }
+
+    suspend fun verifyEmail(
+        email: String,
+        code: String,
+    ): AuthAccountSummary =
+        apiCall(allowAuthRefresh = false) {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("code", code)
+            postJson("auth/verify-email", body).toAuthAccountSummary()
+        }
+
+    suspend fun resendEmailVerification(email: String): AuthVerificationResendResult =
+        apiCall(allowAuthRefresh = false) {
+            val body = JSONObject().put("email", email)
+            postJson("auth/resend-verification", body).toAuthVerificationResendResult()
+        }
+
+    suspend fun login(
+        email: String,
+        password: String,
+        deviceLabel: String?,
+    ): AuthTokenPair =
+        apiCall(allowAuthRefresh = false) {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("password", password)
+                    .put("device_label", deviceLabel)
+            postJson("auth/login", body).toAuthTokenPair()
+        }
+
+    suspend fun requestPasswordReset(email: String): AuthPasswordResetRequestResult =
+        apiCall(allowAuthRefresh = false) {
+            val body = JSONObject().put("email", email)
+            postJson("auth/password-reset/request", body).toAuthPasswordResetRequestResult()
+        }
+
+    suspend fun requestCurrentAccountPasswordReset(): AuthPasswordResetRequestResult =
+        apiCall {
+            postJson("auth/password-reset/request-current", JSONObject()).toAuthPasswordResetRequestResult()
+        }
+
+    suspend fun confirmPasswordReset(
+        email: String,
+        code: String,
+        newPassword: String,
+    ): AuthAccountSummary =
+        apiCall(allowAuthRefresh = false) {
+            val body =
+                JSONObject()
+                    .put("email", email)
+                    .put("code", code)
+                    .put("new_password", newPassword)
+            postJson("auth/password-reset/confirm", body).toAuthAccountSummary()
+        }
+
+    suspend fun confirmCurrentAccountPasswordReset(
+        code: String,
+        newPassword: String,
+    ): AuthAccountSummary =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("code", code)
+                    .put("new_password", newPassword)
+            postJson("auth/password-reset/confirm-current", body).toAuthAccountSummary()
+        }
+
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        signOutEverywhere: Boolean,
+    ): AuthPasswordChangeResult =
+        apiCall {
+            val body =
+                JSONObject()
+                    .put("current_password", currentPassword)
+                    .put("new_password", newPassword)
+                    .put("sign_out_everywhere", signOutEverywhere)
+            postJson("auth/password/change", body).toAuthPasswordChangeResult()
+        }
+
+    suspend fun logout(): Boolean =
+        apiCall {
+            postJson("auth/logout", JSONObject()).optBoolean("revoked", false)
+        }
+
+    suspend fun logoutAll(): AuthLogoutAllResult =
+        apiCall {
+            postJson("auth/logout-all", JSONObject()).toAuthLogoutAllResult()
+        }
+
+    suspend fun deleteAccount(password: String): AuthDeleteAccountResult =
+        apiCall {
+            val body = JSONObject().put("password", password)
+            deleteJson("auth/account", body).toAuthDeleteAccountResult()
+        }
+
     suspend fun identifyImage(
         context: Context,
         imageUri: Uri,
@@ -73,6 +211,7 @@ class VinylApiClient(
                 IdentifyJobStatus.Failed ->
                     throw ApiException(
                         message = job.error?.message ?: "Identify failed. Retry or use Manual Search.",
+                        code = job.error?.code,
                         failedStep = job.error?.failedStep,
                     )
                 IdentifyJobStatus.Expired ->
@@ -669,11 +808,42 @@ class VinylApiClient(
             )
         }
 
-    private suspend fun <T> apiCall(block: suspend () -> T): T =
+    private suspend fun <T> apiCall(
+        allowAuthRefresh: Boolean = true,
+        block: suspend () -> T,
+    ): T =
         withContext(Dispatchers.IO) {
+            val requestAccessToken = accessToken
             try {
                 block()
             } catch (error: ApiException) {
+                if (allowAuthRefresh && error.shouldAttemptAccessRefresh()) {
+                    val refreshResult =
+                        if (accessToken != null && accessToken != requestAccessToken) {
+                            AuthSessionRefreshResult.Ready
+                        } else {
+                            refreshAccessToken?.invoke()
+                        }
+
+                    when (refreshResult) {
+                        AuthSessionRefreshResult.Ready -> return@withContext block()
+                        AuthSessionRefreshResult.NeedsPasswordReentry ->
+                            throw ApiException(
+                                message = "Password re-entry is required.",
+                                kind = ApiErrorKind.Unknown,
+                                code = INACTIVITY_REAUTH_REQUIRED,
+                                statusCode = 401,
+                            )
+                        AuthSessionRefreshResult.NeedsAuth ->
+                            throw ApiException(
+                                message = "Sign in again to continue.",
+                                kind = ApiErrorKind.Unknown,
+                                code = AUTH_REQUIRED,
+                                statusCode = 401,
+                            )
+                        null -> throw error
+                    }
+                }
                 throw error
             } catch (error: IOException) {
                 throw ApiException(
@@ -683,6 +853,16 @@ class VinylApiClient(
                 )
             }
         }
+
+    private fun ApiException.shouldAttemptAccessRefresh(): Boolean =
+        statusCode == 401 &&
+            code in
+            setOf(
+                AUTH_REQUIRED,
+                EXPIRED_ACCESS_TOKEN,
+                INVALID_ACCESS_TOKEN,
+                null,
+            )
 
     private suspend fun getJson(path: String): JSONObject =
         withRetry(ApiHttpMethod.Get) {
@@ -810,12 +990,25 @@ class VinylApiClient(
         return readJsonResponse(connection)
     }
 
+    private fun deleteJson(
+        path: String,
+        body: JSONObject,
+    ): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "DELETE"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.writeUtf8(body.toString()) }
+        return readJsonResponse(connection)
+    }
+
     private fun openConnection(path: String): HttpURLConnection =
         URL("${baseUrl.trimEnd('/')}/${path.trimStart('/')}").openConnection().let { connection ->
             (connection as HttpURLConnection).apply {
                 connectTimeout = 15_000
                 readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
+                accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
             }
         }
 
@@ -837,16 +1030,21 @@ class VinylApiClient(
             val errorBody = runCatching { JSONObject(body) }.getOrNull()
             val errorObject = errorBody?.optJSONObject("error")
             val code = errorObject?.optNullableString("code")
+            val featureUsageLimit = errorObject?.toFeatureUsageLimit()
             val rawMessage =
                 errorObject?.optNullableString("message")
                     ?: errorBody?.optNullableString("detail")
                     ?: body.takeIf { it.isNotBlank() }
             val kind = status.toApiErrorKind()
             throw ApiException(
-                message = apiErrorMessage(status, code, rawMessage, retryAfterMillis),
-                kind = kind,
+                message =
+                    featureUsageLimit?.toUserMessage()
+                        ?: apiErrorMessage(status, code, rawMessage, retryAfterMillis),
+                kind = if (featureUsageLimit != null) ApiErrorKind.FeatureGated else kind,
+                code = code,
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
+                featureUsageLimit = featureUsageLimit,
             )
         }
         if (status == 204) {
@@ -878,6 +1076,7 @@ class VinylApiClient(
 enum class ApiErrorKind {
     Offline,
     RateLimited,
+    FeatureGated,
     Validation,
     NotFound,
     Server,
@@ -887,11 +1086,21 @@ enum class ApiErrorKind {
 class ApiException(
     message: String,
     val kind: ApiErrorKind = ApiErrorKind.Unknown,
+    val code: String? = null,
     val failedStep: String? = null,
     val statusCode: Int? = null,
     val retryAfterMillis: Long? = null,
+    val featureUsageLimit: FeatureUsageLimit? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+data class FeatureUsageLimit(
+    val capability: String,
+    val plan: String?,
+    val limit: Int?,
+    val used: Int?,
+    val resetAt: String?,
+)
 
 data class AiChatResponse(
     val conversationId: String,
@@ -927,6 +1136,13 @@ data class ReleaseSearchResultsPage(
 )
 
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
+
+private const val AUTH_REQUIRED = "auth_required"
+private const val EXPIRED_ACCESS_TOKEN = "expired_access_token"
+private const val INVALID_ACCESS_TOKEN = "invalid_access_token"
+private const val INACTIVITY_REAUTH_REQUIRED = "inactivity_reauth_required"
+private const val FEATURE_USAGE_LIMIT_EXCEEDED = "feature_usage_limit_exceeded"
+private const val OCR_IDENTIFY_CAPABILITY = "ocr_identify"
 
 private fun OutputStream.writeUtf8(value: String) {
     write(value.toByteArray(Charsets.UTF_8))
@@ -1357,14 +1573,92 @@ private fun JSONObject.optNullableLong(name: String): Long? = if (isNull(name)) 
 
 private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
 
+private fun JSONObject.toAuthTokenPair(): AuthTokenPair =
+    AuthTokenPair(
+        accessToken = getString("access_token"),
+        accessExpiresAt = getString("access_expires_at"),
+        refreshToken = getString("refresh_token"),
+        refreshExpiresAt = getString("refresh_expires_at"),
+        tokenType = optString("token_type", "Bearer"),
+        sessionId = getString("session_id"),
+    )
+
+private fun JSONObject.toAuthRegistrationResult(): AuthRegistrationResult =
+    AuthRegistrationResult(
+        userId = getString("user_id"),
+        email = getString("email"),
+        verificationExpiresAt = getString("verification_expires_at"),
+    )
+
+private fun JSONObject.toAuthAccountSummary(): AuthAccountSummary =
+    AuthAccountSummary(
+        userId = getString("user_id"),
+        email = getString("email"),
+        emailVerifiedAt = optNullableString("email_verified_at"),
+    )
+
+private fun JSONObject.toAuthVerificationResendResult(): AuthVerificationResendResult =
+    AuthVerificationResendResult(
+        userId = getString("user_id"),
+        email = getString("email"),
+        verificationExpiresAt = getString("verification_expires_at"),
+        resendCount = getInt("resend_count"),
+    )
+
+private fun JSONObject.toAuthPasswordResetRequestResult(): AuthPasswordResetRequestResult =
+    AuthPasswordResetRequestResult(
+        accepted = optBoolean("accepted", false),
+        email = getString("email"),
+    )
+
+private fun JSONObject.toAuthPasswordChangeResult(): AuthPasswordChangeResult =
+    AuthPasswordChangeResult(
+        changed = optBoolean("changed", false),
+        revokedSessions = optInt("revoked_sessions", 0),
+    )
+
+private fun JSONObject.toAuthLogoutAllResult(): AuthLogoutAllResult =
+    AuthLogoutAllResult(
+        revokedSessions = optInt("revoked_sessions", 0),
+    )
+
+private fun JSONObject.toAuthDeleteAccountResult(): AuthDeleteAccountResult =
+    AuthDeleteAccountResult(
+        deleted = optBoolean("deleted", false),
+        deletionReceiptId = getString("deletion_receipt_id"),
+        deletedAt = getString("deleted_at"),
+    )
+
 private fun Int.toApiErrorKind(): ApiErrorKind =
     when (this) {
+        402 -> ApiErrorKind.FeatureGated
         429 -> ApiErrorKind.RateLimited
         404 -> ApiErrorKind.NotFound
         422 -> ApiErrorKind.Validation
         in 500..599 -> ApiErrorKind.Server
         else -> ApiErrorKind.Unknown
     }
+
+private fun JSONObject.toFeatureUsageLimit(): FeatureUsageLimit? {
+    val code = optNullableString("code")
+    if (code != FEATURE_USAGE_LIMIT_EXCEEDED) return null
+    return FeatureUsageLimit(
+        capability = optString("capability", ""),
+        plan = optNullableString("plan"),
+        limit = optNullableInt("limit"),
+        used = optNullableInt("used"),
+        resetAt = optNullableString("reset_at"),
+    )
+}
+
+private fun FeatureUsageLimit.toUserMessage(): String {
+    val base =
+        when (capability) {
+            OCR_IDENTIFY_CAPABILITY -> "Identify allowance reached. Manual Search is still available."
+            else -> "This feature's current allowance has been reached."
+        }
+    return resetAt?.let { "$base Try again after $it." } ?: base
+}
 
 private fun apiErrorMessage(
     status: Int,

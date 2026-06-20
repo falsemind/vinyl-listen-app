@@ -145,6 +145,8 @@ fun RecordDetailScreen(
     var flowInsightsError by remember(releaseId) { mutableStateOf<String?>(null) }
     var selectedFlowInsightsPeriod by remember(releaseId) { mutableStateOf(FlowInsightsPeriod.ThreeMonths) }
     var detailError by remember(releaseId) { mutableStateOf<String?>(null) }
+    var hasLoadedRecord by remember(releaseId) { mutableStateOf(false) }
+    var isLoadingRecord by remember(releaseId) { mutableStateOf(true) }
     var fullReleaseImportError by remember(releaseId) { mutableStateOf<String?>(null) }
     var manualFullReleaseImportAttempts by remember(releaseId) { mutableIntStateOf(0) }
     var hasAttemptedAutoFullReleaseImport by remember(releaseId) { mutableStateOf(false) }
@@ -278,23 +280,40 @@ fun RecordDetailScreen(
     }
 
     LaunchedEffect(releaseId, retryKey) {
-        releaseId?.let { id ->
-            runCatching {
-                val loadedRecord = apiClient.getRelease(id)
-                record = loadedRecord
-                sessions = apiClient.getReleaseSessions(id)
-                flowInsights = null
-                flowInsightsError = null
-                detailError = null
-                fullReleaseImportError = null
-                if (!hasAttemptedAutoFullReleaseImport && shouldAutoImportFullRelease(loadedRecord)) {
-                    hasAttemptedAutoFullReleaseImport = true
-                    importFullRelease(sourceRecord = loadedRecord, isManualAttempt = false)
-                }
-            }.onFailure { error ->
-                detailError = error.toUserMessage("Could not load record details. Showing local prototype data.")
-            }
+        if (releaseId.isNullOrBlank()) {
+            detailError = "Could not load record details."
+            isLoadingRecord = false
+            return@LaunchedEffect
         }
+
+        isLoadingRecord = true
+        runCatching {
+            val loadedRecord = apiClient.getRelease(releaseId)
+            record = loadedRecord
+            hasLoadedRecord = true
+            sessions = apiClient.getReleaseSessions(releaseId)
+            flowInsights = null
+            flowInsightsError = null
+            detailError = null
+            fullReleaseImportError = null
+            if (!hasAttemptedAutoFullReleaseImport && shouldAutoImportFullRelease(loadedRecord)) {
+                hasAttemptedAutoFullReleaseImport = true
+                importFullRelease(sourceRecord = loadedRecord, isManualAttempt = false)
+            }
+        }.onFailure { error ->
+            detailError = error.toUserMessage("Could not load record details.")
+        }
+        isLoadingRecord = false
+    }
+
+    if (!hasLoadedRecord) {
+        RecordDetailLoadState(
+            isLoading = isLoadingRecord,
+            errorMessage = detailError,
+            onRetry = { retryKey += 1 },
+            onBack = onBack,
+        )
+        return
     }
 
     Box(
@@ -698,6 +717,47 @@ fun RecordDetailScreen(
                     }
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun RecordDetailLoadState(
+    isLoading: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(VinylColors.AppBackground)
+                .padding(VinylSpacing.SpaceXl),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(color = VinylColors.AccentOrange)
+                Text(
+                    text = "Loading record details...",
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                ErrorRetryCard(
+                    message = errorMessage ?: "Could not load record details.",
+                    onRetry = onRetry,
+                )
+            }
+            TextButton(onClick = onBack) {
+                Text("Back")
+            }
         }
     }
 }

@@ -31,10 +31,13 @@ class SuccessfulIdentifyService:
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter=None,
         cancellation_checker=None,
     ):
         _ = (image_bytes, filename, content_type)
+        self.user_ids = getattr(self, "user_ids", [])
+        self.user_ids.append(user_id)
         if cancellation_checker is not None and cancellation_checker():
             raise IdentifyCanceledError
         if progress_reporter is not None:
@@ -72,10 +75,11 @@ class FailingIdentifyService(SuccessfulIdentifyService):
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter=None,
         cancellation_checker=None,
     ):
-        _ = (image_bytes, filename, content_type, progress_reporter, cancellation_checker)
+        _ = (image_bytes, filename, content_type, user_id, progress_reporter, cancellation_checker)
         raise self._error
 
 
@@ -87,10 +91,11 @@ class ProgressFailingIdentifyService(SuccessfulIdentifyService):
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter=None,
         cancellation_checker=None,
     ):
-        _ = (image_bytes, filename, content_type, cancellation_checker)
+        _ = (image_bytes, filename, content_type, user_id, cancellation_checker)
         if progress_reporter is not None:
             progress_reporter.update("extracting_text", "Extracting text from image")
         raise RuntimeError("OCR failed")
@@ -107,10 +112,11 @@ class MidPipelineCancelingIdentifyService(SuccessfulIdentifyService):
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter=None,
         cancellation_checker=None,
     ):
-        _ = (image_bytes, filename, content_type)
+        _ = (image_bytes, filename, content_type, user_id)
         if progress_reporter is not None:
             progress_reporter.update("extracting_text", "Extracting text from image")
         job_id = db.query(IdentifyJob.id).one()[0]
@@ -131,10 +137,11 @@ class CompletionCancelingIdentifyService(SuccessfulIdentifyService):
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter=None,
         cancellation_checker=None,
     ):
-        _ = (image_bytes, filename, content_type, progress_reporter, cancellation_checker)
+        _ = (image_bytes, filename, content_type, user_id, progress_reporter, cancellation_checker)
         job_id = db.query(IdentifyJob.id).one()[0]
         IdentifyJobRepository.request_cancel(db, job_id, requested_at=self._requested_at)
         return IdentifyResult(
@@ -182,8 +189,9 @@ class StubEntitlementService:
 
 def test_identify_job_service_completes_job() -> None:
     session_factory = _build_session_factory()
+    identify_service = SuccessfulIdentifyService()
     service = IdentifyJobService(
-        identify_service=SuccessfulIdentifyService(),
+        identify_service=identify_service,
         session_factory=session_factory,
         now_provider=lambda: datetime(2026, 5, 12, 10, 0, 0, tzinfo=UTC),
     )
@@ -202,6 +210,7 @@ def test_identify_job_service_completes_job() -> None:
     assert completed.result is not None
     assert completed.result.candidates[0].discogs_release_id == 123
     assert completed.error is None
+    assert identify_service.user_ids == ["user-a"]
 
 
 def test_identify_job_service_persists_discogs_failure() -> None:

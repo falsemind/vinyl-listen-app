@@ -57,6 +57,7 @@ def test_identify_endpoint_returns_ranked_candidates(
             "size_bytes": 12,
             "filename": "cover.jpg",
             "content_type": "image/jpeg",
+            "user_id": "test-user",
         }
     ]
     assert entitlement_service.calls == [

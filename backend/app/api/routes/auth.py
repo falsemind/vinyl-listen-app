@@ -21,6 +21,7 @@ from app.schemas.auth import (
     LogoutResponse,
     PasswordChangeRequest,
     PasswordChangeResponse,
+    PasswordResetConfirmCurrentRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequestRequest,
     PasswordResetRequestResponse,
@@ -349,6 +350,28 @@ def request_password_reset(
 
 
 @router.post(
+    "/password-reset/request-current",
+    response_model=PasswordResetRequestResponse,
+    responses={429: {"model": AuthErrorResponse}},
+)
+def request_current_user_password_reset(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    account_service: Annotated[AuthAccountService, Depends(get_auth_account_service)],
+) -> PasswordResetRequestResponse:
+    try:
+        result = account_service.request_password_reset(db, email=current_user.account.email)
+    except PasswordResetRequestRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="password_reset_rate_limited",
+            message="Password reset request is rate limited.",
+        )
+
+    return PasswordResetRequestResponse(accepted=result.accepted, email=result.email)
+
+
+@router.post(
     "/password-reset/confirm",
     response_model=UserAccountResponse,
     responses={400: {"model": AuthErrorResponse}, 410: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
@@ -362,6 +385,48 @@ def confirm_password_reset(
         user = account_service.confirm_password_reset(
             db,
             email=payload.email,
+            code=payload.code,
+            new_password=payload.new_password,
+        )
+    except PasswordResetCodeExpiredError:
+        raise_auth_error(status_code=status.HTTP_410_GONE, code="password_reset_expired", message="Code has expired.")
+    except PasswordResetCodeConsumedError:
+        raise_auth_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="password_reset_consumed",
+            message="Code has already been used.",
+        )
+    except PasswordResetAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="password_reset_attempts_rate_limited",
+            message="Password reset attempts are rate limited.",
+        )
+    except PasswordResetCodeInvalidError:
+        raise_auth_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="password_reset_invalid",
+            message="Code is invalid.",
+        )
+
+    return _account_response(user_id=user.id, email=user.email, email_verified_at=user.email_verified_at)
+
+
+@router.post(
+    "/password-reset/confirm-current",
+    response_model=UserAccountResponse,
+    responses={400: {"model": AuthErrorResponse}, 410: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
+)
+def confirm_current_user_password_reset(
+    payload: PasswordResetConfirmCurrentRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    account_service: Annotated[AuthAccountService, Depends(get_auth_account_service)],
+) -> UserAccountResponse:
+    try:
+        user = account_service.confirm_password_reset(
+            db,
+            email=current_user.account.email,
             code=payload.code,
             new_password=payload.new_password,
         )

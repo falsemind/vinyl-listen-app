@@ -57,12 +57,21 @@ class StubIdentifyService:
         if self.error is not None:
             raise self.error
 
-    def identify(self, _db, *, image_bytes: bytes, filename: str, content_type: str) -> IdentifyResult:
+    def identify(
+        self,
+        _db,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_id: str | None = None,
+    ) -> IdentifyResult:
         self.calls.append(
             {
                 "size_bytes": len(image_bytes),
                 "filename": filename,
                 "content_type": content_type,
+                "user_id": user_id,
             }
         )
         if self.error is not None:

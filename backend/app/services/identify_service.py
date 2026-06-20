@@ -82,6 +82,7 @@ class IdentifyService:
         image_bytes: bytes,
         filename: str,
         content_type: str,
+        user_id: str | None = None,
         progress_reporter: IdentifyProgressReporter | None = None,
         cancellation_checker: Callable[[], bool] | None = None,
     ) -> IdentifyResult:
@@ -143,7 +144,12 @@ class IdentifyService:
 
         _raise_if_cancel_requested(cancellation_checker)
         _report_progress(progress_reporter, "searching_discogs", "Searching Discogs candidates")
-        external_result = self._find_external_candidates(db, identifiers, cancellation_checker=cancellation_checker)
+        external_result = self._find_external_candidates(
+            db,
+            identifiers,
+            user_id=user_id,
+            cancellation_checker=cancellation_checker,
+        )
         _raise_if_cancel_requested(cancellation_checker)
         logger.info(
             "Returning Discogs identify matches filename=%s count=%s discogs_query_count=%s",
@@ -220,11 +226,15 @@ class IdentifyService:
         db: Session,
         identifiers: ExtractedIdentifiers,
         *,
+        user_id: str | None = None,
         cancellation_checker: Callable[[], bool] | None = None,
     ) -> "_ExternalSearchResult":
         candidate_map: dict[int, IdentifyCandidate] = {}
         query_count = 0
-        discogs_service = self._discogs_service or self._discogs_integration_service.build_discogs_service(db)
+        discogs_service = self._discogs_service or self._discogs_integration_service.build_discogs_service(
+            db,
+            user_id=user_id,
+        )
 
         for search_step in self._build_search_plan(identifiers):
             _raise_if_cancel_requested(cancellation_checker)
