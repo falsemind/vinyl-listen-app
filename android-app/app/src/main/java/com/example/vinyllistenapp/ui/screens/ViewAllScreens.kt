@@ -75,11 +75,11 @@ import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.EditableSessionButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
-import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.LocalActiveTimedSessionId
 import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ScrollShortcutButton
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
 import com.example.vinyllistenapp.ui.components.timedSessionMoodDirectionLabel
@@ -494,14 +494,9 @@ private fun ViewAllScreenContent(
         }
 
         if (scrollShortcutState.visible) {
-            FloatingIconButton(
-                icon = scrollShortcutState.icon,
-                contentDescription = scrollShortcutState.contentDescription,
-                onClick = {
-                    scope.launch {
-                        scrollState.animateScrollTo(scrollShortcutState.targetValue)
-                    }
-                },
+            ScrollShortcutButton(
+                scrollState = scrollState,
+                shortcutState = scrollShortcutState,
                 modifier =
                     Modifier
                         .align(Alignment.BottomEnd)

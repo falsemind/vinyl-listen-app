@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -56,9 +55,9 @@ import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
-import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
+import com.example.vinyllistenapp.ui.components.ScrollShortcutButton
 import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
@@ -67,7 +66,6 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -91,7 +89,6 @@ fun AnalyticsScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
     val screenScrollState = rememberScrollState()
-    val scrollShortcutScope = rememberCoroutineScope()
     val headerHiddenThreshold = with(LocalDensity.current) { 120.dp.roundToPx() }
     val scrollShortcutState =
         rememberScrollShortcutState(
@@ -129,14 +126,9 @@ fun AnalyticsScreen(
         },
         floatingActionButton = {
             if (scrollShortcutState.visible) {
-                FloatingIconButton(
-                    icon = scrollShortcutState.icon,
-                    contentDescription = scrollShortcutState.contentDescription,
-                    onClick = {
-                        scrollShortcutScope.launch {
-                            screenScrollState.animateScrollTo(scrollShortcutState.targetValue)
-                        }
-                    },
+                ScrollShortcutButton(
+                    scrollState = screenScrollState,
+                    shortcutState = scrollShortcutState,
                     modifier =
                         Modifier.padding(
                             end = VinylSpacing.SpaceMd,

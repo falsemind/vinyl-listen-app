@@ -93,7 +93,7 @@ fun ActionMenuPopup(
         alignment = Alignment.TopEnd,
         offset = offset,
         onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
+        properties = PopupProperties(focusable = false),
     ) {
         Box(
             modifier =

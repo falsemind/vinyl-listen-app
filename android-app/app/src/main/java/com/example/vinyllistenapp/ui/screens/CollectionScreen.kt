@@ -94,6 +94,7 @@ import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ScrollShortcutButton
 import com.example.vinyllistenapp.ui.components.ScrollShortcutState
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
 import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
@@ -268,6 +269,7 @@ fun CollectionScreen(
             .filter { it }
             .collect {
                 isAddMenuExpanded = false
+                isActionMenuOpen = false
             }
     }
 
@@ -289,12 +291,8 @@ fun CollectionScreen(
         floatingActionButton = {
             if (records.isNotEmpty() || (error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter)) {
                 CollectionFloatingActions(
+                    scrollState = scrollState,
                     scrollShortcutState = scrollShortcutState,
-                    onScrollShortcutClick = {
-                        scope.launch {
-                            scrollState.animateScrollTo(scrollShortcutState.targetValue)
-                        }
-                    },
                     addMenuExpanded = isAddMenuExpanded,
                     onAddMenuExpandedChange = { isAddMenuExpanded = it },
                     onIdentifyRecord = onIdentifyRecord,
@@ -775,8 +773,8 @@ private fun CollectionActionMenuDelimiter() {
 
 @Composable
 private fun CollectionFloatingActions(
+    scrollState: ScrollState,
     scrollShortcutState: ScrollShortcutState,
-    onScrollShortcutClick: () -> Unit,
     addMenuExpanded: Boolean,
     onAddMenuExpandedChange: (Boolean) -> Unit,
     onIdentifyRecord: () -> Unit,
@@ -791,10 +789,9 @@ private fun CollectionFloatingActions(
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
         if (scrollShortcutState.visible) {
-            FloatingIconButton(
-                icon = scrollShortcutState.icon,
-                contentDescription = scrollShortcutState.contentDescription,
-                onClick = onScrollShortcutClick,
+            ScrollShortcutButton(
+                scrollState = scrollState,
+                shortcutState = scrollShortcutState,
             )
         }
         CollectionAddActions(

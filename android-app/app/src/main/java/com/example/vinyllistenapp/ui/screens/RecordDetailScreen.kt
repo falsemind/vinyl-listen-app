@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -113,6 +114,8 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -165,6 +168,7 @@ fun RecordDetailScreen(
     val context = LocalContext.current
     val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     val scope = rememberCoroutineScope()
+    val detailScrollState = rememberScrollState()
     val uriHandler = LocalUriHandler.current
     val density = LocalDensity.current
     var actionMenuMaxWidth by remember { mutableStateOf(260.dp) }
@@ -306,6 +310,16 @@ fun RecordDetailScreen(
         isLoadingRecord = false
     }
 
+    LaunchedEffect(detailScrollState) {
+        snapshotFlow { detailScrollState.isScrollInProgress }
+            .filter { it }
+            .collect {
+                isActionMenuOpen = false
+                isMoreInCollectionExpanded = false
+                isViewOnDiscogsExpanded = false
+            }
+    }
+
     if (!hasLoadedRecord) {
         RecordDetailLoadState(
             isLoading = isLoadingRecord,
@@ -372,7 +386,7 @@ fun RecordDetailScreen(
                 modifier =
                     Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(detailScrollState)
                         .padding(horizontal = VinylSpacing.SpaceMd),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
             ) {
