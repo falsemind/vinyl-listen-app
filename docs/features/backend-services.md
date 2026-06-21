@@ -22,6 +22,8 @@ description: This document explains the backend service layer in `backend/app/se
 | `collection_sync_service.py` | Sync Discogs collection metadata and folder memberships while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `CollectionFoldersRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
 | `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
 | `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
+| `manual_release_service.py` | Create, validate, and manage user-owned manual release drafts and saved manual releases. | `ManualReleaseRepository`, `manual_release_policy.py`, `manual_releases`, `manual_release_drafts`. |
+| `manual_release_policy.py` | Shared manual entry validation constants for field limits, draft cap, supported formats, vinyl details, track roles, and cover uploads. | Manual release schemas and service validation. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
 | `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections, timed-session membership, and active collection membership checks. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
 | `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups. | `SessionGroupsRepository`, `SessionsRepository`. |
@@ -388,6 +390,28 @@ in Records Collection and Record Details can log future sessions.
 - `has_full_discogs_info` reports whether a full Discogs payload is cached for the release.
 - `get_available_sides` reads cached Discogs track positions and returns ordered side prefixes for session logging.
 - `map_discogs_payload` exposes the Discogs-to-internal mapping for tests and route workflows.
+
+## ManualReleaseService
+
+`ManualReleaseService` powers `/api/v1/manual-releases/*`. Manual release data is deliberately user-owned: saved manual submissions live in `manual_releases`, drafts live in `manual_release_drafts`, and neither path writes shared Discogs metadata into `releases`.
+
+### Draft flow
+
+Drafts support list/create/update/delete for the authenticated user. Each account can keep up to 5 drafts. Draft saves accept partial form data, normalize string/list inputs, enforce type-safe payload shapes, and do not add anything to the user's collection, listening history, or analytics.
+
+### Save flow
+
+Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Validation covers required artist/title/label/format/genre data, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
+
+Manual releases remain separate from Discogs-backed releases until a future replacement workflow explicitly maps a user's manual submission to a richer Discogs release.
+
+### Cover upload contract
+
+Cover upload endpoints currently validate file type and size through `manual_release_policy.py`, with a 3 MB image limit. Until durable cover storage is wired, valid uploads return a typed `manual_release_cover_storage_not_configured` error instead of silently accepting data.
+
+### Test coverage status
+
+Current service/API/repository tests cover draft CRUD contracts, the 5-draft cap, form validation, list normalization, cover validation policy, save-from-draft behavior, user ownership scoping, and persistence guards proving that manual release saves preserve collection semantics without creating listening history or analytics records before sessions are logged.
 
 ## release_mapper.py
 

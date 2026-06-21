@@ -109,6 +109,7 @@ backend/app/
 │       ├── health.py
 │       ├── identify.py
 │       ├── integrations.py
+│       ├── manual_releases.py
 │       ├── releases.py
 │       └── sessions.py
 ├── core/
@@ -144,6 +145,7 @@ backend/app/
 │   ├── collection_sync_job_repository.py
 │   ├── discogs_release_repository.py
 │   ├── identify_job_repository.py
+│   ├── manual_release_repository.py
 │   ├── provider_integration_repository.py
 │   ├── releases_repository.py
 │   ├── session_groups_repository.py
@@ -157,6 +159,7 @@ backend/app/
 │   ├── collection.py
 │   ├── identify.py
 │   ├── integrations.py
+│   ├── manual_releases.py
 │   ├── releases.py
 │   └── sessions.py
 ├── services/
@@ -171,6 +174,8 @@ backend/app/
 │   ├── discogs_service.py
 │   ├── identify_job_service.py
 │   ├── identify_service.py
+│   ├── manual_release_policy.py
+│   ├── manual_release_service.py
 │   ├── password_hashing.py
 │   ├── release_import_service.py
 │   ├── release_mapper.py
@@ -187,14 +192,14 @@ backend/app/
 | `main.py` | Creates the FastAPI app, attaches `/api/v1`, applies inbound API rate limiting, handles auth/validation errors, and logs runtime dependency status during startup. |
 | `ai/` | AI runtime adapters owned by the backend, currently disabled fallback plus LM Studio native chat and OpenAI-compatible chat completions support. |
 | `api/auth_dependencies.py` | Bearer token dependency for protected routes and current-user lookup. |
-| `api/router.py` | Registers versioned route modules under `/health`, `/auth`, `/identify`, `/releases`, `/collection`, `/integrations`, `/sessions`, `/analytics`, and `/ai`; all non-health/non-auth application routers require auth by default. |
+| `api/router.py` | Registers versioned route modules under `/health`, `/auth`, `/identify`, `/releases`, `/manual-releases`, `/collection`, `/integrations`, `/sessions`, `/analytics`, and `/ai`; all non-health/non-auth application routers require auth by default. |
 | `api/routes/` | HTTP boundary. Routes read request data, inject database sessions and services, and map service errors to HTTP responses. |
 | `core/` | Configuration, logging, inbound rate-limit policies, and optional runtime dependency checks. |
 | `database/` | SQLAlchemy base, engine/session setup, and request-scoped DB dependency. |
-| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/audit/deletion-audit foundations, shared releases, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
+| `models/` | SQLAlchemy tables for auth accounts/sessions/codes/usage/audit/deletion-audit foundations, shared Discogs releases, user-owned manual releases and drafts, user collection memberships, collection settings, user Discogs collection folders, user release-folder membership, provider integrations, Discogs cache rows, identify jobs, user collection sync jobs, AI chat history, timed session groups, listening sessions, moods, and Spotify listening imports/rollups. |
 | `repositories/` | Database access methods. Repositories keep SQLAlchemy queries out of services and routes. |
 | `schemas/` | Pydantic request/response models exposed by the API. |
-| `services/` | Business workflows: auth account/token/email/password/deletion handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
+| `services/` | Business workflows: auth account/token/email/password/deletion handling, AI insights chat, analytics, identification, identify job progress, Discogs integration/token storage, Discogs access/cache, collection sync and sync jobs, release import, manual release validation/drafts/save contracts, release mapping, timed session groups, listening sessions, and Spotify listening imports/rollups. |
 | `pipelines/identification/` | Image preprocessing, OCR, barcode detection, identifier parsing, search planning, and candidate ranking. |
 
 ### API Route Map
@@ -228,6 +233,12 @@ All routes are nested under `/api/v1`.
 | `GET /collection/folders` | `api/routes/collection.py` | User-scoped `CollectionFoldersRepository` plus Discogs integration state. |
 | `GET /collection/releases` | `api/routes/collection.py` | User-scoped `ReleasesRepository` membership query; supports artist, label, favorites, and Discogs folder filters. |
 | `GET /collection/search` | `api/routes/collection.py` | User-scoped collection-only internal release search. |
+| `GET /manual-releases/drafts` | `api/routes/manual_releases.py` | User-scoped `ManualReleaseService` draft list. |
+| `POST /manual-releases/drafts` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft create with draft cap validation. |
+| `PUT /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft update scoped to the current user. |
+| `DELETE /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` draft delete scoped to the current user. |
+| `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover upload validation contract. |
+| `POST /manual-releases` | `api/routes/manual_releases.py` | `ManualReleaseService` complete manual release validation and user-owned save. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `DELETE /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
@@ -306,8 +317,8 @@ backend/tests/
 | `fixtures/` | Test clients, database fixtures, and service stubs. |
 | `migrations/` | Alembic/schema expectations. |
 | `pipelines/` | Identification pipeline units: preprocessing, OCR, parsing, search planning, evidence scoring, and ranking. |
-| `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries. |
-| `services/` | Analytics, Discogs client/service, Discogs integration service, token ciphering, collection settings, collection sync, collection sync jobs, identify service, identify job service, release import, release mapper, session groups service, sessions service, and Home summary aggregation. |
+| `repositories/` | Real repository SQL coverage, including dialect-specific analytics queries and manual release collection/history boundary guards. |
+| `services/` | Analytics, Discogs client/service, Discogs integration service, token ciphering, collection settings, collection sync, collection sync jobs, identify service, identify job service, release import, manual release service/policy, release mapper, session groups service, sessions service, and Home summary aggregation. |
 | `utils/` | Utility-level test coverage. |
 | `data/` | Static image and Discogs response fixtures. |
 
@@ -330,6 +341,7 @@ backend/alembic/
     ├── 9c6e2a1f4b80_add_spotify_rollups_and_matches.py
     ├── c8d9e0f1a2b3_scope_async_ai_spotify.py
     ├── ab12cd34ef56_add_provider_integrations.py
+    ├── c4d5e6f7a8b9_add_manual_release_schema.py
     └── eed6974773b8_init.py
 
 backend/scripts/

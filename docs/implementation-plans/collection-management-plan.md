@@ -65,12 +65,14 @@ Latest completed slice:
 - Android expandable **Collection folders** action-menu option with folder filters.
 - Backend import-to-collection contract for a confirmed Discogs candidate.
 - Android identify camera option that imports the confirmed candidate into collection and opens Record Details.
+- Manual release entry requirements for a minimal app-owned release.
+- Manual release drafts list with bounded saved drafts.
 
 ### Out of Scope
 
-- Full manual release entry form.
-- Full manual-entry persistence flow.
-- Manual-entry save/persistence.
+- Discogs-equivalent manual submission form depth.
+- Manual fields for companies, credits, mastering, lacquer cutting, copyright, matrix/runout data, or other production metadata.
+- Automatic Discogs matching/replacement for manual releases.
 - Bulk candidate import or multi-select.
 - Scheduled sync.
 - Persisting a selected Discogs folder as collection source.
@@ -474,6 +476,211 @@ Checklist:
 | Default-only folders clutter the action menu | User sees a menu item with no useful options | Hide **Collection folders** unless `has_extra_folders=true`. |
 | Folder membership sync is expensive | Sync may slow down for large Discogs accounts with many folders | Fetch folder membership after the main import, reuse pagination/progress patterns, and keep folder filtering dependent on stored membership. |
 | Folder-filtered totals differ from Discogs folder counts | Deleted/inactive local records may be excluded from app collection filters | Use app active-membership count in the chip and document backend response semantics through tests. |
+| Manual-entry form grows into full Discogs submission | Slice becomes too large and hard to validate | Keep first save path limited to release identity, basic label/catalog/barcode, coarse format, genre/style, and tracklist. |
+| Manual release cannot be matched to Discogs later | User gets stuck with sparse metadata | Store normalized matching fields and keep manual releases separate from Discogs releases until explicit replacement. |
+| Drafts become junk data | User sees stale partial records | Cap saved manual drafts at 5 per user/device account and expose delete/resume actions. |
+
+## Future Phase 10: Minimal Manual Release Entry
+
+### Goal
+
+Replace the placeholder manual-entry screen with a small, app-owned release creation flow. The first version should let a user add a known release to their collection without Discogs, while preserving enough normalized metadata to support a later "replace with Discogs release" workflow.
+
+### Product Requirements
+
+- Entry point stays under the Collection add CTA pencil option.
+- User can save a completed manual release directly into the active app collection.
+- User can save a partially completed manual release as a draft and resume it later.
+- Drafts appear on a dedicated manual release drafts screen.
+- Saved drafts are capped at 5. When the cap is reached, creating another draft requires deleting or completing an existing draft.
+- User can attach release cover art during manual entry.
+- Manual releases are app-owned records, not Discogs releases. They must not be auto-merged into shared Discogs metadata.
+- Later Discogs replacement should be an explicit user-confirmed action that can preserve listening history, ratings, notes, and collection membership.
+
+### Minimal Field Set
+
+| Area | Required for Save | Draft Behavior | Notes |
+| --- | --- | --- | --- |
+| Artist | Yes | Optional | Support one or more display artists; model as a list even if the first UI starts simple. |
+| Title | Yes | Optional | Release title, not collection nickname. |
+| Label | Yes | Optional | Store display label name separately from catalog number. |
+| Catalog number | Optional | Optional | Important matching hint for later Discogs search. |
+| Barcode | Optional | Optional | Normalize digits for matching, preserve display value if needed. |
+| Format | Yes | Optional | Start with `Vinyl`, `CD`, `Tape`, `Other`. |
+| Vinyl details | Required only when format is `Vinyl` | Optional | Size, speed, and disc count for first slice. |
+| Cover art | Optional | Optional | Allow one uploaded image as the manual release cover; validate file type and size before upload/save. |
+| Tracklist | At least one track title for save | Optional | Position and duration can remain optional; track credits are optional. |
+| Track credits | Optional | Optional | Use a constrained role dropdown such as `Featuring`, `Remix`, `Producer`, `Written-By`, `Other`. |
+| Genre | Yes | Optional | Keep first genre list small and stable. |
+| Style | Required only when genre is `Electronic` | Optional | First version can use a constrained style list. |
+
+### Input Validation and Limits
+
+Backend validation is the source of truth. Android must mirror the same limits for immediate feedback and disabled/enabled button state, but backend errors must still be handled as field-level validation results.
+
+- Trim leading/trailing whitespace before validation and persistence.
+- Reject blank required strings after trimming.
+- Reject control characters in text fields. Allow normal punctuation, accented characters, and non-English artist/title text.
+- Collapse repeated internal whitespace only for matching/search helper fields; preserve user-entered display text for release fields.
+- Reject unknown enum values and invalid data types instead of coercing them silently.
+- When a field-level validation error exists, do not also show a generic save/search failure for the same action.
+
+| Field | Type | Limit | Backend Requirement | Android Requirement |
+| --- | --- | --- | --- | --- |
+| Artist name | string list | 1-20 artists; 1-200 chars each | Require at least one artist for release save. | Validate list count and per-name length before enabling **Save Release**. |
+| Title | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
+| Label name | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
+| Catalog number | string | 0-80 chars | Optional; preserve display value and store normalized value for matching. | Warn/block over-limit values. |
+| Barcode | string | 0 or 8-14 digits after normalization | Optional; strip spaces/hyphens for normalized value. | Allow common pasted formats, then validate normalized digits. |
+| Format | enum | `Vinyl`, `CD`, `Tape`, `Other` | Required for release save. | Use dropdown only; do not allow free text. |
+| Vinyl size | enum | `7`, `10`, `12`, `Other` | Required when format is `Vinyl`. | Show only for Vinyl and require selection. |
+| Vinyl speed | enum | `33 1/3`, `45`, `78`, `Other` | Required when format is `Vinyl`. | Show only for Vinyl and require selection. |
+| Vinyl disc count | integer | 1-6 | Required when format is `Vinyl`; covers common 2xLP/3xLP without box-set modeling. | Use stepper/input with min/max guard. |
+| Track count | list | 1-100 tracks | Require at least one track title for release save. | Prevent adding over 100 tracks. |
+| Track title | string | 1-200 chars | Required per saved track. | Validate each visible track row. |
+| Track position | string | 0-16 chars | Optional; reject control characters. | Keep optional and length-limited. |
+| Track duration | string | `m:ss` or `h:mm:ss`; 0-8 chars | Optional; validate only when present. | Validate format before save when entered. |
+| Track credit role | enum | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` | Optional; reject unknown roles. | Use dropdown only. |
+| Track credit name | string | 1-200 chars when role is present | Required when a credit role is added. | Validate paired role/name rows. |
+| Genre | enum | Small app-defined list | Required for release save. | Use dropdown only. |
+| Style | enum | Small app-defined Electronic style list | Required only when genre is `Electronic`. | Show and require only for Electronic. |
+| Cover image | binary file | One file; `JPEG`, `PNG`, or `WebP`; max 3 MB | Validate MIME/content type and size before storing. | Validate picker metadata before upload when available. |
+
+### Manual Submissions Screen Requirements
+
+- The existing manual-entry route becomes the **Manual Submissions** draft hub screen.
+- Screen title is **Manual Submissions**.
+- Screen subheader explains that the user can manually add releases to the collection and save or manage drafts.
+- Show up to 5 saved manual release draft cards.
+- Draft cards should be about double the height of the Recent Session cards so they can show more release detail.
+- Draft cards should show the strongest available summary fields: cover thumbnail when present, artist, title, label/catalog number, format, draft updated time, and required-field completion state.
+- Draft cards include a top-right delete icon button.
+- Tapping a draft delete button opens a confirmation dialog before deleting the draft.
+- Place an **Add Release** CTA in the lower-right corner, following the existing CTA treatment used elsewhere in the app.
+- Tapping **Add Release** opens a manual release form overflow screen when fewer than 5 drafts exist.
+- If 5 drafts already exist, tapping **Add Release** shows a dialog explaining that only 5 drafts are allowed and the user must delete or complete a draft before starting another.
+- Tapping an existing draft opens the same overflow form populated with the draft values.
+- The overflow form contains all manual release inputs, dropdowns, tracklist editing, vinyl size/speed/disc count controls, and cover image upload.
+- Cover upload accepts one image only. First implementation should allow `JPEG`, `PNG`, and `WebP`, with a 3 MB maximum unless backend storage constraints require a smaller limit.
+- Cover validation errors should be shown before save/upload when possible and returned from the backend as field-level errors when server validation fails.
+
+### Manual Form Bottom Actions
+
+- Bottom action layout should follow the Log Session button pattern.
+- Secondary action is always **Cancel** and closes the overflow form after confirming if there are unsaved changes.
+- Primary action starts as disabled **Save** while the form is empty.
+- Once the user enters at least one field but required release fields are incomplete or invalid, primary action becomes **Save Draft**.
+- Once all required release fields are valid, primary action becomes **Save Release**.
+- **Save Draft** persists a draft, closes the form, and shows/updates the card on the **Manual Submissions** screen.
+- **Save Release** creates the manual release, adds it to the active collection, removes the draft if saving from one, and navigates to Record Details. From Record Details, the back action returns to Collection.
+
+### Data and Architecture Requirements
+
+- Store committed manual releases in separate user-owned manual release tables, not in the shared Discogs-backed `releases` catalog.
+- Keep manual release persistence behind the same repository/service boundary as imported releases where practical, but avoid overloading Discogs-specific mappers.
+- Store core release fields in a Discogs-adjacent shape: artists, labels, identifiers, formats, genres/styles, and tracklist as separate structured data instead of one freeform blob.
+- Model vinyl disc count explicitly so common 2xLP/3xLP releases do not require a later schema break.
+- Keep cover art as a single optional manual-release image, with storage, validation, and response shape reusable for later image replacement/removal.
+- Keep draft persistence separate from committed collection membership so drafts do not appear in collection, analytics, listening history, or insights.
+- Design create/update draft APIs so Android can autosave later, even if the first UI uses explicit **Save draft**.
+- Add validation in the backend/domain layer, with Android mirroring required-field state for user feedback.
+
+### First-Slice Non-Goals
+
+- No Discogs search, match suggestions, or replacement UI.
+- No production/company credits, copyright fields, mastering/cutting details, matrix/runout identifiers, marketplace data, or submission-quality Discogs validation.
+- No box set or multiple-release package modeling. Common single-release 2xLP/3xLP vinyl entries are in scope through disc count.
+- No import/export of manual drafts.
+- No automatic draft cleanup beyond the 5-draft cap.
+
+### Phase 10A: Backend Manual Release Domain and Schema
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Define manual release persistence shape | 4-6h | Phase 10 requirements | Manual releases are user-owned rows in separate manual tables with structured artists/labels/identifiers/formats/genres/tracks, vinyl disc count, and optional cover reference. |
+| Define shared validation constants | 2-4h | Input validation requirements | Backend exposes or documents the same limits Android uses for strings, counts, enums, barcode, durations, and cover upload. |
+| Add manual draft persistence | 4-8h | Persistence shape | Drafts store partial form state separately from committed collection releases and include draft timestamps. |
+| Add draft cap enforcement | 2-4h | Draft persistence | Backend prevents creating a sixth draft and returns a typed validation error. |
+| Add cover image storage policy | 4-6h | Persistence shape | Backend accepts one cover image, validates `JPEG`/`PNG`/`WebP`, enforces 3 MB max, and stores a reusable cover reference. |
+| Add migration and rollback notes | 2-4h | Schema decisions | Migration applies cleanly and documents how manual release/draft data maps to existing release tables. |
+
+### Phase 10B: Backend Manual Entry API Contracts
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add draft list contract | 2-4h | Phase 10A | API returns up to 5 drafts with card summary fields, cover thumbnail reference, updated time, and completion state. |
+| Add create/update draft contract | 4-8h | Phase 10A | API saves partial manual release data and returns field-level validation warnings without adding the draft to collection. |
+| Add delete draft contract | 2-4h | Draft list contract | API deletes a draft and frees one draft slot. |
+| Add save manual release contract | 4-8h | Phase 10A | API validates required fields, creates an app-owned manual release, activates collection membership, and removes the source draft when provided. |
+| Add cover upload contract | 4-8h | Cover storage policy | API supports cover upload with typed errors for size, type, and storage failures. |
+
+### Phase 10C: Backend Validation and Tests
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add domain validation tests | 4-6h | Phase 10B | Tests cover required fields, Electronic style requirement, Vinyl size/speed/disc count, draft partial saves, and 5-draft cap. |
+| Add API tests | 4-8h | Phase 10B | Tests cover draft CRUD, cover validation, save-to-collection, draft removal after save, and user ownership isolation for manual releases. |
+| Add collection/history guard tests | 2-4h | Save manual release contract | Manual release save preserves collection semantics and does not create listening history or analytics until the user logs sessions. |
+| Update backend docs | 2-4h | API tests | API spec, database schema, backend-services, and repository-structure docs describe manual entry endpoints, validation errors, cover constraints, storage/schema ownership, and source ownership. |
+
+Current Phase 10C status:
+
+- Covered now: service/API tests cover required fields, Electronic style validation, Vinyl size/speed/disc count, duration/barcode/track role validation, draft partial saves, 5-draft cap, draft CRUD, save-from-draft behavior, user scoping, cover validation policy, and list-item normalization.
+- Covered now: persistence-level collection/history guard coverage proves a saved manual release creates only the intended user-owned manual release/collection state and does not create listening history, session rows, or analytics-visible activity until the user logs a session.
+- Deferred until cover storage exists: successful cover persistence tests. Current implementation validates the upload contract and returns a typed storage-not-configured error for otherwise valid files.
+
+### Phase 10D: Android API Models and Repository
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add manual entry DTOs | 3-5h | Backend contracts | Android models represent drafts, draft summaries, manual release form data, field errors, and cover references. |
+| Add repository methods | 4-6h | DTOs | Repository can list/create/update/delete drafts, upload cover, and save manual release to collection. |
+| Add local form state model | 4-6h | DTOs | UI state tracks dirty fields, shared validation limits, required-field validity, cover validation state, and primary action mode. |
+| Add parser/unit coverage | 2-4h | Repository methods | Tests cover draft summary parsing, validation error parsing, and manual release save response parsing. |
+
+### Phase 10E: Android Manual Submissions Draft Hub
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Replace placeholder with draft hub | 4-6h | Phase 10D | **Manual Submissions** screen loads drafts and shows empty, loading, error, and populated states with title and subheader copy. |
+| Build draft card layout | 4-6h | Draft hub | Cards are roughly double Recent Session card height and show cover, artist/title, label/catalog, format, updated time, completion state, and a top-right delete icon. |
+| Add **Add Release** CTA | 2-4h | Draft hub | Lower-right CTA follows existing collection CTA styling and opens the form when fewer than 5 drafts exist. |
+| Add draft cap dialog | 2-3h | Add Release CTA | When 5 drafts exist, CTA shows a dialog asking the user to delete or complete a draft before adding another. |
+| Add draft delete confirmation | 2-4h | Draft card layout | Delete icon opens a confirmation dialog and removes the draft only after confirmation. |
+| Add draft resume navigation | 2-4h | Draft card layout | Tapping a draft opens the overflow form with saved values. |
+
+### Phase 10F: Android Manual Release Form
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Build overflow form shell | 4-6h | Phase 10D | Form opens as an overflow screen with bottom actions matching Log Session patterns. |
+| Add release identity inputs | 4-8h | Form shell | Artist, title, label, catalog number, barcode, genre, and Electronic style inputs validate in UI state. |
+| Add format controls | 4-6h | Form shell | Format dropdown supports `Vinyl`, `CD`, `Tape`, `Other`; vinyl exposes size, speed, and disc count. |
+| Add tracklist editor | 6-8h | Form shell | User can add at least one track title and optional track role credits from the constrained dropdown. |
+| Add button state behavior | 2-4h | Form validation | Empty form shows disabled **Save**; partial valid input shows **Save Draft**; complete valid input shows **Save Release**. |
+| Add cancel/unsaved changes handling | 2-4h | Form shell | **Cancel** closes immediately when clean and asks for confirmation when unsaved changes exist. |
+
+### Phase 10G: Android Cover Upload and Save Flows
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add cover picker and preview | 4-6h | Form shell | User can choose one cover image and see a preview before saving. |
+| Add client-side cover validation | 2-4h | Cover picker | Android blocks unsupported file types and files over 3 MB before upload when metadata is available. |
+| Wire **Save Draft** | 4-6h | Form state + repository | Partial form saves a draft, closes the form, and shows/updates the draft card. |
+| Wire **Save Release** | 4-8h | Backend save contract | Complete form creates the manual release, adds it to collection, removes the draft when applicable, opens Record Details, and keeps the back path returning to Collection. |
+| Add Android verification | 4-6h | Save flows | Focused tests or compile checks cover draft hub state, form action state, validation, and save response handling. |
+
+### Phase 10 Dependency Map
+
+```text
+Backend schema/domain
+  -> Draft and manual release API contracts
+  -> Backend validation/tests/docs
+  -> Android DTOs/repository
+  -> Draft hub
+  -> Overflow form
+  -> Cover upload and save flows
+```
 
 ## Recommended Implementation Order
 
@@ -495,6 +702,12 @@ Checklist:
 16. Android folder overflow screen and sync confirmation.
 17. Backend import-to-collection service/API for confirmed identify candidates.
 18. Android identify collection-add mode, import confirmation, detail navigation, and collection refresh.
-19. Focused backend and Android verification.
+19. Backend manual release domain/schema, draft persistence, draft cap, and cover storage policy.
+20. Backend manual entry API contracts for drafts, cover upload, and save-to-collection.
+21. Backend validation, API tests, and docs updates.
+22. Android manual entry DTOs, repository methods, and form state model.
+23. Android **Manual Submissions** draft hub, draft cards, **Add Release** CTA, draft delete confirmation, and draft cap dialog.
+24. Android overflow form, inputs, dropdowns, tracklist editor, and bottom action states.
+25. Android cover picker, cover validation, **Save Draft**, **Save Release**, and focused verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.
