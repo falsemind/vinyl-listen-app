@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -57,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,6 +110,7 @@ import kotlinx.coroutines.launch
 
 private const val COLLECTION_PAGE_SIZE = 25
 private const val COLLECTION_FOLDER_MENU_LIMIT = 10
+private const val ACTION_MENU_DISMISS_REOPEN_GUARD_MS = 250L
 
 @Composable
 fun CollectionScreen(
@@ -141,6 +144,7 @@ fun CollectionScreen(
     var discogsAccessTokenSaved by remember { mutableStateOf(false) }
     var collectionFolders by remember { mutableStateOf<List<CollectionFolder>>(emptyList()) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
+    var actionMenuDismissedAtMillis by remember { mutableLongStateOf(0L) }
     var isAddMenuExpanded by remember { mutableStateOf(false) }
     var isCollectionFoldersExpanded by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
@@ -376,8 +380,23 @@ fun CollectionScreen(
                     onViewAllCollectionFolders()
                 },
                 isActionMenuOpen = isActionMenuOpen,
-                onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
+                onActionMenuToggle =
+                    if (isActionMenuOpen) {
+                        {
+                            actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
+                            isActionMenuOpen = false
+                            isCollectionFoldersExpanded = false
+                        }
+                    } else {
+                        {
+                            val now = SystemClock.uptimeMillis()
+                            if (now - actionMenuDismissedAtMillis > ACTION_MENU_DISMISS_REOPEN_GUARD_MS) {
+                                isActionMenuOpen = true
+                            }
+                        }
+                    },
                 onActionMenuDismiss = {
+                    actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
                     isActionMenuOpen = false
                     isCollectionFoldersExpanded = false
                 },
