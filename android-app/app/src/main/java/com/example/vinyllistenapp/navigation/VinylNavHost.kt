@@ -39,9 +39,9 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
-import com.example.vinyllistenapp.ui.screens.ManualCollectionEntryScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchMode
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
+import com.example.vinyllistenapp.ui.screens.ManualSubmissionsScreen
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationMode
 import com.example.vinyllistenapp.ui.screens.MatchConfirmationScreen
 import com.example.vinyllistenapp.ui.screens.MonthSessionsDrilldownScreen
@@ -398,7 +398,8 @@ fun VinylNavHost(
                 )
             }
             composable(VinylRoutes.COLLECTION_MANUAL_ENTRY) {
-                ManualCollectionEntryScreen(
+                ManualSubmissionsScreen(
+                    apiClient = activeApiClient,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -407,6 +408,8 @@ fun VinylNavHost(
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                     onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
+                    onAddRelease = {},
+                    onOpenDraft = {},
                 )
             }
             composable(
