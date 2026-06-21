@@ -56,6 +56,16 @@ class ManualReleaseBaseModel(BaseModel):
     def trim_strings(cls, value: Any) -> Any:
         if isinstance(value, str):
             return value.strip()
+        if isinstance(value, list):
+            normalized_items: list[Any] = []
+            for item in value:
+                if isinstance(item, str):
+                    trimmed_item = item.strip()
+                    if trimmed_item:
+                        normalized_items.append(trimmed_item)
+                else:
+                    normalized_items.append(item)
+            return normalized_items
         return value
 
 

@@ -49,6 +49,23 @@ def test_save_release_requires_complete_form_data() -> None:
     assert exc_info.value.field_errors["label"] == "This field is required."
 
 
+def test_save_release_rejects_whitespace_only_artist() -> None:
+    service = ManualReleaseService(FakeManualReleaseRepository())
+    form_data = ManualReleaseFormData(
+        artists=["   "],
+        title="Title",
+        label="Label",
+        format="CD",
+        genres=["Rock"],
+        tracklist=[{"title": "Track"}],
+    )
+
+    with pytest.raises(ManualReleaseValidationError) as exc_info:
+        service.save_release(object(), user_id="user-1", form_data=form_data)
+
+    assert exc_info.value.field_errors["artists"] == "At least one artist is required."
+
+
 def test_save_release_accepts_complete_vinyl_form_data() -> None:
     repository = FakeManualReleaseRepository()
     service = ManualReleaseService(repository)
@@ -70,6 +87,45 @@ def test_save_release_accepts_complete_vinyl_form_data() -> None:
     assert release.id == "manual-1"
     assert repository.created_release_user_ids == ["user-1"]
     assert repository.saved_form_data == form_data
+
+
+def test_save_release_normalizes_list_string_fields_for_electronic_style_validation() -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(repository)
+    form_data = ManualReleaseFormData(
+        artists=[" Artist ", "   "],
+        title="Title",
+        label="Label",
+        format="CD",
+        genres=[" Electronic "],
+        styles=[" Techno "],
+        tracklist=[{"title": "Track"}],
+    )
+
+    service.save_release(object(), user_id="user-1", form_data=form_data)
+
+    assert repository.saved_form_data is not None
+    assert repository.saved_form_data.artists == ["Artist"]
+    assert repository.saved_form_data.genres == ["Electronic"]
+    assert repository.saved_form_data.styles == ["Techno"]
+
+
+def test_save_release_requires_style_for_normalized_electronic_genre() -> None:
+    service = ManualReleaseService(FakeManualReleaseRepository())
+    form_data = ManualReleaseFormData(
+        artists=["Artist"],
+        title="Title",
+        label="Label",
+        format="CD",
+        genres=[" Electronic "],
+        styles=["   "],
+        tracklist=[{"title": "Track"}],
+    )
+
+    with pytest.raises(ManualReleaseValidationError) as exc_info:
+        service.save_release(object(), user_id="user-1", form_data=form_data)
+
+    assert exc_info.value.field_errors["styles"] == "Style is required when genre is Electronic."
 
 
 def test_save_release_returns_field_error_for_bad_duration() -> None:
