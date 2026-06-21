@@ -1,7 +1,19 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Index, Integer, String, func
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -18,6 +30,11 @@ class Releases(Base):
 
     __tablename__ = "releases"
     __table_args__ = (
+        CheckConstraint("source IN ('DISCOGS', 'MANUAL')", name="ck_releases_source"),
+        CheckConstraint(
+            "(source != 'DISCOGS') OR (discogs_release_id IS NOT NULL)",
+            name="ck_releases_discogs_id_required_for_discogs",
+        ),
         Index("idx_releases_artist", "artist"),
         Index("idx_releases_title", "title"),
         Index("idx_releases_genres", "genres", postgresql_using="gin"),
@@ -34,8 +51,10 @@ class Releases(Base):
         default=lambda: str(uuid4()),
     )
 
-    # Discogs identifier – unique.
-    discogs_release_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    # Metadata source and external identifier. Manual releases do not have a
+    # Discogs id until a later explicit replacement flow links them.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="DISCOGS", server_default="DISCOGS")
+    discogs_release_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
 
     # Core metadata.
     artist: Mapped[str] = mapped_column(String, nullable=False)
@@ -66,4 +85,74 @@ class Releases(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ManualReleaseDetails(Base):
+    """Structured manual metadata attached to one committed release."""
+
+    __tablename__ = "manual_release_details"
+    __table_args__ = (Index("idx_manual_release_details_release_id", "release_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    release_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("releases.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    artists: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    labels: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    identifiers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    format_details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    tracklist: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    cover_storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_content_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    cover_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ManualReleaseDraft(Base):
+    """Partial manual release form state saved before collection creation."""
+
+    __tablename__ = "manual_release_drafts"
+    __table_args__ = (Index("idx_manual_release_drafts_user_updated", "user_id", "updated_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    form_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    completion_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    cover_storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_content_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    cover_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
