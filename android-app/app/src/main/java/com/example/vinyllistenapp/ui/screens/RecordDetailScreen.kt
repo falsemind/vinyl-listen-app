@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -50,10 +51,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -113,11 +116,14 @@ import com.example.vinyllistenapp.ui.components.SectionTitle
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal const val NO_RECORD_DETAIL_DATA_MESSAGE = "No data yet for this record."
 private const val RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT = 10
+private const val ACTION_MENU_DISMISS_REOPEN_GUARD_MS = 250L
 private val RECORD_DETAIL_STAT_CARD_HEIGHT = 88.dp
 private const val FULL_RELEASE_IMPORT_RETRY_ERROR = "Failed to import full release data. Tap to try again"
 private const val FULL_RELEASE_IMPORT_LOCKED_ERROR = "Something went wrong. Please try again later"
@@ -154,6 +160,7 @@ fun RecordDetailScreen(
     var isUpdatingCollectionMembership by remember(releaseId) { mutableStateOf(false) }
     var isLoadingFlowInsights by remember(releaseId) { mutableStateOf(false) }
     var isActionMenuOpen by remember(releaseId) { mutableStateOf(false) }
+    var actionMenuDismissedAtMillis by remember(releaseId) { mutableLongStateOf(0L) }
     var showSyncReleaseConfirmation by remember(releaseId) { mutableStateOf(false) }
     var showDeleteCollectionConfirmation by remember(releaseId) { mutableStateOf(false) }
     var isMoreInCollectionExpanded by remember(releaseId) { mutableStateOf(false) }
@@ -165,6 +172,7 @@ fun RecordDetailScreen(
     val context = LocalContext.current
     val discogsApiClient = remember(context) { DiscogsApiClient(context) }
     val scope = rememberCoroutineScope()
+    val detailScrollState = rememberScrollState()
     val uriHandler = LocalUriHandler.current
     val density = LocalDensity.current
     var actionMenuMaxWidth by remember { mutableStateOf(260.dp) }
@@ -306,6 +314,16 @@ fun RecordDetailScreen(
         isLoadingRecord = false
     }
 
+    LaunchedEffect(detailScrollState) {
+        snapshotFlow { detailScrollState.isScrollInProgress }
+            .filter { it }
+            .collect {
+                isActionMenuOpen = false
+                isMoreInCollectionExpanded = false
+                isViewOnDiscogsExpanded = false
+            }
+    }
+
     if (!hasLoadedRecord) {
         RecordDetailLoadState(
             isLoading = isLoadingRecord,
@@ -354,7 +372,22 @@ fun RecordDetailScreen(
                 )
                 ActionMenuToggle(
                     isOpen = isActionMenuOpen,
-                    onClick = { isActionMenuOpen = !isActionMenuOpen },
+                    onClick =
+                        if (isActionMenuOpen) {
+                            {
+                                actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
+                                isActionMenuOpen = false
+                                isMoreInCollectionExpanded = false
+                                isViewOnDiscogsExpanded = false
+                            }
+                        } else {
+                            {
+                                val now = SystemClock.uptimeMillis()
+                                if (now - actionMenuDismissedAtMillis > ACTION_MENU_DISMISS_REOPEN_GUARD_MS) {
+                                    isActionMenuOpen = true
+                                }
+                            }
+                        },
                 )
             }
             LocalTimedSessionBanner.current?.let { banner ->
@@ -372,7 +405,7 @@ fun RecordDetailScreen(
                 modifier =
                     Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(detailScrollState)
                         .padding(horizontal = VinylSpacing.SpaceMd),
                 verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
             ) {
@@ -490,6 +523,7 @@ fun RecordDetailScreen(
                 offset = menuOffset,
                 width = actionMenuWidth,
                 onDismiss = {
+                    actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
                     isActionMenuOpen = false
                     isMoreInCollectionExpanded = false
                     isViewOnDiscogsExpanded = false

@@ -1,5 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
+import android.os.SystemClock
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,11 +9,15 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,10 +58,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +72,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -87,14 +96,21 @@ import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
+import com.example.vinyllistenapp.ui.components.ScrollShortcutButton
+import com.example.vinyllistenapp.ui.components.ScrollShortcutState
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
+import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 private const val COLLECTION_PAGE_SIZE = 25
 private const val COLLECTION_FOLDER_MENU_LIMIT = 10
+private const val ACTION_MENU_DISMISS_REOPEN_GUARD_MS = 250L
 
 @Composable
 fun CollectionScreen(
@@ -128,6 +144,7 @@ fun CollectionScreen(
     var discogsAccessTokenSaved by remember { mutableStateOf(false) }
     var collectionFolders by remember { mutableStateOf<List<CollectionFolder>>(emptyList()) }
     var isActionMenuOpen by remember { mutableStateOf(false) }
+    var actionMenuDismissedAtMillis by remember { mutableLongStateOf(0L) }
     var isAddMenuExpanded by remember { mutableStateOf(false) }
     var isCollectionFoldersExpanded by remember { mutableStateOf(false) }
     var retryKey by remember { mutableIntStateOf(0) }
@@ -138,6 +155,7 @@ fun CollectionScreen(
     var showSyncConfirmation by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val scrollShortcutState = rememberScrollShortcutState(scrollState)
 
     suspend fun loadFirstPage() {
         val requestedArtistFilter = artistFilter
@@ -250,6 +268,15 @@ fun CollectionScreen(
         loadCollectionState()
     }
 
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.isScrollInProgress }
+            .filter { it }
+            .collect {
+                isAddMenuExpanded = false
+                isActionMenuOpen = false
+            }
+    }
+
     val hasActiveFilter = artistFilter != null || labelFilter != null || favoriteFilter || folderFilter != null
 
     Scaffold(
@@ -268,12 +295,8 @@ fun CollectionScreen(
         floatingActionButton = {
             if (records.isNotEmpty() || (error == null && !isLoadingInitial && !isSyncing && !hasActiveFilter)) {
                 CollectionFloatingActions(
-                    showScrollToTop = scrollState.value > 0,
-                    onScrollToTop = {
-                        scope.launch {
-                            scrollState.animateScrollTo(0)
-                        }
-                    },
+                    scrollState = scrollState,
+                    scrollShortcutState = scrollShortcutState,
                     addMenuExpanded = isAddMenuExpanded,
                     onAddMenuExpandedChange = { isAddMenuExpanded = it },
                     onIdentifyRecord = onIdentifyRecord,
@@ -290,116 +313,140 @@ fun CollectionScreen(
         },
         floatingActionButtonPosition = FabPosition.End,
     ) { innerPadding ->
-        CollectionListContent(
-            records = records,
-            hasMore = hasMore,
-            isLoadingInitial = isLoadingInitial,
-            isLoadingMore = isLoadingMore,
-            isSyncing = isSyncing,
-            syncMessage = syncMessage,
-            error = error,
-            artistFilter = artistFilter,
-            labelFilter = labelFilter,
-            favoriteFilter = favoriteFilter,
-            folderFilter = folderFilter,
-            filterResultCount = totalRecords,
-            hasFavorites = hasFavorites,
-            collectionFolders = collectionFolders,
-            isCollectionFoldersExpanded = isCollectionFoldersExpanded,
-            showDiscogsSyncAction = discogsAccessTokenSaved,
-            showLoadDiscogsAction = discogsAccessTokenSaved && records.isEmpty() && !hasActiveFilter,
-            scrollState = scrollState,
-            onOpenRecord = onOpenRecord,
-            onRetry = { scope.launch { followCollectionSync() } },
-            onClearArtistFilter = {
-                artistFilter = null
-                onArtistFilterCleared()
-            },
-            onClearLabelFilter = {
-                labelFilter = null
-                onLabelFilterCleared()
-            },
-            onClearFavoriteFilter = {
-                favoriteFilter = false
-            },
-            onClearFolderFilter = {
-                folderFilter = null
-                onFolderFilterCleared()
-            },
-            onShowFavorites = {
-                artistFilter = null
-                labelFilter = null
-                folderFilter = null
-                favoriteFilter = true
-                isActionMenuOpen = false
-            },
-            onCollectionFoldersExpandedChange = { expanded ->
-                isCollectionFoldersExpanded = expanded
-            },
-            onShowCollectionFolder = { folder ->
-                artistFilter = null
-                labelFilter = null
-                favoriteFilter = false
-                folderFilter = folder
-                isCollectionFoldersExpanded = false
-                isActionMenuOpen = false
-            },
-            onViewAllCollectionFolders = {
-                isActionMenuOpen = false
-                isCollectionFoldersExpanded = false
-                onViewAllCollectionFolders()
-            },
-            isActionMenuOpen = isActionMenuOpen,
-            onActionMenuToggle = { isActionMenuOpen = !isActionMenuOpen },
-            onActionMenuDismiss = {
-                isActionMenuOpen = false
-                isCollectionFoldersExpanded = false
-            },
-            onCollectionSettings = onCollectionSettings,
-            onSync = {
-                isActionMenuOpen = false
-                showSyncConfirmation = true
-            },
-            onShowMore = { count ->
-                scope.launch {
-                    val requestedArtistFilter = artistFilter
-                    val requestedLabelFilter = labelFilter
-                    val requestedFavoriteFilter = favoriteFilter
-                    val requestedFolderFilter = folderFilter
-                    isLoadingMore = true
-                    runCatching {
-                        apiClient.getCollectionReleases(
-                            limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
-                            offset = records.size,
-                            artist = requestedArtistFilter,
-                            label = requestedLabelFilter,
-                            favorite = requestedFavoriteFilter,
-                            folderId = requestedFolderFilter?.id,
-                        )
-                    }.onSuccess { page ->
-                        if (requestedArtistFilter != artistFilter ||
-                            requestedLabelFilter != labelFilter ||
-                            requestedFavoriteFilter != favoriteFilter ||
-                            requestedFolderFilter?.id != folderFilter?.id
-                        ) {
-                            return@onSuccess
-                        }
-                        records = records + page.records
-                        hasMore = page.hasMore
-                        totalRecords = page.total
-                        error = null
-                    }.onFailure { failure ->
-                        error = failure.toUserMessage("Could not load more collection records.")
-                    }
-                    isLoadingMore = false
-                }
-            },
+        Box(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .background(VinylColors.AppBackground)
                     .padding(innerPadding),
-        )
+        ) {
+            CollectionListContent(
+                records = records,
+                hasMore = hasMore,
+                isLoadingInitial = isLoadingInitial,
+                isLoadingMore = isLoadingMore,
+                isSyncing = isSyncing,
+                syncMessage = syncMessage,
+                error = error,
+                artistFilter = artistFilter,
+                labelFilter = labelFilter,
+                favoriteFilter = favoriteFilter,
+                folderFilter = folderFilter,
+                filterResultCount = totalRecords,
+                hasFavorites = hasFavorites,
+                collectionFolders = collectionFolders,
+                isCollectionFoldersExpanded = isCollectionFoldersExpanded,
+                showDiscogsSyncAction = discogsAccessTokenSaved,
+                showLoadDiscogsAction = discogsAccessTokenSaved && records.isEmpty() && !hasActiveFilter,
+                scrollState = scrollState,
+                onOpenRecord = onOpenRecord,
+                onRetry = { scope.launch { followCollectionSync() } },
+                onClearArtistFilter = {
+                    artistFilter = null
+                    onArtistFilterCleared()
+                },
+                onClearLabelFilter = {
+                    labelFilter = null
+                    onLabelFilterCleared()
+                },
+                onClearFavoriteFilter = {
+                    favoriteFilter = false
+                },
+                onClearFolderFilter = {
+                    folderFilter = null
+                    onFolderFilterCleared()
+                },
+                onShowFavorites = {
+                    artistFilter = null
+                    labelFilter = null
+                    folderFilter = null
+                    favoriteFilter = true
+                    isActionMenuOpen = false
+                },
+                onCollectionFoldersExpandedChange = { expanded ->
+                    isCollectionFoldersExpanded = expanded
+                },
+                onShowCollectionFolder = { folder ->
+                    artistFilter = null
+                    labelFilter = null
+                    favoriteFilter = false
+                    folderFilter = folder
+                    isCollectionFoldersExpanded = false
+                    isActionMenuOpen = false
+                },
+                onViewAllCollectionFolders = {
+                    isActionMenuOpen = false
+                    isCollectionFoldersExpanded = false
+                    onViewAllCollectionFolders()
+                },
+                isActionMenuOpen = isActionMenuOpen,
+                onActionMenuToggle =
+                    if (isActionMenuOpen) {
+                        {
+                            actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
+                            isActionMenuOpen = false
+                            isCollectionFoldersExpanded = false
+                        }
+                    } else {
+                        {
+                            val now = SystemClock.uptimeMillis()
+                            if (now - actionMenuDismissedAtMillis > ACTION_MENU_DISMISS_REOPEN_GUARD_MS) {
+                                isActionMenuOpen = true
+                            }
+                        }
+                    },
+                onActionMenuDismiss = {
+                    actionMenuDismissedAtMillis = SystemClock.uptimeMillis()
+                    isActionMenuOpen = false
+                    isCollectionFoldersExpanded = false
+                },
+                onCollectionSettings = onCollectionSettings,
+                onSync = {
+                    isActionMenuOpen = false
+                    showSyncConfirmation = true
+                },
+                onContentPress = {
+                    if (isAddMenuExpanded) {
+                        isAddMenuExpanded = false
+                    }
+                },
+                onShowMore = { count ->
+                    scope.launch {
+                        val requestedArtistFilter = artistFilter
+                        val requestedLabelFilter = labelFilter
+                        val requestedFavoriteFilter = favoriteFilter
+                        val requestedFolderFilter = folderFilter
+                        isLoadingMore = true
+                        runCatching {
+                            apiClient.getCollectionReleases(
+                                limit = count.coerceIn(1, SHOW_MORE_MAX_COUNT),
+                                offset = records.size,
+                                artist = requestedArtistFilter,
+                                label = requestedLabelFilter,
+                                favorite = requestedFavoriteFilter,
+                                folderId = requestedFolderFilter?.id,
+                            )
+                        }.onSuccess { page ->
+                            if (requestedArtistFilter != artistFilter ||
+                                requestedLabelFilter != labelFilter ||
+                                requestedFavoriteFilter != favoriteFilter ||
+                                requestedFolderFilter?.id != folderFilter?.id
+                            ) {
+                                return@onSuccess
+                            }
+                            records = records + page.records
+                            hasMore = page.hasMore
+                            totalRecords = page.total
+                            error = null
+                        }.onFailure { failure ->
+                            error = failure.toUserMessage("Could not load more collection records.")
+                        }
+                        isLoadingMore = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
     if (showSyncConfirmation) {
         AlertDialog(
@@ -461,6 +508,7 @@ private fun CollectionListContent(
     onActionMenuDismiss: () -> Unit,
     onCollectionSettings: () -> Unit,
     onSync: () -> Unit,
+    onContentPress: () -> Unit,
     onShowMore: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -479,7 +527,12 @@ private fun CollectionListContent(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .verticalScroll(scrollState)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            onContentPress()
+                        }
+                    }.verticalScroll(scrollState)
                     .padding(horizontal = VinylSpacing.SpaceMd)
                     .padding(top = VinylSpacing.Space2Xl, bottom = VinylSpacing.Space2Xl),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
@@ -739,8 +792,8 @@ private fun CollectionActionMenuDelimiter() {
 
 @Composable
 private fun CollectionFloatingActions(
-    showScrollToTop: Boolean,
-    onScrollToTop: () -> Unit,
+    scrollState: ScrollState,
+    scrollShortcutState: ScrollShortcutState,
     addMenuExpanded: Boolean,
     onAddMenuExpandedChange: (Boolean) -> Unit,
     onIdentifyRecord: () -> Unit,
@@ -754,11 +807,10 @@ private fun CollectionFloatingActions(
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
     ) {
-        if (showScrollToTop) {
-            FloatingIconButton(
-                icon = Icons.Filled.KeyboardArrowUp,
-                contentDescription = "Scroll to top",
-                onClick = onScrollToTop,
+        if (scrollShortcutState.visible) {
+            ScrollShortcutButton(
+                scrollState = scrollState,
+                shortcutState = scrollShortcutState,
             )
         }
         CollectionAddActions(
@@ -785,24 +837,60 @@ private fun CollectionAddActions(
     onManualEntry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val actions =
+        listOf(
+            CollectionQuickAction(
+                icon = Icons.Filled.CameraAlt,
+                contentDescription = "Identify record",
+                onClick = onIdentifyRecord,
+            ),
+            CollectionQuickAction(
+                icon = Icons.Filled.Edit,
+                contentDescription = "Manual release entry",
+                onClick = onManualEntry,
+            ),
+        )
+    var visibleActionCount by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(expanded, actions.size) {
+        if (!expanded && visibleActionCount == 0) {
+            return@LaunchedEffect
+        }
+        val range =
+            if (expanded) {
+                1..actions.size
+            } else {
+                (actions.size - 1) downTo 0
+            }
+        range.forEachIndexed { index, count ->
+            if (index > 0) {
+                delay(COLLECTION_QUICK_ACTION_STAGGER_MS)
+            }
+            visibleActionCount = count
+        }
+    }
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (expanded) {
-            FloatingIconButton(
-                icon = Icons.Filled.CameraAlt,
-                contentDescription = "Identify record",
-                onClick = onIdentifyRecord,
-            )
-            Spacer(Modifier.width(VinylSpacing.SpaceSm))
-            FloatingIconButton(
-                icon = Icons.Filled.Edit,
-                contentDescription = "Manual release entry",
-                onClick = onManualEntry,
-            )
-            Spacer(Modifier.width(VinylSpacing.SpaceSm))
+        actions.forEachIndexed { index, action ->
+            val isVisible = index >= actions.size - visibleActionCount
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(durationMillis = 100)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 60)),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FloatingIconButton(
+                        icon = action.icon,
+                        contentDescription = action.contentDescription,
+                        onClick = action.onClick,
+                    )
+                    Spacer(Modifier.width(VinylSpacing.SpaceSm))
+                }
+            }
         }
         FloatingIconButton(
             icon = if (expanded) Icons.Filled.Close else Icons.Filled.Add,
@@ -811,6 +899,14 @@ private fun CollectionAddActions(
         )
     }
 }
+
+private data class CollectionQuickAction(
+    val icon: ImageVector,
+    val contentDescription: String,
+    val onClick: () -> Unit,
+)
+
+private const val COLLECTION_QUICK_ACTION_STAGGER_MS = 50L
 
 @Composable
 private fun CollectionCenteredStatus(

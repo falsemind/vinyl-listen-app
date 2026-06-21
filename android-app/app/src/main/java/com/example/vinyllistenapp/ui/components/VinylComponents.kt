@@ -4,23 +4,32 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -28,11 +37,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,12 +76,132 @@ import com.example.vinyllistenapp.domain.confidenceLevel
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+enum class ScrollShortcutDirection {
+    Up,
+    Down,
+}
+
+@Stable
+data class ScrollShortcutState(
+    val visible: Boolean,
+    val direction: ScrollShortcutDirection,
+    val targetValue: Int,
+) {
+    val icon: ImageVector
+        get() =
+            when (direction) {
+                ScrollShortcutDirection.Up -> Icons.Filled.KeyboardArrowUp
+                ScrollShortcutDirection.Down -> Icons.Filled.KeyboardArrowDown
+            }
+
+    val contentDescription: String
+        get() =
+            when (direction) {
+                ScrollShortcutDirection.Up -> "Scroll to top"
+                ScrollShortcutDirection.Down -> "Scroll to bottom"
+            }
+}
+
+@Composable
+fun rememberScrollShortcutState(
+    scrollState: ScrollState,
+    headerThresholdPx: Int = 0,
+): ScrollShortcutState {
+    var previousScrollValue by remember { mutableIntStateOf(scrollState.value) }
+    var direction by remember { mutableStateOf(ScrollShortcutDirection.Down) }
+    val currentScrollValue = scrollState.value
+    val maxScrollValue = scrollState.maxValue
+
+    LaunchedEffect(currentScrollValue, maxScrollValue) {
+        direction =
+            when {
+                currentScrollValue >= maxScrollValue && maxScrollValue > 0 -> ScrollShortcutDirection.Up
+                currentScrollValue > previousScrollValue -> ScrollShortcutDirection.Down
+                currentScrollValue < previousScrollValue -> ScrollShortcutDirection.Up
+                else -> direction
+            }
+        previousScrollValue = currentScrollValue
+    }
+
+    val visible =
+        maxScrollValue > 0 &&
+            when (direction) {
+                ScrollShortcutDirection.Up -> currentScrollValue > headerThresholdPx
+                ScrollShortcutDirection.Down -> currentScrollValue < maxScrollValue
+            } &&
+            currentScrollValue > 0
+    val targetValue =
+        when (direction) {
+            ScrollShortcutDirection.Up -> 0
+            ScrollShortcutDirection.Down -> maxScrollValue
+        }
+
+    return ScrollShortcutState(
+        visible = visible,
+        direction = direction,
+        targetValue = targetValue,
+    )
+}
+
+@Composable
+fun ScrollShortcutButton(
+    scrollState: ScrollState,
+    shortcutState: ScrollShortcutState,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    var longPressScrollJob by remember { mutableStateOf<Job?>(null) }
+
+    fun stopLongPressScroll() {
+        longPressScrollJob?.cancel()
+        longPressScrollJob = null
+    }
+
+    fun startLongPressScroll() {
+        stopLongPressScroll()
+        longPressScrollJob =
+            scope.launch {
+                while (isActive && scrollState.value != shortcutState.targetValue) {
+                    val targetValue = shortcutState.targetValue
+                    val nextValue =
+                        if (targetValue > scrollState.value) {
+                            (scrollState.value + SCROLL_SHORTCUT_LONG_PRESS_STEP_PX).coerceAtMost(targetValue)
+                        } else {
+                            (scrollState.value - SCROLL_SHORTCUT_LONG_PRESS_STEP_PX).coerceAtLeast(targetValue)
+                        }
+                    scrollState.scrollTo(nextValue)
+                    delay(SCROLL_SHORTCUT_LONG_PRESS_FRAME_MS)
+                }
+            }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { stopLongPressScroll() }
+    }
+
+    FloatingIconButton(
+        icon = shortcutState.icon,
+        contentDescription = shortcutState.contentDescription,
+        onClick = {
+            scope.launch {
+                scrollState.animateScrollTo(shortcutState.targetValue)
+            }
+        },
+        onLongClick = ::startLongPressScroll,
+        onPressEnd = ::stopLongPressScroll,
+        modifier = modifier,
+    )
+}
 
 @Composable
 fun AccentCard(
@@ -175,13 +308,18 @@ fun FloatingGlassButton(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FloatingIconButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onPressEnd: (() -> Unit)? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
     val brush =
         Brush.linearGradient(
             listOf(
@@ -189,6 +327,12 @@ fun FloatingIconButton(
                 VinylColors.AccentGreen.copy(alpha = 0.70f),
             ),
         )
+
+    LaunchedEffect(isPressed) {
+        if (!isPressed) {
+            onPressEnd?.invoke()
+        }
+    }
 
     Box(
         modifier =
@@ -202,9 +346,13 @@ fun FloatingIconButton(
                 ).clip(VinylShapes.Floating)
                 .background(brush)
                 .border(1.dp, VinylColors.GreenBorder30, VinylShapes.Floating)
-                .clickable(
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
                     onClickLabel = contentDescription,
+                    onLongClickLabel = contentDescription,
                     role = Role.Button,
+                    onLongClick = onLongClick,
                     onClick = onClick,
                 ),
         contentAlignment = Alignment.Center,
@@ -217,6 +365,9 @@ fun FloatingIconButton(
         )
     }
 }
+
+private const val SCROLL_SHORTCUT_LONG_PRESS_STEP_PX = 16
+private const val SCROLL_SHORTCUT_LONG_PRESS_FRAME_MS = 16L
 
 @Composable
 fun TimedSessionBanner(
@@ -698,6 +849,8 @@ fun BottomNavBar(
     modifier: Modifier = Modifier,
     drawTopBorder: Boolean = true,
 ) {
+    val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Surface(
         modifier =
             modifier
@@ -721,7 +874,9 @@ fun BottomNavBar(
                     .fillMaxWidth()
                     .padding(
                         horizontal = VinylSpacing.SpaceLg,
-                        vertical = VinylSpacing.SpaceMd,
+                    ).padding(
+                        top = VinylSpacing.SpaceMd,
+                        bottom = VinylSpacing.SpaceMd + navigationBottomPadding,
                     ),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,

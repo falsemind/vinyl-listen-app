@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.FabPosition
@@ -26,12 +25,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -58,17 +55,17 @@ import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.BottomNavBar
 import com.example.vinyllistenapp.ui.components.BottomNavItem
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
-import com.example.vinyllistenapp.ui.components.FloatingIconButton
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
+import com.example.vinyllistenapp.ui.components.ScrollShortcutButton
 import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
+import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -92,13 +89,12 @@ fun AnalyticsScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
     val screenScrollState = rememberScrollState()
-    val scrollShortcutScope = rememberCoroutineScope()
     val headerHiddenThreshold = with(LocalDensity.current) { 120.dp.roundToPx() }
-    val showScrollToTop by remember {
-        derivedStateOf {
-            screenScrollState.maxValue > 0 && screenScrollState.value > headerHiddenThreshold
-        }
-    }
+    val scrollShortcutState =
+        rememberScrollShortcutState(
+            scrollState = screenScrollState,
+            headerThresholdPx = headerHiddenThreshold,
+        )
 
     LaunchedEffect(retryKey) {
         runCatching { apiClient.getAnalyticsDashboard() }
@@ -129,15 +125,10 @@ fun AnalyticsScreen(
             )
         },
         floatingActionButton = {
-            if (showScrollToTop) {
-                FloatingIconButton(
-                    icon = Icons.Filled.KeyboardArrowUp,
-                    contentDescription = "Scroll to top",
-                    onClick = {
-                        scrollShortcutScope.launch {
-                            screenScrollState.animateScrollTo(0)
-                        }
-                    },
+            if (scrollShortcutState.visible) {
+                ScrollShortcutButton(
+                    scrollState = screenScrollState,
+                    shortcutState = scrollShortcutState,
                     modifier =
                         Modifier.padding(
                             end = VinylSpacing.SpaceMd,

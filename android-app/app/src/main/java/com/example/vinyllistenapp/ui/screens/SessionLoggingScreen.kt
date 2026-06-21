@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -50,15 +52,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -81,6 +89,7 @@ import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private const val CUSTOM_MOOD_MIN_LENGTH = 3
 private const val CUSTOM_MOOD_MAX_LENGTH = 20
@@ -789,7 +798,7 @@ private fun SessionTrackSelector(
     val allTracksSelected = trackOptions.isNotEmpty() && selectedPositionSet.containsAll(allPositions)
     val singleSelectedTrackLabel =
         trackOptions
-            .singleOrNull()
+            .singleOrNull { trackOption -> trackOption.position in selectedPositionSet }
             ?.takeIf { trackOption -> trackOption.position in selectedPositionSet }
             ?.label
     val showAllTracksOption = shouldShowAllTracksOption(trackOptions)
@@ -1161,12 +1170,23 @@ private fun SessionMoodGrid(
     var inputValue by rememberSaveable { mutableStateOf("") }
     var deleteCandidate by remember { mutableStateOf<String?>(null) }
     var popupWidth by remember { mutableStateOf(Dp.Unspecified) }
+    var popupAnchorTopPx by remember { mutableStateOf(0f) }
+    val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val inputPopupTargetOffset =
-        if (WindowInsets.ime.getBottom(density) > 0) {
-            with(density) { (-72).dp.roundToPx() }
-        } else {
-            0
+        with(density) {
+            val keyboardBottom = WindowInsets.ime.getBottom(this)
+            if (keyboardBottom > 0 && popupAnchorTopPx > 0f) {
+                val screenHeightPx = configuration.screenHeightDp.dp.roundToPx()
+                val keyboardTopPx = screenHeightPx - keyboardBottom
+                val popupHeightPx = 64.dp.roundToPx()
+                val desiredTopPx = keyboardTopPx - popupHeightPx - VinylSpacing.SpaceMd.roundToPx()
+                (desiredTopPx - popupAnchorTopPx)
+                    .roundToInt()
+                    .coerceAtMost(0)
+            } else {
+                0
+            }
         }
     val inputPopupYOffset by animateIntAsState(
         targetValue = inputPopupTargetOffset,
@@ -1181,6 +1201,7 @@ private fun SessionMoodGrid(
                 .fillMaxWidth()
                 .onGloballyPositioned { coordinates ->
                     popupWidth = with(density) { coordinates.size.width.toDp() }
+                    popupAnchorTopPx = coordinates.boundsInWindow().top
                 },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
@@ -1400,6 +1421,14 @@ private fun SessionCustomMoodInput(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     Row(
         modifier =
             modifier
@@ -1413,8 +1442,20 @@ private fun SessionCustomMoodInput(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        if (canSave) {
+                            onSave()
+                        }
+                    },
+                ),
             textStyle =
                 MaterialTheme.typography.bodyMedium.copy(
                     color = VinylColors.TextPrimary,
