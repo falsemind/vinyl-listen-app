@@ -6,7 +6,6 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
-    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -30,11 +29,6 @@ class Releases(Base):
 
     __tablename__ = "releases"
     __table_args__ = (
-        CheckConstraint("source IN ('DISCOGS', 'MANUAL')", name="ck_releases_source"),
-        CheckConstraint(
-            "(source != 'DISCOGS') OR (discogs_release_id IS NOT NULL)",
-            name="ck_releases_discogs_id_required_for_discogs",
-        ),
         Index("idx_releases_artist", "artist"),
         Index("idx_releases_title", "title"),
         Index("idx_releases_genres", "genres", postgresql_using="gin"),
@@ -51,10 +45,8 @@ class Releases(Base):
         default=lambda: str(uuid4()),
     )
 
-    # Metadata source and external identifier. Manual releases do not have a
-    # Discogs id until a later explicit replacement flow links them.
-    source: Mapped[str] = mapped_column(String(20), nullable=False, default="DISCOGS", server_default="DISCOGS")
-    discogs_release_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
+    # Discogs identifier – unique.
+    discogs_release_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
 
     # Core metadata.
     artist: Mapped[str] = mapped_column(String, nullable=False)
@@ -88,19 +80,31 @@ class Releases(Base):
     )
 
 
-class ManualReleaseDetails(Base):
-    """Structured manual metadata attached to one committed release."""
+class ManualRelease(Base):
+    """User-owned committed manual release metadata."""
 
-    __tablename__ = "manual_release_details"
-    __table_args__ = (Index("idx_manual_release_details_release_id", "release_id"),)
+    __tablename__ = "manual_releases"
+    __table_args__ = (
+        Index("idx_manual_releases_user_updated", "user_id", "updated_at"),
+        Index("idx_manual_releases_user_title", "user_id", "title"),
+        Index("idx_manual_releases_in_collection", "in_collection"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    release_id: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("releases.id", ondelete="CASCADE"),
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
+        index=True,
     )
+    artist: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    catalog_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    barcode: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    format: Mapped[str] = mapped_column(String(20), nullable=False)
+    genres: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    styles: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     artists: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     labels: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     identifiers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -111,6 +115,10 @@ class ManualReleaseDetails(Base):
     cover_thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
     cover_content_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     cover_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    in_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    collection_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collection_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -131,10 +139,10 @@ class ManualReleaseDraft(Base):
     __table_args__ = (Index("idx_manual_release_drafts_user_updated", "user_id", "updated_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    user_id: Mapped[str | None] = mapped_column(
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("user_accounts.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     form_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

@@ -35,16 +35,16 @@ def test_alembic_upgrade_sql_contains_documented_constraints_and_indexes(monkeyp
     assert "ADD COLUMN collection_removed_at TIMESTAMP WITH TIME ZONE" in sql
     assert "ADD COLUMN last_discogs_sync_at TIMESTAMP WITH TIME ZONE" in sql
     assert "ADD COLUMN discogs_instance_id BIGINT" in sql
-    assert "ADD COLUMN source VARCHAR(20) DEFAULT 'DISCOGS' NOT NULL" in sql
-    assert "ALTER TABLE releases ALTER COLUMN discogs_release_id DROP NOT NULL" in sql
-    assert "ck_releases_source" in sql
-    assert "ck_releases_discogs_id_required_for_discogs" in sql
+    assert "ALTER TABLE releases ALTER COLUMN discogs_release_id DROP NOT NULL" not in sql
+    assert "ck_releases_source" not in sql
     assert "CREATE INDEX idx_releases_in_collection" in sql
     assert "CREATE INDEX idx_releases_collection_added_at" in sql
-    assert "CREATE TABLE manual_release_details" in sql
-    assert "uq_manual_release_details_release_id" in sql
-    assert "ck_manual_release_details_cover_size_non_negative" in sql
-    assert "CREATE INDEX idx_manual_release_details_release_id" in sql
+    assert "CREATE TABLE manual_releases" in sql
+    assert "user_id VARCHAR(36) NOT NULL" in sql
+    assert "FOREIGN KEY(user_id) REFERENCES user_accounts (id) ON DELETE CASCADE" in sql
+    assert "ck_manual_releases_cover_size_non_negative" in sql
+    assert "CREATE INDEX idx_manual_releases_user_updated" in sql
+    assert "CREATE INDEX idx_manual_releases_user_title" in sql
     assert "CREATE TABLE manual_release_drafts" in sql
     assert "validation_version INTEGER DEFAULT '1' NOT NULL" in sql
     assert "ck_manual_release_drafts_cover_size_non_negative" in sql
