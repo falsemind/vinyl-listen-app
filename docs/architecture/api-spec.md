@@ -828,6 +828,253 @@ Restores an existing release to the active collection without creating a duplica
 
 ---
 
+# 4A. Manual Release Submissions
+
+Endpoints used by the Manual Submissions screen. These endpoints manage user-owned manual releases and drafts. They do not write manual data into the shared Discogs-backed `releases` catalog.
+
+All endpoints require bearer authentication. Every request is scoped to the authenticated `user_id`.
+
+## Shared Form Shape
+
+Manual draft and save requests use this nested `form_data` shape.
+
+```json
+{
+  "artists": ["Artist"],
+  "title": "Release Title",
+  "label": "Label Name",
+  "catalog_number": "CAT-001",
+  "barcode": "1234567890123",
+  "format": "Vinyl",
+  "vinyl_size": "12",
+  "vinyl_speed": "33 1/3",
+  "vinyl_disc_count": 2,
+  "genres": ["Electronic"],
+  "styles": ["Techno"],
+  "tracklist": [
+    {
+      "position": "A1",
+      "title": "Track Title",
+      "duration": "6:30",
+      "credits": [
+        {
+          "role": "Featuring",
+          "name": "Guest Artist"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Supported enums:
+
+| Field | Values |
+| --- | --- |
+| `format` | `Vinyl`, `CD`, `Tape`, `Other` |
+| `vinyl_size` | `7`, `10`, `12`, `Other` |
+| `vinyl_speed` | `33 1/3`, `45`, `78`, `Other` |
+| `credits[].role` | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` |
+
+## GET /manual-releases/drafts
+
+Lists the authenticated user's manual release drafts.
+
+### Response
+
+```json
+{
+  "items": [
+    {
+      "id": "draft-uuid",
+      "artist": "Artist",
+      "title": "Release Title",
+      "label": "Label Name",
+      "catalog_number": "CAT-001",
+      "format": "Vinyl",
+      "cover_thumbnail_url": null,
+      "completion_state": {
+        "required_complete": false
+      },
+      "updated_at": "2026-06-21T12:00:00Z"
+    }
+  ],
+  "limit": 5,
+  "remaining_slots": 4
+}
+```
+
+## POST /manual-releases/drafts
+
+Creates a draft for partial manual form state.
+
+### Request
+
+```json
+{
+  "form_data": {
+    "artists": ["Artist"],
+    "title": "Partial Title"
+  },
+  "completion_state": {
+    "required_complete": false
+  }
+}
+```
+
+### Response
+
+`201 Created`
+
+Returns the full draft, including `form_data`, cover metadata, `created_at`, and `updated_at`.
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `409 Conflict` | `manual_release_draft_limit_reached` | The user already has 5 saved drafts. |
+| `422 Unprocessable Content` | `invalid_request` | Request body shape is invalid. |
+
+## PUT /manual-releases/drafts/{draft_id}
+
+Updates a draft owned by the authenticated user.
+
+### Request
+
+Same shape as `POST /manual-releases/drafts`.
+
+### Response
+
+Returns the updated full draft.
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
+| `422 Unprocessable Content` | `invalid_request` | Request body shape is invalid. |
+
+## DELETE /manual-releases/drafts/{draft_id}
+
+Deletes a draft owned by the authenticated user.
+
+### Response
+
+`204 No Content`
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
+
+## POST /manual-releases
+
+Creates a committed user-owned manual release and adds it to the user's active collection. If `draft_id` is provided, the backend can use the draft form state and removes the draft after a successful save.
+
+### Request
+
+Save directly from form data:
+
+```json
+{
+  "form_data": {
+    "artists": ["Artist"],
+    "title": "Release Title",
+    "label": "Label Name",
+    "format": "Vinyl",
+    "vinyl_size": "12",
+    "vinyl_speed": "33 1/3",
+    "vinyl_disc_count": 2,
+    "genres": ["Electronic"],
+    "styles": ["Techno"],
+    "tracklist": [
+      {
+        "title": "Track Title"
+      }
+    ]
+  }
+}
+```
+
+Save an existing complete draft:
+
+```json
+{
+  "draft_id": "draft-uuid"
+}
+```
+
+### Response
+
+`201 Created`
+
+```json
+{
+  "id": "manual-release-uuid",
+  "title": "Release Title",
+  "artist": "Artist",
+  "in_collection": true
+}
+```
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
+| `422 Unprocessable Content` | `manual_release_validation_failed` | Required release fields are missing or invalid. |
+
+Validation errors include field-level details:
+
+```json
+{
+  "error": {
+    "code": "manual_release_validation_failed",
+    "message": "Manual release validation failed.",
+    "field_errors": {
+      "title": "This field is required."
+    }
+  }
+}
+```
+
+## POST /manual-releases/drafts/{draft_id}/cover
+
+Validates a cover image upload for a draft owned by the authenticated user.
+
+Current Phase 10B behavior validates ownership, content type, and size. Valid uploads return a typed storage error until the cover storage backend is configured.
+
+### Request
+
+`multipart/form-data`
+
+| Part | Type | Notes |
+| --- | --- | --- |
+| `file` | file | One `JPEG`, `PNG`, or `WebP` image, max 3 MB |
+
+### Response
+
+When storage is configured later, the response shape is:
+
+```json
+{
+  "content_type": "image/jpeg",
+  "size_bytes": 1024
+}
+```
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400 Bad Request` | `manual_release_cover_invalid` | Unsupported content type or missing content type. |
+| `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
+| `413 Request Entity Too Large` | `manual_release_cover_invalid` | The image exceeds 3 MB. |
+| `501 Not Implemented` | `manual_release_cover_storage_not_configured` | Upload validated, but cover storage is not configured yet. |
+
+---
+
 # 5. Collection Management
 
 Endpoints used by the Records Collection screen to load the authenticated user's collection records, start manual Discogs metadata sync, and manage that user's collection source of truth. The default source of truth is the app database. In app-owned mode, Discogs sync can enrich shared release metadata but must not remove, deactivate, or re-add the user's collection membership. Removed records stay in the local database so historical listening sessions and analytics remain available.

@@ -46,6 +46,8 @@ Core entities:
 
 ```
 releases
+manual_releases
+manual_release_drafts
 user_accounts
 auth_sessions
 consumed_refresh_tokens
@@ -88,7 +90,13 @@ releases
    │
    ├── session_moods
    │
-   └── discogs_release_cache
+    └── discogs_release_cache
+
+manual_releases
+   └── user-owned manual release metadata outside the shared Discogs catalog
+
+manual_release_drafts
+   └── user-owned draft form state for manual submissions
 
 session_groups
    │
@@ -115,7 +123,9 @@ user_accounts
    ├── email_verification_codes
    ├── password_reset_codes
    ├── user_entitlements
-   └── usage_events
+   ├── usage_events
+   ├── manual_releases
+   └── manual_release_drafts
 
 auth_sessions
    └── consumed_refresh_tokens
@@ -360,6 +370,106 @@ USING GIN (styles);
 INDEX (in_collection)
 INDEX (collection_added_at)
 ```
+
+---
+
+# Table: manual_releases
+
+Stores committed manual submissions as **user-owned app data**. These rows are separate from the shared Discogs-backed `releases` catalog so one user's manual release never becomes shared metadata for another user.
+
+Manual releases can later be replaced by a user-confirmed Discogs match, but Phase 10A does not store a Discogs id here.
+
+## Columns
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Required owner; references `user_accounts.id` with `ON DELETE CASCADE` |
+| artist | VARCHAR(200) | Display artist summary |
+| title | VARCHAR(200) | Release title |
+| label | VARCHAR(200) | Display label summary |
+| catalog_number | VARCHAR(80) | Optional matching hint |
+| barcode | VARCHAR(14) | Optional normalized barcode |
+| format | VARCHAR(20) | `Vinyl`, `CD`, `Tape`, or `Other` |
+| genres | TEXT[] | App-defined genre values |
+| styles | TEXT[] | App-defined style values |
+| artists | JSON | Structured artist list |
+| labels | JSON | Structured label list |
+| identifiers | JSON | Catalog number, barcode, and future matching helpers |
+| format_details | JSON | Vinyl size, speed, disc count, or other format details |
+| tracklist | JSON | Structured track rows and optional track credits |
+| cover_storage_key | TEXT | Optional backend storage key for cover art |
+| cover_image_url | TEXT | Optional cover image URL |
+| cover_thumbnail_url | TEXT | Optional cover thumbnail URL |
+| cover_content_type | VARCHAR(80) | `image/jpeg`, `image/png`, or `image/webp` |
+| cover_size_bytes | INTEGER | Optional cover image size; must be non-negative |
+| in_collection | BOOLEAN | Whether the manual release is active in the user's collection |
+| collection_added_at | TIMESTAMP | Time the manual release entered the collection |
+| collection_removed_at | TIMESTAMP | Time the manual release was removed from the collection |
+| is_favorite | BOOLEAN | User-specific favorite flag |
+| created_at | TIMESTAMP | Record creation time |
+| updated_at | TIMESTAMP | Last metadata update |
+
+## Constraints and Indexes
+
+```sql
+FOREIGN KEY (user_id)
+REFERENCES user_accounts(id)
+ON DELETE CASCADE
+
+CHECK (
+  cover_size_bytes IS NULL
+  OR cover_size_bytes >= 0
+)
+
+INDEX (user_id)
+INDEX (user_id, updated_at)
+INDEX (user_id, title)
+INDEX (in_collection)
+```
+
+Access to this table must always filter by authenticated `user_id`. Manual releases are not joined into the shared `releases` catalog unless a later replacement flow explicitly maps user-owned data to a Discogs release.
+
+---
+
+# Table: manual_release_drafts
+
+Stores partial Manual Submissions form state before a release is saved to the user's collection. Drafts are user-owned and do not appear in collection queries, listening history, analytics, or insights.
+
+## Columns
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | UUID | Primary key |
+| user_id | UUID | Required owner; references `user_accounts.id` with `ON DELETE CASCADE` |
+| form_data | JSON | Partial manual submission form state |
+| completion_state | JSON | Optional required-field completion summary for draft cards |
+| cover_storage_key | TEXT | Optional backend storage key for draft cover art |
+| cover_image_url | TEXT | Optional cover image URL |
+| cover_thumbnail_url | TEXT | Optional cover thumbnail URL |
+| cover_content_type | VARCHAR(80) | `image/jpeg`, `image/png`, or `image/webp` |
+| cover_size_bytes | INTEGER | Optional cover image size; must be non-negative |
+| validation_version | INTEGER | Version of the validation rules used to save the draft |
+| created_at | TIMESTAMP | Draft creation time |
+| updated_at | TIMESTAMP | Last draft update time |
+
+## Constraints and Indexes
+
+```sql
+FOREIGN KEY (user_id)
+REFERENCES user_accounts(id)
+ON DELETE CASCADE
+
+CHECK (
+  cover_size_bytes IS NULL
+  OR cover_size_bytes >= 0
+)
+
+INDEX (user_id)
+INDEX (user_id, updated_at)
+```
+
+The application enforces a maximum of five drafts per user. The table keeps ownership non-null so draft limits, deletion, and future account cleanup cannot be bypassed by orphan rows.
 
 ---
 
@@ -1080,6 +1190,10 @@ payload to the backend for mapping, cache upsert, and persistence. The backend
 does not perform unauthenticated Discogs fetches and does not read a Discogs
 access token from configuration.
 
+Manual submissions do not write to `releases`. Saving a manual release inserts
+or updates user-owned rows in `manual_release_drafts` until the form is complete,
+then creates a `manual_releases` row owned by the authenticated user.
+
 ---
 
 ### Discogs Integration Token
@@ -1165,6 +1279,8 @@ Initial migration should create:
 
 ```
 releases
+manual_releases
+manual_release_drafts
 sessions
 session_moods
 discogs_release_cache
@@ -1185,6 +1301,7 @@ wishlist
 record_prices
 marketplace_links
 ai_insights
+manual-to-discogs replacement links
 ```
 
 Example future tables:
@@ -1233,6 +1350,7 @@ The MVP schema provides:
 - efficient session logging
     
 - Discogs metadata caching
+- user-owned manual submissions and drafts outside shared Discogs metadata
 - server-backed identify progress
     
 - simple analytics queries

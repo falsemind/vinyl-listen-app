@@ -16,7 +16,7 @@ from app.models.collection_sync_job import CollectionSyncJob
 from app.models.discogs_release_cache import DiscogsReleaseCache
 from app.models.identify_job import IdentifyJob
 from app.models.provider_integration import ProviderIntegration
-from app.models.releases import Releases
+from app.models.releases import ManualRelease, ManualReleaseDraft, Releases
 from app.models.sessions import SessionGroups, Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import (
@@ -49,6 +49,8 @@ __all__ = [
     "EmailVerificationCode",
     "PasswordResetCode",
     "ProviderIntegration",
+    "ManualRelease",
+    "ManualReleaseDraft",
     "Releases",
     "SessionGroups",
     "Sessions",
