@@ -625,7 +625,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 
 Current Phase 10C status:
 
-- Covered now: service/API tests cover required fields, Electronic style validation, Vinyl size/speed/disc count, duration/barcode/track role validation, draft partial saves, 5-draft cap, draft CRUD, save-from-draft behavior, user scoping, cover validation policy, and list-item normalization.
+- Covered now: service/API/repository tests cover required fields, Electronic style validation, Vinyl size/speed/disc count, duration/barcode/track role validation, draft partial saves, serialized 5-draft cap checks, locked draft consumption for save-from-draft behavior, draft CRUD, user scoping, cover validation policy, and list-item normalization.
 - Covered now: persistence-level collection/history guard coverage proves a saved manual release creates only the intended user-owned manual release/collection state and does not create listening history, session rows, or analytics-visible activity until the user logs a session.
 - Deferred until cover storage exists: successful cover persistence tests. Current implementation validates the upload contract and returns a typed storage-not-configured error for otherwise valid files.
 

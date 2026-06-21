@@ -9,6 +9,28 @@ from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.schemas.manual_releases import ManualReleaseFormat, ManualReleaseFormData
 
 
+class _FakeDialect:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _FakeBind:
+    def __init__(self, dialect_name: str) -> None:
+        self.dialect = _FakeDialect(dialect_name)
+
+
+class _FakeLockSession:
+    def __init__(self, dialect_name: str) -> None:
+        self.bind = _FakeBind(dialect_name)
+        self.executed: list[tuple[str, dict]] = []
+
+    def get_bind(self) -> _FakeBind:
+        return self.bind
+
+    def execute(self, statement, parameters: dict) -> None:
+        self.executed.append((str(statement), parameters))
+
+
 @pytest.fixture()
 def db_session() -> Iterator[Session]:
     engine = create_engine("sqlite:///:memory:")
@@ -22,6 +44,28 @@ def db_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def test_lock_draft_capacity_for_user_uses_postgres_transaction_advisory_lock() -> None:
+    db_session = _FakeLockSession("postgresql")
+    repository = ManualReleaseRepository()
+
+    repository.lock_draft_capacity_for_user(db_session, user_id="user-a")
+
+    assert len(db_session.executed) == 1
+    statement, parameters = db_session.executed[0]
+    assert "pg_advisory_xact_lock" in statement
+    assert "hashtext" in statement
+    assert parameters["user_id"] == "user-a"
+
+
+def test_lock_draft_capacity_for_user_is_noop_for_non_postgres_dialects() -> None:
+    db_session = _FakeLockSession("sqlite")
+    repository = ManualReleaseRepository()
+
+    repository.lock_draft_capacity_for_user(db_session, user_id="user-a")
+
+    assert db_session.executed == []
 
 
 def test_manual_release_save_preserves_collection_and_history_boundaries(

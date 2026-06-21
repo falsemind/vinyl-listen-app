@@ -1,10 +1,13 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.releases import ManualRelease, ManualReleaseDraft
 from app.schemas.manual_releases import ManualReleaseFormData
+
+_DRAFT_CAP_LOCK_NAMESPACE = 912409
 
 
 class ManualReleaseRepository:
@@ -21,12 +24,33 @@ class ManualReleaseRepository:
     def count_drafts(self, db: Session, *, user_id: str) -> int:
         return db.query(ManualReleaseDraft).filter(ManualReleaseDraft.user_id == user_id).count()
 
-    def get_draft(self, db: Session, draft_id: str, *, user_id: str) -> ManualReleaseDraft | None:
-        return (
-            db.query(ManualReleaseDraft)
-            .filter(ManualReleaseDraft.id == draft_id, ManualReleaseDraft.user_id == user_id)
-            .one_or_none()
+    def lock_draft_capacity_for_user(self, db: Session, *, user_id: str) -> None:
+        """Serialize per-user draft cap checks on PostgreSQL."""
+
+        bind = db.get_bind()
+        if bind.dialect.name != "postgresql":
+            return
+
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:user_id))"),
+            {"namespace": _DRAFT_CAP_LOCK_NAMESPACE, "user_id": user_id},
         )
+
+    def get_draft(
+        self,
+        db: Session,
+        draft_id: str,
+        *,
+        user_id: str,
+        for_update: bool = False,
+    ) -> ManualReleaseDraft | None:
+        query = db.query(ManualReleaseDraft).filter(
+            ManualReleaseDraft.id == draft_id,
+            ManualReleaseDraft.user_id == user_id,
+        )
+        if for_update:
+            query = query.with_for_update()
+        return query.one_or_none()
 
     def create_draft(
         self,

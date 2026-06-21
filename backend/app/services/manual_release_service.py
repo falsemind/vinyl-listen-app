@@ -63,6 +63,7 @@ class ManualReleaseService:
         form_data: ManualReleaseFormData,
         completion_state: dict | None = None,
     ) -> ManualReleaseDraft:
+        self.repository.lock_draft_capacity_for_user(db, user_id=user_id)
         ensure_manual_release_draft_capacity(self.repository.count_drafts(db, user_id=user_id))
         return self.repository.create_draft(
             db,
@@ -102,7 +103,9 @@ class ManualReleaseService:
     ) -> ManualRelease:
         draft: ManualReleaseDraft | None = None
         if draft_id is not None:
-            draft = self.get_draft(db, draft_id, user_id=user_id)
+            draft = self.repository.get_draft(db, draft_id, user_id=user_id, for_update=True)
+            if draft is None:
+                raise ManualReleaseNotFoundError
 
         if form_data is None:
             if draft is None:

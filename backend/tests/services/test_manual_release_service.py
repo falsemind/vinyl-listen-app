@@ -12,14 +12,42 @@ class FakeManualReleaseRepository:
         self.draft_count = 0
         self.created_draft_user_ids: list[str] = []
         self.created_release_user_ids: list[str] = []
+        self.get_draft_calls: list[dict] = []
+        self.operation_log: list[str] = []
         self.saved_form_data: ManualReleaseFormData | None = None
+        self.draft_form_data = ManualReleaseFormData(
+            artists=["Draft Artist"],
+            title="Draft Title",
+            label="Draft Label",
+            format="CD",
+            genres=["Rock"],
+            tracklist=[{"title": "Draft Track"}],
+        )
+
+    def lock_draft_capacity_for_user(self, _db, *, user_id: str) -> None:
+        self.operation_log.append(f"lock:{user_id}")
 
     def count_drafts(self, _db, *, user_id: str) -> int:
-        _ = user_id
+        self.operation_log.append(f"count:{user_id}")
         return self.draft_count
+
+    def get_draft(self, _db, draft_id: str, *, user_id: str, for_update: bool = False):
+        self.get_draft_calls.append(
+            {
+                "draft_id": draft_id,
+                "user_id": user_id,
+                "for_update": for_update,
+            }
+        )
+        return SimpleNamespace(
+            id=draft_id,
+            user_id=user_id,
+            form_data=self.draft_form_data.model_dump(mode="json"),
+        )
 
     def create_draft(self, _db, *, user_id: str, form_data, completion_state=None):
         _ = completion_state
+        self.operation_log.append(f"create:{user_id}")
         self.created_draft_user_ids.append(user_id)
         return SimpleNamespace(id="draft-1", user_id=user_id, form_data=form_data.model_dump(mode="json"))
 
@@ -37,6 +65,15 @@ def test_create_draft_enforces_user_draft_limit() -> None:
 
     with pytest.raises(ManualReleaseDraftLimitExceeded):
         service.create_draft(object(), user_id="user-1", form_data=ManualReleaseFormData(title="Partial"))
+
+
+def test_create_draft_serializes_capacity_check_before_counting() -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(repository)
+
+    service.create_draft(object(), user_id="user-1", form_data=ManualReleaseFormData(title="Partial"))
+
+    assert repository.operation_log == ["lock:user-1", "count:user-1", "create:user-1"]
 
 
 def test_save_release_requires_complete_form_data() -> None:
@@ -87,6 +124,23 @@ def test_save_release_accepts_complete_vinyl_form_data() -> None:
     assert release.id == "manual-1"
     assert repository.created_release_user_ids == ["user-1"]
     assert repository.saved_form_data == form_data
+
+
+def test_save_release_locks_draft_before_consuming_it() -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(repository)
+
+    release = service.save_release(object(), user_id="user-1", draft_id="draft-1")
+
+    assert release.id == "manual-1"
+    assert repository.get_draft_calls == [
+        {
+            "draft_id": "draft-1",
+            "user_id": "user-1",
+            "for_update": True,
+        }
+    ]
+    assert repository.saved_form_data == repository.draft_form_data
 
 
 def test_save_release_normalizes_list_string_fields_for_electronic_style_validation() -> None:

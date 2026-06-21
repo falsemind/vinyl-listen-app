@@ -397,11 +397,11 @@ in Records Collection and Record Details can log future sessions.
 
 ### Draft flow
 
-Drafts support list/create/update/delete for the authenticated user. Each account can keep up to 5 drafts. Draft saves accept partial form data, normalize string/list inputs, enforce type-safe payload shapes, and do not add anything to the user's collection, listening history, or analytics.
+Drafts support list/create/update/delete for the authenticated user. Each account can keep up to 5 drafts. Draft creation serializes the per-user cap check with a PostgreSQL transaction advisory lock so concurrent creates cannot exceed the limit. Draft saves accept partial form data, normalize string/list inputs, enforce type-safe payload shapes, and do not add anything to the user's collection, listening history, or analytics.
 
 ### Save flow
 
-Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Validation covers required artist/title/label/format/genre data, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
+Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Draft-backed saves read the source draft with `FOR UPDATE` and consume it in the same transaction, so concurrent saves for the same draft cannot create duplicate manual releases. Validation covers required artist/title/label/format/genre data, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
 
 Manual releases remain separate from Discogs-backed releases until a future replacement workflow explicitly maps a user's manual submission to a richer Discogs release.
 
@@ -411,7 +411,7 @@ Cover upload endpoints currently validate file type and size through `manual_rel
 
 ### Test coverage status
 
-Current service/API/repository tests cover draft CRUD contracts, the 5-draft cap, form validation, list normalization, cover validation policy, save-from-draft behavior, user ownership scoping, and persistence guards proving that manual release saves preserve collection semantics without creating listening history or analytics records before sessions are logged.
+Current service/API/repository tests cover draft CRUD contracts, the 5-draft cap, serialized draft-cap checks, locked draft consumption, form validation, list normalization, cover validation policy, save-from-draft behavior, user ownership scoping, and persistence guards proving that manual release saves preserve collection semantics without creating listening history or analytics records before sessions are logged.
 
 ## release_mapper.py
 
