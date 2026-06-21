@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,14 +14,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -29,7 +34,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +76,73 @@ import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+enum class ScrollShortcutDirection {
+    Up,
+    Down,
+}
+
+@Stable
+data class ScrollShortcutState(
+    val visible: Boolean,
+    val direction: ScrollShortcutDirection,
+    val targetValue: Int,
+) {
+    val icon: ImageVector
+        get() =
+            when (direction) {
+                ScrollShortcutDirection.Up -> Icons.Filled.KeyboardArrowUp
+                ScrollShortcutDirection.Down -> Icons.Filled.KeyboardArrowDown
+            }
+
+    val contentDescription: String
+        get() =
+            when (direction) {
+                ScrollShortcutDirection.Up -> "Scroll to top"
+                ScrollShortcutDirection.Down -> "Scroll to bottom"
+            }
+}
+
+@Composable
+fun rememberScrollShortcutState(
+    scrollState: ScrollState,
+    headerThresholdPx: Int = 0,
+): ScrollShortcutState {
+    var previousScrollValue by remember { mutableIntStateOf(scrollState.value) }
+    var direction by remember { mutableStateOf(ScrollShortcutDirection.Down) }
+    val currentScrollValue = scrollState.value
+    val maxScrollValue = scrollState.maxValue
+
+    LaunchedEffect(currentScrollValue, maxScrollValue) {
+        direction =
+            when {
+                currentScrollValue >= maxScrollValue && maxScrollValue > 0 -> ScrollShortcutDirection.Up
+                currentScrollValue > previousScrollValue -> ScrollShortcutDirection.Down
+                currentScrollValue < previousScrollValue -> ScrollShortcutDirection.Up
+                else -> direction
+            }
+        previousScrollValue = currentScrollValue
+    }
+
+    val visible =
+        maxScrollValue > 0 &&
+            when (direction) {
+                ScrollShortcutDirection.Up -> currentScrollValue > headerThresholdPx
+                ScrollShortcutDirection.Down -> currentScrollValue < maxScrollValue
+            } &&
+            currentScrollValue > 0
+    val targetValue =
+        when (direction) {
+            ScrollShortcutDirection.Up -> 0
+            ScrollShortcutDirection.Down -> maxScrollValue
+        }
+
+    return ScrollShortcutState(
+        visible = visible,
+        direction = direction,
+        targetValue = targetValue,
+    )
+}
 
 @Composable
 fun AccentCard(
@@ -698,6 +772,8 @@ fun BottomNavBar(
     modifier: Modifier = Modifier,
     drawTopBorder: Boolean = true,
 ) {
+    val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Surface(
         modifier =
             modifier
@@ -721,7 +797,9 @@ fun BottomNavBar(
                     .fillMaxWidth()
                     .padding(
                         horizontal = VinylSpacing.SpaceLg,
-                        vertical = VinylSpacing.SpaceMd,
+                    ).padding(
+                        top = VinylSpacing.SpaceMd,
+                        bottom = VinylSpacing.SpaceMd + navigationBottomPadding,
                     ),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,

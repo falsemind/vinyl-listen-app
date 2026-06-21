@@ -34,7 +34,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,8 +55,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +81,7 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.SHOW_MORE_MAX_COUNT
 import com.example.vinyllistenapp.ui.components.ShowMoreActionButton
+import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
 import com.example.vinyllistenapp.ui.components.timedSessionMoodDirectionLabel
 import com.example.vinyllistenapp.ui.components.timedSessionStyleFocusLabel
 import com.example.vinyllistenapp.ui.components.timedSessionTypeLabel
@@ -456,11 +454,11 @@ private fun ViewAllScreenContent(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val headerHiddenThreshold = with(LocalDensity.current) { 120.dp.roundToPx() }
-    val showScrollToTop by remember {
-        derivedStateOf {
-            scrollState.maxValue > 0 && scrollState.value > headerHiddenThreshold
-        }
-    }
+    val scrollShortcutState =
+        rememberScrollShortcutState(
+            scrollState = scrollState,
+            headerThresholdPx = headerHiddenThreshold,
+        )
 
     Box(
         modifier =
@@ -495,13 +493,13 @@ private fun ViewAllScreenContent(
             Spacer(Modifier.height(96.dp))
         }
 
-        if (showScrollToTop) {
+        if (scrollShortcutState.visible) {
             FloatingIconButton(
-                icon = Icons.Filled.KeyboardArrowUp,
-                contentDescription = "Scroll to top",
+                icon = scrollShortcutState.icon,
+                contentDescription = scrollShortcutState.contentDescription,
                 onClick = {
                     scope.launch {
-                        scrollState.animateScrollTo(0)
+                        scrollState.animateScrollTo(scrollShortcutState.targetValue)
                     }
                 },
                 modifier =
@@ -1794,64 +1792,36 @@ private fun TopRecordListItem(
                         .height(1.dp)
                         .background(VinylColors.BorderDefault),
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            WrappingMetadataChipRow(
+                modifier =
+                    Modifier.fillMaxWidth(),
+                horizontalSpacing = VinylSpacing.SpaceXs,
+                verticalSpacing = VinylSpacing.SpaceXs,
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                ) {
-                    TopRecordMetricRow(
-                        label = "Rating: ",
-                        value = record.averageRating.toString(),
-                        valueColor = VinylColors.AccentGreen,
-                    )
-                    TopRecordMetricRow(
-                        label = "Top track: ",
-                        value = record.topTrack ?: "n/a",
-                        valueColor = VinylColors.AccentOrange,
-                    )
-                    TopRecordMetricRow(
-                        label = "Top mood: ",
-                        value = record.topMood ?: "n/a",
-                        valueColor = VinylColors.AccentPurple,
-                    )
-                }
-                Text(
-                    text = "${record.plays} plays",
-                    color = VinylColors.AccentGreen,
-                    modifier =
-                        Modifier
-                            .padding(start = VinylSpacing.SpaceMd)
-                            .widthIn(min = 72.dp),
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                TopRecordMetadataChip(label = playCountChipLabel(record.plays))
+                TopRecordMetadataChip(label = "Rating: ${record.averageRating}")
+                TopRecordMetadataChip(label = "Top track: ${record.topTrack ?: "n/a"}")
+                TopRecordMetadataChip(label = "Top mood: ${record.topMood ?: "n/a"}")
             }
         }
     }
 }
 
 @Composable
-private fun TopRecordMetricRow(
-    label: String,
-    value: String,
-    valueColor: Color,
-) {
+private fun TopRecordMetadataChip(label: String) {
     Text(
-        text =
-            buildAnnotatedString {
-                append(label)
-                pushStyle(SpanStyle(color = valueColor))
-                append(value)
-                pop()
-            },
-        color = VinylColors.TextSecondary,
+        modifier =
+            Modifier
+                .clip(VinylShapes.Chip)
+                .background(VinylColors.GreenTint20)
+                .border(1.dp, VinylColors.AccentGreen, VinylShapes.Chip)
+                .padding(horizontal = VinylSpacing.SpaceSm, vertical = VinylSpacing.SpaceXs),
+        text = label,
+        color = VinylColors.AccentGreen,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
     )
 }
 
@@ -1863,6 +1833,8 @@ private fun analyticsMonthTitle(month: String): String =
     }.getOrDefault(month)
 
 private fun ratingCountLabel(count: Int): String = if (count == 1) "1 rating" else "$count ratings"
+
+private fun playCountChipLabel(count: Int): String = if (count == 1) "1 Play" else "$count Plays"
 
 private fun listenCountLabel(count: Int): String = if (count == 1) "1 listen" else "$count listens"
 

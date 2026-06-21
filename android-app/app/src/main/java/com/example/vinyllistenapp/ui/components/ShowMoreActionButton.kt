@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -87,29 +90,47 @@ fun ShowMoreActionButton(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
+        Column(
             modifier =
                 Modifier
-                    .width(width)
-                    .combinedClickable(
-                        enabled = enabled,
-                        onClickLabel = label,
-                        onLongClickLabel = "Choose item count",
-                        role = Role.Button,
-                        onLongClick = {
-                            inputValue = ""
-                            inputVisible = true
-                        },
-                        onClick = onClick,
-                    ).padding(vertical = VinylSpacing.SpaceSm),
-            text = label,
-            color = VinylColors.AccentGreen,
-            textAlign = TextAlign.Center,
-            style =
-                MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
-                ),
-        )
+                    .fillMaxWidth()
+                    .padding(vertical = VinylSpacing.SpaceSm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                modifier =
+                    Modifier
+                        .width(width)
+                        .combinedClickable(
+                            enabled = enabled,
+                            onClickLabel = label,
+                            onLongClickLabel = "Choose item count",
+                            role = Role.Button,
+                            onLongClick = {
+                                inputValue = ""
+                                inputVisible = true
+                            },
+                            onClick = onClick,
+                        ),
+                text = label,
+                color = VinylColors.AccentGreen,
+                textAlign = TextAlign.Center,
+                style =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
+                    ),
+            )
+            Text(
+                modifier =
+                    Modifier
+                        .width(width)
+                        .padding(top = VinylSpacing.SpaceXs),
+                text = "Tap and hold to load custom amount of items (from 1 to 250)",
+                color = VinylColors.TextSecondary,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (inputVisible) {
             Popup(
                 alignment = Alignment.Center,
@@ -170,7 +191,19 @@ private fun ShowMoreCountInput(
                     .weight(1f)
                     .focusRequester(focusRequester),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            keyboardOptions =
+                KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        if (canSave) {
+                            onSave()
+                        }
+                    },
+                ),
             textStyle =
                 MaterialTheme.typography.bodyMedium.copy(
                     color = VinylColors.TextPrimary,

@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.FabPosition
@@ -26,7 +25,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +61,7 @@ import com.example.vinyllistenapp.ui.components.RatingStars
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.components.SectionActionHeader
 import com.example.vinyllistenapp.ui.components.SectionTitle
+import com.example.vinyllistenapp.ui.components.rememberScrollShortcutState
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
@@ -94,11 +93,11 @@ fun AnalyticsScreen(
     val screenScrollState = rememberScrollState()
     val scrollShortcutScope = rememberCoroutineScope()
     val headerHiddenThreshold = with(LocalDensity.current) { 120.dp.roundToPx() }
-    val showScrollToTop by remember {
-        derivedStateOf {
-            screenScrollState.maxValue > 0 && screenScrollState.value > headerHiddenThreshold
-        }
-    }
+    val scrollShortcutState =
+        rememberScrollShortcutState(
+            scrollState = screenScrollState,
+            headerThresholdPx = headerHiddenThreshold,
+        )
 
     LaunchedEffect(retryKey) {
         runCatching { apiClient.getAnalyticsDashboard() }
@@ -129,13 +128,13 @@ fun AnalyticsScreen(
             )
         },
         floatingActionButton = {
-            if (showScrollToTop) {
+            if (scrollShortcutState.visible) {
                 FloatingIconButton(
-                    icon = Icons.Filled.KeyboardArrowUp,
-                    contentDescription = "Scroll to top",
+                    icon = scrollShortcutState.icon,
+                    contentDescription = scrollShortcutState.contentDescription,
                     onClick = {
                         scrollShortcutScope.launch {
-                            screenScrollState.animateScrollTo(0)
+                            screenScrollState.animateScrollTo(scrollShortcutState.targetValue)
                         }
                     },
                     modifier =
