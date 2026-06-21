@@ -386,11 +386,13 @@ class VinylApiClient(
         imageUri: Uri,
     ): ManualReleaseCoverUploadResult =
         apiCall {
+            val contentType = validateManualReleaseCoverContentType(context.contentResolver.getType(imageUri))
             postImageMultipart(
                 context = context,
                 imageUri = imageUri,
                 path = "manual-releases/drafts/${Uri.encode(draftId)}/cover",
                 fieldName = "file",
+                contentType = contentType,
             ).toManualReleaseCoverUploadResult()
         }
 
@@ -987,9 +989,10 @@ class VinylApiClient(
         imageUri: Uri,
         path: String,
         fieldName: String = "image",
+        contentType: String? = null,
     ): JSONObject {
         val resolver = context.contentResolver
-        val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
+        val mimeType = contentType ?: resolver.getType(imageUri) ?: "image/jpeg"
         val filename = imageUri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "record.jpg"
         val imageBytes =
             resolver.openInputStream(imageUri)?.use { it.readBytes() }
@@ -1210,6 +1213,27 @@ data class ReleaseSearchResultsPage(
 )
 
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
+
+internal fun validateManualReleaseCoverContentType(contentType: String?): String {
+    val normalizedContentType =
+        contentType
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: throw ApiException(
+                message = "Cover image type could not be detected.",
+                kind = ApiErrorKind.Validation,
+                code = "manual_release_cover_invalid",
+            )
+    if (normalizedContentType !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES) {
+        throw ApiException(
+            message = "Cover image must be JPEG, PNG, or WebP.",
+            kind = ApiErrorKind.Validation,
+            code = "manual_release_cover_invalid",
+        )
+    }
+    return normalizedContentType
+}
 
 private const val AUTH_REQUIRED = "auth_required"
 private const val EXPIRED_ACCESS_TOKEN = "expired_access_token"

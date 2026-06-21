@@ -141,6 +141,33 @@ class VinylApiClientAuthRefreshTest {
             }
         }
 
+    @Test
+    fun manualCoverContentTypeValidationRejectsUnknownAndUnsupportedTypes() {
+        assertEquals("image/jpeg", validateManualReleaseCoverContentType(" IMAGE/JPEG "))
+        assertManualCoverValidationError(
+            contentType = null,
+            expectedMessage = "Cover image type could not be detected.",
+        )
+        assertManualCoverValidationError(
+            contentType = "application/pdf",
+            expectedMessage = "Cover image must be JPEG, PNG, or WebP.",
+        )
+    }
+
+    private fun assertManualCoverValidationError(
+        contentType: String?,
+        expectedMessage: String,
+    ) {
+        try {
+            validateManualReleaseCoverContentType(contentType)
+            fail("Expected manual cover validation error.")
+        } catch (error: ApiException) {
+            assertEquals(ApiErrorKind.Validation, error.kind)
+            assertEquals("manual_release_cover_invalid", error.code)
+            assertEquals(expectedMessage, error.message)
+        }
+    }
+
     private fun com.sun.net.httpserver.HttpExchange.respond(
         status: Int,
         body: String,

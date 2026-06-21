@@ -187,6 +187,9 @@ data class ManualReleaseFormState(
                         put("vinyl_disc_count", "Vinyl disc count must be between 1 and 6.")
                     }
                 }
+                if (coverValidationState == ManualReleaseCoverValidationState.UnknownType) {
+                    put("cover", "Cover image type could not be detected.")
+                }
                 if (coverValidationState == ManualReleaseCoverValidationState.UnsupportedType) {
                     put("cover", "Cover image must be JPEG, PNG, or WebP.")
                 }
@@ -199,10 +202,10 @@ data class ManualReleaseFormState(
         get() =
             when {
                 coverUri == null -> ManualReleaseCoverValidationState.Empty
+                coverContentType == null -> ManualReleaseCoverValidationState.UnknownType
                 coverSizeBytes != null && coverSizeBytes > ManualReleaseLimits.MAX_COVER_BYTES ->
                     ManualReleaseCoverValidationState.TooLarge
-                coverContentType != null &&
-                    coverContentType.lowercase() !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES ->
+                coverContentType.lowercase() !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES ->
                     ManualReleaseCoverValidationState.UnsupportedType
                 else -> ManualReleaseCoverValidationState.Valid
             }
@@ -258,6 +261,7 @@ enum class ManualReleasePrimaryAction {
 enum class ManualReleaseCoverValidationState {
     Empty,
     Valid,
+    UnknownType,
     UnsupportedType,
     TooLarge,
 }

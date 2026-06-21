@@ -214,5 +214,14 @@ class ManualReleaseParsingTest {
         assertEquals(ManualReleaseCoverValidationState.TooLarge, state.coverValidationState)
         assertEquals("Backend title error.", state.localFieldErrors["title"])
         assertEquals("Cover image must be 3 MB or smaller.", state.localFieldErrors["cover"])
+
+        val unknownTypeState =
+            state.copy(
+                coverContentType = null,
+                coverSizeBytes = 1024,
+            )
+
+        assertEquals(ManualReleaseCoverValidationState.UnknownType, unknownTypeState.coverValidationState)
+        assertEquals("Cover image type could not be detected.", unknownTypeState.localFieldErrors["cover"])
     }
 }
