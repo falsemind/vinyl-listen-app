@@ -3,7 +3,18 @@
 from fastapi import APIRouter, Depends
 
 from app.api.auth_dependencies import require_authenticated_user
-from app.api.routes import ai, analytics, auth, collection, health, identify, integrations, releases, sessions
+from app.api.routes import (
+    ai,
+    analytics,
+    auth,
+    collection,
+    health,
+    identify,
+    integrations,
+    manual_releases,
+    releases,
+    sessions,
+)
 
 api_router = APIRouter()
 
@@ -30,6 +41,13 @@ api_router.include_router(
     releases.router,
     prefix="/releases",
     tags=["releases"],
+    dependencies=[Depends(require_authenticated_user)],
+)
+
+api_router.include_router(
+    manual_releases.router,
+    prefix="/manual-releases",
+    tags=["manual-releases"],
     dependencies=[Depends(require_authenticated_user)],
 )
 
