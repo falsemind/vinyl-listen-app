@@ -26,6 +26,20 @@ import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import com.example.vinyllistenapp.domain.DiscogsIntegrationStatus
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.ManualReleaseCompletionState
+import com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult
+import com.example.vinyllistenapp.domain.ManualReleaseDraft
+import com.example.vinyllistenapp.domain.ManualReleaseDraftList
+import com.example.vinyllistenapp.domain.ManualReleaseDraftSummary
+import com.example.vinyllistenapp.domain.ManualReleaseFormData
+import com.example.vinyllistenapp.domain.ManualReleaseFormat
+import com.example.vinyllistenapp.domain.ManualReleaseLimits
+import com.example.vinyllistenapp.domain.ManualReleaseSaveResult
+import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditInput
+import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditRole
+import com.example.vinyllistenapp.domain.ManualReleaseTrackInput
+import com.example.vinyllistenapp.domain.ManualReleaseVinylSize
+import com.example.vinyllistenapp.domain.ManualReleaseVinylSpeed
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
@@ -322,6 +336,62 @@ class VinylApiClient(
     suspend fun deleteDiscogsAccessToken(): DiscogsIntegrationStatus =
         apiCall {
             deleteJson("integrations/discogs/token").toDiscogsIntegrationStatus()
+        }
+
+    suspend fun listManualReleaseDrafts(): ManualReleaseDraftList =
+        apiCall {
+            getJson("manual-releases/drafts").toManualReleaseDraftList()
+        }
+
+    suspend fun createManualReleaseDraft(
+        formData: ManualReleaseFormData,
+        completionState: ManualReleaseCompletionState? = null,
+    ): ManualReleaseDraft =
+        apiCall {
+            postJson("manual-releases/drafts", manualReleaseDraftBody(formData, completionState)).toManualReleaseDraft()
+        }
+
+    suspend fun updateManualReleaseDraft(
+        draftId: String,
+        formData: ManualReleaseFormData,
+        completionState: ManualReleaseCompletionState? = null,
+    ): ManualReleaseDraft =
+        apiCall {
+            putJson(
+                "manual-releases/drafts/${Uri.encode(draftId)}",
+                manualReleaseDraftBody(formData, completionState),
+            ).toManualReleaseDraft()
+        }
+
+    suspend fun deleteManualReleaseDraft(draftId: String) {
+        apiCall {
+            deleteJson("manual-releases/drafts/${Uri.encode(draftId)}")
+        }
+    }
+
+    suspend fun saveManualRelease(
+        formData: ManualReleaseFormData? = null,
+        draftId: String? = null,
+    ): ManualReleaseSaveResult =
+        apiCall {
+            val body = JSONObject()
+            formData?.let { body.put("form_data", it.toJson()) }
+            draftId?.let { body.put("draft_id", it) }
+            postJson("manual-releases", body).toManualReleaseSaveResult()
+        }
+
+    suspend fun uploadManualReleaseDraftCover(
+        context: Context,
+        draftId: String,
+        imageUri: Uri,
+    ): ManualReleaseCoverUploadResult =
+        apiCall {
+            postImageMultipart(
+                context = context,
+                imageUri = imageUri,
+                path = "manual-releases/drafts/${Uri.encode(draftId)}/cover",
+                fieldName = "file",
+            ).toManualReleaseCoverUploadResult()
         }
 
     suspend fun importRelease(discogsReleaseId: Long): String =
@@ -916,6 +986,7 @@ class VinylApiClient(
         context: Context,
         imageUri: Uri,
         path: String,
+        fieldName: String = "image",
     ): JSONObject {
         val resolver = context.contentResolver
         val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
@@ -931,7 +1002,7 @@ class VinylApiClient(
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         connection.outputStream.use { output ->
             output.writeUtf8("--$boundary\r\n")
-            output.writeUtf8("Content-Disposition: form-data; name=\"image\"; filename=\"$filename\"\r\n")
+            output.writeUtf8("Content-Disposition: form-data; name=\"$fieldName\"; filename=\"$filename\"\r\n")
             output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
             output.write(imageBytes)
             output.writeUtf8("\r\n--$boundary--\r\n")
@@ -1030,6 +1101,7 @@ class VinylApiClient(
             val errorBody = runCatching { JSONObject(body) }.getOrNull()
             val errorObject = errorBody?.optJSONObject("error")
             val code = errorObject?.optNullableString("code")
+            val fieldErrors = errorObject?.optJSONObject("field_errors").toFieldErrors()
             val featureUsageLimit = errorObject?.toFeatureUsageLimit()
             val rawMessage =
                 errorObject?.optNullableString("message")
@@ -1045,6 +1117,7 @@ class VinylApiClient(
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
                 featureUsageLimit = featureUsageLimit,
+                fieldErrors = fieldErrors,
             )
         }
         if (status == 204) {
@@ -1091,6 +1164,7 @@ class ApiException(
     val statusCode: Int? = null,
     val retryAfterMillis: Long? = null,
     val featureUsageLimit: FeatureUsageLimit? = null,
+    val fieldErrors: Map<String, String> = emptyMap(),
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
@@ -1232,6 +1306,97 @@ internal fun JSONObject.toDiscogsIntegrationStatus(): DiscogsIntegrationStatus =
         externalUsername = optNullableString("external_username"),
         sourceOfTruth = CollectionSourceOfTruth.fromWireValue(optString("source_of_truth", "APP")),
         backendIdentifyEnabled = optBoolean("backend_identify_enabled", false),
+    )
+
+internal fun JSONObject.toManualReleaseDraftList(): ManualReleaseDraftList {
+    val items = optJSONArray("items").orEmpty().mapObjects { item -> item.toManualReleaseDraftSummary() }
+    return ManualReleaseDraftList(
+        items = items,
+        limit = optInt("limit", ManualReleaseLimits.MAX_DRAFTS),
+        remainingSlots = optInt("remaining_slots", 0),
+    )
+}
+
+internal fun JSONObject.toManualReleaseDraft(): ManualReleaseDraft {
+    val summary = toManualReleaseDraftSummary()
+    return ManualReleaseDraft(
+        id = summary.id,
+        artist = summary.artist,
+        title = summary.title,
+        label = summary.label,
+        catalogNumber = summary.catalogNumber,
+        format = summary.format,
+        coverThumbnailUrl = summary.coverThumbnailUrl,
+        completionState = summary.completionState,
+        updatedAt = summary.updatedAt,
+        formData = optJSONObject("form_data").orEmpty().toManualReleaseFormData(),
+        coverImageUrl = optNullableString("cover_image_url"),
+        coverContentType = optNullableString("cover_content_type"),
+        coverSizeBytes = optNullableInt("cover_size_bytes"),
+        createdAt = optString("created_at", summary.updatedAt),
+    )
+}
+
+internal fun JSONObject.toManualReleaseSaveResult(): ManualReleaseSaveResult =
+    ManualReleaseSaveResult(
+        id = getString("id"),
+        title = optString("title", ""),
+        artist = optString("artist", ""),
+        inCollection = optBoolean("in_collection", true),
+    )
+
+internal fun JSONObject.toManualReleaseCoverUploadResult(): ManualReleaseCoverUploadResult =
+    ManualReleaseCoverUploadResult(
+        contentType = getString("content_type"),
+        sizeBytes = optInt("size_bytes", 0),
+    )
+
+private fun JSONObject.toManualReleaseDraftSummary(): ManualReleaseDraftSummary =
+    ManualReleaseDraftSummary(
+        id = getString("id"),
+        artist = optNullableString("artist"),
+        title = optNullableString("title"),
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        format = optNullableString("format"),
+        coverThumbnailUrl = optNullableString("cover_thumbnail_url"),
+        completionState = optJSONObject("completion_state")?.toManualReleaseCompletionState(),
+        updatedAt = optString("updated_at", ""),
+    )
+
+private fun JSONObject.toManualReleaseCompletionState(): ManualReleaseCompletionState =
+    ManualReleaseCompletionState(
+        requiredComplete = optBoolean("required_complete", false),
+    )
+
+private fun JSONObject.toManualReleaseFormData(): ManualReleaseFormData =
+    ManualReleaseFormData(
+        artists = optJSONArray("artists").orEmpty().mapStrings(),
+        title = optNullableString("title"),
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        barcode = optNullableString("barcode"),
+        format = ManualReleaseFormat.fromWireValue(optNullableString("format")),
+        vinylSize = ManualReleaseVinylSize.fromWireValue(optNullableString("vinyl_size")),
+        vinylSpeed = ManualReleaseVinylSpeed.fromWireValue(optNullableString("vinyl_speed")),
+        vinylDiscCount = optNullableInt("vinyl_disc_count"),
+        genres = optJSONArray("genres").orEmpty().mapStrings(),
+        styles = optJSONArray("styles").orEmpty().mapStrings(),
+        tracklist = optJSONArray("tracklist").orEmpty().mapObjects { track -> track.toManualReleaseTrackInput() },
+    )
+
+private fun JSONObject.toManualReleaseTrackInput(): ManualReleaseTrackInput =
+    ManualReleaseTrackInput(
+        title = optNullableString("title"),
+        position = optNullableString("position"),
+        duration = optNullableString("duration"),
+        credits = optJSONArray("credits").orEmpty().mapObjects { credit -> credit.toManualReleaseTrackCreditInput() },
+    )
+
+private fun JSONObject.toManualReleaseTrackCreditInput(): ManualReleaseTrackCreditInput =
+    ManualReleaseTrackCreditInput(
+        role = ManualReleaseTrackCreditRole.fromWireValue(optNullableString("role")) ?: ManualReleaseTrackCreditRole.Other,
+        name = optNullableString("name"),
     )
 
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
@@ -1406,6 +1571,47 @@ private fun JSONObject.putNullable(
         }
     }
 
+private fun manualReleaseDraftBody(
+    formData: ManualReleaseFormData,
+    completionState: ManualReleaseCompletionState?,
+): JSONObject =
+    JSONObject()
+        .put("form_data", formData.toJson())
+        .putNullable("completion_state", completionState?.toJson())
+
+private fun ManualReleaseCompletionState.toJson(): JSONObject =
+    JSONObject()
+        .put("required_complete", requiredComplete)
+
+private fun ManualReleaseFormData.toJson(): JSONObject =
+    JSONObject()
+        .put("artists", artists.toJsonArray())
+        .putNullable("title", title)
+        .putNullable("label", label)
+        .putNullable("catalog_number", catalogNumber)
+        .putNullable("barcode", barcode)
+        .putNullable("format", format?.wireValue)
+        .putNullable("vinyl_size", vinylSize?.wireValue)
+        .putNullable("vinyl_speed", vinylSpeed?.wireValue)
+        .putNullable("vinyl_disc_count", vinylDiscCount)
+        .put("genres", genres.toJsonArray())
+        .put("styles", styles.toJsonArray())
+        .put("tracklist", JSONArray().also { items -> tracklist.forEach { items.put(it.toJson()) } })
+
+private fun ManualReleaseTrackInput.toJson(): JSONObject =
+    JSONObject()
+        .putNullable("title", title)
+        .putNullable("position", position)
+        .putNullable("duration", duration)
+        .put("credits", JSONArray().also { items -> credits.forEach { items.put(it.toJson()) } })
+
+private fun ManualReleaseTrackCreditInput.toJson(): JSONObject =
+    JSONObject()
+        .put("role", role.wireValue)
+        .putNullable("name", name)
+
+private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> forEach { items.put(it) } }
+
 data class IdentifyJobState(
     val jobId: String,
     val status: IdentifyJobStatus,
@@ -1572,6 +1778,18 @@ private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) nu
 private fun JSONObject.optNullableLong(name: String): Long? = if (isNull(name)) null else optLong(name).takeIf { it > 0 }
 
 private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
+
+private fun JSONObject?.toFieldErrors(): Map<String, String> {
+    if (this == null) return emptyMap()
+    val keys = keys()
+    val fieldErrors = linkedMapOf<String, String>()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val message = optNullableString(key) ?: continue
+        fieldErrors[key] = message
+    }
+    return fieldErrors
+}
 
 private fun JSONObject.toAuthTokenPair(): AuthTokenPair =
     AuthTokenPair(
