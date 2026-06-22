@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,10 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,13 +39,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
 import com.example.vinyllistenapp.data.api.ApiException
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun AuthFlowScreen(
@@ -47,11 +59,15 @@ fun AuthFlowScreen(
     onAuthenticated: () -> Unit,
     modifier: Modifier = Modifier,
     apiClient: VinylApiClient? = null,
+    startOnSignIn: Boolean = false,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var mode by rememberSaveable { mutableStateOf(AuthFlowMode.Register) }
+    var mode by rememberSaveable(startOnSignIn) {
+        mutableStateOf(if (startOnSignIn) AuthFlowMode.SignIn else AuthFlowMode.Register)
+    }
     var email by rememberSaveable { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var registerPassword by remember { mutableStateOf("") }
+    var signInPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var verificationEmail by rememberSaveable { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
@@ -86,18 +102,18 @@ fun AuthFlowScreen(
                 errorMessage = "Enter a valid email address."
                 return
             }
-            password.length < MIN_PASSWORD_LENGTH -> {
-                errorMessage = "Password must be at least $MIN_PASSWORD_LENGTH characters."
+            !registerPassword.meetsPasswordRequirements() -> {
+                errorMessage = PASSWORD_REQUIREMENTS_MESSAGE
                 return
             }
-            password != confirmPassword -> {
+            registerPassword != confirmPassword -> {
                 errorMessage = "Passwords do not match."
                 return
             }
         }
         val submittedEmail = email.trim()
-        val submittedPassword = password
-        password = ""
+        val submittedPassword = registerPassword
+        registerPassword = ""
         confirmPassword = ""
         isSubmitting = true
         coroutineScope.launch {
@@ -117,10 +133,10 @@ fun AuthFlowScreen(
     }
 
     fun submitSignIn() {
-        if (isSubmitting || !email.isValidEmail() || password.isBlank()) return
+        if (isSubmitting || !email.isValidEmail() || signInPassword.isBlank()) return
         val submittedEmail = email.trim()
-        val submittedPassword = password
-        password = ""
+        val submittedPassword = signInPassword
+        signInPassword = ""
         clearMessages()
         isSubmitting = true
         coroutineScope.launch {
@@ -248,7 +264,7 @@ fun AuthFlowScreen(
             runCatching { authRepository.confirmPasswordReset(resetEmail, submittedCode, submittedPassword) }
                 .onSuccess { result ->
                     email = result.email
-                    password = ""
+                    signInPassword = ""
                     statusMessage = "Password updated. Sign in with your new password."
                     mode = AuthFlowMode.SignIn
                 }.onFailure { error ->
@@ -264,107 +280,179 @@ fun AuthFlowScreen(
                 .fillMaxSize()
                 .background(VinylColors.AppBackground)
                 .padding(VinylSpacing.SpaceXl),
-        contentAlignment = Alignment.Center,
+        contentAlignment = if (mode == AuthFlowMode.OptionalSetup) Alignment.TopStart else Alignment.Center,
     ) {
-        Column(
-            verticalArrangement = Arrangement.Center,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-        ) {
-            AuthFlowHeader(mode)
-            Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
-            when (mode) {
-                AuthFlowMode.Register ->
-                    RegisterFields(
-                        email = email,
-                        password = password,
-                        confirmPassword = confirmPassword,
-                        isSubmitting = isSubmitting,
-                        onEmailChange = { email = it },
-                        onPasswordChange = { password = it },
-                        onConfirmPasswordChange = { confirmPassword = it },
-                        onSubmit = ::submitRegister,
-                        onSignIn = {
-                            clearMessages()
-                            mode = AuthFlowMode.SignIn
-                        },
-                    )
-                AuthFlowMode.Verify ->
-                    VerificationFields(
-                        email = verificationEmail.ifBlank { email },
-                        code = verificationCode,
-                        expiresAt = verificationExpiresAt,
-                        isSubmitting = isSubmitting,
-                        onCodeChange = { verificationCode = it },
-                        onSubmit = ::submitVerification,
-                        onResend = ::resendVerification,
-                        onSignIn = {
-                            clearMessages()
-                            mode = AuthFlowMode.SignIn
-                        },
-                    )
-                AuthFlowMode.SignIn ->
-                    SignInFields(
-                        email = email,
-                        password = password,
-                        isSubmitting = isSubmitting,
-                        onEmailChange = { email = it },
-                        onPasswordChange = { password = it },
-                        onSubmit = ::submitSignIn,
-                        onCreateAccount = {
-                            clearMessages()
-                            mode = AuthFlowMode.Register
-                        },
-                        onForgotPassword = {
-                            clearMessages()
-                            mode = AuthFlowMode.ForgotPassword
-                        },
-                    )
-                AuthFlowMode.ForgotPassword ->
-                    ForgotPasswordFields(
-                        email = email,
-                        isSubmitting = isSubmitting,
-                        onEmailChange = { email = it },
-                        onSubmit = ::submitResetRequest,
-                        onBack = {
-                            clearMessages()
-                            mode = AuthFlowMode.SignIn
-                        },
-                    )
-                AuthFlowMode.ResetPassword ->
-                    ResetPasswordFields(
-                        email = resetEmail,
-                        code = resetCode,
-                        password = resetPassword,
-                        confirmPassword = resetConfirmPassword,
-                        isSubmitting = isSubmitting,
-                        onCodeChange = { resetCode = it.toResetCodeInput() },
-                        onPasswordChange = { resetPassword = it },
-                        onConfirmPasswordChange = { resetConfirmPassword = it },
-                        onSubmit = ::submitResetConfirm,
-                        onBack = {
-                            clearMessages()
-                            mode = AuthFlowMode.ForgotPassword
-                        },
-                    )
-                AuthFlowMode.OptionalSetup ->
-                    OptionalSetupFields(
-                        discogsToken = optionalDiscogsToken,
-                        useDiscogsSource = optionalUseDiscogsSource,
-                        isSubmitting = isSubmitting,
-                        onDiscogsTokenChange = { optionalDiscogsToken = it },
-                        onUseDiscogsSourceChange = { optionalUseDiscogsSource = it },
-                        onSubmit = ::submitOptionalSetup,
-                        onSkip = ::completeAuthentication,
-                    )
-            }
-            AuthFlowMessages(
+        if (mode == AuthFlowMode.OptionalSetup) {
+            OptionalSetupScreen(
+                discogsToken = optionalDiscogsToken,
+                useDiscogsSource = optionalUseDiscogsSource,
+                isSubmitting = isSubmitting,
                 errorMessage = errorMessage,
                 statusMessage = statusMessage,
+                onDiscogsTokenChange = { optionalDiscogsToken = it },
+                onUseDiscogsSourceChange = { optionalUseDiscogsSource = it },
+                onSubmit = ::submitOptionalSetup,
+                onSkip = ::completeAuthentication,
             )
+        } else {
+            Column(
+                verticalArrangement = Arrangement.Center,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+            ) {
+                AuthFlowHeader(mode)
+                Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
+                AuthFlowFields(
+                    mode = mode,
+                    email = email,
+                    registerPassword = registerPassword,
+                    signInPassword = signInPassword,
+                    confirmPassword = confirmPassword,
+                    verificationEmail = verificationEmail,
+                    verificationCode = verificationCode,
+                    verificationExpiresAt = verificationExpiresAt,
+                    resetEmail = resetEmail,
+                    resetCode = resetCode,
+                    resetPassword = resetPassword,
+                    resetConfirmPassword = resetConfirmPassword,
+                    isSubmitting = isSubmitting,
+                    onEmailChange = { email = it },
+                    onRegisterPasswordChange = { registerPassword = it },
+                    onSignInPasswordChange = { signInPassword = it },
+                    onConfirmPasswordChange = { confirmPassword = it },
+                    onVerificationCodeChange = { verificationCode = it },
+                    onResetCodeChange = { resetCode = it.toResetCodeInput() },
+                    onResetPasswordChange = { resetPassword = it },
+                    onResetConfirmPasswordChange = { resetConfirmPassword = it },
+                    onSubmitRegister = ::submitRegister,
+                    onSubmitSignIn = ::submitSignIn,
+                    onSubmitVerification = ::submitVerification,
+                    onResendVerification = ::resendVerification,
+                    onSubmitResetRequest = ::submitResetRequest,
+                    onSubmitResetConfirm = ::submitResetConfirm,
+                    onShowSignIn = {
+                        clearMessages()
+                        registerPassword = ""
+                        confirmPassword = ""
+                        mode = AuthFlowMode.SignIn
+                    },
+                    onShowRegister = {
+                        clearMessages()
+                        signInPassword = ""
+                        mode = AuthFlowMode.Register
+                    },
+                    onShowForgotPassword = {
+                        clearMessages()
+                        signInPassword = ""
+                        mode = AuthFlowMode.ForgotPassword
+                    },
+                    onBackToForgotPassword = {
+                        clearMessages()
+                        mode = AuthFlowMode.ForgotPassword
+                    },
+                )
+                AuthFlowMessages(
+                    errorMessage = errorMessage,
+                    statusMessage = statusMessage,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun AuthFlowFields(
+    mode: AuthFlowMode,
+    email: String,
+    registerPassword: String,
+    signInPassword: String,
+    confirmPassword: String,
+    verificationEmail: String,
+    verificationCode: String,
+    verificationExpiresAt: String?,
+    resetEmail: String,
+    resetCode: String,
+    resetPassword: String,
+    resetConfirmPassword: String,
+    isSubmitting: Boolean,
+    onEmailChange: (String) -> Unit,
+    onRegisterPasswordChange: (String) -> Unit,
+    onSignInPasswordChange: (String) -> Unit,
+    onConfirmPasswordChange: (String) -> Unit,
+    onVerificationCodeChange: (String) -> Unit,
+    onResetCodeChange: (String) -> Unit,
+    onResetPasswordChange: (String) -> Unit,
+    onResetConfirmPasswordChange: (String) -> Unit,
+    onSubmitRegister: () -> Unit,
+    onSubmitSignIn: () -> Unit,
+    onSubmitVerification: () -> Unit,
+    onResendVerification: () -> Unit,
+    onSubmitResetRequest: () -> Unit,
+    onSubmitResetConfirm: () -> Unit,
+    onShowSignIn: () -> Unit,
+    onShowRegister: () -> Unit,
+    onShowForgotPassword: () -> Unit,
+    onBackToForgotPassword: () -> Unit,
+) {
+    when (mode) {
+        AuthFlowMode.Register ->
+            RegisterFields(
+                email = email,
+                password = registerPassword,
+                confirmPassword = confirmPassword,
+                isSubmitting = isSubmitting,
+                onEmailChange = onEmailChange,
+                onPasswordChange = onRegisterPasswordChange,
+                onConfirmPasswordChange = onConfirmPasswordChange,
+                onSubmit = onSubmitRegister,
+                onSignIn = onShowSignIn,
+            )
+        AuthFlowMode.Verify ->
+            VerificationFields(
+                email = verificationEmail.ifBlank { email },
+                code = verificationCode,
+                expiresAt = verificationExpiresAt,
+                isSubmitting = isSubmitting,
+                onCodeChange = onVerificationCodeChange,
+                onSubmit = onSubmitVerification,
+                onResend = onResendVerification,
+                onSignIn = onShowSignIn,
+            )
+        AuthFlowMode.SignIn ->
+            SignInFields(
+                email = email,
+                password = signInPassword,
+                isSubmitting = isSubmitting,
+                onEmailChange = onEmailChange,
+                onPasswordChange = onSignInPasswordChange,
+                onSubmit = onSubmitSignIn,
+                onCreateAccount = onShowRegister,
+                onForgotPassword = onShowForgotPassword,
+            )
+        AuthFlowMode.ForgotPassword ->
+            ForgotPasswordFields(
+                email = email,
+                isSubmitting = isSubmitting,
+                onEmailChange = onEmailChange,
+                onSubmit = onSubmitResetRequest,
+                onBack = onShowSignIn,
+            )
+        AuthFlowMode.ResetPassword ->
+            ResetPasswordFields(
+                email = resetEmail,
+                code = resetCode,
+                password = resetPassword,
+                confirmPassword = resetConfirmPassword,
+                isSubmitting = isSubmitting,
+                onCodeChange = onResetCodeChange,
+                onPasswordChange = onResetPasswordChange,
+                onConfirmPasswordChange = onResetConfirmPasswordChange,
+                onSubmit = onSubmitResetConfirm,
+                onBack = onBackToForgotPassword,
+            )
+        AuthFlowMode.OptionalSetup -> Unit
     }
 }
 
@@ -425,10 +513,19 @@ private fun RegisterFields(
         enabled = !isSubmitting,
         onValueChange = onConfirmPasswordChange,
     )
+    Text(
+        text = PASSWORD_REQUIREMENTS_MESSAGE,
+        color = VinylColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+    )
     Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
     Button(
         onClick = onSubmit,
-        enabled = !isSubmitting && email.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank(),
+        enabled =
+            !isSubmitting &&
+                email.isValidEmail() &&
+                password.meetsPasswordRequirements() &&
+                confirmPassword.isNotBlank(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text(if (isSubmitting) "Creating..." else "Create account")
@@ -461,7 +558,7 @@ private fun VerificationFields(
     expiresAt?.let {
         Spacer(modifier = Modifier.height(VinylSpacing.SpaceXs))
         Text(
-            text = "Code expires at $it",
+            text = "Code expires at ${it.toLocalExpiryLabel()}",
             color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -649,61 +746,148 @@ private fun ResetPasswordFields(
 }
 
 @Composable
-private fun OptionalSetupFields(
+private fun OptionalSetupScreen(
     discogsToken: String,
     useDiscogsSource: Boolean,
     isSubmitting: Boolean,
+    errorMessage: String?,
+    statusMessage: String?,
     onDiscogsTokenChange: (String) -> Unit,
     onUseDiscogsSourceChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
     onSkip: () -> Unit,
 ) {
-    OutlinedTextField(
-        value = discogsToken,
-        onValueChange = onDiscogsTokenChange,
-        enabled = !isSubmitting,
-        label = { Text("Discogs access token") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions =
-            KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done,
-            ),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(modifier = Modifier.height(VinylSpacing.SpaceMd))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+    var privacyExpanded by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = !isSubmitting) {
+        onSkip()
+    }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
     ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp, bottom = VinylSpacing.SpaceLg),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CloseCircleButton(onClick = onSkip)
+            Text(
+                text = "Optional setup",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.width(40.dp))
+        }
         Text(
-            modifier = Modifier.weight(1f),
-            text = "Use Discogs as collection source",
+            text =
+                "These optional settings and integrations are highly recommended. " +
+                    "They improve the app experience and unlock more advanced collection and discovery features.",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
+        Text(
+            text = "Discogs Integration",
             color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceSm))
+        Text(
+            text =
+                "Add your Discogs access token to enrich your collection, sync release data, " +
+                    "and access more advanced app features.",
+            color = VinylColors.TextSecondary,
             style = MaterialTheme.typography.bodyMedium,
         )
-        Switch(
-            checked = useDiscogsSource,
-            enabled = !isSubmitting && discogsToken.isNotBlank(),
-            onCheckedChange = onUseDiscogsSourceChange,
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
+        OutlinedTextField(
+            value = discogsToken,
+            onValueChange = onDiscogsTokenChange,
+            enabled = !isSubmitting,
+            label = { Text("Discogs access token") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions =
+                KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+            modifier = Modifier.fillMaxWidth(),
         )
-    }
-    Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
-    Button(
-        onClick = onSubmit,
-        enabled = !isSubmitting && discogsToken.isNotBlank(),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(if (isSubmitting) "Saving..." else "Save Discogs token")
-    }
-    TextButton(
-        onClick = onSkip,
-        enabled = !isSubmitting,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text("Skip")
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceMd))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Use Discogs as collection source",
+                color = VinylColors.TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = useDiscogsSource,
+                enabled = !isSubmitting && discogsToken.isNotBlank(),
+                onCheckedChange = onUseDiscogsSourceChange,
+            )
+        }
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceLg))
+        TextButton(
+            onClick = { privacyExpanded = !privacyExpanded },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Privacy Notice")
+                Icon(
+                    imageVector =
+                        if (privacyExpanded) {
+                            Icons.Filled.KeyboardArrowDown
+                        } else {
+                            Icons.AutoMirrored.Filled.KeyboardArrowLeft
+                        },
+                    contentDescription = null,
+                )
+            }
+        }
+        if (privacyExpanded) {
+            Text(
+                modifier = Modifier.padding(horizontal = VinylSpacing.SpaceLg),
+                text =
+                    "Your token is used to import and sync your Discogs collection, and later your wantlist, " +
+                        "plus match records against Discogs release data. The app does not use it to access unrelated " +
+                        "Discogs personal data. If you prefer not to use your personal Discogs account, you can create " +
+                        "a dedicated account for the app and still benefit from the richer features. Tokens are stored " +
+                        "encrypted on the server, and you can revoke access in Discogs or delete the token from the app anytime.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Spacer(modifier = Modifier.height(VinylSpacing.SpaceXl))
+        Button(
+            onClick = onSubmit,
+            enabled = !isSubmitting && discogsToken.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (isSubmitting) "Saving..." else "Save Discogs token")
+        }
+        AuthFlowMessages(
+            errorMessage = errorMessage,
+            statusMessage = statusMessage,
+        )
+        Spacer(modifier = Modifier.height(96.dp))
     }
 }
 
@@ -776,12 +960,39 @@ private enum class AuthFlowMode {
     OptionalSetup,
 }
 
-private fun String.isValidEmail(): Boolean = trim().length >= 3 && "@" in this
+private fun String.isValidEmail(): Boolean {
+    val value = trim()
+    val atIndex = value.indexOf('@')
+    val dotIndex = value.lastIndexOf('.')
+    return atIndex > 0 &&
+        dotIndex > atIndex + 1 &&
+        dotIndex < value.lastIndex &&
+        value.none { it.isWhitespace() } &&
+        value.count { it == '@' } == 1
+}
+
+private fun String.meetsPasswordRequirements(): Boolean =
+    length >= MIN_PASSWORD_LENGTH &&
+        any { it.isLetter() } &&
+        any { it.isDigit() } &&
+        any { !it.isLetterOrDigit() && !it.isWhitespace() }
 
 private fun String.toResetCodeInput(): String = filter { it.isDigit() }.take(RESET_CODE_LENGTH)
 
+private fun String.toLocalExpiryLabel(): String =
+    runCatching {
+        VERIFICATION_EXPIRY_FORMATTER.format(Instant.parse(this))
+    }.getOrElse { this }
+
 private fun Throwable.authMessage(fallback: String): String = message?.takeIf { it.isNotBlank() } ?: fallback
+
+private val VERIFICATION_EXPIRY_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter
+        .ofPattern("h:mm a, MMM d yyyy", Locale.getDefault())
+        .withZone(ZoneId.systemDefault())
 
 private const val EMAIL_NOT_VERIFIED = "email_not_verified"
 private const val MIN_PASSWORD_LENGTH = 8
+private const val PASSWORD_REQUIREMENTS_MESSAGE =
+    "Use 8+ characters with at least one letter, one number, and one symbol."
 private const val RESET_CODE_LENGTH = 6
