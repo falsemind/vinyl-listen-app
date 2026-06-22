@@ -152,14 +152,24 @@ class ManualReleaseService:
             content_type=normalized_content_type,
             image_bytes=image_bytes,
         )
-        self.repository.update_draft_cover(
-            db,
-            draft,
-            cover_storage_key=stored_cover.storage_key,
-            cover_image_url=stored_cover.image_url,
-            cover_thumbnail_url=stored_cover.thumbnail_url,
-            cover_content_type=normalized_content_type,
-            cover_size_bytes=size_bytes,
+        try:
+            self.repository.update_draft_cover(
+                db,
+                draft,
+                cover_storage_key=stored_cover.storage_key,
+                cover_image_url=stored_cover.image_url,
+                cover_thumbnail_url=stored_cover.thumbnail_url,
+                cover_content_type=normalized_content_type,
+                cover_size_bytes=size_bytes,
+            )
+        except Exception:
+            self.cover_storage.delete_stored_cover(stored_cover.storage_key)
+            raise
+
+        self.cover_storage.cleanup_draft_covers(
+            user_id=user_id,
+            draft_id=draft_id,
+            keep_storage_key=stored_cover.storage_key,
         )
         return CoverUploadValidationResult(
             content_type=normalized_content_type,

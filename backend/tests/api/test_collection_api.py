@@ -622,6 +622,44 @@ def test_list_collection_releases_includes_manual_releases() -> None:
     assert response.json()["total"] == 2
 
 
+def test_list_collection_releases_paginates_after_merging_sources() -> None:
+    repository = StubReleasesRepository(
+        [
+            _release("release-1", 101, "Imported First"),
+            _release("release-2", 202, "Imported Second"),
+        ]
+    )
+    manual_repository = StubManualReleaseRepository(
+        [
+            _manual_release("manual-release-1", "Manual First"),
+            _manual_release("manual-release-2", "Manual Second"),
+        ]
+    )
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases", params={"limit": 2, "offset": 1})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == ["manual-release-2", "release-1"]
+    assert response.json()["has_more"] is True
+    assert repository.calls == [
+        {
+            "limit": 4,
+            "offset": 0,
+            "include_removed": False,
+            "artist": None,
+            "label": None,
+            "favorite": False,
+            "folder_id": None,
+        }
+    ]
+
+
 def test_list_collection_releases_filters_by_artist() -> None:
     repository = StubReleasesRepository([_release("release-1", 101, "First")])
     _override_db()
@@ -930,6 +968,40 @@ def test_search_collection_releases_reports_has_more() -> None:
             "offset": 0,
         }
     ]
+
+
+def test_search_collection_releases_reports_combined_has_more() -> None:
+    repository = StubReleasesRepository(
+        [
+            _release("release-1", 101, "First"),
+            _release("release-2", 102, "Second"),
+        ]
+    )
+    manual_repository = StubManualReleaseRepository(
+        [
+            _manual_release("manual-release-1", "Manual First"),
+            _manual_release("manual-release-2", "Manual Second"),
+        ]
+    )
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/collection/search",
+            params={"limit": 3, "offset": 0},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [item["release_id"] for item in response.json()["results"]] == [
+        "release-1",
+        "release-2",
+        "manual-release-1",
+    ]
+    assert response.json()["has_more"] is True
 
 
 def _override_db() -> None:

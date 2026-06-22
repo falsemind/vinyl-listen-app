@@ -212,11 +212,12 @@ def list_collection_releases(
         favorite=favorite,
         folder_id=folder_id,
     )
+    source_limit = offset + limit + 1
     releases = repository.list_collection_releases(
         db,
         user_id=current_user.account.id,
-        limit=limit + 1,
-        offset=offset,
+        limit=source_limit,
+        offset=0,
         include_removed=include_removed,
         artist=artist,
         label=label,
@@ -226,19 +227,20 @@ def list_collection_releases(
     manual_releases = manual_release_repository.list_collection_releases(
         db,
         user_id=current_user.account.id,
-        limit=limit + 1,
-        offset=offset,
+        limit=source_limit,
+        offset=0,
         include_removed=include_removed,
         artist=artist,
         label=label,
         favorite=favorite,
         folder_id=folder_id,
     )
-    visible_releases = sorted(
+    total += manual_total
+    combined_releases = sorted(
         [*releases, *manual_releases],
         key=_collection_release_sort_key,
-    )[:limit]
-    total += manual_total
+    )
+    visible_releases = combined_releases[offset : offset + limit]
     return CollectionReleasesResponse(
         items=[_to_collection_release_response(release) for release in visible_releases],
         limit=limit,
@@ -267,6 +269,7 @@ def search_collection_releases(
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 10,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReleaseSearchResponse:
+    source_limit = offset + limit + 1
     releases = repository.search_collection_releases(
         db,
         user_id=current_user.account.id,
@@ -275,8 +278,8 @@ def search_collection_releases(
         catalog=catalog,
         barcode=barcode,
         year=year,
-        limit=limit + 1,
-        offset=offset,
+        limit=source_limit,
+        offset=0,
     )
     manual_releases = manual_release_repository.search_collection_releases(
         db,
@@ -286,15 +289,16 @@ def search_collection_releases(
         catalog=catalog,
         barcode=barcode,
         year=year,
-        limit=limit + 1,
-        offset=offset,
+        limit=source_limit,
+        offset=0,
     )
-    page_releases = sorted([*releases, *manual_releases], key=_collection_search_sort_key)[:limit]
+    combined_releases = sorted([*releases, *manual_releases], key=_collection_search_sort_key)
+    page_releases = combined_releases[offset : offset + limit]
     return ReleaseSearchResponse(
         results=[_to_collection_search_result(release) for release in page_releases],
         limit=limit,
         offset=offset,
-        has_more=len(releases) > limit or len(manual_releases) > limit,
+        has_more=len(combined_releases) > offset + limit,
     )
 
 

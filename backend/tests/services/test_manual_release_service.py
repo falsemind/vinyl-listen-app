@@ -19,6 +19,7 @@ class FakeManualReleaseRepository:
         self.operation_log: list[str] = []
         self.saved_form_data: ManualReleaseFormData | None = None
         self.cover_updates: list[dict] = []
+        self.fail_cover_update = False
         self.draft_form_data = ManualReleaseFormData(
             artists=["Draft Artist"],
             title="Draft Title",
@@ -72,6 +73,8 @@ class FakeManualReleaseRepository:
         cover_content_type: str,
         cover_size_bytes: int,
     ):
+        if self.fail_cover_update:
+            raise RuntimeError("cover update failed")
         self.cover_updates.append(
             {
                 "draft_id": draft.id,
@@ -122,11 +125,15 @@ def test_upload_cover_stores_file_and_updates_draft_metadata(tmp_path) -> None:
         image_bytes=image_bytes,
     )
 
-    stored_file = tmp_path / "user-1" / "draft-1" / "cover.png"
+    stored_files = list((tmp_path / "user-1" / "draft-1").glob("cover-*.png"))
+    assert len(stored_files) == 1
+    stored_file = stored_files[0]
     assert stored_file.read_bytes() == image_bytes
+    storage_key = f"manual-release-covers/user-1/draft-1/{stored_file.name}"
+    image_url = f"/media/manual-release-covers/user-1/draft-1/{stored_file.name}"
     assert result.content_type == "image/png"
     assert result.size_bytes == len(image_bytes)
-    assert result.cover_image_url == "/media/manual-release-covers/user-1/draft-1/cover.png"
+    assert result.cover_image_url == image_url
     assert repository.get_draft_calls == [
         {
             "draft_id": "draft-1",
@@ -137,13 +144,63 @@ def test_upload_cover_stores_file_and_updates_draft_metadata(tmp_path) -> None:
     assert repository.cover_updates == [
         {
             "draft_id": "draft-1",
-            "cover_storage_key": "manual-release-covers/user-1/draft-1/cover.png",
-            "cover_image_url": "/media/manual-release-covers/user-1/draft-1/cover.png",
-            "cover_thumbnail_url": "/media/manual-release-covers/user-1/draft-1/cover.png",
+            "cover_storage_key": storage_key,
+            "cover_image_url": image_url,
+            "cover_thumbnail_url": image_url,
             "cover_content_type": "image/png",
             "cover_size_bytes": len(image_bytes),
         }
     ]
+
+
+def test_upload_cover_cleans_old_cover_after_draft_metadata_update(tmp_path) -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(
+        repository,
+        cover_storage=ManualReleaseCoverStorage(
+            root_dir=tmp_path,
+            public_url_prefix="/media/manual-release-covers",
+        ),
+    )
+    old_cover = tmp_path / "user-1" / "draft-1" / "cover.png"
+    old_cover.parent.mkdir(parents=True)
+    old_cover.write_bytes(b"old")
+
+    service.upload_cover(
+        object(),
+        draft_id="draft-1",
+        user_id="user-1",
+        content_type="image/png",
+        image_bytes=_cover_image_bytes(width=120, height=100),
+    )
+
+    assert not old_cover.exists()
+    assert len(list(old_cover.parent.glob("cover-*.png"))) == 1
+
+
+def test_upload_cover_deletes_new_file_when_draft_metadata_update_fails(tmp_path) -> None:
+    repository = FakeManualReleaseRepository()
+    repository.fail_cover_update = True
+    service = ManualReleaseService(
+        repository,
+        cover_storage=ManualReleaseCoverStorage(
+            root_dir=tmp_path,
+            public_url_prefix="/media/manual-release-covers",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="cover update failed"):
+        service.upload_cover(
+            object(),
+            draft_id="draft-1",
+            user_id="user-1",
+            content_type="image/png",
+            image_bytes=_cover_image_bytes(width=120, height=100),
+        )
+
+    cover_dir = tmp_path / "user-1" / "draft-1"
+    assert list(cover_dir.glob("cover-*.png")) == []
+    assert list(cover_dir.glob(".cover-*.tmp")) == []
 
 
 def test_save_release_requires_complete_form_data() -> None:
