@@ -704,6 +704,8 @@ Each time a user listens to a record, a session is created.
 
 Sessions can optionally belong to a timed listening session group. Existing and standalone sessions keep `session_group_id = null`.
 
+Current sessions target shared Discogs-backed releases through `sessions.release_id -> releases.id`. Manual releases are user-owned rows in `manual_releases` and are not valid session targets until a later session-domain migration adds a manual-release reference or polymorphic release target.
+
 ### Columns
 
 |Column|Type|Notes|
