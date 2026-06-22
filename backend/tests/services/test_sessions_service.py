@@ -438,6 +438,41 @@ def test_response_tracks_enrich_missing_artists_from_cached_discogs(
     assert repository.tracks_by_session_id["session-123"][0].track_artist is None
 
 
+def test_response_tracks_do_not_enrich_manual_release_tracks(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    repository = sessions_repository_factory()
+    manual_release = build_manual_release("manual-release-1")
+    repository.tracks_by_session_id["manual-session-1"] = [
+        SessionTracks(
+            id="track-1",
+            session_id="manual-session-1",
+            track_position="1",
+            track_artist=None,
+            track_title="Manual Track",
+            track_duration="5:08",
+            track_sequence=1,
+        )
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[],
+        manual_releases=[manual_release],
+    )
+
+    tracks_by_session_id = service.get_tracks_by_session_ids_for_releases(
+        object(),
+        [("manual-session-1", manual_release)],
+    )
+
+    track = tracks_by_session_id["manual-session-1"][0]
+    assert track.track_position == "1"
+    assert track.track_title == "Manual Track"
+    assert track.track_artist is None
+
+
 def test_create_session_rejects_track_from_another_side(build_sessions_service) -> None:
     service = build_sessions_service(
         payload_by_discogs_id={

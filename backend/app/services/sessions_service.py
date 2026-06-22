@@ -414,7 +414,7 @@ class SessionsService:
     def get_tracks_by_session_ids_for_releases(
         self,
         db: Session,
-        session_releases: list[tuple[str, Releases]],
+        session_releases: list[tuple[str, Releases | ManualRelease]],
     ) -> dict[str, list[SessionTrackSnapshot]]:
         session_ids = [session_id for session_id, _release in session_releases]
         tracks_by_session_id = self._sessions_repository.get_tracks_by_session_ids(db, session_ids)
@@ -1058,12 +1058,12 @@ class SessionsService:
     def _enrich_track_artists(
         self,
         db: Session,
-        release: Releases | None,
+        release: Releases | ManualRelease | None,
         tracks: list[SessionTracks],
         *,
         lookup_cache: dict[int, tuple[dict[tuple[str, str], str], dict[str, str]]] | None = None,
     ) -> list[SessionTrackSnapshot]:
-        if release is None or all(track.track_artist for track in tracks):
+        if not isinstance(release, Releases) or all(track.track_artist for track in tracks):
             return [_session_track_snapshot(track) for track in tracks]
 
         cache = lookup_cache if lookup_cache is not None else {}
