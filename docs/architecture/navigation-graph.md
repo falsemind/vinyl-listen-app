@@ -1,6 +1,6 @@
 ---
 name: navigation-graph
-description: This document explains Android Navigation Graph Specificationn.
+description: This document explains Android Navigation Graph Specification.
 ---
 
 # Vinyl Listening App — Android Navigation Graph Specification (MVP)
@@ -54,7 +54,10 @@ Home
         │     ├── BarcodeProcessing
         │     └── MatchConfirmation
         │            └── RecordDetail
-        ├── CollectionManualEntry
+        ├── ManualSubmissions
+        │      └── ManualReleaseForm
+        │             ├── ManualSubmissions
+        │             └── RecordDetail
         └── CollectionManualSearch
 ```
 
@@ -74,7 +77,8 @@ Home, Analytics, Insights, and Collection are active bottom-navigation routes. S
 |Match Confirmation|`match_confirmation?flowMode={flowMode}`|
 |Manual Search|`manual_search?barcode={barcode}`|
 |Collection Manual Search|`collection_manual_search`|
-|Collection Manual Entry|`collection_manual_entry`|
+|Manual Submissions|`collection_manual_entry`|
+|Manual Release Form|`collection_manual_form?draftId={draftId}`|
 |Session Logging|`session_logging/{releaseId}`|
 |Record Detail|`record_detail/{releaseId}`|
 |Analytics|`analytics`|
@@ -115,6 +119,12 @@ Current backend endpoints used by these routes:
 |Poll Discogs collection sync|`GET /api/v1/collection/sync/{job_id}`|
 |Load Records Collection list|`GET /api/v1/collection/releases?limit=25&offset={offset}`|
 |Manual collection search|`GET /api/v1/collection/search`|
+|List manual release drafts|`GET /api/v1/manual-releases/drafts`|
+|Create manual release draft|`POST /api/v1/manual-releases/drafts`|
+|Update manual release draft|`PUT /api/v1/manual-releases/drafts/{draft_id}`|
+|Delete manual release draft|`DELETE /api/v1/manual-releases/drafts/{draft_id}`|
+|Upload manual release draft cover|`POST /api/v1/manual-releases/drafts/{draft_id}/cover`|
+|Save manual release to collection|`POST /api/v1/manual-releases`|
 |Create listening session|`POST /api/v1/sessions`|
 |Start timed listening session|`POST /api/v1/sessions/groups`|
 |Load active timed listening session|`GET /api/v1/sessions/groups/active`|
@@ -158,6 +168,8 @@ session_logging/{releaseId}
 Android no-token manual search and barcode search use `DiscogsApiClient` directly on the device. Search results do not have an internal `release_id`, so the app fetches the selected full Discogs release, imports it with `POST /api/v1/releases/import/client-discogs`, then navigates to `session_logging/{releaseId}`.
 
 Collection Manual Search uses the same screen shell but calls `GET /api/v1/collection/search`. Results include internal `release_id`, so selecting one navigates directly to `record_detail/{releaseId}` without importing from Discogs.
+
+Manual Submissions manages user-owned drafts and manual releases. It opens `collection_manual_form` for a new release and `collection_manual_form?draftId={draftId}` to resume a draft. Saving a draft pops back to Manual Submissions and refreshes the draft list. Saving a release creates the manual release, refreshes Manual Submissions and Collection state, then opens `record_detail/{releaseId}`. The Record Detail back action returns to Collection because the form save pops up to the Collection graph entry.
 
 # Screen Navigation Details
 
@@ -244,7 +256,7 @@ capture_record
 ### Arguments Passed
 
 ```
-image_uri
+imageUri
 ```
 
 ---
@@ -390,7 +402,7 @@ session history
 |Action|Destination|
 |---|---|
 |Add session|`session_logging/{releaseId}`|
-|Back|`home`|
+|Back|previous screen, or `home` when there is no back stack|
 
 # 9. Analytics Screen
 
@@ -489,7 +501,53 @@ Browser for active app collection membership with optional Discogs sync and add-
 
 ---
 
-# 12. Settings Screen
+# 12. Manual Submissions Screen
+
+### Route
+
+```text
+collection_manual_entry
+```
+
+### Purpose
+
+Draft hub for app-owned manual releases. This route replaces the old manual-entry placeholder.
+
+### Displays
+
+- Screen title: `Manual Submissions`
+- Draft cards for up to 5 saved manual release drafts
+- Draft card delete confirmation
+- Add Release CTA
+- Draft-limit dialog when the user already has 5 drafts
+
+### Navigation
+
+|Action|Destination|
+|---|---|
+|Tap Add Release|`collection_manual_form`|
+|Tap draft card|`collection_manual_form?draftId={draftId}`|
+|Save draft from form|returns to `collection_manual_entry` and refreshes draft cards|
+|Save release from form|`record_detail/{releaseId}`|
+|Cancel form|returns to `collection_manual_entry`|
+|Tap Home tab|`home`|
+|Tap Stats tab|`analytics`|
+|Tap Insights tab|`ai_insights`|
+|Tap Collection tab|`collection`|
+
+### Form Route
+
+```text
+collection_manual_form?draftId={draftId}
+```
+
+`draftId` is optional. When absent, the form starts a new manual release. When present, the form loads and updates that draft before draft save or release save.
+
+Saving a release posts to `POST /api/v1/manual-releases`, removes the source draft when applicable, refreshes Collection and Manual Submissions state, and navigates to Record Detail. From that Record Detail screen, back returns to Collection.
+
+---
+
+# 13. Settings Screen
 
 ### Route
 
@@ -527,7 +585,7 @@ This screen can still support future configuration features such as:
 
 ---
 
-# 13. AI Insights Screen
+# 14. AI Insights Screen
 
 ### Route
 
@@ -560,7 +618,10 @@ Single-thread chat shell for future AI-assisted listening insights.
 |Argument|Type|Description|
 |---|---|---|
 |releaseId|String|Internal backend release identifier returned as `release_id`|
-|image_uri|String|Local URI of captured photo|
+|imageUri|String|Local URI of captured photo|
+|barcode|String|Optional UPC/EAN value passed into barcode processing or manual search|
+|flowMode|String|Identify flow mode: `session` or `collection_add`|
+|draftId|String?|Optional manual release draft id for `collection_manual_form`|
 
 ---
 
@@ -599,7 +660,14 @@ NavHost(
     }
 
     composable("collection_manual_entry") {
-        ManualCollectionEntryScreen()
+        ManualSubmissionsScreen()
+    }
+
+    composable("collection_manual_form?draftId={draftId}") { backStackEntry ->
+        val draftId =
+            backStackEntry.arguments?.getString("draftId")
+
+        ManualReleaseFormScreen(draftId = draftId)
     }
 
     composable(

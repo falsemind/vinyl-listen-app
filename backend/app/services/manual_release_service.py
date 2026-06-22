@@ -1,16 +1,21 @@
 import re
 from dataclasses import dataclass
+from io import BytesIO
 
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.releases import ManualRelease, ManualReleaseDraft
 from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.schemas.manual_releases import ManualReleaseFormat, ManualReleaseFormData
+from app.services.manual_release_cover_storage import ManualReleaseCoverStorage
 from app.services.manual_release_policy import (
     ARTIST_NAME_LIMIT,
     MAX_MANUAL_RELEASE_DRAFTS,
     ManualReleaseCoverValidationError,
     ensure_manual_release_draft_capacity,
+    validate_manual_release_cover_dimensions,
     validate_manual_release_cover_policy,
 )
 
@@ -27,21 +32,27 @@ class ManualReleaseValidationError(Exception):
         super().__init__("Manual release validation failed.")
 
 
-class ManualReleaseCoverStorageNotConfiguredError(Exception):
-    """Raised when upload validation passes but no cover storage backend exists."""
-
-
 @dataclass(frozen=True)
 class CoverUploadValidationResult:
     content_type: str
     size_bytes: int
+    cover_image_url: str
+    cover_thumbnail_url: str
 
 
 class ManualReleaseService:
     """Business logic for user-owned manual releases and drafts."""
 
-    def __init__(self, repository: ManualReleaseRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: ManualReleaseRepository | None = None,
+        cover_storage: ManualReleaseCoverStorage | None = None,
+    ) -> None:
         self.repository = repository or ManualReleaseRepository()
+        self.cover_storage = cover_storage or ManualReleaseCoverStorage(
+            root_dir=settings.manual_release_cover_storage_dir,
+            public_url_prefix=settings.manual_release_cover_public_url_prefix,
+        )
 
     def list_drafts(self, db: Session, *, user_id: str) -> list[ManualReleaseDraft]:
         return self.repository.list_drafts(db, user_id=user_id)
@@ -115,11 +126,57 @@ class ManualReleaseService:
         self._validate_release_save(form_data)
         return self.repository.create_manual_release(db, user_id=user_id, form_data=form_data, draft=draft)
 
-    def validate_cover_upload(self, *, content_type: str | None, size_bytes: int) -> CoverUploadValidationResult:
+    def upload_cover(
+        self,
+        db: Session,
+        *,
+        draft_id: str,
+        user_id: str,
+        content_type: str | None,
+        image_bytes: bytes,
+    ) -> CoverUploadValidationResult:
+        draft = self.repository.get_draft(db, draft_id, user_id=user_id, for_update=True)
+        if draft is None:
+            raise ManualReleaseNotFoundError
         if content_type is None:
             raise ManualReleaseCoverValidationError("Cover image content type is required.")
-        validate_manual_release_cover_policy(content_type, size_bytes)
-        raise ManualReleaseCoverStorageNotConfiguredError
+
+        normalized_content_type = content_type.strip().lower()
+        size_bytes = len(image_bytes)
+        validate_manual_release_cover_policy(normalized_content_type, size_bytes)
+        width_px, height_px = _read_cover_dimensions(image_bytes)
+        validate_manual_release_cover_dimensions(width_px, height_px)
+        stored_cover = self.cover_storage.store_draft_cover(
+            user_id=user_id,
+            draft_id=draft_id,
+            content_type=normalized_content_type,
+            image_bytes=image_bytes,
+        )
+        try:
+            self.repository.update_draft_cover(
+                db,
+                draft,
+                cover_storage_key=stored_cover.storage_key,
+                cover_image_url=stored_cover.image_url,
+                cover_thumbnail_url=stored_cover.thumbnail_url,
+                cover_content_type=normalized_content_type,
+                cover_size_bytes=size_bytes,
+            )
+        except Exception:
+            self.cover_storage.delete_stored_cover(stored_cover.storage_key)
+            raise
+
+        self.cover_storage.cleanup_draft_covers(
+            user_id=user_id,
+            draft_id=draft_id,
+            keep_storage_key=stored_cover.storage_key,
+        )
+        return CoverUploadValidationResult(
+            content_type=normalized_content_type,
+            size_bytes=size_bytes,
+            cover_image_url=stored_cover.image_url,
+            cover_thumbnail_url=stored_cover.thumbnail_url,
+        )
 
     def _validate_release_save(self, form_data: ManualReleaseFormData) -> None:
         field_errors: dict[str, str] = {}
@@ -168,3 +225,13 @@ class ManualReleaseService:
 def _require_field(field_errors: dict[str, str], field_name: str, value: str | None) -> None:
     if not value:
         field_errors[field_name] = "This field is required."
+
+
+def _read_cover_dimensions(image_bytes: bytes) -> tuple[int, int]:
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            width_px, height_px = image.size
+            image.verify()
+    except (OSError, UnidentifiedImageError) as error:
+        raise ManualReleaseCoverValidationError("Cover image file could not be read.") from error
+    return width_px, height_px

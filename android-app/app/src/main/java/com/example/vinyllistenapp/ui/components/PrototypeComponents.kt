@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
@@ -49,7 +50,7 @@ internal val LocalActiveTimedSessionId = compositionLocalOf<String?> { null }
 
 @Composable
 internal fun ScreenContent(
-    title: String,
+    title: String?,
     subtitle: String,
     innerPadding: PaddingValues = PaddingValues(),
     topPadding: androidx.compose.ui.unit.Dp = VinylSpacing.Space2Xl,
@@ -71,29 +72,31 @@ internal fun ScreenContent(
                 .padding(top = topPadding, bottom = VinylSpacing.Space2Xl),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
     ) {
-        if (titleEndContent == null) {
-            Text(
-                text = title,
-                color = VinylColors.TextPrimary,
-                style = MaterialTheme.typography.headlineLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        title?.takeIf { it.isNotBlank() }?.let { titleText ->
+            if (titleEndContent == null) {
                 Text(
-                    modifier = Modifier.weight(1f),
-                    text = title,
+                    text = titleText,
                     color = VinylColors.TextPrimary,
                     style = MaterialTheme.typography.headlineLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                titleEndContent()
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        text = titleText,
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.headlineLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    titleEndContent()
+                }
             }
         }
         Text(
@@ -190,14 +193,17 @@ internal fun CircleIconButton(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    iconTint: Color = VinylColors.TextPrimary,
+    backgroundColor: Color = VinylColors.SurfaceSecondary,
+    borderColor: Color = VinylColors.BorderDefault,
 ) {
     Box(
         modifier =
             modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(VinylColors.SurfaceSecondary)
-                .border(1.dp, VinylColors.BorderDefault, CircleShape)
+                .background(backgroundColor)
+                .border(1.dp, borderColor, CircleShape)
                 .semantics { this.contentDescription = contentDescription }
                 .clickable(
                     onClickLabel = contentDescription,
@@ -209,7 +215,7 @@ internal fun CircleIconButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = VinylColors.TextPrimary,
+            tint = iconTint,
             modifier = Modifier.size(20.dp),
         )
     }

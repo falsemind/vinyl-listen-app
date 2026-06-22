@@ -22,6 +22,9 @@ object VinylRoutes {
     const val BARCODE = "barcode"
     const val COLLECTION_MANUAL_SEARCH = "collection_manual_search"
     const val COLLECTION_MANUAL_ENTRY = "collection_manual_entry"
+    const val COLLECTION_MANUAL_FORM = "collection_manual_form"
+    const val COLLECTION_MANUAL_FORM_PATTERN = "$COLLECTION_MANUAL_FORM?draftId={draftId}"
+    const val DRAFT_ID = "draftId"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
     const val MOOD_DISTRIBUTION = "mood_distribution"
@@ -108,4 +111,11 @@ object VinylRoutes {
     fun matchConfirmation(flowMode: String = FLOW_MODE_SESSION): String = "$MATCH_CONFIRMATION?$FLOW_MODE=$flowMode"
 
     fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${Uri.encode(barcode)}"
+
+    fun manualReleaseForm(draftId: String? = null): String =
+        if (draftId.isNullOrBlank()) {
+            COLLECTION_MANUAL_FORM
+        } else {
+            "$COLLECTION_MANUAL_FORM?$DRAFT_ID=${Uri.encode(draftId)}"
+        }
 }

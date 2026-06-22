@@ -715,7 +715,7 @@ Same response shape as `POST /releases/import`.
 
 ## GET /releases/{release_id}
 
-Returns stored release metadata for an internal release ID.
+Returns stored release metadata for an internal release ID. The endpoint supports both shared Discogs-backed releases and user-owned manual releases.
 
 ### Response
 
@@ -768,15 +768,17 @@ Returns stored release metadata for an internal release ID.
 }
 ```
 
-`has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for this release. Android uses `false` Discogs-backed records to auto-import full release data on open, while **Sync release** stays available for confirmed manual refreshes.
+Manual releases return the same response shape with `discogs_release_id: 0`, the saved optional `year`, `has_full_discogs_info: false`, empty Discogs artist metadata, and the manual tracklist supplied by the user. Android must treat `discogs_release_id <= 0` as "no Discogs page".
 
-`available_sides`, `available_side_options`, and `tracklist` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached. `tracklist` contains Discogs track rows only; headings and other non-track rows are omitted. `duration` may be `null`.
+`has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for a Discogs-backed release. Android uses `false` Discogs-backed records to auto-import full release data on open, while **Sync release** stays available for confirmed manual refreshes.
+
+For Discogs-backed releases, `available_sides`, `available_side_options`, and `tracklist` are derived from the cached Discogs tracklist. They are empty until full Discogs release data is cached. `tracklist` contains Discogs track rows only; headings and other non-track rows are omitted. `duration` may be `null`.
 
 `discogs_artists` is derived from the cached full Discogs release artist list and includes only artists with Discogs artist IDs. Android uses it to link to artist discography pages.
 
 ## PATCH /releases/{release_id}/favorite
 
-Sets the local favorite flag for a release and returns the same response shape as `GET /releases/{release_id}`.
+Sets the local favorite flag for a Discogs-backed collection release or user-owned manual release. Returns the same response shape as `GET /releases/{release_id}`.
 
 ### Request
 
@@ -808,7 +810,7 @@ Android uses this endpoint from Record Details to hydrate one collection import 
 
 ## POST /releases/{release_id}/collection/deactivate
 
-Marks a release as removed from the active collection without deleting the release row, sessions, analytics inputs, or cached Discogs metadata. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: false` and `collection_removed_at` set.
+Marks a release as removed from the active collection without deleting the release metadata. For Discogs-backed releases, this updates the user's collection membership row and keeps sessions, analytics inputs, and cached Discogs metadata. For manual releases, this updates the user-owned `manual_releases` row. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: false` and `collection_removed_at` set.
 
 ### Errors
 
@@ -818,7 +820,7 @@ Marks a release as removed from the active collection without deleting the relea
 
 ## POST /releases/{release_id}/collection/reactivate
 
-Restores an existing release to the active collection without creating a duplicate. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: true`.
+Restores an existing Discogs-backed or manual release to the active collection without creating a duplicate. Returns the same response shape as `GET /releases/{release_id}` with `in_collection: true`.
 
 ### Errors
 
@@ -842,6 +844,7 @@ Manual draft and save requests use this nested `form_data` shape.
 {
   "artists": ["Artist"],
   "title": "Release Title",
+  "year": 1998,
   "label": "Label Name",
   "catalog_number": "CAT-001",
   "barcode": "1234567890123",
@@ -876,6 +879,8 @@ Supported enums:
 | `vinyl_speed` | `33 1/3`, `45`, `78`, `Other` |
 | `credits[].role` | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` |
 
+`year` is optional and must be an integer between `1900` and `2100` when provided.
+
 ## GET /manual-releases/drafts
 
 Lists the authenticated user's manual release drafts.
@@ -889,6 +894,7 @@ Lists the authenticated user's manual release drafts.
       "id": "draft-uuid",
       "artist": "Artist",
       "title": "Release Title",
+      "year": 1998,
       "label": "Label Name",
       "catalog_number": "CAT-001",
       "format": "Vinyl",
@@ -912,10 +918,11 @@ Creates a draft for partial manual form state.
 
 ```json
 {
-  "form_data": {
-    "artists": ["Artist"],
-    "title": "Partial Title"
-  },
+    "form_data": {
+      "artists": ["Artist"],
+      "title": "Partial Title",
+      "year": 1998
+    },
   "completion_state": {
     "required_complete": false
   }
@@ -934,6 +941,16 @@ Returns the full draft, including `form_data`, cover metadata, `created_at`, and
 | --- | --- | --- |
 | `409 Conflict` | `manual_release_draft_limit_reached` | The user already has 5 saved drafts. |
 | `422 Unprocessable Content` | `invalid_request` | Request body shape is invalid. |
+
+## GET /manual-releases/drafts/{draft_id}
+
+Returns a full manual release draft owned by the authenticated user, including `form_data`, cover metadata, `created_at`, and `updated_at`. Used by Android to resume an existing draft from the Manual Submissions hub.
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
 
 ## PUT /manual-releases/drafts/{draft_id}
 
@@ -978,10 +995,11 @@ Save directly from form data:
 
 ```json
 {
-  "form_data": {
-    "artists": ["Artist"],
-    "title": "Release Title",
-    "label": "Label Name",
+    "form_data": {
+      "artists": ["Artist"],
+      "title": "Release Title",
+      "year": 1998,
+      "label": "Label Name",
     "format": "Vinyl",
     "vinyl_size": "12",
     "vinyl_speed": "33 1/3",
@@ -1041,9 +1059,9 @@ Validation errors include field-level details:
 
 ## POST /manual-releases/drafts/{draft_id}/cover
 
-Validates a cover image upload for a draft owned by the authenticated user.
+Validates and stores a cover image upload for a draft owned by the authenticated user.
 
-Current Phase 10B behavior validates ownership, content type, and size. Valid uploads return a typed storage error until the cover storage backend is configured.
+The backend stores valid images under the configured manual release cover storage directory, updates the draft cover metadata, and serves the stored file from the configured manual release cover public URL prefix.
 
 ### Request
 
@@ -1051,7 +1069,7 @@ Current Phase 10B behavior validates ownership, content type, and size. Valid up
 
 | Part | Type | Notes |
 | --- | --- | --- |
-| `file` | file | One `JPEG`, `PNG`, or `WebP` image, max 3 MB |
+| `file` | file | One `JPEG`, `PNG`, or `WebP` image, max 500 KB; longest side must be 100..1200 px |
 
 ### Response
 
@@ -1068,10 +1086,9 @@ When storage is configured later, the response shape is:
 
 | Status | Code | Meaning |
 | --- | --- | --- |
-| `400 Bad Request` | `manual_release_cover_invalid` | Unsupported content type or missing content type. |
+| `400 Bad Request` | `manual_release_cover_invalid` | Unsupported content type, missing content type, unreadable image data, or invalid dimensions. |
 | `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
-| `413 Request Entity Too Large` | `manual_release_cover_invalid` | The image exceeds 3 MB. |
-| `501 Not Implemented` | `manual_release_cover_storage_not_configured` | Upload validated, but cover storage is not configured yet. |
+| `413 Request Entity Too Large` | `manual_release_cover_invalid` | The image exceeds 500 KB. |
 
 ---
 
@@ -1184,7 +1201,9 @@ Terminal statuses are `succeeded` and `failed`. Missing jobs return `404` with `
 
 ## GET /collection/releases
 
-Returns the authenticated user's active collection records ordered by Discogs collection add date, newest first. Release metadata is shared catalog data; `in_collection`, `collection_added_at`, and `is_favorite` come from that user's collection membership row.
+Returns the authenticated user's active collection records ordered by collection add date, newest first. Results include shared Discogs-backed releases from `release_collection_memberships` and user-owned manual releases from `manual_releases`.
+
+For Discogs-backed rows, release metadata is shared catalog data and user state comes from the membership row. For manual rows, metadata and user state live on the user-owned manual release row. Manual releases are excluded when `folder_id` is present because Discogs folders only apply to Discogs collection items.
 
 ### Query Parameters
 
@@ -1192,8 +1211,8 @@ Returns the authenticated user's active collection records ordered by Discogs co
 | --- | --- | --- |
 | `limit` | integer | Page size. Android loads `25` by default and supports custom page sizes up to the configured max page limit, currently `250`. |
 | `offset` | integer | Number of active collection records to skip. |
-| `artist` | string | Optional artist-name filter, 1..255 characters. Matches the release artist field and cached Discogs artist data so multi-artist releases can be shown from Record Details. |
-| `label` | string | Optional label-name filter, 1..255 characters. Matches the release label field and cached Discogs release data so multi-label releases can be shown from Record Details. |
+| `artist` | string | Optional artist-name filter, 1..255 characters. Matches Discogs release artist fields, cached Discogs artist data, and manual release artist summaries. |
+| `label` | string | Optional label-name filter, 1..255 characters. Matches Discogs release label fields, cached Discogs release data, and manual release label summaries. |
 | `favorite` | boolean | Optional flag. When `true`, returns only records marked as the user's personal favorites. |
 | `folder_id` | integer | Optional Discogs collection folder id. When present, returns the user's active local collection records that were imported in that Discogs folder. `total` is the active local count for the folder, not the raw Discogs folder count. |
 
@@ -1270,7 +1289,9 @@ exist, the menu shows a `View all folders` row that opens a full folder list.
 
 Searches records already present in the active internal collection. This powers the Collection screen manual search and does not call Discogs or import external releases.
 
-Artist search matches the local `artist` field and, when a full release payload is cached, the raw Discogs JSON. That lets hydrated records match track-level or remix artist metadata without fetching every collection item during bulk sync.
+Search includes Discogs-backed collection records and user-owned manual releases. Artist search matches the local `artist` field and, when a full release payload is cached, the raw Discogs JSON. That lets hydrated records match track-level or remix artist metadata without fetching every collection item during bulk sync.
+
+Manual releases match `artist`, `title`, `catalog`, normalized `barcode`, and optional `year` fields.
 
 ### Query Parameters
 
@@ -1825,6 +1846,8 @@ Used for listening history.
 
 ## GET /releases/{release_id}/sessions
 
+Returns listening history for a Discogs-backed release. Until manual releases are added to the session domain, user-owned manual releases return an empty `sessions` list instead of `404` so Record Details can render.
+
 ### Query Parameters
 
 | Parameter | Description       |
@@ -1871,6 +1894,8 @@ Timed session groups are treated as strongest sequence evidence. Standalone
 sessions are only linked when neighboring plays are within 1 hour, and
 consecutive plays of the same release are collapsed into one record block. By
 default, insights use logged plays from the last 3 months.
+
+Until manual releases are added to the session and analytics domain, user-owned manual releases return empty insight arrays with `sample_size: 0` and `confidence: "low"` instead of `404`.
 
 ### Query Parameters
 

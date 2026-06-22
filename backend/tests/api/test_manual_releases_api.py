@@ -8,7 +8,7 @@ from app.database.session import get_db
 from app.main import app
 from app.services.manual_release_policy import ManualReleaseDraftLimitExceeded
 from app.services.manual_release_service import (
-    ManualReleaseCoverStorageNotConfiguredError,
+    CoverUploadValidationResult,
     ManualReleaseNotFoundError,
     ManualReleaseValidationError,
 )
@@ -21,6 +21,7 @@ class StubManualReleaseService:
         self.updated_draft_ids: list[str] = []
         self.deleted_draft_ids: list[str] = []
         self.saved_payloads: list[dict] = []
+        self.cover_uploads: list[dict] = []
         self.raise_limit = False
         self.raise_not_found = False
         self.validation_error: ManualReleaseValidationError | None = None
@@ -64,9 +65,21 @@ class StubManualReleaseService:
             raise ManualReleaseNotFoundError
         return _draft(id=draft_id)
 
-    def validate_cover_upload(self, *, content_type: str | None, size_bytes: int):
-        _ = (content_type, size_bytes)
-        raise ManualReleaseCoverStorageNotConfiguredError
+    def upload_cover(self, _db, *, draft_id: str, user_id: str, content_type: str | None, image_bytes: bytes):
+        self.cover_uploads.append(
+            {
+                "draft_id": draft_id,
+                "user_id": user_id,
+                "content_type": content_type,
+                "size_bytes": len(image_bytes),
+            }
+        )
+        return CoverUploadValidationResult(
+            content_type=content_type or "",
+            size_bytes=len(image_bytes),
+            cover_image_url="/media/manual-release-covers/test-user/draft-1/cover.jpg",
+            cover_thumbnail_url="/media/manual-release-covers/test-user/draft-1/cover.jpg",
+        )
 
 
 def test_list_manual_release_drafts_returns_user_owned_summaries() -> None:
@@ -82,6 +95,7 @@ def test_list_manual_release_drafts_returns_user_owned_summaries() -> None:
     assert response.status_code == 200
     assert service.user_ids == ["test-user"]
     assert response.json()["items"][0]["id"] == "draft-1"
+    assert response.json()["items"][0]["year"] == 1998
     assert response.json()["remaining_slots"] == 4
 
 
@@ -98,6 +112,24 @@ def test_create_manual_release_draft_enforces_draft_cap() -> None:
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "manual_release_draft_limit_reached"
+    assert service.user_ids == ["test-user"]
+
+
+def test_get_manual_release_draft_returns_full_draft() -> None:
+    service = StubManualReleaseService()
+    _override_db()
+    app.dependency_overrides[get_manual_release_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/manual-releases/drafts/draft-1")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "draft-1"
+    assert response.json()["form_data"]["artists"] == ["Artist"]
+    assert response.json()["form_data"]["title"] == "Title"
+    assert response.json()["form_data"]["year"] == 1998
     assert service.user_ids == ["test-user"]
 
 
@@ -171,7 +203,7 @@ def test_save_manual_release_returns_created_manual_release() -> None:
     assert service.user_ids == ["test-user"]
 
 
-def test_cover_upload_contract_returns_storage_not_configured_after_owner_check() -> None:
+def test_cover_upload_contract_stores_after_owner_check() -> None:
     service = StubManualReleaseService()
     _override_db()
     app.dependency_overrides[get_manual_release_service] = lambda: service
@@ -184,9 +216,17 @@ def test_cover_upload_contract_returns_storage_not_configured_after_owner_check(
 
     app.dependency_overrides.clear()
 
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "manual_release_cover_storage_not_configured"
+    assert response.status_code == 200
+    assert response.json() == {"content_type": "image/jpeg", "size_bytes": len(b"image-bytes")}
     assert service.user_ids == ["test-user"]
+    assert service.cover_uploads == [
+        {
+            "draft_id": "draft-1",
+            "user_id": "test-user",
+            "content_type": "image/jpeg",
+            "size_bytes": len(b"image-bytes"),
+        }
+    ]
 
 
 def _override_db() -> None:
@@ -205,7 +245,14 @@ def _draft(
     now = datetime(2026, 6, 21, 12, 0, tzinfo=UTC)
     return SimpleNamespace(
         id=id,
-        form_data=form_data or {"artists": ["Artist"], "title": "Title", "label": "Label", "format": "Vinyl"},
+        form_data=form_data
+        or {
+            "artists": ["Artist"],
+            "title": "Title",
+            "year": 1998,
+            "label": "Label",
+            "format": "Vinyl",
+        },
         completion_state=completion_state,
         cover_thumbnail_url=None,
         cover_image_url=None,

@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.database.session import get_db
 from app.repositories.collection_folders_repository import CollectionFoldersRepository
 from app.repositories.collection_settings_repository import CollectionSettingsRepository
+from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.repositories.provider_integration_repository import ProviderIntegrationRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.collection import (
@@ -45,6 +46,10 @@ def get_collection_sync_job_service() -> CollectionSyncJobService:
 
 def get_releases_repository() -> ReleasesRepository:
     return ReleasesRepository()
+
+
+def get_manual_release_repository() -> ManualReleaseRepository:
+    return ManualReleaseRepository()
 
 
 def get_collection_settings_repository() -> CollectionSettingsRepository:
@@ -180,6 +185,7 @@ def list_collection_releases(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
@@ -197,25 +203,55 @@ def list_collection_releases(
         favorite=favorite,
         folder_id=folder_id,
     )
-    releases = repository.list_collection_releases(
+    manual_total = manual_release_repository.count_collection_releases(
         db,
         user_id=current_user.account.id,
-        limit=limit + 1,
-        offset=offset,
         include_removed=include_removed,
         artist=artist,
         label=label,
         favorite=favorite,
         folder_id=folder_id,
     )
-    visible_releases = releases[:limit]
+    source_limit = offset + limit + 1
+    releases = repository.list_collection_releases(
+        db,
+        user_id=current_user.account.id,
+        limit=source_limit,
+        offset=0,
+        include_removed=include_removed,
+        artist=artist,
+        label=label,
+        favorite=favorite,
+        folder_id=folder_id,
+    )
+    manual_releases = manual_release_repository.list_collection_releases(
+        db,
+        user_id=current_user.account.id,
+        limit=source_limit,
+        offset=0,
+        include_removed=include_removed,
+        artist=artist,
+        label=label,
+        favorite=favorite,
+        folder_id=folder_id,
+    )
+    total += manual_total
+    combined_releases = sorted(
+        [*releases, *manual_releases],
+        key=_collection_release_sort_key,
+    )
+    visible_releases = combined_releases[offset : offset + limit]
     return CollectionReleasesResponse(
         items=[_to_collection_release_response(release) for release in visible_releases],
         limit=limit,
         offset=offset,
         total=total,
         has_more=offset + len(visible_releases) < total,
-        has_favorites=repository.has_favorite_collection_releases(db, user_id=current_user.account.id),
+        has_favorites=repository.has_favorite_collection_releases(
+            db,
+            user_id=current_user.account.id,
+        )
+        or manual_release_repository.has_favorite_collection_releases(db, user_id=current_user.account.id),
     )
 
 
@@ -224,6 +260,7 @@ def search_collection_releases(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     artist: Annotated[str | None, Query(min_length=1, max_length=COLLECTION_ARTIST_QUERY_MAX_LENGTH)] = None,
     title: Annotated[str | None, Query(min_length=1)] = None,
     catalog: Annotated[str | None, Query(min_length=1)] = None,
@@ -232,6 +269,7 @@ def search_collection_releases(
     limit: Annotated[int, Query(ge=1, le=settings.max_page_limit)] = 10,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReleaseSearchResponse:
+    source_limit = offset + limit + 1
     releases = repository.search_collection_releases(
         db,
         user_id=current_user.account.id,
@@ -240,28 +278,27 @@ def search_collection_releases(
         catalog=catalog,
         barcode=barcode,
         year=year,
-        limit=limit + 1,
-        offset=offset,
+        limit=source_limit,
+        offset=0,
     )
-    page_releases = releases[:limit]
+    manual_releases = manual_release_repository.search_collection_releases(
+        db,
+        user_id=current_user.account.id,
+        artist=artist,
+        title=title,
+        catalog=catalog,
+        barcode=barcode,
+        year=year,
+        limit=source_limit,
+        offset=0,
+    )
+    combined_releases = sorted([*releases, *manual_releases], key=_collection_search_sort_key)
+    page_releases = combined_releases[offset : offset + limit]
     return ReleaseSearchResponse(
-        results=[
-            ReleaseSearchResult(
-                release_id=release.id,
-                discogs_release_id=release.discogs_release_id,
-                artist=release.artist,
-                title=release.title,
-                year=release.year,
-                label=clean_discogs_label_name(release.label),
-                catalog_number=release.catalog_number,
-                thumbnail_url=release.cover_image_url,
-                format=release.format,
-            )
-            for release in page_releases
-        ],
+        results=[_to_collection_search_result(release) for release in page_releases],
         limit=limit,
         offset=offset,
-        has_more=len(releases) > limit,
+        has_more=len(combined_releases) > offset + limit,
     )
 
 
@@ -271,19 +308,50 @@ def _to_collection_release_response(record) -> CollectionReleaseResponse:
 
     return CollectionReleaseResponse(
         id=str(release.id),
-        discogs_release_id=release.discogs_release_id,
+        discogs_release_id=getattr(release, "discogs_release_id", 0),
         title=release.title,
         artist=release.artist,
-        year=release.year,
+        year=getattr(release, "year", None),
         format=release.format,
         label=clean_discogs_label_name(release.label),
         catalog_number=release.catalog_number,
         styles=release.styles,
-        thumb_url=release.thumbnail_url or release.cover_image_url,
+        thumb_url=(
+            getattr(release, "thumbnail_url", None)
+            or getattr(release, "cover_thumbnail_url", None)
+            or release.cover_image_url
+        ),
         collection_added_at=membership.collection_added_at,
         in_collection=membership.in_collection,
         is_favorite=membership.is_favorite,
     )
+
+
+def _to_collection_search_result(release) -> ReleaseSearchResult:
+    return ReleaseSearchResult(
+        release_id=release.id,
+        discogs_release_id=getattr(release, "discogs_release_id", 0),
+        artist=release.artist,
+        title=release.title,
+        year=getattr(release, "year", None),
+        label=clean_discogs_label_name(release.label),
+        catalog_number=release.catalog_number,
+        thumbnail_url=getattr(release, "cover_image_url", None),
+        format=release.format,
+    )
+
+
+def _collection_release_sort_key(record) -> tuple[float, str, str]:
+    release = getattr(record, "release", record)
+    membership = getattr(record, "membership", record)
+    added_at = getattr(membership, "collection_added_at", None)
+    timestamp = added_at.timestamp() if added_at else 0
+    return (-timestamp, release.artist.lower(), release.title.lower())
+
+
+def _collection_search_sort_key(release) -> tuple[str, str, int]:
+    year = getattr(release, "year", None) or 0
+    return (release.artist.lower(), release.title.lower(), -year)
 
 
 def _has_configured_discogs_collection(integration) -> bool:

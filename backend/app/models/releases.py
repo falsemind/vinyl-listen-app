@@ -99,6 +99,7 @@ class ManualRelease(Base):
     )
     artist: Mapped[str] = mapped_column(String(200), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     catalog_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     barcode: Mapped[str | None] = mapped_column(String(14), nullable=True)

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     database_echo: bool = False
     max_page_limit: int = Field(default=250, ge=1)
+    manual_release_cover_storage_dir: Path = BACKEND_ROOT / "storage" / "manual-release-covers"
+    manual_release_cover_public_url_prefix: str = "/media/manual-release-covers"
 
     discogs_token_encryption_key: str | None = None
     discogs_base_url: str

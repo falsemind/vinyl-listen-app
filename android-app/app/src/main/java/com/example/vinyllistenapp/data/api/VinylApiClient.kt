@@ -26,6 +26,20 @@ import com.example.vinyllistenapp.domain.CollectionSourceOfTruth
 import com.example.vinyllistenapp.domain.DiscogsIntegrationStatus
 import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
+import com.example.vinyllistenapp.domain.ManualReleaseCompletionState
+import com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult
+import com.example.vinyllistenapp.domain.ManualReleaseDraft
+import com.example.vinyllistenapp.domain.ManualReleaseDraftList
+import com.example.vinyllistenapp.domain.ManualReleaseDraftSummary
+import com.example.vinyllistenapp.domain.ManualReleaseFormData
+import com.example.vinyllistenapp.domain.ManualReleaseFormat
+import com.example.vinyllistenapp.domain.ManualReleaseLimits
+import com.example.vinyllistenapp.domain.ManualReleaseSaveResult
+import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditInput
+import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditRole
+import com.example.vinyllistenapp.domain.ManualReleaseTrackInput
+import com.example.vinyllistenapp.domain.ManualReleaseVinylSize
+import com.example.vinyllistenapp.domain.ManualReleaseVinylSpeed
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.MonthlyPlayCount
 import com.example.vinyllistenapp.domain.MoodDistributionItem
@@ -324,6 +338,69 @@ class VinylApiClient(
             deleteJson("integrations/discogs/token").toDiscogsIntegrationStatus()
         }
 
+    suspend fun listManualReleaseDrafts(): ManualReleaseDraftList =
+        apiCall {
+            getJson("manual-releases/drafts").toManualReleaseDraftList()
+        }
+
+    suspend fun getManualReleaseDraft(draftId: String): ManualReleaseDraft =
+        apiCall {
+            getJson("manual-releases/drafts/${Uri.encode(draftId)}").toManualReleaseDraft()
+        }
+
+    suspend fun createManualReleaseDraft(
+        formData: ManualReleaseFormData,
+        completionState: ManualReleaseCompletionState? = null,
+    ): ManualReleaseDraft =
+        apiCall {
+            postJson("manual-releases/drafts", manualReleaseDraftBody(formData, completionState)).toManualReleaseDraft()
+        }
+
+    suspend fun updateManualReleaseDraft(
+        draftId: String,
+        formData: ManualReleaseFormData,
+        completionState: ManualReleaseCompletionState? = null,
+    ): ManualReleaseDraft =
+        apiCall {
+            putJson(
+                "manual-releases/drafts/${Uri.encode(draftId)}",
+                manualReleaseDraftBody(formData, completionState),
+            ).toManualReleaseDraft()
+        }
+
+    suspend fun deleteManualReleaseDraft(draftId: String) {
+        apiCall {
+            deleteJson("manual-releases/drafts/${Uri.encode(draftId)}")
+        }
+    }
+
+    suspend fun saveManualRelease(
+        formData: ManualReleaseFormData? = null,
+        draftId: String? = null,
+    ): ManualReleaseSaveResult =
+        apiCall {
+            val body = JSONObject()
+            formData?.let { body.put("form_data", it.toJson()) }
+            draftId?.let { body.put("draft_id", it) }
+            postJson("manual-releases", body).toManualReleaseSaveResult()
+        }
+
+    suspend fun uploadManualReleaseDraftCover(
+        context: Context,
+        draftId: String,
+        imageUri: Uri,
+    ): ManualReleaseCoverUploadResult =
+        apiCall {
+            val contentType = validateManualReleaseCoverContentType(context.contentResolver.getType(imageUri))
+            postImageMultipart(
+                context = context,
+                imageUri = imageUri,
+                path = "manual-releases/drafts/${Uri.encode(draftId)}/cover",
+                fieldName = "file",
+                contentType = contentType,
+            ).toManualReleaseCoverUploadResult()
+        }
+
     suspend fun importRelease(discogsReleaseId: Long): String =
         apiCall {
             val body =
@@ -485,7 +562,7 @@ class VinylApiClient(
                                     format = "Vinyl",
                                     rating = 0,
                                     lastPlayed = "",
-                                    coverImageUrl = item.optNullableString("thumbnail_url"),
+                                    coverImageUrl = item.optResolvedMediaUrl("thumbnail_url"),
                                 ),
                             plays = item.optInt("plays", 0),
                             averageRating = item.optNullableDouble("average_rating")?.let { String.format(Locale.US, "%.1f", it) } ?: "-",
@@ -524,7 +601,7 @@ class VinylApiClient(
                                         format = "Vinyl",
                                         rating = 0,
                                         lastPlayed = "",
-                                        coverImageUrl = item.optNullableString("thumbnail_url"),
+                                        coverImageUrl = item.optResolvedMediaUrl("thumbnail_url"),
                                     ),
                                 plays = item.optInt("plays", 0),
                                 averageRating =
@@ -916,9 +993,11 @@ class VinylApiClient(
         context: Context,
         imageUri: Uri,
         path: String,
+        fieldName: String = "image",
+        contentType: String? = null,
     ): JSONObject {
         val resolver = context.contentResolver
-        val mimeType = resolver.getType(imageUri) ?: "image/jpeg"
+        val mimeType = contentType ?: resolver.getType(imageUri) ?: "image/jpeg"
         val filename = imageUri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: "record.jpg"
         val imageBytes =
             resolver.openInputStream(imageUri)?.use { it.readBytes() }
@@ -931,7 +1010,7 @@ class VinylApiClient(
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         connection.outputStream.use { output ->
             output.writeUtf8("--$boundary\r\n")
-            output.writeUtf8("Content-Disposition: form-data; name=\"image\"; filename=\"$filename\"\r\n")
+            output.writeUtf8("Content-Disposition: form-data; name=\"$fieldName\"; filename=\"$filename\"\r\n")
             output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
             output.write(imageBytes)
             output.writeUtf8("\r\n--$boundary--\r\n")
@@ -1030,6 +1109,7 @@ class VinylApiClient(
             val errorBody = runCatching { JSONObject(body) }.getOrNull()
             val errorObject = errorBody?.optJSONObject("error")
             val code = errorObject?.optNullableString("code")
+            val fieldErrors = errorObject?.optJSONObject("field_errors").toFieldErrors()
             val featureUsageLimit = errorObject?.toFeatureUsageLimit()
             val rawMessage =
                 errorObject?.optNullableString("message")
@@ -1045,6 +1125,7 @@ class VinylApiClient(
                 statusCode = status,
                 retryAfterMillis = retryAfterMillis,
                 featureUsageLimit = featureUsageLimit,
+                fieldErrors = fieldErrors,
             )
         }
         if (status == 204) {
@@ -1091,6 +1172,7 @@ class ApiException(
     val statusCode: Int? = null,
     val retryAfterMillis: Long? = null,
     val featureUsageLimit: FeatureUsageLimit? = null,
+    val fieldErrors: Map<String, String> = emptyMap(),
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
@@ -1137,6 +1219,27 @@ data class ReleaseSearchResultsPage(
 
 fun Throwable.toUserMessage(fallback: String): String = (this as? ApiException)?.message ?: fallback
 
+internal fun validateManualReleaseCoverContentType(contentType: String?): String {
+    val normalizedContentType =
+        contentType
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: throw ApiException(
+                message = "Cover image type could not be detected.",
+                kind = ApiErrorKind.Validation,
+                code = "manual_release_cover_invalid",
+            )
+    if (normalizedContentType !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES) {
+        throw ApiException(
+            message = "Cover image must be JPEG, PNG, or WebP.",
+            kind = ApiErrorKind.Validation,
+            code = "manual_release_cover_invalid",
+        )
+    }
+    return normalizedContentType
+}
+
 private const val AUTH_REQUIRED = "auth_required"
 private const val EXPIRED_ACCESS_TOKEN = "expired_access_token"
 private const val INVALID_ACCESS_TOKEN = "invalid_access_token"
@@ -1173,7 +1276,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         barcode = optNullableString("barcode"),
         genres = optJSONArray("genres").orEmpty().mapStrings(),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
-        coverImageUrl = optNullableString("cover_image_url"),
+        coverImageUrl = optResolvedMediaUrl("cover_image_url"),
         availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
         availableSideOptions = optJSONArray("available_side_options").orEmpty().toReleaseSideOptions(),
         inCollection = optBoolean("in_collection", true),
@@ -1234,6 +1337,100 @@ internal fun JSONObject.toDiscogsIntegrationStatus(): DiscogsIntegrationStatus =
         backendIdentifyEnabled = optBoolean("backend_identify_enabled", false),
     )
 
+internal fun JSONObject.toManualReleaseDraftList(): ManualReleaseDraftList {
+    val items = optJSONArray("items").orEmpty().mapObjects { item -> item.toManualReleaseDraftSummary() }
+    return ManualReleaseDraftList(
+        items = items,
+        limit = optInt("limit", ManualReleaseLimits.MAX_DRAFTS),
+        remainingSlots = optInt("remaining_slots", 0),
+    )
+}
+
+internal fun JSONObject.toManualReleaseDraft(): ManualReleaseDraft {
+    val summary = toManualReleaseDraftSummary()
+    return ManualReleaseDraft(
+        id = summary.id,
+        artist = summary.artist,
+        title = summary.title,
+        year = summary.year,
+        label = summary.label,
+        catalogNumber = summary.catalogNumber,
+        format = summary.format,
+        coverThumbnailUrl = summary.coverThumbnailUrl,
+        completionState = summary.completionState,
+        updatedAt = summary.updatedAt,
+        formData = optJSONObject("form_data").orEmpty().toManualReleaseFormData(),
+        coverImageUrl = optResolvedMediaUrl("cover_image_url"),
+        coverContentType = optNullableString("cover_content_type"),
+        coverSizeBytes = optNullableInt("cover_size_bytes"),
+        createdAt = optString("created_at", summary.updatedAt),
+    )
+}
+
+internal fun JSONObject.toManualReleaseSaveResult(): ManualReleaseSaveResult =
+    ManualReleaseSaveResult(
+        id = getString("id"),
+        title = optString("title", ""),
+        artist = optString("artist", ""),
+        inCollection = optBoolean("in_collection", true),
+    )
+
+internal fun JSONObject.toManualReleaseCoverUploadResult(): ManualReleaseCoverUploadResult =
+    ManualReleaseCoverUploadResult(
+        contentType = getString("content_type"),
+        sizeBytes = optInt("size_bytes", 0),
+    )
+
+private fun JSONObject.toManualReleaseDraftSummary(): ManualReleaseDraftSummary =
+    ManualReleaseDraftSummary(
+        id = getString("id"),
+        artist = optNullableString("artist"),
+        title = optNullableString("title"),
+        year = optNullableInt("year"),
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        format = optNullableString("format"),
+        coverThumbnailUrl = optResolvedMediaUrl("cover_thumbnail_url"),
+        completionState = optJSONObject("completion_state")?.toManualReleaseCompletionState(),
+        updatedAt = optString("updated_at", ""),
+    )
+
+private fun JSONObject.toManualReleaseCompletionState(): ManualReleaseCompletionState =
+    ManualReleaseCompletionState(
+        requiredComplete = optBoolean("required_complete", false),
+    )
+
+private fun JSONObject.toManualReleaseFormData(): ManualReleaseFormData =
+    ManualReleaseFormData(
+        artists = optJSONArray("artists").orEmpty().mapStrings(),
+        title = optNullableString("title"),
+        year = optNullableInt("year"),
+        label = optNullableString("label"),
+        catalogNumber = optNullableString("catalog_number"),
+        barcode = optNullableString("barcode"),
+        format = ManualReleaseFormat.fromWireValue(optNullableString("format")),
+        vinylSize = ManualReleaseVinylSize.fromWireValue(optNullableString("vinyl_size")),
+        vinylSpeed = ManualReleaseVinylSpeed.fromWireValue(optNullableString("vinyl_speed")),
+        vinylDiscCount = optNullableInt("vinyl_disc_count"),
+        genres = optJSONArray("genres").orEmpty().mapStrings(),
+        styles = optJSONArray("styles").orEmpty().mapStrings(),
+        tracklist = optJSONArray("tracklist").orEmpty().mapObjects { track -> track.toManualReleaseTrackInput() },
+    )
+
+private fun JSONObject.toManualReleaseTrackInput(): ManualReleaseTrackInput =
+    ManualReleaseTrackInput(
+        title = optNullableString("title"),
+        position = optNullableString("position"),
+        duration = optNullableString("duration"),
+        credits = optJSONArray("credits").orEmpty().mapObjects { credit -> credit.toManualReleaseTrackCreditInput() },
+    )
+
+private fun JSONObject.toManualReleaseTrackCreditInput(): ManualReleaseTrackCreditInput =
+    ManualReleaseTrackCreditInput(
+        role = ManualReleaseTrackCreditRole.fromWireValue(optNullableString("role")) ?: ManualReleaseTrackCreditRole.Other,
+        name = optNullableString("name"),
+    )
+
 private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
     ReleaseSearchResult(
         releaseId = optNullableString("release_id"),
@@ -1243,7 +1440,7 @@ private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
         year = optNullableInt("year"),
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
-        thumbnailUrl = optNullableString("thumbnail_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumbnail_url"),
         format = optNullableString("format"),
     )
 
@@ -1275,7 +1472,7 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
-        thumbnailUrl = optNullableString("thumb_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumb_url"),
         collectionAddedAt = optNullableString("collection_added_at"),
         inCollection = optBoolean("in_collection", false),
         isFavorite = optBoolean("is_favorite", false),
@@ -1322,7 +1519,7 @@ internal fun JSONObject.toListeningSession(
         playedAt = optNullableString("played_at") ?: optNullableString("date") ?: "Unknown date",
         mood = optNullableString("mood") ?: "Unspecified",
         rating = optNullableInt("rating") ?: 0,
-        thumbnailUrl = optNullableString("thumbnail_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumbnail_url"),
         side = optNullableString("side") ?: optNullableString("vinyl_side"),
         hasNotes = optBoolean("has_notes", false) || !notes.isNullOrBlank(),
         notes = notes,
@@ -1391,7 +1588,7 @@ private fun JSONObject.toAnalyticsRecordSummary(): RecordSummary =
         format = "Vinyl",
         rating = 0,
         lastPlayed = "",
-        coverImageUrl = optNullableString("thumbnail_url"),
+        coverImageUrl = optResolvedMediaUrl("thumbnail_url"),
     )
 
 private fun JSONObject.putNullable(
@@ -1405,6 +1602,48 @@ private fun JSONObject.putNullable(
             put(name, value)
         }
     }
+
+private fun manualReleaseDraftBody(
+    formData: ManualReleaseFormData,
+    completionState: ManualReleaseCompletionState?,
+): JSONObject =
+    JSONObject()
+        .put("form_data", formData.toJson())
+        .putNullable("completion_state", completionState?.toJson())
+
+private fun ManualReleaseCompletionState.toJson(): JSONObject =
+    JSONObject()
+        .put("required_complete", requiredComplete)
+
+private fun ManualReleaseFormData.toJson(): JSONObject =
+    JSONObject()
+        .put("artists", artists.toJsonArray())
+        .putNullable("title", title)
+        .putNullable("year", year)
+        .putNullable("label", label)
+        .putNullable("catalog_number", catalogNumber)
+        .putNullable("barcode", barcode)
+        .putNullable("format", format?.wireValue)
+        .putNullable("vinyl_size", vinylSize?.wireValue)
+        .putNullable("vinyl_speed", vinylSpeed?.wireValue)
+        .putNullable("vinyl_disc_count", vinylDiscCount)
+        .put("genres", genres.toJsonArray())
+        .put("styles", styles.toJsonArray())
+        .put("tracklist", JSONArray().also { items -> tracklist.forEach { items.put(it.toJson()) } })
+
+private fun ManualReleaseTrackInput.toJson(): JSONObject =
+    JSONObject()
+        .putNullable("title", title)
+        .putNullable("position", position)
+        .putNullable("duration", duration)
+        .put("credits", JSONArray().also { items -> credits.forEach { items.put(it.toJson()) } })
+
+private fun ManualReleaseTrackCreditInput.toJson(): JSONObject =
+    JSONObject()
+        .put("role", role.wireValue)
+        .putNullable("name", name)
+
+private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> forEach { items.put(it) } }
 
 data class IdentifyJobState(
     val jobId: String,
@@ -1558,7 +1797,7 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
             year = candidate.optNullableInt("year"),
             catalogNumber = candidate.optNullableString("catalog_number"),
             barcode = candidate.optNullableString("barcode"),
-            coverImageUrl = candidate.optNullableString("cover_image_url"),
+            coverImageUrl = candidate.optResolvedMediaUrl("cover_image_url"),
             format = candidate.optNullableString("format"),
             matchSource = candidate.optNullableString("match_source"),
             matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
@@ -1567,11 +1806,38 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
 
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
+private fun JSONObject.optResolvedMediaUrl(name: String): String? = optNullableString(name)?.toResolvedMediaUrl()
+
+private fun String.toResolvedMediaUrl(): String =
+    when {
+        startsWith("/") -> "${BuildConfig.VINYL_API_BASE_URL.toOriginUrl().trimEnd('/')}$this"
+        else -> this
+    }
+
+private fun String.toOriginUrl(): String =
+    runCatching {
+        val url = URL(this)
+        val port = if (url.port >= 0) ":${url.port}" else ""
+        "${url.protocol}://${url.host}$port"
+    }.getOrElse { trimEnd('/') }
+
 private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) null else optInt(name)
 
 private fun JSONObject.optNullableLong(name: String): Long? = if (isNull(name)) null else optLong(name).takeIf { it > 0 }
 
 private fun JSONObject.optNullableDouble(name: String): Double? = if (isNull(name)) null else optDouble(name)
+
+private fun JSONObject?.toFieldErrors(): Map<String, String> {
+    if (this == null) return emptyMap()
+    val keys = keys()
+    val fieldErrors = linkedMapOf<String, String>()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val message = optNullableString(key) ?: continue
+        fieldErrors[key] = message
+    }
+    return fieldErrors
+}
 
 private fun JSONObject.toAuthTokenPair(): AuthTokenPair =
     AuthTokenPair(
@@ -1763,8 +2029,8 @@ private fun JSONArray.toRecordFlowReleaseSummaries(): List<RecordFlowReleaseSumm
             artist = item.optString("artist", "Unknown artist"),
             title = item.optString("title", "Unknown title"),
             year = item.optNullableInt("year"),
-            thumbnailUrl = item.optNullableString("thumbnail_url"),
-            coverImageUrl = item.optNullableString("cover_image_url"),
+            thumbnailUrl = item.optResolvedMediaUrl("thumbnail_url"),
+            coverImageUrl = item.optResolvedMediaUrl("cover_image_url"),
             styles = item.optJSONArray("styles").orEmpty().mapStrings(),
             count = item.optInt("count", 0),
         )

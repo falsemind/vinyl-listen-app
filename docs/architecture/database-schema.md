@@ -387,6 +387,7 @@ Manual releases can later be replaced by a user-confirmed Discogs match, but Pha
 | user_id | UUID | Required owner; references `user_accounts.id` with `ON DELETE CASCADE` |
 | artist | VARCHAR(200) | Display artist summary |
 | title | VARCHAR(200) | Release title |
+| year | INTEGER | Optional release year |
 | label | VARCHAR(200) | Display label summary |
 | catalog_number | VARCHAR(80) | Optional matching hint |
 | barcode | VARCHAR(14) | Optional normalized barcode |
@@ -703,6 +704,8 @@ Represents a **listening event**.
 Each time a user listens to a record, a session is created.
 
 Sessions can optionally belong to a timed listening session group. Existing and standalone sessions keep `session_group_id = null`.
+
+Current sessions target shared Discogs-backed releases through `sessions.release_id -> releases.id`. Manual releases are user-owned rows in `manual_releases` and are not valid session targets until a later session-domain migration adds a manual-release reference or polymorphic release target.
 
 ### Columns
 
@@ -1192,7 +1195,9 @@ access token from configuration.
 
 Manual submissions do not write to `releases`. Saving a manual release inserts
 or updates user-owned rows in `manual_release_drafts` until the form is complete,
-then creates a `manual_releases` row owned by the authenticated user.
+then creates a `manual_releases` row owned by the authenticated user. Optional
+release year is stored on the manual release row and can be used by collection
+search.
 
 ---
 

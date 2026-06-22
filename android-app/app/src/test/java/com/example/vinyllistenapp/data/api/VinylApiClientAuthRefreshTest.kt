@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.data.api
 
 import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
+import com.example.vinyllistenapp.domain.ManualReleaseFormData
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -99,6 +100,73 @@ class VinylApiClientAuthRefreshTest {
                 server.stop(0)
             }
         }
+
+    @Test
+    fun validationErrorPreservesFieldErrors() =
+        runBlocking {
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/api/v1/manual-releases") { exchange ->
+                exchange.respond(
+                    status = 422,
+                    body =
+                        """
+                        {
+                          "error": {
+                            "code": "manual_release_validation_failed",
+                            "message": "Manual release validation failed.",
+                            "field_errors": {
+                              "title": "This field is required.",
+                              "tracklist.0.title": "Track title is required."
+                            }
+                          }
+                        }
+                        """.trimIndent(),
+                )
+            }
+            server.start()
+            try {
+                val client = VinylApiClient(baseUrl = "http://127.0.0.1:${server.address.port}/api/v1")
+
+                try {
+                    client.saveManualRelease(formData = ManualReleaseFormData())
+                    fail("Expected validation API error.")
+                } catch (error: ApiException) {
+                    assertEquals(ApiErrorKind.Validation, error.kind)
+                    assertEquals("manual_release_validation_failed", error.code)
+                    assertEquals("This field is required.", error.fieldErrors["title"])
+                    assertEquals("Track title is required.", error.fieldErrors["tracklist.0.title"])
+                }
+            } finally {
+                server.stop(0)
+            }
+        }
+
+    @Test
+    fun manualCoverContentTypeValidationRejectsUnknownAndUnsupportedTypes() {
+        assertEquals("image/jpeg", validateManualReleaseCoverContentType(" IMAGE/JPEG "))
+        assertManualCoverValidationError(
+            contentType = null,
+            expectedMessage = "Cover image type could not be detected.",
+        )
+        assertManualCoverValidationError(
+            contentType = "application/pdf",
+            expectedMessage = "Cover image must be JPEG, PNG, or WebP.",
+        )
+    }
+
+    private fun assertManualCoverValidationError(
+        contentType: String?,
+        expectedMessage: String,
+    ) {
+        try {
+            validateManualReleaseCoverContentType(contentType)
+            fail("Expected manual cover validation error.")
+        } catch (error: ApiException) {
+            assertEquals(ApiErrorKind.Validation, error.kind)
+            assertEquals("manual_release_cover_invalid", error.code)
+            assertEquals(expectedMessage, error.message)
+        }
+    }
 
     private fun com.sun.net.httpserver.HttpExchange.respond(
         status: Int,

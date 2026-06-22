@@ -23,7 +23,6 @@ from app.services.manual_release_policy import (
     ManualReleaseDraftLimitExceeded,
 )
 from app.services.manual_release_service import (
-    ManualReleaseCoverStorageNotConfiguredError,
     ManualReleaseNotFoundError,
     ManualReleaseService,
     ManualReleaseValidationError,
@@ -53,6 +52,20 @@ def list_manual_release_drafts(
         items=[_draft_summary_response(draft) for draft in drafts],
         remaining_slots=remaining_slots,
     )
+
+
+@router.get("/drafts/{draft_id}", response_model=ManualReleaseDraftResponse)
+def get_manual_release_draft(
+    draft_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    service: Annotated[ManualReleaseService, Depends(get_manual_release_service)],
+) -> ManualReleaseDraftResponse | JSONResponse:
+    try:
+        draft = service.get_draft(db, draft_id, user_id=current_user.account.id)
+    except ManualReleaseNotFoundError:
+        return _not_found_response()
+    return _draft_response(draft)
 
 
 @router.post("/drafts", response_model=ManualReleaseDraftResponse, status_code=status.HTTP_201_CREATED)
@@ -155,20 +168,24 @@ async def upload_manual_release_draft_cover(
 
     content = await file.read(MAX_MANUAL_RELEASE_COVER_BYTES + 1)
     try:
-        result = service.validate_cover_upload(content_type=file.content_type, size_bytes=len(content))
+        result = service.upload_cover(
+            db,
+            draft_id=draft_id,
+            user_id=current_user.account.id,
+            content_type=file.content_type,
+            image_bytes=content,
+        )
     except ManualReleaseCoverValidationError as error:
-        status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if "3 MB" in str(error) else status.HTTP_400_BAD_REQUEST
+        status_code = (
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if "500 KB" in str(error) else status.HTTP_400_BAD_REQUEST
+        )
         return _error_response(
             status_code=status_code,
             code="manual_release_cover_invalid",
             message=str(error),
         )
-    except ManualReleaseCoverStorageNotConfiguredError:
-        return _error_response(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            code="manual_release_cover_storage_not_configured",
-            message="Manual release cover storage is not configured yet.",
-        )
+    except ManualReleaseNotFoundError:
+        return _not_found_response()
     return ManualReleaseCoverUploadResponse(content_type=result.content_type, size_bytes=result.size_bytes)
 
 
@@ -178,6 +195,7 @@ def _draft_summary_response(draft: ManualReleaseDraft) -> ManualReleaseDraftSumm
         id=draft.id,
         artist=_first_string(form_data.get("artists")),
         title=form_data.get("title"),
+        year=form_data.get("year"),
         label=form_data.get("label"),
         catalog_number=form_data.get("catalog_number"),
         format=form_data.get("format"),

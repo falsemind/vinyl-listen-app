@@ -68,6 +68,32 @@ def test_lock_draft_capacity_for_user_is_noop_for_non_postgres_dialects() -> Non
     assert db_session.executed == []
 
 
+def test_update_draft_cover_persists_cover_metadata(db_session: Session) -> None:
+    repository = ManualReleaseRepository()
+    draft = repository.create_draft(
+        db_session,
+        user_id="user-a",
+        form_data=ManualReleaseFormData(title="Partial"),
+    )
+
+    updated = repository.update_draft_cover(
+        db_session,
+        draft,
+        cover_storage_key="manual-release-covers/user-a/draft-1/cover.png",
+        cover_image_url="/media/manual-release-covers/user-a/draft-1/cover.png",
+        cover_thumbnail_url="/media/manual-release-covers/user-a/draft-1/cover.png",
+        cover_content_type="image/png",
+        cover_size_bytes=1024,
+    )
+
+    db_session.refresh(updated)
+    assert updated.cover_storage_key == "manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_image_url == "/media/manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_thumbnail_url == "/media/manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_content_type == "image/png"
+    assert updated.cover_size_bytes == 1024
+
+
 def test_manual_release_save_preserves_collection_and_history_boundaries(
     db_session: Session,
 ) -> None:
@@ -75,6 +101,7 @@ def test_manual_release_save_preserves_collection_and_history_boundaries(
     form_data = ManualReleaseFormData(
         artists=["Manual Artist"],
         title="Private Press",
+        year=1998,
         label="Living Room Records",
         catalog_number="LR-001",
         barcode="1234 5678",
@@ -99,7 +126,34 @@ def test_manual_release_save_preserves_collection_and_history_boundaries(
     assert manual_release.collection_added_at is not None
     assert manual_release.collection_removed_at is None
     assert manual_release.artist == "Manual Artist"
+    assert manual_release.year == 1998
     assert manual_release.barcode == "12345678"
+    assert manual_release.identifiers["year"] == 1998
+    assert repository.search_collection_releases(
+        db_session,
+        user_id="user-a",
+        year=1998,
+        artist=None,
+        title=None,
+        catalog=None,
+        barcode=None,
+        limit=10,
+        offset=0,
+    ) == [manual_release]
+    assert (
+        repository.search_collection_releases(
+            db_session,
+            user_id="user-a",
+            year=1999,
+            artist=None,
+            title=None,
+            catalog=None,
+            barcode=None,
+            limit=10,
+            offset=0,
+        )
+        == []
+    )
 
     assert _count_rows(db_session, "manual_releases") == 1
     assert _count_rows(db_session, "manual_release_drafts") == 0
@@ -125,6 +179,7 @@ def _create_manual_release_tables(connection) -> None:
             user_id TEXT NOT NULL,
             artist TEXT NOT NULL,
             title TEXT NOT NULL,
+            year INTEGER,
             label TEXT NOT NULL,
             catalog_number TEXT,
             barcode TEXT,

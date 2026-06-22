@@ -401,13 +401,13 @@ Drafts support list/create/update/delete for the authenticated user. Each accoun
 
 ### Save flow
 
-Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Draft-backed saves read the source draft with `FOR UPDATE` and consume it in the same transaction, so concurrent saves for the same draft cannot create duplicate manual releases. Validation covers required artist/title/label/format/genre data, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
+Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Draft-backed saves read the source draft with `FOR UPDATE` and consume it in the same transaction, so concurrent saves for the same draft cannot create duplicate manual releases. Validation covers required artist/title/label/format/genre data, optional release year bounds, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
 
 Manual releases remain separate from Discogs-backed releases until a future replacement workflow explicitly maps a user's manual submission to a richer Discogs release.
 
 ### Cover upload contract
 
-Cover upload endpoints currently validate file type and size through `manual_release_policy.py`, with a 3 MB image limit. Until durable cover storage is wired, valid uploads return a typed `manual_release_cover_storage_not_configured` error instead of silently accepting data.
+Cover upload endpoints validate file type, size, and dimensions through `manual_release_policy.py`, with a 500 KB image limit and a 100..1200 px longest-side range. Valid manual release covers are stored on the server under the configured manual release cover storage directory and draft cover metadata is updated with the served image URL.
 
 ### Test coverage status
 

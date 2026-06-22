@@ -231,13 +231,13 @@ All routes are nested under `/api/v1`.
 | `GET /collection/sync/active` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/sync/{job_id}` | `api/routes/collection.py` | `CollectionSyncJobService`. |
 | `GET /collection/folders` | `api/routes/collection.py` | User-scoped `CollectionFoldersRepository` plus Discogs integration state. |
-| `GET /collection/releases` | `api/routes/collection.py` | User-scoped `ReleasesRepository` membership query; supports artist, label, favorites, and Discogs folder filters. |
-| `GET /collection/search` | `api/routes/collection.py` | User-scoped collection-only internal release search. |
+| `GET /collection/releases` | `api/routes/collection.py` | User-scoped `ReleasesRepository` membership query plus `ManualReleaseRepository`; supports artist, label, favorites, and Discogs folder filters. |
+| `GET /collection/search` | `api/routes/collection.py` | User-scoped collection-only internal release search across Discogs-backed and manual releases. |
 | `GET /manual-releases/drafts` | `api/routes/manual_releases.py` | User-scoped `ManualReleaseService` draft list. |
 | `POST /manual-releases/drafts` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft create with draft cap validation. |
 | `PUT /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft update scoped to the current user. |
 | `DELETE /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` draft delete scoped to the current user. |
-| `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover upload validation contract. |
+| `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover validation, local storage, and draft metadata update. |
 | `POST /manual-releases` | `api/routes/manual_releases.py` | `ManualReleaseService` complete manual release validation and user-owned save. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
@@ -247,11 +247,11 @@ All routes are nested under `/api/v1`.
 | `POST /releases/import` | `api/routes/releases.py` | `ReleaseImportService`. |
 | `POST /releases/import-to-collection` | `api/routes/releases.py` | Token-backed `ReleaseImportService` import plus collection activation. |
 | `POST /releases/import/client-discogs` | `api/routes/releases.py` | Client-provided Discogs payload import through `ReleaseImportService`. |
-| `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService`. |
+| `GET /releases/{release_id}` | `api/routes/releases.py` | `ReleaseImportService` with `ManualReleaseRepository` fallback for user-owned manual releases. |
 | `POST /releases/{release_id}/refresh` | `api/routes/releases.py` | `ReleaseImportService`. |
-| `POST /releases/{release_id}/collection/deactivate` | `api/routes/releases.py` | `ReleasesRepository`. |
-| `POST /releases/{release_id}/collection/reactivate` | `api/routes/releases.py` | `ReleasesRepository`. |
-| `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService`. |
+| `POST /releases/{release_id}/collection/deactivate` | `api/routes/releases.py` | `ReleasesRepository` with `ManualReleaseRepository` fallback. |
+| `POST /releases/{release_id}/collection/reactivate` | `api/routes/releases.py` | `ReleasesRepository` with `ManualReleaseRepository` fallback. |
+| `GET /releases/{release_id}/sessions` | `api/routes/releases.py` | `SessionsService` with empty manual-release fallback until manual sessions are modeled. |
 | `POST /sessions` | `api/routes/sessions.py` | `SessionsService`. |
 | `GET /sessions/summary` | `api/routes/sessions.py` | `SessionsService` home summary aggregation. |
 | `GET /sessions/groups/active` | `api/routes/sessions.py` | `SessionGroupsService` active group lookup and stale auto-finish. |
@@ -342,6 +342,7 @@ backend/alembic/
     ├── c8d9e0f1a2b3_scope_async_ai_spotify.py
     ├── ab12cd34ef56_add_provider_integrations.py
     ├── c4d5e6f7a8b9_add_manual_release_schema.py
+    ├── e7f8a9b0c1d2_add_manual_release_year.py
     └── eed6974773b8_init.py
 
 backend/scripts/

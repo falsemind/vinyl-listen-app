@@ -1,8 +1,11 @@
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from app.schemas.manual_releases import ManualReleaseFormData
+from app.services.manual_release_cover_storage import ManualReleaseCoverStorage
 from app.services.manual_release_policy import ManualReleaseDraftLimitExceeded
 from app.services.manual_release_service import ManualReleaseService, ManualReleaseValidationError
 
@@ -15,6 +18,8 @@ class FakeManualReleaseRepository:
         self.get_draft_calls: list[dict] = []
         self.operation_log: list[str] = []
         self.saved_form_data: ManualReleaseFormData | None = None
+        self.cover_updates: list[dict] = []
+        self.fail_cover_update = False
         self.draft_form_data = ManualReleaseFormData(
             artists=["Draft Artist"],
             title="Draft Title",
@@ -57,6 +62,31 @@ class FakeManualReleaseRepository:
         self.saved_form_data = form_data
         return SimpleNamespace(id="manual-1", user_id=user_id, title=form_data.title)
 
+    def update_draft_cover(
+        self,
+        _db,
+        draft,
+        *,
+        cover_storage_key: str,
+        cover_image_url: str,
+        cover_thumbnail_url: str,
+        cover_content_type: str,
+        cover_size_bytes: int,
+    ):
+        if self.fail_cover_update:
+            raise RuntimeError("cover update failed")
+        self.cover_updates.append(
+            {
+                "draft_id": draft.id,
+                "cover_storage_key": cover_storage_key,
+                "cover_image_url": cover_image_url,
+                "cover_thumbnail_url": cover_thumbnail_url,
+                "cover_content_type": cover_content_type,
+                "cover_size_bytes": cover_size_bytes,
+            }
+        )
+        return draft
+
 
 def test_create_draft_enforces_user_draft_limit() -> None:
     repository = FakeManualReleaseRepository()
@@ -74,6 +104,103 @@ def test_create_draft_serializes_capacity_check_before_counting() -> None:
     service.create_draft(object(), user_id="user-1", form_data=ManualReleaseFormData(title="Partial"))
 
     assert repository.operation_log == ["lock:user-1", "count:user-1", "create:user-1"]
+
+
+def test_upload_cover_stores_file_and_updates_draft_metadata(tmp_path) -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(
+        repository,
+        cover_storage=ManualReleaseCoverStorage(
+            root_dir=tmp_path,
+            public_url_prefix="/media/manual-release-covers",
+        ),
+    )
+    image_bytes = _cover_image_bytes(width=120, height=100)
+
+    result = service.upload_cover(
+        object(),
+        draft_id="draft-1",
+        user_id="user-1",
+        content_type=" IMAGE/PNG ",
+        image_bytes=image_bytes,
+    )
+
+    stored_files = list((tmp_path / "user-1" / "draft-1").glob("cover-*.png"))
+    assert len(stored_files) == 1
+    stored_file = stored_files[0]
+    assert stored_file.read_bytes() == image_bytes
+    storage_key = f"manual-release-covers/user-1/draft-1/{stored_file.name}"
+    image_url = f"/media/manual-release-covers/user-1/draft-1/{stored_file.name}"
+    assert result.content_type == "image/png"
+    assert result.size_bytes == len(image_bytes)
+    assert result.cover_image_url == image_url
+    assert repository.get_draft_calls == [
+        {
+            "draft_id": "draft-1",
+            "user_id": "user-1",
+            "for_update": True,
+        }
+    ]
+    assert repository.cover_updates == [
+        {
+            "draft_id": "draft-1",
+            "cover_storage_key": storage_key,
+            "cover_image_url": image_url,
+            "cover_thumbnail_url": image_url,
+            "cover_content_type": "image/png",
+            "cover_size_bytes": len(image_bytes),
+        }
+    ]
+
+
+def test_upload_cover_cleans_old_cover_after_draft_metadata_update(tmp_path) -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(
+        repository,
+        cover_storage=ManualReleaseCoverStorage(
+            root_dir=tmp_path,
+            public_url_prefix="/media/manual-release-covers",
+        ),
+    )
+    old_cover = tmp_path / "user-1" / "draft-1" / "cover.png"
+    old_cover.parent.mkdir(parents=True)
+    old_cover.write_bytes(b"old")
+
+    service.upload_cover(
+        object(),
+        draft_id="draft-1",
+        user_id="user-1",
+        content_type="image/png",
+        image_bytes=_cover_image_bytes(width=120, height=100),
+    )
+
+    assert not old_cover.exists()
+    assert len(list(old_cover.parent.glob("cover-*.png"))) == 1
+
+
+def test_upload_cover_deletes_new_file_when_draft_metadata_update_fails(tmp_path) -> None:
+    repository = FakeManualReleaseRepository()
+    repository.fail_cover_update = True
+    service = ManualReleaseService(
+        repository,
+        cover_storage=ManualReleaseCoverStorage(
+            root_dir=tmp_path,
+            public_url_prefix="/media/manual-release-covers",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="cover update failed"):
+        service.upload_cover(
+            object(),
+            draft_id="draft-1",
+            user_id="user-1",
+            content_type="image/png",
+            image_bytes=_cover_image_bytes(width=120, height=100),
+        )
+
+    cover_dir = tmp_path / "user-1" / "draft-1"
+    assert list(cover_dir.glob("cover-*.png")) == []
+    assert list(cover_dir.glob(".cover-*.tmp")) == []
 
 
 def test_save_release_requires_complete_form_data() -> None:
@@ -197,3 +324,9 @@ def test_save_release_returns_field_error_for_bad_duration() -> None:
         service.save_release(object(), user_id="user-1", form_data=form_data)
 
     assert exc_info.value.field_errors == {"tracklist.0.duration": "Track duration must use m:ss or h:mm:ss."}
+
+
+def _cover_image_bytes(*, width: int, height: int) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (width, height), color=(32, 96, 64)).save(output, format="PNG")
+    return output.getvalue()

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from app.api.auth_dependencies import AuthAPIError
 from app.api.router import api_router
@@ -37,6 +38,11 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Vinyl Listening App API", version="0.1.0", lifespan=lifespan)
+app.mount(
+    settings.manual_release_cover_public_url_prefix,
+    StaticFiles(directory=settings.manual_release_cover_storage_dir, check_dir=False),
+    name="manual-release-covers",
+)
 app.state.rate_limiter = build_rate_limiter(
     backend=settings.inbound_rate_limit_backend,
     redis_url=settings.inbound_rate_limit_redis_url,

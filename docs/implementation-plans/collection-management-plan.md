@@ -503,6 +503,7 @@ Replace the placeholder manual-entry screen with a small, app-owned release crea
 | --- | --- | --- | --- |
 | Artist | Yes | Optional | Support one or more display artists; model as a list even if the first UI starts simple. |
 | Title | Yes | Optional | Release title, not collection nickname. |
+| Year | Optional | Optional | Store as a bounded integer matching Discogs-style release year for later matching/search. |
 | Label | Yes | Optional | Store display label name separately from catalog number. |
 | Catalog number | Optional | Optional | Important matching hint for later Discogs search. |
 | Barcode | Optional | Optional | Normalize digits for matching, preserve display value if needed. |
@@ -529,6 +530,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | --- | --- | --- | --- | --- |
 | Artist name | string list | 1-20 artists; 1-200 chars each | Require at least one artist for release save. | Validate list count and per-name length before enabling **Save Release**. |
 | Title | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
+| Year | integer | 1900-2100 | Optional; reject non-integer values and years outside the supported range. | Use numeric input and block out-of-range values before save. |
 | Label name | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
 | Catalog number | string | 0-80 chars | Optional; preserve display value and store normalized value for matching. | Warn/block over-limit values. |
 | Barcode | string | 0 or 8-14 digits after normalization | Optional; strip spaces/hyphens for normalized value. | Allow common pasted formats, then validate normalized digits. |
@@ -544,7 +546,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | Track credit name | string | 1-200 chars when role is present | Required when a credit role is added. | Validate paired role/name rows. |
 | Genre | enum | Small app-defined list | Required for release save. | Use dropdown only. |
 | Style | enum | Small app-defined Electronic style list | Required only when genre is `Electronic`. | Show and require only for Electronic. |
-| Cover image | binary file | One file; `JPEG`, `PNG`, or `WebP`; max 3 MB | Validate MIME/content type and size before storing. | Validate picker metadata before upload when available. |
+| Cover image | binary file | One file; `JPEG`, `PNG`, or `WebP`; max 500 KB; longest side 100..1200 px | Validate MIME/content type, size, readable image data, and dimensions before storing. | Validate picker metadata and image bounds before upload when available. |
 
 ### Manual Submissions Screen Requirements
 
@@ -553,7 +555,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 - Screen subheader explains that the user can manually add releases to the collection and save or manage drafts.
 - Show up to 5 saved manual release draft cards.
 - Draft cards should be about double the height of the Recent Session cards so they can show more release detail.
-- Draft cards should show the strongest available summary fields: cover thumbnail when present, artist, title, label/catalog number, format, draft updated time, and required-field completion state.
+- Draft cards should show the strongest available summary fields: cover thumbnail when present, artist, title, optional year, label/catalog number, format, draft updated time, and required-field completion state.
 - Draft cards include a top-right delete icon button.
 - Tapping a draft delete button opens a confirmation dialog before deleting the draft.
 - Place an **Add Release** CTA in the lower-right corner, following the existing CTA treatment used elsewhere in the app.
@@ -561,7 +563,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 - If 5 drafts already exist, tapping **Add Release** shows a dialog explaining that only 5 drafts are allowed and the user must delete or complete a draft before starting another.
 - Tapping an existing draft opens the same overflow form populated with the draft values.
 - The overflow form contains all manual release inputs, dropdowns, tracklist editing, vinyl size/speed/disc count controls, and cover image upload.
-- Cover upload accepts one image only. First implementation should allow `JPEG`, `PNG`, and `WebP`, with a 3 MB maximum unless backend storage constraints require a smaller limit.
+- Cover upload accepts one image only. First implementation should allow `JPEG`, `PNG`, and `WebP`, max 500 KB, with longest side between 100 px and 1200 px.
 - Cover validation errors should be shown before save/upload when possible and returned from the backend as field-level errors when server validation fails.
 
 ### Manual Form Bottom Actions
@@ -601,7 +603,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | Define shared validation constants | 2-4h | Input validation requirements | Backend exposes or documents the same limits Android uses for strings, counts, enums, barcode, durations, and cover upload. |
 | Add manual draft persistence | 4-8h | Persistence shape | Drafts store partial form state separately from committed collection releases and include draft timestamps. |
 | Add draft cap enforcement | 2-4h | Draft persistence | Backend prevents creating a sixth draft and returns a typed validation error. |
-| Add cover image storage policy | 4-6h | Persistence shape | Backend accepts one cover image, validates `JPEG`/`PNG`/`WebP`, enforces 3 MB max, and stores a reusable cover reference. |
+| Add cover image storage policy | 4-6h | Persistence shape | Backend accepts one cover image, validates `JPEG`/`PNG`/`WebP`, enforces 500 KB max and 100..1200 px longest-side bounds, and stores a reusable cover reference. |
 | Add migration and rollback notes | 2-4h | Schema decisions | Migration applies cleanly and documents how manual release/draft data maps to existing release tables. |
 
 ### Phase 10B: Backend Manual Entry API Contracts
@@ -654,7 +656,7 @@ Current Phase 10C status:
 | Task | Effort | Depends On | Done Criteria |
 | --- | --- | --- | --- |
 | Build overflow form shell | 4-6h | Phase 10D | Form opens as an overflow screen with bottom actions matching Log Session patterns. |
-| Add release identity inputs | 4-8h | Form shell | Artist, title, label, catalog number, barcode, genre, and Electronic style inputs validate in UI state. |
+| Add release identity inputs | 4-8h | Form shell | Artist, title, optional year, label, catalog number, barcode, genre, and Electronic style inputs validate in UI state. |
 | Add format controls | 4-6h | Form shell | Format dropdown supports `Vinyl`, `CD`, `Tape`, `Other`; vinyl exposes size, speed, and disc count. |
 | Add tracklist editor | 6-8h | Form shell | User can add at least one track title and optional track role credits from the constrained dropdown. |
 | Add button state behavior | 2-4h | Form validation | Empty form shows disabled **Save**; partial valid input shows **Save Draft**; complete valid input shows **Save Release**. |
@@ -665,7 +667,7 @@ Current Phase 10C status:
 | Task | Effort | Depends On | Done Criteria |
 | --- | --- | --- | --- |
 | Add cover picker and preview | 4-6h | Form shell | User can choose one cover image and see a preview before saving. |
-| Add client-side cover validation | 2-4h | Cover picker | Android blocks unsupported file types and files over 3 MB before upload when metadata is available. |
+| Add client-side cover validation | 2-4h | Cover picker | Android blocks unsupported file types, files over 500 KB, and images outside 100..1200 px longest-side bounds before upload when metadata is available. |
 | Wire **Save Draft** | 4-6h | Form state + repository | Partial form saves a draft, closes the form, and shows/updates the draft card. |
 | Wire **Save Release** | 4-8h | Backend save contract | Complete form creates the manual release, adds it to collection, removes the draft when applicable, opens Record Details, and keeps the back path returning to Collection. |
 | Add Android verification | 4-6h | Save flows | Focused tests or compile checks cover draft hub state, form action state, validation, and save response handling. |

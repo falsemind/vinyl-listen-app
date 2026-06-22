@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
 MAX_MANUAL_RELEASE_DRAFTS = 5
-MAX_MANUAL_RELEASE_COVER_BYTES = 3 * 1024 * 1024
+MAX_MANUAL_RELEASE_COVER_BYTES = 500 * 1024
+MIN_MANUAL_RELEASE_COVER_LONGEST_SIDE_PX = 100
+MAX_MANUAL_RELEASE_COVER_LONGEST_SIDE_PX = 1200
 
 SUPPORTED_MANUAL_RELEASE_COVER_CONTENT_TYPES = frozenset(
     {
@@ -31,6 +33,8 @@ TRACK_CREDIT_NAME_LIMIT = TextFieldLimit(min_length=1, max_length=200)
 
 MAX_MANUAL_RELEASE_ARTISTS = 20
 MAX_MANUAL_RELEASE_TRACKS = 100
+MIN_RELEASE_YEAR = 1900
+MAX_RELEASE_YEAR = 2100
 MIN_VINYL_DISC_COUNT = 1
 MAX_VINYL_DISC_COUNT = 6
 
@@ -69,4 +73,16 @@ def validate_manual_release_cover_policy(content_type: str, size_bytes: int) -> 
         raise ManualReleaseCoverValidationError("Cover image size must be non-negative.")
 
     if size_bytes > MAX_MANUAL_RELEASE_COVER_BYTES:
-        raise ManualReleaseCoverValidationError("Cover image must be 3 MB or smaller.")
+        raise ManualReleaseCoverValidationError("Cover image must be 500 KB or smaller.")
+
+
+def validate_manual_release_cover_dimensions(width_px: int, height_px: int) -> None:
+    """Validate cover image dimensions for manual releases."""
+    if width_px <= 0 or height_px <= 0:
+        raise ManualReleaseCoverValidationError("Cover image dimensions could not be detected.")
+
+    longest_side_px = max(width_px, height_px)
+    if longest_side_px < MIN_MANUAL_RELEASE_COVER_LONGEST_SIDE_PX:
+        raise ManualReleaseCoverValidationError("Cover image longest side must be at least 100 px.")
+    if longest_side_px > MAX_MANUAL_RELEASE_COVER_LONGEST_SIDE_PX:
+        raise ManualReleaseCoverValidationError("Cover image longest side must be 1200 px or smaller.")
