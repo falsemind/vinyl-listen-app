@@ -812,6 +812,70 @@ def test_get_sessions_by_release_returns_manual_release_sessions(
     assert [session.id for session in sessions] == ["session-1"]
 
 
+def test_home_summary_includes_manual_release_sessions(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_release,
+    build_manual_release,
+) -> None:
+    repository = sessions_repository_factory()
+    shared_release = build_release(release_id="release-123", discogs_release_id=555123)
+    manual_release = build_manual_release(release_id="manual-release-1", user_id="user-1")
+    month_played_at = datetime.now(UTC).replace(day=2, hour=20, minute=0, second=0, microsecond=0)
+    repository.sessions.extend(
+        [
+            Sessions(
+                id="shared-session",
+                user_id="user-1",
+                release_id=shared_release.id,
+                manual_release_id=None,
+                rating=3,
+                mood="Calm",
+                notes=None,
+                played_at=month_played_at - timedelta(days=1),
+                vinyl_side="A",
+                created_at=month_played_at - timedelta(days=1),
+            ),
+            Sessions(
+                id="manual-session-1",
+                user_id="user-1",
+                release_id=None,
+                manual_release_id=manual_release.id,
+                rating=5,
+                mood="Focused",
+                notes=None,
+                played_at=month_played_at,
+                vinyl_side=None,
+                created_at=month_played_at,
+            ),
+            Sessions(
+                id="manual-session-2",
+                user_id="user-1",
+                release_id=None,
+                manual_release_id=manual_release.id,
+                rating=4,
+                mood="Focused",
+                notes=None,
+                played_at=month_played_at - timedelta(hours=1),
+                vinyl_side=None,
+                created_at=month_played_at - timedelta(hours=1),
+            ),
+        ]
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[shared_release],
+        manual_releases=[manual_release],
+    )
+
+    summary = service.get_home_summary(db=object(), user_id="user-1", recent_limit=1, top_limit=1)
+
+    assert summary.recent_sessions[0].release.id == manual_release.id
+    assert summary.records_this_month == 2
+    assert summary.top_records[0].release.id == manual_release.id
+    assert summary.top_records[0].plays == 2
+
+
 def test_custom_moods_are_persisted_and_listed(
     sessions_moods_repository_factory,
     build_sessions_service,

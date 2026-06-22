@@ -19,6 +19,7 @@ class InMemorySessionsRepository:
         self.sessions: list[Sessions] = []
         self.tracks_by_session_id: dict[str, list[SessionTracks]] = {}
         self.flow_insight_since_calls: list[datetime | None] = []
+        self.manual_releases: dict[str, ManualRelease] = {}
 
     def create(self, _db, **kwargs) -> Sessions:
         self.created_payload = {key: value for key, value in kwargs.items() if key != "user_id" or value is not None}
@@ -108,6 +109,23 @@ class InMemorySessionsRepository:
         ]
         return matching[offset : offset + limit]
 
+    def get_recent_with_releases(self, _db, *, user_id: str | None = None, limit: int):
+        releases = getattr(self, "releases", {})
+        rows = [
+            (session, releases[session.release_id])
+            for session in self.sessions
+            if session.release_id in releases and (user_id is None or session.user_id == user_id)
+        ]
+        return sorted(rows, key=lambda row: row[0].played_at or row[0].created_at, reverse=True)[:limit]
+
+    def get_recent_with_manual_releases(self, _db, *, user_id: str | None = None, limit: int):
+        rows = [
+            (session, self.manual_releases[session.manual_release_id])
+            for session in self.sessions
+            if session.manual_release_id in self.manual_releases and (user_id is None or session.user_id == user_id)
+        ]
+        return sorted(rows, key=lambda row: row[0].played_at or row[0].created_at, reverse=True)[:limit]
+
     def get_flow_insight_sessions(
         self,
         _db,
@@ -121,6 +139,54 @@ class InMemorySessionsRepository:
             sessions = [session for session in sessions if (session.played_at or session.created_at) >= since]
         return sorted(sessions, key=lambda session: session.played_at or session.created_at)
 
+    def count_all(self, _db, *, user_id: str | None = None) -> int:
+        return len([session for session in self.sessions if user_id is None or session.user_id == user_id])
+
+    def count_distinct_releases_since(self, _db, *, user_id: str | None = None, since: datetime) -> int:
+        release_ids = {
+            session.release_id
+            for session in self.sessions
+            if session.release_id is not None
+            and (session.played_at or session.created_at) >= since
+            and (user_id is None or session.user_id == user_id)
+        }
+        return len(release_ids)
+
+    def count_distinct_manual_releases_since(self, _db, *, user_id: str | None = None, since: datetime) -> int:
+        release_ids = {
+            session.manual_release_id
+            for session in self.sessions
+            if session.manual_release_id is not None
+            and (session.played_at or session.created_at) >= since
+            and (user_id is None or session.user_id == user_id)
+        }
+        return len(release_ids)
+
+    def get_top_release_stats(self, _db, *, user_id: str | None = None, limit: int):
+        releases = getattr(self, "releases", {})
+        rows = []
+        for release_id, release in releases.items():
+            sessions = [
+                session
+                for session in self.sessions
+                if session.release_id == release_id and (user_id is None or session.user_id == user_id)
+            ]
+            if sessions:
+                rows.append((release, len(sessions), _average_rating(sessions)))
+        return sorted(rows, key=lambda row: (row[1], row[2] or 0), reverse=True)[:limit]
+
+    def get_top_manual_release_stats(self, _db, *, user_id: str | None = None, limit: int):
+        rows = []
+        for release_id, release in self.manual_releases.items():
+            sessions = [
+                session
+                for session in self.sessions
+                if session.manual_release_id == release_id and (user_id is None or session.user_id == user_id)
+            ]
+            if sessions:
+                rows.append((release, len(sessions), _average_rating(sessions)))
+        return sorted(rows, key=lambda row: (row[1], row[2] or 0), reverse=True)[:limit]
+
     def get_mood_by_name(self, _db, name: str, *, user_id: str | None = None) -> str | None:
         for session in sorted(self.sessions, key=lambda item: item.created_at):
             if (
@@ -130,6 +196,13 @@ class InMemorySessionsRepository:
             ):
                 return session.mood
         return None
+
+
+def _average_rating(sessions: list[Sessions]) -> float | None:
+    ratings = [session.rating for session in sessions if session.rating is not None]
+    if not ratings:
+        return None
+    return sum(ratings) / len(ratings)
 
 
 class InMemoryReleasesRepository:
@@ -290,10 +363,15 @@ def build_sessions_service(
         session_groups_service: SessionGroupsService | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> SessionsService:
+        repository = sessions_repository or InMemorySessionsRepository()
+        shared_releases = releases or [build_release()]
+        owned_manual_releases = manual_releases or [build_manual_release()]
+        repository.releases = {release.id: release for release in shared_releases}
+        repository.manual_releases = {release.id: release for release in owned_manual_releases}
         return SessionsService(
-            sessions_repository=sessions_repository or InMemorySessionsRepository(),
-            releases_repository=InMemoryReleasesRepository(releases or [build_release()]),
-            manual_release_repository=InMemoryManualReleaseRepository(manual_releases or [build_manual_release()]),
+            sessions_repository=repository,
+            releases_repository=InMemoryReleasesRepository(shared_releases),
+            manual_release_repository=InMemoryManualReleaseRepository(owned_manual_releases),
             discogs_repository=StubDiscogsRepository(payload_by_discogs_id or {}),
             moods_repository=moods_repository or InMemorySessionsMoodsRepository(),
             session_groups_service=session_groups_service,

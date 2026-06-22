@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.releases import Releases
+from app.models.releases import ManualRelease, Releases
 from app.models.sessions import Sessions, SessionTracks
 
 
@@ -85,6 +85,21 @@ class SessionsRepository:
         return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).limit(limit).all()
 
     @staticmethod
+    def get_recent_with_manual_releases(
+        db: Session,
+        *,
+        user_id: str | None = None,
+        limit: int,
+    ):
+        query = db.query(Sessions, ManualRelease).join(
+            ManualRelease,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).limit(limit).all()
+
+    @staticmethod
     def get_recent_notes_with_releases(
         db: Session,
         *,
@@ -134,6 +149,18 @@ class SessionsRepository:
         return query.scalar() or 0
 
     @staticmethod
+    def count_distinct_manual_releases_since(
+        db: Session,
+        *,
+        user_id: str | None = None,
+        since: datetime,
+    ) -> int:
+        query = db.query(func.count(func.distinct(Sessions.manual_release_id))).filter(Sessions.played_at >= since)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.scalar() or 0
+
+    @staticmethod
     def get_top_release_stats(
         db: Session,
         *,
@@ -146,6 +173,23 @@ class SessionsRepository:
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
         return query.group_by(Releases.id).order_by(plays.desc(), average_rating.desc()).limit(limit).all()
+
+    @staticmethod
+    def get_top_manual_release_stats(
+        db: Session,
+        *,
+        user_id: str | None = None,
+        limit: int,
+    ):
+        plays = func.count(Sessions.id).label("plays")
+        average_rating = func.avg(Sessions.rating).label("average_rating")
+        query = db.query(ManualRelease, plays, average_rating).join(
+            Sessions,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        return query.group_by(ManualRelease.id).order_by(plays.desc(), average_rating.desc()).limit(limit).all()
 
     @staticmethod
     def create(

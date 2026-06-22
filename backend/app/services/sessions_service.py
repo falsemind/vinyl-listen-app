@@ -153,12 +153,12 @@ class CreateSessionResult:
 @dataclass(frozen=True)
 class SessionReleaseSummary:
     session: Sessions
-    release: Releases
+    release: Releases | ManualRelease
 
 
 @dataclass(frozen=True)
 class TopReleaseSummary:
-    release: Releases
+    release: Releases | ManualRelease
     plays: int
     average_rating: float | None
 
@@ -611,15 +611,63 @@ class SessionsService:
 
         now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        recent_sessions = [
+        recent_sessions = self._home_recent_sessions(db, user_id=user_id, limit=recent_limit)
+        top_records = self._home_top_records(db, user_id=user_id, limit=top_limit)
+        return HomeSummary(
+            recent_sessions=recent_sessions,
+            total_sessions=self._sessions_repository.count_all(db, user_id=user_id),
+            records_this_month=(
+                self._sessions_repository.count_distinct_releases_since(
+                    db,
+                    user_id=user_id,
+                    since=month_start,
+                )
+                + self._sessions_repository.count_distinct_manual_releases_since(
+                    db,
+                    user_id=user_id,
+                    since=month_start,
+                )
+            ),
+            top_records=top_records,
+        )
+
+    def _home_recent_sessions(
+        self,
+        db: Session,
+        *,
+        user_id: str | None,
+        limit: int,
+    ) -> list[SessionReleaseSummary]:
+        rows = [
             SessionReleaseSummary(session=session, release=release)
             for session, release in self._sessions_repository.get_recent_with_releases(
                 db,
                 user_id=user_id,
-                limit=recent_limit,
+                limit=limit,
             )
         ]
-        top_records = [
+        rows.extend(
+            SessionReleaseSummary(session=session, release=release)
+            for session, release in self._sessions_repository.get_recent_with_manual_releases(
+                db,
+                user_id=user_id,
+                limit=limit,
+            )
+        )
+        return sorted(
+            rows,
+            key=lambda item: (item.session.played_at or item.session.created_at, item.session.created_at),
+            reverse=True,
+        )[:limit]
+
+    def _home_top_records(
+        self,
+        db: Session,
+        *,
+        user_id: str | None,
+        limit: int,
+    ) -> list[TopReleaseSummary]:
+        rows = [
             TopReleaseSummary(
                 release=release,
                 plays=int(plays),
@@ -628,19 +676,26 @@ class SessionsService:
             for release, plays, average_rating in self._sessions_repository.get_top_release_stats(
                 db,
                 user_id=user_id,
-                limit=top_limit,
+                limit=limit,
             )
         ]
-        return HomeSummary(
-            recent_sessions=recent_sessions,
-            total_sessions=self._sessions_repository.count_all(db, user_id=user_id),
-            records_this_month=self._sessions_repository.count_distinct_releases_since(
+        rows.extend(
+            TopReleaseSummary(
+                release=release,
+                plays=int(plays),
+                average_rating=float(average_rating) if average_rating else None,
+            )
+            for release, plays, average_rating in self._sessions_repository.get_top_manual_release_stats(
                 db,
                 user_id=user_id,
-                since=month_start,
-            ),
-            top_records=top_records,
+                limit=limit,
+            )
         )
+        return sorted(
+            rows,
+            key=lambda item: (item.plays, item.average_rating or 0),
+            reverse=True,
+        )[:limit]
 
     def list_custom_moods(self, db: Session, *, user_id: str) -> list[SessionsMoods]:
         return self._moods_repository.get_custom(db, user_id=user_id)

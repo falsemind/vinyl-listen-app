@@ -331,7 +331,7 @@ def get_home_summary(
                 year=item.release.year,
                 label=clean_discogs_label_name(item.release.label),
                 catalog_number=item.release.catalog_number,
-                thumbnail_url=item.release.cover_image_url,
+                thumbnail_url=_home_release_thumbnail_url(item.release),
                 date=item.session.played_at.date().isoformat() if item.session.played_at is not None else None,
                 played_at=item.session.played_at,
                 side=item.session.vinyl_side,
@@ -352,13 +352,17 @@ def get_home_summary(
                 release_id=item.release.id,
                 artist=item.release.artist,
                 title=item.release.title,
-                thumbnail_url=item.release.cover_image_url,
+                thumbnail_url=_home_release_thumbnail_url(item.release),
                 plays=item.plays,
                 average_rating=round(item.average_rating, 1) if item.average_rating is not None else None,
             )
             for item in summary.top_records
         ],
     )
+
+
+def _home_release_thumbnail_url(release) -> str | None:
+    return getattr(release, "cover_thumbnail_url", None) or getattr(release, "cover_image_url", None)
 
 
 @router.get(
