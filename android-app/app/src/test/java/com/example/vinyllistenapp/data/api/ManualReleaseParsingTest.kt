@@ -1,9 +1,11 @@
 package com.example.vinyllistenapp.data.api
 
 import com.example.vinyllistenapp.domain.ManualReleaseCoverValidationState
+import com.example.vinyllistenapp.domain.ManualReleaseFormData
 import com.example.vinyllistenapp.domain.ManualReleaseFormState
 import com.example.vinyllistenapp.domain.ManualReleaseFormat
 import com.example.vinyllistenapp.domain.ManualReleasePrimaryAction
+import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditInput
 import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditRole
 import com.example.vinyllistenapp.domain.ManualReleaseTrackInput
 import com.example.vinyllistenapp.domain.ManualReleaseVinylSize
@@ -200,6 +202,29 @@ class ManualReleaseParsingTest {
     }
 
     @Test
+    fun manualReleaseFormStateValidatesTrackFieldsBeforeSaveRelease() {
+        val state =
+            ManualReleaseFormState(
+                formData =
+                    validManualReleaseFormData().copy(
+                        tracklist =
+                            listOf(
+                                ManualReleaseTrackInput(
+                                    title = "Low Ceiling",
+                                    duration = "5m",
+                                    credits = listOf(ManualReleaseTrackCreditInput(ManualReleaseTrackCreditRole.Remix)),
+                                ),
+                            ),
+                    ),
+            )
+
+        assertFalse(state.requiredComplete)
+        assertEquals(ManualReleasePrimaryAction.SaveDraft, state.primaryAction)
+        assertEquals("Track duration must use m:ss or h:mm:ss.", state.localFieldErrors["tracklist.0.duration"])
+        assertEquals("Credit name is required.", state.localFieldErrors["tracklist.0.credits.0.name"])
+    }
+
+    @Test
     fun manualReleaseFormStateTracksDirtyFieldsAndCoverValidation() {
         val state =
             ManualReleaseFormState(
@@ -225,3 +250,17 @@ class ManualReleaseParsingTest {
         assertEquals("Cover image type could not be detected.", unknownTypeState.localFieldErrors["cover"])
     }
 }
+
+private fun validManualReleaseFormData(): ManualReleaseFormData =
+    ManualReleaseFormData(
+        artists = listOf("Gradient Sync"),
+        title = "Night Plates",
+        label = "Room Tone",
+        format = ManualReleaseFormat.Vinyl,
+        vinylSize = ManualReleaseVinylSize.TwelveInch,
+        vinylSpeed = ManualReleaseVinylSpeed.ThirtyThree,
+        vinylDiscCount = 2,
+        genres = listOf("Electronic"),
+        styles = listOf("Techno"),
+        tracklist = listOf(ManualReleaseTrackInput(title = "Low Ceiling")),
+    )

@@ -35,6 +35,24 @@ class ManualReleaseRepositoryTest {
         }
 
     @Test
+    fun getDraftDelegatesDraftId() =
+        runBlocking {
+            var capturedDraftId: String? = null
+            val repository =
+                repository(
+                    getDraft = { draftId ->
+                        capturedDraftId = draftId
+                        draft(id = draftId)
+                    },
+                )
+
+            val result = repository.getDraft("draft-2")
+
+            assertEquals("draft-2", result.id)
+            assertEquals("draft-2", capturedDraftId)
+        }
+
+    @Test
     fun createDraftSubmitsFormDataAndCompletionState() =
         runBlocking {
             val formData = ManualReleaseFormData(title = "Partial")
@@ -150,6 +168,7 @@ class ManualReleaseRepositoryTest {
         listDrafts: suspend () -> ManualReleaseDraftList = {
             ManualReleaseDraftList(items = emptyList(), limit = 5, remainingSlots = 5)
         },
+        getDraft: suspend (String) -> ManualReleaseDraft = { draftId -> draft(id = draftId) },
         createDraft: suspend (ManualReleaseFormData, ManualReleaseCompletionState?) -> ManualReleaseDraft = { formData, _ ->
             draft(formData = formData)
         },
@@ -171,6 +190,7 @@ class ManualReleaseRepositoryTest {
     ): ManualReleaseRepository =
         ManualReleaseRepository(
             listDraftsRequest = listDrafts,
+            getDraftRequest = getDraft,
             createDraftRequest = createDraft,
             updateDraftRequest = updateDraft,
             deleteDraftRequest = deleteDraft,
@@ -188,9 +208,12 @@ class ManualReleaseRepositoryTest {
             tracklist = listOf(ManualReleaseTrackInput(title = "Track")),
         )
 
-    private fun draft(formData: ManualReleaseFormData): ManualReleaseDraft =
+    private fun draft(
+        formData: ManualReleaseFormData = ManualReleaseFormData(title = "Draft"),
+        id: String = "draft-1",
+    ): ManualReleaseDraft =
         ManualReleaseDraft(
-            id = "draft-1",
+            id = id,
             artist = formData.artists.firstOrNull(),
             title = formData.title,
             label = formData.label,

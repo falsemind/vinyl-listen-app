@@ -70,6 +70,7 @@ private data class ManualSubmissionsUiState(
 @Composable
 fun ManualSubmissionsScreen(
     apiClient: VinylApiClient,
+    refreshKey: Int = 0,
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
@@ -132,7 +133,7 @@ fun ManualSubmissionsScreen(
         }
     }
 
-    LaunchedEffect(repository, retryKey) {
+    LaunchedEffect(repository, retryKey, refreshKey) {
         loadDrafts()
     }
 

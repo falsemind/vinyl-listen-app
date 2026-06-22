@@ -13,6 +13,7 @@ import com.example.vinyllistenapp.domain.ManualReleaseSaveResult
 
 class ManualReleaseRepository(
     private val listDraftsRequest: suspend () -> ManualReleaseDraftList,
+    private val getDraftRequest: suspend (String) -> ManualReleaseDraft,
     private val createDraftRequest: suspend (ManualReleaseFormData, ManualReleaseCompletionState?) -> ManualReleaseDraft,
     private val updateDraftRequest: suspend (String, ManualReleaseFormData, ManualReleaseCompletionState?) -> ManualReleaseDraft,
     private val deleteDraftRequest: suspend (String) -> Unit,
@@ -21,6 +22,7 @@ class ManualReleaseRepository(
 ) {
     constructor(apiClient: VinylApiClient) : this(
         listDraftsRequest = apiClient::listManualReleaseDrafts,
+        getDraftRequest = apiClient::getManualReleaseDraft,
         createDraftRequest = apiClient::createManualReleaseDraft,
         updateDraftRequest = apiClient::updateManualReleaseDraft,
         deleteDraftRequest = apiClient::deleteManualReleaseDraft,
@@ -29,6 +31,8 @@ class ManualReleaseRepository(
     )
 
     suspend fun listDrafts(): ManualReleaseDraftList = listDraftsRequest()
+
+    suspend fun getDraft(draftId: String): ManualReleaseDraft = getDraftRequest(draftId)
 
     suspend fun createDraft(formState: ManualReleaseFormState): ManualReleaseDraft =
         createDraftRequest(formState.formData, formState.completionState())

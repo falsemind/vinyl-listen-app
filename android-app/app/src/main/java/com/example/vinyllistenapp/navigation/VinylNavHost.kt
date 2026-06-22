@@ -39,6 +39,7 @@ import com.example.vinyllistenapp.ui.screens.CaptureRecordScreen
 import com.example.vinyllistenapp.ui.screens.CollectionScreen
 import com.example.vinyllistenapp.ui.screens.EditSessionScreen
 import com.example.vinyllistenapp.ui.screens.HomeScreen
+import com.example.vinyllistenapp.ui.screens.ManualReleaseFormScreen
 import com.example.vinyllistenapp.ui.screens.ManualSearchMode
 import com.example.vinyllistenapp.ui.screens.ManualSearchScreen
 import com.example.vinyllistenapp.ui.screens.ManualSubmissionsScreen
@@ -64,6 +65,7 @@ import kotlinx.coroutines.launch
 private const val NAV_FADE_DURATION_MILLIS = 140
 private const val TIMED_SESSION_REFRESH_MILLIS = 60_000L
 private const val COLLECTION_MEMBERSHIP_REFRESH_KEY = "collectionMembershipRefreshKey"
+private const val MANUAL_SUBMISSIONS_REFRESH_KEY = "manualSubmissionsRefreshKey"
 
 @Composable
 fun VinylNavHost(
@@ -104,6 +106,17 @@ fun VinylNavHost(
         handle.set(
             COLLECTION_MEMBERSHIP_REFRESH_KEY,
             (handle.get<Int>(COLLECTION_MEMBERSHIP_REFRESH_KEY) ?: 0) + 1,
+        )
+    }
+
+    fun notifyManualSubmissionsChanged() {
+        val handle =
+            runCatching { navController.getBackStackEntry(VinylRoutes.COLLECTION_MANUAL_ENTRY).savedStateHandle }
+                .getOrNull()
+                ?: return
+        handle.set(
+            MANUAL_SUBMISSIONS_REFRESH_KEY,
+            (handle.get<Int>(MANUAL_SUBMISSIONS_REFRESH_KEY) ?: 0) + 1,
         )
     }
 
@@ -398,8 +411,13 @@ fun VinylNavHost(
                 )
             }
             composable(VinylRoutes.COLLECTION_MANUAL_ENTRY) {
+                val manualSubmissionsRefreshKey by
+                    it.savedStateHandle
+                        .getStateFlow(MANUAL_SUBMISSIONS_REFRESH_KEY, 0)
+                        .collectAsState()
                 ManualSubmissionsScreen(
                     apiClient = activeApiClient,
+                    refreshKey = manualSubmissionsRefreshKey,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
@@ -408,8 +426,36 @@ fun VinylNavHost(
                     onStats = { navController.navigate(VinylRoutes.ANALYTICS) },
                     onInsights = { navController.navigate(VinylRoutes.AI_INSIGHTS) },
                     onCollection = { navController.navigate(VinylRoutes.COLLECTION) },
-                    onAddRelease = {},
-                    onOpenDraft = {},
+                    onAddRelease = { navController.navigate(VinylRoutes.manualReleaseForm()) },
+                    onOpenDraft = { draftId -> navController.navigate(VinylRoutes.manualReleaseForm(draftId)) },
+                )
+            }
+            composable(
+                route = VinylRoutes.COLLECTION_MANUAL_FORM_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.DRAFT_ID) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+            ) { backStackEntry ->
+                ManualReleaseFormScreen(
+                    apiClient = activeApiClient,
+                    draftId = backStackEntry.arguments?.getString(VinylRoutes.DRAFT_ID),
+                    onCancel = { navController.popBackStack() },
+                    onDraftSaved = {
+                        notifyManualSubmissionsChanged()
+                        navController.popBackStack()
+                    },
+                    onReleaseSaved = { releaseId ->
+                        notifyManualSubmissionsChanged()
+                        notifyCollectionMembershipChanged()
+                        navController.navigate(VinylRoutes.recordDetail(releaseId)) {
+                            popUpTo(VinylRoutes.COLLECTION_PATTERN)
+                        }
+                    },
                 )
             }
             composable(
@@ -746,6 +792,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
             VinylRoutes.COLLECTION_MANUAL_ENTRY,
+            VinylRoutes.COLLECTION_MANUAL_FORM_PATTERN,
             VinylRoutes.SESSION_LOGGING_PATTERN,
             VinylRoutes.SESSION_EDIT_PATTERN,
             VinylRoutes.RECORD_DETAIL_PATTERN,

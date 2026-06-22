@@ -18,6 +18,8 @@ object ManualReleaseLimits {
     val SUPPORTED_COVER_CONTENT_TYPES = setOf("image/jpeg", "image/png", "image/webp")
 }
 
+private val MANUAL_TRACK_DURATION_PATTERN = Regex("""\d{1,2}:\d{2}(:\d{2})?""")
+
 enum class ManualReleaseFormat(
     val wireValue: String,
 ) {
@@ -181,6 +183,40 @@ data class ManualReleaseFormState(
                 }
                 if (formData.tracklist.size > ManualReleaseLimits.MAX_TRACKS) {
                     put("tracklist", "Use ${ManualReleaseLimits.MAX_TRACKS} tracks or fewer.")
+                }
+                formData.tracklist.forEachIndexed { trackIndex, track ->
+                    if ((track.title?.length ?: 0) > ManualReleaseLimits.TRACK_TITLE_MAX_LENGTH) {
+                        put(
+                            "tracklist.$trackIndex.title",
+                            "Track title must be ${ManualReleaseLimits.TRACK_TITLE_MAX_LENGTH} characters or fewer.",
+                        )
+                    }
+                    if ((track.position?.length ?: 0) > ManualReleaseLimits.TRACK_POSITION_MAX_LENGTH) {
+                        put(
+                            "tracklist.$trackIndex.position",
+                            "Track position must be ${ManualReleaseLimits.TRACK_POSITION_MAX_LENGTH} characters or fewer.",
+                        )
+                    }
+                    track.duration?.takeIf { it.isNotBlank() }?.let { duration ->
+                        if (duration.length > ManualReleaseLimits.TRACK_DURATION_MAX_LENGTH) {
+                            put(
+                                "tracklist.$trackIndex.duration",
+                                "Track duration must be ${ManualReleaseLimits.TRACK_DURATION_MAX_LENGTH} characters or fewer.",
+                            )
+                        } else if (!MANUAL_TRACK_DURATION_PATTERN.matches(duration)) {
+                            put("tracklist.$trackIndex.duration", "Track duration must use m:ss or h:mm:ss.")
+                        }
+                    }
+                    track.credits.forEachIndexed { creditIndex, credit ->
+                        if (credit.name.isNullOrBlank()) {
+                            put("tracklist.$trackIndex.credits.$creditIndex.name", "Credit name is required.")
+                        } else if (credit.name.length > ManualReleaseLimits.TRACK_CREDIT_NAME_MAX_LENGTH) {
+                            put(
+                                "tracklist.$trackIndex.credits.$creditIndex.name",
+                                "Credit name must be ${ManualReleaseLimits.TRACK_CREDIT_NAME_MAX_LENGTH} characters or fewer.",
+                            )
+                        }
+                    }
                 }
                 formData.vinylDiscCount?.let { discCount ->
                     if (discCount !in 1..ManualReleaseLimits.MAX_VINYL_DISC_COUNT) {

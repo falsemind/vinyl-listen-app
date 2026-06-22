@@ -628,79 +628,81 @@ fun RecordDetailScreen(
                         ActionMenuDelimiter()
                     }
                 }
-                ActionMenuGroupAction(
-                    label = "View on Discogs",
-                    expanded = isViewOnDiscogsExpanded,
-                    onClick = { isViewOnDiscogsExpanded = !isViewOnDiscogsExpanded },
-                )
-                if (isViewOnDiscogsExpanded) {
-                    ActionMenuDelimiter()
-                    ActionMenuSubOption(
-                        label = "Release page",
-                        icon = Icons.Filled.Album,
-                        onClickLabel = "View release page on Discogs",
-                        onClick = {
-                            isActionMenuOpen = false
-                            isViewOnDiscogsExpanded = false
-                            uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
-                        },
+                if (canSyncRelease(record)) {
+                    ActionMenuGroupAction(
+                        label = "View on Discogs",
+                        expanded = isViewOnDiscogsExpanded,
+                        onClick = { isViewOnDiscogsExpanded = !isViewOnDiscogsExpanded },
                     )
-                    val discogsArtistRows = discogsArtistRows(record)
-                    discogsArtistRows.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artist ->
-                        val displayArtistName = cleanDiscogsDisplayName(artist.name)
+                    if (isViewOnDiscogsExpanded) {
+                        ActionMenuDelimiter()
                         ActionMenuSubOption(
-                            label = displayArtistName,
-                            icon = Icons.Filled.Person,
-                            onClickLabel = "Open $displayArtistName on Discogs",
+                            label = "Release page",
+                            icon = Icons.Filled.Album,
+                            onClickLabel = "View release page on Discogs",
                             onClick = {
                                 isActionMenuOpen = false
                                 isViewOnDiscogsExpanded = false
-                                uriHandler.openUri(
-                                    if (artist.discogsArtistId > 0) {
-                                        discogsArtistUrl(artist.discogsArtistId)
-                                    } else {
-                                        discogsArtistSearchUrl(displayArtistName)
-                                    },
-                                )
+                                uriHandler.openUri(discogsReleaseUrl(record.discogsReleaseId))
                             },
                         )
+                        val discogsArtistRows = discogsArtistRows(record)
+                        discogsArtistRows.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artist ->
+                            val displayArtistName = cleanDiscogsDisplayName(artist.name)
+                            ActionMenuSubOption(
+                                label = displayArtistName,
+                                icon = Icons.Filled.Person,
+                                onClickLabel = "Open $displayArtistName on Discogs",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isViewOnDiscogsExpanded = false
+                                    uriHandler.openUri(
+                                        if (artist.discogsArtistId > 0) {
+                                            discogsArtistUrl(artist.discogsArtistId)
+                                        } else {
+                                            discogsArtistSearchUrl(displayArtistName)
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                        if (discogsArtistRows.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                            ActionMenuSubOption(
+                                label = "View all artists",
+                                icon = Icons.Filled.MoreHoriz,
+                                onClickLabel = "View all release artists",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isViewOnDiscogsExpanded = false
+                                    onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_ARTISTS)
+                                },
+                            )
+                        }
+                        collectionLabelNames.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
+                            ActionMenuSubOption(
+                                label = labelName,
+                                onClickLabel = "Open $labelName on Discogs",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isViewOnDiscogsExpanded = false
+                                    uriHandler.openUri(discogsLabelSearchUrl(labelName))
+                                },
+                            )
+                        }
+                        if (collectionLabelNames.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
+                            ActionMenuSubOption(
+                                label = "View all labels",
+                                icon = Icons.Filled.MoreHoriz,
+                                onClickLabel = "View all release labels",
+                                onClick = {
+                                    isActionMenuOpen = false
+                                    isViewOnDiscogsExpanded = false
+                                    onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_LABELS)
+                                },
+                            )
+                        }
+                        ActionMenuDelimiter()
                     }
-                    if (discogsArtistRows.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
-                        ActionMenuSubOption(
-                            label = "View all artists",
-                            icon = Icons.Filled.MoreHoriz,
-                            onClickLabel = "View all release artists",
-                            onClick = {
-                                isActionMenuOpen = false
-                                isViewOnDiscogsExpanded = false
-                                onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_ARTISTS)
-                            },
-                        )
-                    }
-                    collectionLabelNames.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { labelName ->
-                        ActionMenuSubOption(
-                            label = labelName,
-                            onClickLabel = "Open $labelName on Discogs",
-                            onClick = {
-                                isActionMenuOpen = false
-                                isViewOnDiscogsExpanded = false
-                                uriHandler.openUri(discogsLabelSearchUrl(labelName))
-                            },
-                        )
-                    }
-                    if (collectionLabelNames.size > RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT) {
-                        ActionMenuSubOption(
-                            label = "View all labels",
-                            icon = Icons.Filled.MoreHoriz,
-                            onClickLabel = "View all release labels",
-                            onClick = {
-                                isActionMenuOpen = false
-                                isViewOnDiscogsExpanded = false
-                                onOpenRecordActionItems(record.releaseId, RECORD_ACTION_DISCOGS_LABELS)
-                            },
-                        )
-                    }
-                    ActionMenuDelimiter()
                 }
             }
         }

@@ -343,6 +343,11 @@ class VinylApiClient(
             getJson("manual-releases/drafts").toManualReleaseDraftList()
         }
 
+    suspend fun getManualReleaseDraft(draftId: String): ManualReleaseDraft =
+        apiCall {
+            getJson("manual-releases/drafts/${Uri.encode(draftId)}").toManualReleaseDraft()
+        }
+
     suspend fun createManualReleaseDraft(
         formData: ManualReleaseFormData,
         completionState: ManualReleaseCompletionState? = null,
