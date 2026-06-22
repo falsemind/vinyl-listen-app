@@ -122,7 +122,9 @@ fun ManualSubmissionsScreen(
             runCatching { repository.deleteDraft(draft.id) }
                 .onSuccess {
                     draftPendingDelete = null
+                    state = state.copy(deletingDraftId = null)
                     loadDrafts()
+                    state = state.copy(deletingDraftId = null)
                 }.onFailure { failure ->
                     state =
                         state.copy(
@@ -177,7 +179,7 @@ fun ManualSubmissionsScreen(
             isDeleting = state.deletingDraftId == draft.id,
             onConfirm = { deleteDraft(draft) },
             onDismiss = {
-                if (state.deletingDraftId == null) {
+                if (state.deletingDraftId != draft.id) {
                     draftPendingDelete = null
                 }
             },
@@ -341,6 +343,7 @@ private fun ManualReleaseDraftCard(
                 icon = Icons.Filled.Delete,
                 contentDescription = "Delete draft",
                 onClick = onDelete,
+                iconTint = VinylColors.AccentOrange,
             )
         }
         if (isDeleting) {

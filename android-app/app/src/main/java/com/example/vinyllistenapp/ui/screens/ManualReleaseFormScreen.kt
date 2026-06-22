@@ -16,19 +16,22 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -46,13 +49,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.vinyllistenapp.data.api.ApiException
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
@@ -72,6 +83,7 @@ import com.example.vinyllistenapp.domain.ManualReleaseVinylSpeed
 import com.example.vinyllistenapp.ui.components.AccentCard
 import com.example.vinyllistenapp.ui.components.AlbumArtBlock
 import com.example.vinyllistenapp.ui.components.CircleIconButton
+import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.ErrorRetryCard
 import com.example.vinyllistenapp.ui.components.ScreenContent
 import com.example.vinyllistenapp.ui.components.SectionTitle
@@ -103,6 +115,11 @@ private sealed class ManualFormSaveOutcome {
     ) : ManualFormSaveOutcome()
 }
 
+private enum class ManualFormSaveTarget {
+    Draft,
+    Collection,
+}
+
 private data class SelectedCoverMetadata(
     val contentType: String?,
     val sizeBytes: Int?,
@@ -123,6 +140,7 @@ fun ManualReleaseFormScreen(
     val scope = rememberCoroutineScope()
     var retryKey by remember { mutableIntStateOf(0) }
     var showCancelConfirmation by remember { mutableStateOf(false) }
+    var showSaveAsDialog by remember { mutableStateOf(false) }
     var state by remember(draftId) {
         mutableStateOf(
             ManualReleaseFormUiState(
@@ -175,7 +193,7 @@ fun ManualReleaseFormScreen(
         }
     }
 
-    fun saveForm() {
+    fun saveForm(target: ManualFormSaveTarget) {
         val action = state.formState.primaryAction
         if (state.isSaving || action == ManualReleasePrimaryAction.DisabledSave) return
         val coverError = state.formState.selectedCoverError()
@@ -192,8 +210,8 @@ fun ManualReleaseFormScreen(
             val submitState = state.formState.copy(formData = state.formState.formData.normalizedForManualSubmit())
             var nextActiveDraftId = state.activeDraftId
             runCatching {
-                when (action) {
-                    ManualReleasePrimaryAction.SaveDraft -> {
+                when (target) {
+                    ManualFormSaveTarget.Draft -> {
                         val draft =
                             if (nextActiveDraftId.isNullOrBlank()) {
                                 repository.createDraft(submitState)
@@ -205,7 +223,7 @@ fun ManualReleaseFormScreen(
                         ManualFormSaveOutcome.Draft
                     }
 
-                    ManualReleasePrimaryAction.SaveRelease -> {
+                    ManualFormSaveTarget.Collection -> {
                         val release =
                             if (submitState.coverUri != null || !nextActiveDraftId.isNullOrBlank()) {
                                 val draft =
@@ -222,8 +240,6 @@ fun ManualReleaseFormScreen(
                             }
                         ManualFormSaveOutcome.Release(release.id)
                     }
-
-                    ManualReleasePrimaryAction.DisabledSave -> ManualFormSaveOutcome.Draft
                 }
             }.onSuccess { outcome ->
                 state = state.copy(activeDraftId = nextActiveDraftId, isSaving = false)
@@ -288,13 +304,25 @@ fun ManualReleaseFormScreen(
 
     Scaffold(
         containerColor = VinylColors.AppBackground,
+        topBar = {
+            ManualReleaseFormTopBar(
+                title = if (!draftId.isNullOrBlank()) "Edit Draft" else "Add Release",
+                onClose = ::requestCancel,
+            )
+        },
         bottomBar = {
             ManualReleaseFormBottomActions(
                 primaryAction = state.formState.primaryAction,
                 isSaving = state.isSaving,
                 isLoading = state.isLoading,
                 onCancel = ::requestCancel,
-                onSave = ::saveForm,
+                onSave = {
+                    when (state.formState.primaryAction) {
+                        ManualReleasePrimaryAction.SaveRelease -> showSaveAsDialog = true
+                        ManualReleasePrimaryAction.SaveDraft -> saveForm(ManualFormSaveTarget.Draft)
+                        ManualReleasePrimaryAction.DisabledSave -> Unit
+                    }
+                },
             )
         },
     ) { innerPadding ->
@@ -326,6 +354,75 @@ fun ManualReleaseFormScreen(
             },
         )
     }
+
+    if (showSaveAsDialog) {
+        ManualSaveAsDialog(
+            isSaving = state.isSaving,
+            onDismiss = { showSaveAsDialog = false },
+            onSaveDraft = {
+                showSaveAsDialog = false
+                saveForm(ManualFormSaveTarget.Draft)
+            },
+            onSaveToCollection = {
+                showSaveAsDialog = false
+                saveForm(ManualFormSaveTarget.Collection)
+            },
+        )
+    }
+}
+
+@Composable
+private fun ManualReleaseFormTopBar(
+    title: String,
+    onClose: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(VinylColors.AppBackground)
+                .padding(horizontal = VinylSpacing.SpaceMd)
+                .padding(top = 48.dp, bottom = VinylSpacing.SpaceLg),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CloseCircleButton(onClick = onClose, contentDescription = "Close Add Release")
+        Text(
+            text = title,
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Box(Modifier.size(40.dp))
+    }
+}
+
+@Composable
+private fun ManualSaveAsDialog(
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSaveDraft: () -> Unit,
+    onSaveToCollection: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isSaving) onDismiss() },
+        title = { Text("Save as") },
+        confirmButton = {
+            TextButton(
+                enabled = !isSaving,
+                onClick = onSaveToCollection,
+            ) {
+                Text("To collection")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                enabled = !isSaving,
+                onClick = onSaveDraft,
+            ) {
+                Text("Draft")
+            }
+        },
+    )
 }
 
 @Composable
@@ -340,9 +437,10 @@ private fun ManualReleaseFormContent(
 ) {
     val scrollState = rememberScrollState()
     ScreenContent(
-        title = if (isEditingDraft) "Edit Draft" else "Add Release",
+        title = null,
         subtitle = "Enter the core release details, format, and tracklist.",
         innerPadding = innerPadding,
+        topPadding = 0.dp,
         scrollState = scrollState,
     ) {
         when {
@@ -375,6 +473,7 @@ private fun ManualReleaseIdentitySection(
     AccentCard {
         ManualTextInput(
             label = "Artist",
+            required = true,
             value =
                 formState.formData.artists
                     .firstOrNull()
@@ -388,6 +487,7 @@ private fun ManualReleaseIdentitySection(
         )
         ManualTextInput(
             label = "Title",
+            required = true,
             value = formState.formData.title.orEmpty(),
             error = formState.localFieldErrors["title"],
             onValueChange = { value ->
@@ -395,7 +495,17 @@ private fun ManualReleaseIdentitySection(
             },
         )
         ManualTextInput(
+            label = "Year",
+            value = formState.formData.year?.toString() ?: "",
+            error = formState.localFieldErrors["year"],
+            onValueChange = { value ->
+                val digitsOnly = value.filter { character -> character.isDigit() }.take(4)
+                onUpdateForm("year") { data -> data.copy(year = digitsOnly.toIntOrNull()) }
+            },
+        )
+        ManualTextInput(
             label = "Label",
+            required = true,
             value = formState.formData.label.orEmpty(),
             error = formState.localFieldErrors["label"],
             onValueChange = { value ->
@@ -420,6 +530,7 @@ private fun ManualReleaseIdentitySection(
         )
         ManualDropdown(
             label = "Genre",
+            required = true,
             value = formState.formData.genres.firstOrNull(),
             placeholder = "Select genre",
             options = MANUAL_GENRES,
@@ -435,6 +546,7 @@ private fun ManualReleaseIdentitySection(
         if (formState.formData.genres.contains("Electronic")) {
             ManualDropdown(
                 label = "Style",
+                required = true,
                 value = formState.formData.styles.firstOrNull(),
                 placeholder = "Select style",
                 options = ELECTRONIC_STYLES,
@@ -455,6 +567,7 @@ private fun ManualReleaseFormatSection(
     AccentCard {
         ManualDropdown(
             label = "Format",
+            required = true,
             value = formState.formData.format?.wireValue,
             placeholder = "Select format",
             options = ManualReleaseFormat.entries.map { it.wireValue },
@@ -473,6 +586,7 @@ private fun ManualReleaseFormatSection(
         if (formState.formData.format == ManualReleaseFormat.Vinyl) {
             ManualDropdown(
                 label = "Vinyl Size",
+                required = true,
                 value = formState.formData.vinylSize?.wireValue,
                 placeholder = "Select size",
                 options = ManualReleaseVinylSize.entries.map { it.wireValue },
@@ -482,6 +596,7 @@ private fun ManualReleaseFormatSection(
             )
             ManualDropdown(
                 label = "Vinyl Speed",
+                required = true,
                 value = formState.formData.vinylSpeed?.wireValue,
                 placeholder = "Select speed",
                 options = ManualReleaseVinylSpeed.entries.map { it.wireValue },
@@ -491,6 +606,7 @@ private fun ManualReleaseFormatSection(
             )
             ManualDropdown(
                 label = "Vinyl Discs",
+                required = true,
                 value = formState.formData.vinylDiscCount?.toString(),
                 placeholder = "Select disc count",
                 options = (1..ManualReleaseLimits.MAX_VINYL_DISC_COUNT).map { it.toString() },
@@ -674,7 +790,7 @@ private fun ManualTrackCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Icon(
-                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                 contentDescription = null,
                 tint = VinylColors.TextSecondary,
                 modifier = Modifier.size(22.dp),
@@ -684,12 +800,14 @@ private fun ManualTrackCard(
                     icon = Icons.Filled.Delete,
                     contentDescription = "Delete track",
                     onClick = onDelete,
+                    iconTint = VinylColors.AccentOrange,
                 )
             }
         }
         if (expanded) {
             ManualTextInput(
                 label = "Track Title",
+                required = true,
                 value = track.title.orEmpty(),
                 error = fieldErrors["tracklist.$index.title"],
                 onValueChange = { value -> onUpdate(track.copy(title = value.toOptionalText())) },
@@ -740,22 +858,40 @@ private fun ManualTrackCard(
 }
 
 @Composable
+private fun ManualFieldLabel(
+    label: String,
+    required: Boolean,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        if (required) {
+            Text(
+                text = "*",
+                color = VinylColors.AccentOrange,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ManualTextInput(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     error: String? = null,
+    required: Boolean = false,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
     ) {
-        Text(
-            text = label,
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.labelMedium,
-        )
+        ManualFieldLabel(label = label, required = required)
         Box(
             modifier =
                 Modifier
@@ -800,57 +936,88 @@ private fun ManualDropdown(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     error: String? = null,
+    required: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var selectorWidth by remember { mutableStateOf(Dp.Unspecified) }
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXs),
     ) {
-        Text(
-            text = label,
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.labelMedium,
-        )
-        Box {
-            Box(
+        ManualFieldLabel(label = label, required = required)
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coordinates ->
+                        selectorWidth = with(density) { coordinates.size.width.toDp() }
+                    },
+        ) {
+            Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
                         .clip(VinylShapes.Card)
-                        .background(VinylColors.SurfaceSecondary)
+                        .background(VinylColors.SurfacePrimary)
                         .border(1.dp, if (error == null) VinylColors.BorderDefault else VinylColors.AccentOrange, VinylShapes.Card)
                         .clickable(
                             onClickLabel = label,
                             role = Role.Button,
-                            onClick = { expanded = true },
-                        ).padding(horizontal = VinylSpacing.SpaceLg),
-                contentAlignment = Alignment.CenterStart,
+                            onClick = { expanded = !expanded },
+                        ).padding(horizontal = VinylSpacing.SpaceMd)
+                        .height(56.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
+                    modifier = Modifier.weight(1f),
                     text = value?.takeIf { it.isNotBlank() } ?: placeholder,
                     color = if (value.isNullOrBlank()) VinylColors.TextSecondary else VinylColors.TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = null,
+                    tint = VinylColors.TextSecondary,
+                    modifier = Modifier.size(28.dp),
+                )
             }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier =
-                    Modifier
-                        .background(VinylColors.SurfacePrimary)
-                        .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
-            ) {
-                options.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option, color = VinylColors.TextPrimary) },
-                        onClick = {
-                            expanded = false
-                            onSelect(option)
-                        },
-                    )
+            if (expanded) {
+                Popup(
+                    alignment = Alignment.TopStart,
+                    offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
+                    onDismissRequest = { expanded = false },
+                    properties = PopupProperties(focusable = true),
+                ) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 240.dp)
+                                .heightIn(max = 320.dp)
+                                .shadow(4.dp, VinylShapes.Card)
+                                .clip(VinylShapes.Card)
+                                .background(VinylColors.SurfacePrimary)
+                                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                                .verticalScroll(rememberScrollState()),
+                    ) {
+                        options.forEachIndexed { index, option ->
+                            ManualDropdownOptionRow(
+                                label = option,
+                                selected = option == value,
+                                alternate = index % 2 == 0,
+                                onClickLabel = "Select $option",
+                                onClick = {
+                                    expanded = false
+                                    focusManager.clearFocus(force = true)
+                                    onSelect(option)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -969,7 +1136,7 @@ private fun ManualReleaseFormBottomActions(
                     isSaving -> "Saving..."
                     primaryAction == ManualReleasePrimaryAction.DisabledSave -> "Save"
                     primaryAction == ManualReleasePrimaryAction.SaveDraft -> "Save Draft"
-                    else -> "Save Release"
+                    else -> "Save as"
                 },
             enabled = !isLoading && !isSaving && primaryAction != ManualReleasePrimaryAction.DisabledSave,
             onClick = onSave,
@@ -1041,6 +1208,60 @@ private fun ManualFormSaveButton(
             color = VinylColors.TextOnAccent,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ManualDropdownOptionRow(
+    label: String,
+    selected: Boolean,
+    alternate: Boolean,
+    onClickLabel: String,
+    onClick: () -> Unit,
+) {
+    val rowColor = if (alternate) VinylColors.SurfacePrimary else VinylColors.SurfaceSecondary
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(rowColor)
+                .clickable(
+                    role = Role.RadioButton,
+                    onClickLabel = onClickLabel,
+                    onClick = onClick,
+                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) VinylColors.AccentGreen else VinylColors.SurfacePrimary)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) VinylColors.AccentGreen else VinylColors.BorderDefault,
+                        shape = CircleShape,
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = VinylColors.SurfacePrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        Text(
+            text = label,
+            color = if (selected) VinylColors.AccentGreen else VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
     }

@@ -768,7 +768,7 @@ Returns stored release metadata for an internal release ID. The endpoint support
 }
 ```
 
-Manual releases return the same response shape with `discogs_release_id: 0`, `year: null`, `has_full_discogs_info: false`, empty Discogs artist metadata, and the manual tracklist supplied by the user. Android must treat `discogs_release_id <= 0` as "no Discogs page".
+Manual releases return the same response shape with `discogs_release_id: 0`, the saved optional `year`, `has_full_discogs_info: false`, empty Discogs artist metadata, and the manual tracklist supplied by the user. Android must treat `discogs_release_id <= 0` as "no Discogs page".
 
 `has_full_discogs_info` is `true` when the backend has a cached full Discogs release payload for a Discogs-backed release. Android uses `false` Discogs-backed records to auto-import full release data on open, while **Sync release** stays available for confirmed manual refreshes.
 
@@ -844,6 +844,7 @@ Manual draft and save requests use this nested `form_data` shape.
 {
   "artists": ["Artist"],
   "title": "Release Title",
+  "year": 1998,
   "label": "Label Name",
   "catalog_number": "CAT-001",
   "barcode": "1234567890123",
@@ -878,6 +879,8 @@ Supported enums:
 | `vinyl_speed` | `33 1/3`, `45`, `78`, `Other` |
 | `credits[].role` | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` |
 
+`year` is optional and must be an integer between `1900` and `2100` when provided.
+
 ## GET /manual-releases/drafts
 
 Lists the authenticated user's manual release drafts.
@@ -891,6 +894,7 @@ Lists the authenticated user's manual release drafts.
       "id": "draft-uuid",
       "artist": "Artist",
       "title": "Release Title",
+      "year": 1998,
       "label": "Label Name",
       "catalog_number": "CAT-001",
       "format": "Vinyl",
@@ -914,10 +918,11 @@ Creates a draft for partial manual form state.
 
 ```json
 {
-  "form_data": {
-    "artists": ["Artist"],
-    "title": "Partial Title"
-  },
+    "form_data": {
+      "artists": ["Artist"],
+      "title": "Partial Title",
+      "year": 1998
+    },
   "completion_state": {
     "required_complete": false
   }
@@ -990,10 +995,11 @@ Save directly from form data:
 
 ```json
 {
-  "form_data": {
-    "artists": ["Artist"],
-    "title": "Release Title",
-    "label": "Label Name",
+    "form_data": {
+      "artists": ["Artist"],
+      "title": "Release Title",
+      "year": 1998,
+      "label": "Label Name",
     "format": "Vinyl",
     "vinyl_size": "12",
     "vinyl_speed": "33 1/3",
@@ -1285,7 +1291,7 @@ Searches records already present in the active internal collection. This powers 
 
 Search includes Discogs-backed collection records and user-owned manual releases. Artist search matches the local `artist` field and, when a full release payload is cached, the raw Discogs JSON. That lets hydrated records match track-level or remix artist metadata without fetching every collection item during bulk sync.
 
-Manual releases match `artist`, `title`, `catalog`, and normalized `barcode` fields. They are excluded when `year` is present because manual releases do not store a release year yet.
+Manual releases match `artist`, `title`, `catalog`, normalized `barcode`, and optional `year` fields.
 
 ### Query Parameters
 

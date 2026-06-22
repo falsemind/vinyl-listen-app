@@ -401,7 +401,7 @@ Drafts support list/create/update/delete for the authenticated user. Each accoun
 
 ### Save flow
 
-Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Draft-backed saves read the source draft with `FOR UPDATE` and consume it in the same transaction, so concurrent saves for the same draft cannot create duplicate manual releases. Validation covers required artist/title/label/format/genre data, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
+Saving a manual release validates the complete form, creates a user-owned `manual_releases` row, and removes the source draft when the request saves from an existing draft. Draft-backed saves read the source draft with `FOR UPDATE` and consume it in the same transaction, so concurrent saves for the same draft cannot create duplicate manual releases. Validation covers required artist/title/label/format/genre data, optional release year bounds, Electronic style requirements, vinyl size/speed/disc count, tracklist limits, supported track credit roles, barcode format, duration bounds, and shared field length limits.
 
 Manual releases remain separate from Discogs-backed releases until a future replacement workflow explicitly maps a user's manual submission to a richer Discogs release.
 

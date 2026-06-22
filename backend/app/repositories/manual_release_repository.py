@@ -131,14 +131,14 @@ class ManualReleaseRepository:
         limit: int,
         offset: int,
     ) -> list[ManualRelease]:
-        if year is not None:
-            return []
-
         query = db.query(ManualRelease).filter(
             ManualRelease.user_id == user_id,
             ManualRelease.in_collection.is_(True),
         )
         has_filter = False
+        if year is not None:
+            has_filter = True
+            query = query.filter(ManualRelease.year == year)
         if artist and artist.strip():
             has_filter = True
             query = query.filter(ManualRelease.artist.ilike(f"%{artist.strip()}%"))
@@ -332,6 +332,7 @@ class ManualReleaseRepository:
             user_id=user_id,
             artist=", ".join(form_data.artists),
             title=form_data.title or "",
+            year=form_data.year,
             label=form_data.label or "",
             catalog_number=form_data.catalog_number,
             barcode=_normalize_barcode(form_data.barcode),
@@ -343,6 +344,7 @@ class ManualReleaseRepository:
             identifiers={
                 "catalog_number": form_data.catalog_number,
                 "barcode": _normalize_barcode(form_data.barcode),
+                "year": form_data.year,
             },
             format_details={
                 "format": form_data.format.value if form_data.format else None,

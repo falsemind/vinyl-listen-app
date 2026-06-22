@@ -342,6 +342,7 @@ backend/alembic/
     ├── c8d9e0f1a2b3_scope_async_ai_spotify.py
     ├── ab12cd34ef56_add_provider_integrations.py
     ├── c4d5e6f7a8b9_add_manual_release_schema.py
+    ├── e7f8a9b0c1d2_add_manual_release_year.py
     └── eed6974773b8_init.py
 
 backend/scripts/

@@ -1352,6 +1352,7 @@ internal fun JSONObject.toManualReleaseDraft(): ManualReleaseDraft {
         id = summary.id,
         artist = summary.artist,
         title = summary.title,
+        year = summary.year,
         label = summary.label,
         catalogNumber = summary.catalogNumber,
         format = summary.format,
@@ -1385,6 +1386,7 @@ private fun JSONObject.toManualReleaseDraftSummary(): ManualReleaseDraftSummary 
         id = getString("id"),
         artist = optNullableString("artist"),
         title = optNullableString("title"),
+        year = optNullableInt("year"),
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
         format = optNullableString("format"),
@@ -1402,6 +1404,7 @@ private fun JSONObject.toManualReleaseFormData(): ManualReleaseFormData =
     ManualReleaseFormData(
         artists = optJSONArray("artists").orEmpty().mapStrings(),
         title = optNullableString("title"),
+        year = optNullableInt("year"),
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
         barcode = optNullableString("barcode"),
@@ -1616,6 +1619,7 @@ private fun ManualReleaseFormData.toJson(): JSONObject =
     JSONObject()
         .put("artists", artists.toJsonArray())
         .putNullable("title", title)
+        .putNullable("year", year)
         .putNullable("label", label)
         .putNullable("catalog_number", catalogNumber)
         .putNullable("barcode", barcode)

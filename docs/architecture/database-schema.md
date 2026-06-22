@@ -387,6 +387,7 @@ Manual releases can later be replaced by a user-confirmed Discogs match, but Pha
 | user_id | UUID | Required owner; references `user_accounts.id` with `ON DELETE CASCADE` |
 | artist | VARCHAR(200) | Display artist summary |
 | title | VARCHAR(200) | Release title |
+| year | INTEGER | Optional release year |
 | label | VARCHAR(200) | Display label summary |
 | catalog_number | VARCHAR(80) | Optional matching hint |
 | barcode | VARCHAR(14) | Optional normalized barcode |
@@ -1194,7 +1195,9 @@ access token from configuration.
 
 Manual submissions do not write to `releases`. Saving a manual release inserts
 or updates user-owned rows in `manual_release_drafts` until the form is complete,
-then creates a `manual_releases` row owned by the authenticated user.
+then creates a `manual_releases` row owned by the authenticated user. Optional
+release year is stored on the manual release row and can be used by collection
+search.
 
 ---
 

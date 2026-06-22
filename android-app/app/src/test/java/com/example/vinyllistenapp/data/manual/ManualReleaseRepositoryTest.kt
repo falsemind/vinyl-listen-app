@@ -216,6 +216,7 @@ class ManualReleaseRepositoryTest {
             id = id,
             artist = formData.artists.firstOrNull(),
             title = formData.title,
+            year = formData.year,
             label = formData.label,
             catalogNumber = formData.catalogNumber,
             format = formData.format?.wireValue,

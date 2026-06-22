@@ -8,6 +8,8 @@ object ManualReleaseLimits {
     const val MAX_ARTISTS = 20
     const val MAX_TRACKS = 100
     const val MAX_VINYL_DISC_COUNT = 6
+    const val MIN_RELEASE_YEAR = 1900
+    const val MAX_RELEASE_YEAR = 2100
     const val ARTIST_NAME_MAX_LENGTH = 200
     const val TITLE_MAX_LENGTH = 200
     const val LABEL_MAX_LENGTH = 200
@@ -94,6 +96,7 @@ data class ManualReleaseTrackInput(
 data class ManualReleaseFormData(
     val artists: List<String> = emptyList(),
     val title: String? = null,
+    val year: Int? = null,
     val label: String? = null,
     val catalogNumber: String? = null,
     val barcode: String? = null,
@@ -114,6 +117,7 @@ data class ManualReleaseDraftSummary(
     val id: String,
     val artist: String?,
     val title: String?,
+    val year: Int?,
     val label: String?,
     val catalogNumber: String?,
     val format: String?,
@@ -126,6 +130,7 @@ data class ManualReleaseDraft(
     val id: String,
     val artist: String?,
     val title: String?,
+    val year: Int?,
     val label: String?,
     val catalogNumber: String?,
     val format: String?,
@@ -175,6 +180,14 @@ data class ManualReleaseFormState(
                 }
                 if ((formData.title?.length ?: 0) > ManualReleaseLimits.TITLE_MAX_LENGTH) {
                     put("title", "Title must be ${ManualReleaseLimits.TITLE_MAX_LENGTH} characters or fewer.")
+                }
+                formData.year?.let { year ->
+                    if (year !in ManualReleaseLimits.MIN_RELEASE_YEAR..ManualReleaseLimits.MAX_RELEASE_YEAR) {
+                        put(
+                            "year",
+                            "Year must be between ${ManualReleaseLimits.MIN_RELEASE_YEAR} and ${ManualReleaseLimits.MAX_RELEASE_YEAR}.",
+                        )
+                    }
                 }
                 if ((formData.label?.length ?: 0) > ManualReleaseLimits.LABEL_MAX_LENGTH) {
                     put("label", "Label must be ${ManualReleaseLimits.LABEL_MAX_LENGTH} characters or fewer.")
@@ -272,6 +285,7 @@ data class ManualReleaseFormState(
         get() =
             formData.artists.any { it.isNotBlank() } ||
                 !formData.title.isNullOrBlank() ||
+                formData.year != null ||
                 !formData.label.isNullOrBlank() ||
                 !formData.catalogNumber.isNullOrBlank() ||
                 !formData.barcode.isNullOrBlank() ||

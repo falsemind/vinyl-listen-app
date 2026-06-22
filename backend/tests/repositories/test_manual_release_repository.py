@@ -101,6 +101,7 @@ def test_manual_release_save_preserves_collection_and_history_boundaries(
     form_data = ManualReleaseFormData(
         artists=["Manual Artist"],
         title="Private Press",
+        year=1998,
         label="Living Room Records",
         catalog_number="LR-001",
         barcode="1234 5678",
@@ -125,7 +126,34 @@ def test_manual_release_save_preserves_collection_and_history_boundaries(
     assert manual_release.collection_added_at is not None
     assert manual_release.collection_removed_at is None
     assert manual_release.artist == "Manual Artist"
+    assert manual_release.year == 1998
     assert manual_release.barcode == "12345678"
+    assert manual_release.identifiers["year"] == 1998
+    assert repository.search_collection_releases(
+        db_session,
+        user_id="user-a",
+        year=1998,
+        artist=None,
+        title=None,
+        catalog=None,
+        barcode=None,
+        limit=10,
+        offset=0,
+    ) == [manual_release]
+    assert (
+        repository.search_collection_releases(
+            db_session,
+            user_id="user-a",
+            year=1999,
+            artist=None,
+            title=None,
+            catalog=None,
+            barcode=None,
+            limit=10,
+            offset=0,
+        )
+        == []
+    )
 
     assert _count_rows(db_session, "manual_releases") == 1
     assert _count_rows(db_session, "manual_release_drafts") == 0
@@ -151,6 +179,7 @@ def _create_manual_release_tables(connection) -> None:
             user_id TEXT NOT NULL,
             artist TEXT NOT NULL,
             title TEXT NOT NULL,
+            year INTEGER,
             label TEXT NOT NULL,
             catalog_number TEXT,
             barcode TEXT,

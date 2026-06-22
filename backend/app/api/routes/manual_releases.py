@@ -195,6 +195,7 @@ def _draft_summary_response(draft: ManualReleaseDraft) -> ManualReleaseDraftSumm
         id=draft.id,
         artist=_first_string(form_data.get("artists")),
         title=form_data.get("title"),
+        year=form_data.get("year"),
         label=form_data.get("label"),
         catalog_number=form_data.get("catalog_number"),
         format=form_data.get("format"),

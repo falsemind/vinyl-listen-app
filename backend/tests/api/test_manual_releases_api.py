@@ -95,6 +95,7 @@ def test_list_manual_release_drafts_returns_user_owned_summaries() -> None:
     assert response.status_code == 200
     assert service.user_ids == ["test-user"]
     assert response.json()["items"][0]["id"] == "draft-1"
+    assert response.json()["items"][0]["year"] == 1998
     assert response.json()["remaining_slots"] == 4
 
 
@@ -128,6 +129,7 @@ def test_get_manual_release_draft_returns_full_draft() -> None:
     assert response.json()["id"] == "draft-1"
     assert response.json()["form_data"]["artists"] == ["Artist"]
     assert response.json()["form_data"]["title"] == "Title"
+    assert response.json()["form_data"]["year"] == 1998
     assert service.user_ids == ["test-user"]
 
 
@@ -243,7 +245,14 @@ def _draft(
     now = datetime(2026, 6, 21, 12, 0, tzinfo=UTC)
     return SimpleNamespace(
         id=id,
-        form_data=form_data or {"artists": ["Artist"], "title": "Title", "label": "Label", "format": "Vinyl"},
+        form_data=form_data
+        or {
+            "artists": ["Artist"],
+            "title": "Title",
+            "year": 1998,
+            "label": "Label",
+            "format": "Vinyl",
+        },
         completion_state=completion_state,
         cover_thumbnail_url=None,
         cover_image_url=None,

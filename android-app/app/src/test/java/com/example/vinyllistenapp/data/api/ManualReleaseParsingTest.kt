@@ -27,6 +27,7 @@ class ManualReleaseParsingTest {
                   "id": "draft-1",
                   "artist": "Gradient Sync",
                   "title": "Night Plates",
+                  "year": 1998,
                   "label": "Room Tone",
                   "catalog_number": "RT-12",
                   "format": "Vinyl",
@@ -39,6 +40,7 @@ class ManualReleaseParsingTest {
                   "form_data": {
                     "artists": ["Gradient Sync"],
                     "title": "Night Plates",
+                    "year": 1998,
                     "label": "Room Tone",
                     "catalog_number": "RT-12",
                     "barcode": "1234567890123",
@@ -71,6 +73,7 @@ class ManualReleaseParsingTest {
 
         assertEquals("draft-1", draft.id)
         assertEquals("Gradient Sync", draft.artist)
+        assertEquals(1998, draft.year)
         assertEquals("RT-12", draft.catalogNumber)
         assertTrue(draft.completionState?.requiredComplete == true)
         val expectedCoverUrl =
@@ -80,6 +83,7 @@ class ManualReleaseParsingTest {
         assertEquals(expectedCoverUrl, draft.coverImageUrl)
         assertEquals("image/jpeg", draft.coverContentType)
         assertEquals(1024, draft.coverSizeBytes)
+        assertEquals(1998, draft.formData.year)
         assertEquals(ManualReleaseFormat.Vinyl, draft.formData.format)
         assertEquals(ManualReleaseVinylSize.TwelveInch, draft.formData.vinylSize)
         assertEquals(ManualReleaseVinylSpeed.ThirtyThree, draft.formData.vinylSpeed)
@@ -110,6 +114,7 @@ class ManualReleaseParsingTest {
                       "id": "draft-1",
                       "artist": "Gradient Sync",
                       "title": "Night Plates",
+                      "year": 1998,
                       "label": "Room Tone",
                       "catalog_number": "RT-12",
                       "format": "Vinyl",
@@ -128,6 +133,7 @@ class ManualReleaseParsingTest {
 
         assertEquals(1, list.items.size)
         assertEquals(expectedCoverUrl, list.items.first().coverThumbnailUrl)
+        assertEquals(1998, list.items.first().year)
         assertEquals(5, list.limit)
         assertEquals(4, list.remainingSlots)
         assertFalse(

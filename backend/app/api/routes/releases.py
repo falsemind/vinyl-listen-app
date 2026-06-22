@@ -467,7 +467,7 @@ def _manual_release_response(release: ManualRelease) -> ReleaseResponse:
         discogs_release_id=0,
         artist=release.artist,
         title=release.title,
-        year=None,
+        year=release.year,
         format=release.format,
         label=release.label,
         catalog_number=release.catalog_number,

@@ -11,6 +11,8 @@ from app.services.manual_release_policy import (
     MAX_MANUAL_RELEASE_COVER_BYTES,
     MAX_MANUAL_RELEASE_DRAFTS,
     MAX_MANUAL_RELEASE_TRACKS,
+    MAX_RELEASE_YEAR,
+    MIN_RELEASE_YEAR,
     TITLE_LIMIT,
     TRACK_CREDIT_NAME_LIMIT,
     TRACK_DURATION_LIMIT,
@@ -84,6 +86,7 @@ class ManualReleaseTrackInput(ManualReleaseBaseModel):
 class ManualReleaseFormData(ManualReleaseBaseModel):
     artists: list[str] = Field(default_factory=list, max_length=MAX_MANUAL_RELEASE_ARTISTS)
     title: str | None = Field(default=None, max_length=TITLE_LIMIT.max_length)
+    year: int | None = Field(default=None, ge=MIN_RELEASE_YEAR, le=MAX_RELEASE_YEAR)
     label: str | None = Field(default=None, max_length=LABEL_NAME_LIMIT.max_length)
     catalog_number: str | None = Field(default=None, max_length=CATALOG_NUMBER_LIMIT.max_length)
     barcode: str | None = Field(default=None, max_length=32)
@@ -110,6 +113,7 @@ class ManualReleaseDraftSummaryResponse(BaseModel):
     id: str
     artist: str | None
     title: str | None
+    year: int | None
     label: str | None
     catalog_number: str | None
     format: str | None

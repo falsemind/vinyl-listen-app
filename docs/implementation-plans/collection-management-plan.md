@@ -503,6 +503,7 @@ Replace the placeholder manual-entry screen with a small, app-owned release crea
 | --- | --- | --- | --- |
 | Artist | Yes | Optional | Support one or more display artists; model as a list even if the first UI starts simple. |
 | Title | Yes | Optional | Release title, not collection nickname. |
+| Year | Optional | Optional | Store as a bounded integer matching Discogs-style release year for later matching/search. |
 | Label | Yes | Optional | Store display label name separately from catalog number. |
 | Catalog number | Optional | Optional | Important matching hint for later Discogs search. |
 | Barcode | Optional | Optional | Normalize digits for matching, preserve display value if needed. |
@@ -529,6 +530,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | --- | --- | --- | --- | --- |
 | Artist name | string list | 1-20 artists; 1-200 chars each | Require at least one artist for release save. | Validate list count and per-name length before enabling **Save Release**. |
 | Title | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
+| Year | integer | 1900-2100 | Optional; reject non-integer values and years outside the supported range. | Use numeric input and block out-of-range values before save. |
 | Label name | string | 1-200 chars | Required for release save. | Validate after trim and show inline error. |
 | Catalog number | string | 0-80 chars | Optional; preserve display value and store normalized value for matching. | Warn/block over-limit values. |
 | Barcode | string | 0 or 8-14 digits after normalization | Optional; strip spaces/hyphens for normalized value. | Allow common pasted formats, then validate normalized digits. |
@@ -553,7 +555,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 - Screen subheader explains that the user can manually add releases to the collection and save or manage drafts.
 - Show up to 5 saved manual release draft cards.
 - Draft cards should be about double the height of the Recent Session cards so they can show more release detail.
-- Draft cards should show the strongest available summary fields: cover thumbnail when present, artist, title, label/catalog number, format, draft updated time, and required-field completion state.
+- Draft cards should show the strongest available summary fields: cover thumbnail when present, artist, title, optional year, label/catalog number, format, draft updated time, and required-field completion state.
 - Draft cards include a top-right delete icon button.
 - Tapping a draft delete button opens a confirmation dialog before deleting the draft.
 - Place an **Add Release** CTA in the lower-right corner, following the existing CTA treatment used elsewhere in the app.
@@ -654,7 +656,7 @@ Current Phase 10C status:
 | Task | Effort | Depends On | Done Criteria |
 | --- | --- | --- | --- |
 | Build overflow form shell | 4-6h | Phase 10D | Form opens as an overflow screen with bottom actions matching Log Session patterns. |
-| Add release identity inputs | 4-8h | Form shell | Artist, title, label, catalog number, barcode, genre, and Electronic style inputs validate in UI state. |
+| Add release identity inputs | 4-8h | Form shell | Artist, title, optional year, label, catalog number, barcode, genre, and Electronic style inputs validate in UI state. |
 | Add format controls | 4-6h | Form shell | Format dropdown supports `Vinyl`, `CD`, `Tape`, `Other`; vinyl exposes size, speed, and disc count. |
 | Add tracklist editor | 6-8h | Form shell | User can add at least one track title and optional track role credits from the constrained dropdown. |
 | Add button state behavior | 2-4h | Form validation | Empty form shows disabled **Save**; partial valid input shows **Save Draft**; complete valid input shows **Save Release**. |
