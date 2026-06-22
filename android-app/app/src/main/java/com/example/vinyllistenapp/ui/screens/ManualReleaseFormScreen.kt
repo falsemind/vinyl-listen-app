@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,9 +15,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,7 +50,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -92,9 +97,48 @@ import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
 import kotlinx.coroutines.launch
 
-private val MANUAL_GENRES = listOf("Electronic", "Rock", "Jazz", "Hip Hop", "Pop", "Other")
-private val ELECTRONIC_STYLES = listOf("Techno", "House", "Ambient", "Electro", "Drum & Bass", "Other")
+private val MANUAL_GENRES =
+    listOf(
+        "Blues",
+        "Classical",
+        "Electronic",
+        "Folk, World, Country",
+        "Funk",
+        "Hip Hop",
+        "Jazz",
+        "Pop",
+        "Reggae",
+        "Rock",
+        "Soul",
+        "Other",
+    )
+private val ELECTRONIC_STYLES =
+    listOf(
+        "Acid",
+        "Ambient",
+        "Breakbeat",
+        "Disco",
+        "Downtempo",
+        "Drum & Bass",
+        "Dub",
+        "Dub Techno",
+        "Dubstep",
+        "Electro",
+        "Experimental",
+        "Hardcore",
+        "House",
+        "IDM",
+        "Jungle",
+        "Leftfield",
+        "Minimal",
+        "Techno",
+        "Trance",
+        "UK Garage",
+        "Other",
+    )
 private const val MAX_EMPTY_TRACK_FORMS = 2
+private const val MANUAL_DROPDOWN_MAX_VISIBLE_ITEMS = 10
+private val MANUAL_DROPDOWN_OPTION_HEIGHT = 44.dp
 
 private data class ManualReleaseFormUiState(
     val formState: ManualReleaseFormState = ManualReleaseFormState(),
@@ -987,34 +1031,52 @@ private fun ManualDropdown(
                 )
             }
             if (expanded) {
+                val dropdownScrollState = rememberScrollState()
+                val dropdownHeight =
+                    MANUAL_DROPDOWN_OPTION_HEIGHT * options.size.coerceAtMost(MANUAL_DROPDOWN_MAX_VISIBLE_ITEMS)
                 Popup(
                     alignment = Alignment.TopStart,
                     offset = IntOffset(x = 0, y = with(density) { 62.dp.roundToPx() }),
                     onDismissRequest = { expanded = false },
                     properties = PopupProperties(focusable = true),
                 ) {
-                    Column(
+                    Box(
                         modifier =
                             Modifier
                                 .width(selectorWidth.takeIf { it != Dp.Unspecified } ?: 240.dp)
-                                .heightIn(max = 320.dp)
+                                .height(dropdownHeight)
                                 .shadow(4.dp, VinylShapes.Card)
                                 .clip(VinylShapes.Card)
                                 .background(VinylColors.SurfacePrimary)
-                                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                                .verticalScroll(rememberScrollState()),
+                                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card),
                     ) {
-                        options.forEachIndexed { index, option ->
-                            ManualDropdownOptionRow(
-                                label = option,
-                                selected = option == value,
-                                alternate = index % 2 == 0,
-                                onClickLabel = "Select $option",
-                                onClick = {
-                                    expanded = false
-                                    focusManager.clearFocus(force = true)
-                                    onSelect(option)
-                                },
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(dropdownScrollState),
+                        ) {
+                            options.forEachIndexed { index, option ->
+                                ManualDropdownOptionRow(
+                                    label = option,
+                                    selected = option == value,
+                                    alternate = index % 2 == 0,
+                                    onClickLabel = "Select $option",
+                                    onClick = {
+                                        expanded = false
+                                        focusManager.clearFocus(force = true)
+                                        onSelect(option)
+                                    },
+                                )
+                            }
+                        }
+                        if (options.size > MANUAL_DROPDOWN_MAX_VISIBLE_ITEMS) {
+                            ManualDropdownScrollbar(
+                                scrollState = dropdownScrollState,
+                                modifier =
+                                    Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 4.dp, top = 6.dp, bottom = 6.dp),
                             )
                         }
                     }
@@ -1023,6 +1085,38 @@ private fun ManualDropdown(
         }
         error?.let { ManualFieldError(it) }
     }
+}
+
+@Composable
+private fun ManualDropdownScrollbar(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .drawBehind {
+                    val maxScroll = scrollState.maxValue
+                    if (maxScroll <= 0) return@drawBehind
+
+                    val viewportHeight = size.height
+                    val contentHeight = viewportHeight + maxScroll
+                    val thumbHeight =
+                        ((viewportHeight * viewportHeight) / contentHeight)
+                            .coerceIn(24.dp.toPx(), viewportHeight)
+                    val scrollFraction = scrollState.value.toFloat() / maxScroll
+                    val thumbTop = (viewportHeight - thumbHeight) * scrollFraction
+
+                    drawRoundRect(
+                        color = VinylColors.TextSecondary.copy(alpha = 0.65f),
+                        topLeft = Offset(0f, thumbTop),
+                        size = Size(size.width, thumbHeight),
+                        cornerRadius = CornerRadius(size.width / 2f, size.width / 2f),
+                    )
+                },
+    )
 }
 
 @Composable
@@ -1226,12 +1320,13 @@ private fun ManualDropdownOptionRow(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .height(MANUAL_DROPDOWN_OPTION_HEIGHT)
                 .background(rowColor)
                 .clickable(
                     role = Role.RadioButton,
                     onClickLabel = onClickLabel,
                     onClick = onClick,
-                ).padding(horizontal = VinylSpacing.SpaceMd, vertical = VinylSpacing.SpaceSm),
+                ).padding(horizontal = VinylSpacing.SpaceMd),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
     ) {
