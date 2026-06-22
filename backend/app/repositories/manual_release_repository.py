@@ -286,6 +286,31 @@ class ManualReleaseRepository:
             db.flush()
         return draft
 
+    def update_draft_cover(
+        self,
+        db: Session,
+        draft: ManualReleaseDraft,
+        *,
+        cover_storage_key: str,
+        cover_image_url: str,
+        cover_thumbnail_url: str,
+        cover_content_type: str,
+        cover_size_bytes: int,
+        commit: bool = True,
+    ) -> ManualReleaseDraft:
+        draft.cover_storage_key = cover_storage_key
+        draft.cover_image_url = cover_image_url
+        draft.cover_thumbnail_url = cover_thumbnail_url
+        draft.cover_content_type = cover_content_type
+        draft.cover_size_bytes = cover_size_bytes
+        db.add(draft)
+        if commit:
+            db.commit()
+            db.refresh(draft)
+        else:
+            db.flush()
+        return draft
+
     def delete_draft(self, db: Session, draft: ManualReleaseDraft, *, commit: bool = True) -> None:
         db.delete(draft)
         if commit:

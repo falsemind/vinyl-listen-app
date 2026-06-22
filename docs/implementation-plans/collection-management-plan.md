@@ -544,7 +544,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | Track credit name | string | 1-200 chars when role is present | Required when a credit role is added. | Validate paired role/name rows. |
 | Genre | enum | Small app-defined list | Required for release save. | Use dropdown only. |
 | Style | enum | Small app-defined Electronic style list | Required only when genre is `Electronic`. | Show and require only for Electronic. |
-| Cover image | binary file | One file; `JPEG`, `PNG`, or `WebP`; max 3 MB | Validate MIME/content type and size before storing. | Validate picker metadata before upload when available. |
+| Cover image | binary file | One file; `JPEG`, `PNG`, or `WebP`; max 500 KB; longest side 100..1200 px | Validate MIME/content type, size, readable image data, and dimensions before storing. | Validate picker metadata and image bounds before upload when available. |
 
 ### Manual Submissions Screen Requirements
 
@@ -561,7 +561,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 - If 5 drafts already exist, tapping **Add Release** shows a dialog explaining that only 5 drafts are allowed and the user must delete or complete a draft before starting another.
 - Tapping an existing draft opens the same overflow form populated with the draft values.
 - The overflow form contains all manual release inputs, dropdowns, tracklist editing, vinyl size/speed/disc count controls, and cover image upload.
-- Cover upload accepts one image only. First implementation should allow `JPEG`, `PNG`, and `WebP`, with a 3 MB maximum unless backend storage constraints require a smaller limit.
+- Cover upload accepts one image only. First implementation should allow `JPEG`, `PNG`, and `WebP`, max 500 KB, with longest side between 100 px and 1200 px.
 - Cover validation errors should be shown before save/upload when possible and returned from the backend as field-level errors when server validation fails.
 
 ### Manual Form Bottom Actions
@@ -601,7 +601,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | Define shared validation constants | 2-4h | Input validation requirements | Backend exposes or documents the same limits Android uses for strings, counts, enums, barcode, durations, and cover upload. |
 | Add manual draft persistence | 4-8h | Persistence shape | Drafts store partial form state separately from committed collection releases and include draft timestamps. |
 | Add draft cap enforcement | 2-4h | Draft persistence | Backend prevents creating a sixth draft and returns a typed validation error. |
-| Add cover image storage policy | 4-6h | Persistence shape | Backend accepts one cover image, validates `JPEG`/`PNG`/`WebP`, enforces 3 MB max, and stores a reusable cover reference. |
+| Add cover image storage policy | 4-6h | Persistence shape | Backend accepts one cover image, validates `JPEG`/`PNG`/`WebP`, enforces 500 KB max and 100..1200 px longest-side bounds, and stores a reusable cover reference. |
 | Add migration and rollback notes | 2-4h | Schema decisions | Migration applies cleanly and documents how manual release/draft data maps to existing release tables. |
 
 ### Phase 10B: Backend Manual Entry API Contracts
@@ -665,7 +665,7 @@ Current Phase 10C status:
 | Task | Effort | Depends On | Done Criteria |
 | --- | --- | --- | --- |
 | Add cover picker and preview | 4-6h | Form shell | User can choose one cover image and see a preview before saving. |
-| Add client-side cover validation | 2-4h | Cover picker | Android blocks unsupported file types and files over 3 MB before upload when metadata is available. |
+| Add client-side cover validation | 2-4h | Cover picker | Android blocks unsupported file types, files over 500 KB, and images outside 100..1200 px longest-side bounds before upload when metadata is available. |
 | Wire **Save Draft** | 4-6h | Form state + repository | Partial form saves a draft, closes the form, and shows/updates the draft card. |
 | Wire **Save Release** | 4-8h | Backend save contract | Complete form creates the manual release, adds it to collection, removes the draft when applicable, opens Record Details, and keeps the back path returning to Collection. |
 | Add Android verification | 4-6h | Save flows | Focused tests or compile checks cover draft hub state, form action state, validation, and save response handling. |

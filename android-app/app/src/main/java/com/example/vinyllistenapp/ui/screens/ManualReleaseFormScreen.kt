@@ -1,6 +1,7 @@
 package com.example.vinyllistenapp.ui.screens
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -105,6 +106,8 @@ private sealed class ManualFormSaveOutcome {
 private data class SelectedCoverMetadata(
     val contentType: String?,
     val sizeBytes: Int?,
+    val widthPx: Int?,
+    val heightPx: Int?,
 )
 
 @Composable
@@ -139,6 +142,8 @@ fun ManualReleaseFormScreen(
                             coverUri = uri.toString(),
                             coverContentType = metadata.contentType,
                             coverSizeBytes = metadata.sizeBytes,
+                            coverWidthPx = metadata.widthPx,
+                            coverHeightPx = metadata.heightPx,
                             dirtyFields = state.formState.dirtyFields + "cover",
                             fieldErrors = emptyMap(),
                         ),
@@ -247,6 +252,8 @@ fun ManualReleaseFormScreen(
                         coverUri = null,
                         coverContentType = state.initialFormState.coverContentType,
                         coverSizeBytes = state.initialFormState.coverSizeBytes,
+                        coverWidthPx = null,
+                        coverHeightPx = null,
                         dirtyFields = state.formState.dirtyFields + "cover",
                         fieldErrors = emptyMap(),
                     ),
@@ -1055,13 +1062,7 @@ private suspend fun uploadSelectedCoverIfNeeded(
     formState: ManualReleaseFormState,
 ) {
     val coverUri = formState.coverUri ?: return
-    try {
-        repository.uploadCover(context, draftId, Uri.parse(coverUri))
-    } catch (error: ApiException) {
-        if (error.statusCode != 501) {
-            throw error
-        }
-    }
+    repository.uploadCover(context, draftId, Uri.parse(coverUri))
 }
 
 private fun ManualReleaseFormUiState.hasUnsavedChanges(): Boolean =
@@ -1094,7 +1095,7 @@ private fun ManualReleaseFormState.coverDetailsLabel(): String {
     return listOfNotNull(contentLabel, sizeLabel)
         .takeIf { it.isNotEmpty() }
         ?.joinToString(" / ")
-        ?: "JPEG, PNG, or WebP up to 3 MB"
+        ?: "JPEG, PNG, or WebP up to 500 KB; longest side 100-1200 px"
 }
 
 private fun String.toCoverContentLabel(): String =
@@ -1125,7 +1126,19 @@ private fun Context.readSelectedCoverMetadata(uri: Uri): SelectedCoverMetadata {
                 null
             }
         }
-    return SelectedCoverMetadata(contentType = contentType, sizeBytes = sizeBytes)
+    val imageBounds =
+        contentResolver.openInputStream(uri)?.use { inputStream ->
+            val options = BitmapFactory.Options()
+            options.inJustDecodeBounds = true
+            BitmapFactory.decodeStream(inputStream, null, options)
+            options.takeIf { bounds -> bounds.outWidth > 0 && bounds.outHeight > 0 }
+        }
+    return SelectedCoverMetadata(
+        contentType = contentType,
+        sizeBytes = sizeBytes,
+        widthPx = imageBounds?.outWidth,
+        heightPx = imageBounds?.outHeight,
+    )
 }
 
 private fun ManualReleaseFormData.normalizedForManualSubmit(): ManualReleaseFormData =

@@ -2,7 +2,9 @@ package com.example.vinyllistenapp.domain
 
 object ManualReleaseLimits {
     const val MAX_DRAFTS = 5
-    const val MAX_COVER_BYTES = 3 * 1024 * 1024
+    const val MAX_COVER_BYTES = 500 * 1024
+    const val MIN_COVER_LONGEST_SIDE_PX = 100
+    const val MAX_COVER_LONGEST_SIDE_PX = 1200
     const val MAX_ARTISTS = 20
     const val MAX_TRACKS = 100
     const val MAX_VINYL_DISC_COUNT = 6
@@ -160,6 +162,8 @@ data class ManualReleaseFormState(
     val coverUri: String? = null,
     val coverContentType: String? = null,
     val coverSizeBytes: Int? = null,
+    val coverWidthPx: Int? = null,
+    val coverHeightPx: Int? = null,
     val dirtyFields: Set<String> = emptySet(),
     val fieldErrors: Map<String, String> = emptyMap(),
 ) {
@@ -230,21 +234,39 @@ data class ManualReleaseFormState(
                     put("cover", "Cover image must be JPEG, PNG, or WebP.")
                 }
                 if (coverValidationState == ManualReleaseCoverValidationState.TooLarge) {
-                    put("cover", "Cover image must be 3 MB or smaller.")
+                    put("cover", "Cover image must be 500 KB or smaller.")
+                }
+                if (coverValidationState == ManualReleaseCoverValidationState.TooSmallDimensions) {
+                    put("cover", "Cover image longest side must be at least 100 px.")
+                }
+                if (coverValidationState == ManualReleaseCoverValidationState.TooLargeDimensions) {
+                    put("cover", "Cover image longest side must be 1200 px or smaller.")
                 }
             } + fieldErrors
 
     val coverValidationState: ManualReleaseCoverValidationState
         get() =
-            when {
-                coverUri == null -> ManualReleaseCoverValidationState.Empty
-                coverContentType == null -> ManualReleaseCoverValidationState.UnknownType
-                coverSizeBytes != null && coverSizeBytes > ManualReleaseLimits.MAX_COVER_BYTES ->
-                    ManualReleaseCoverValidationState.TooLarge
-                coverContentType.lowercase() !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES ->
-                    ManualReleaseCoverValidationState.UnsupportedType
-                else -> ManualReleaseCoverValidationState.Valid
+            run {
+                val longestSidePx = coverLongestSidePx
+                when {
+                    coverUri == null -> ManualReleaseCoverValidationState.Empty
+                    coverContentType == null -> ManualReleaseCoverValidationState.UnknownType
+                    coverSizeBytes != null && coverSizeBytes > ManualReleaseLimits.MAX_COVER_BYTES ->
+                        ManualReleaseCoverValidationState.TooLarge
+                    coverContentType.lowercase() !in ManualReleaseLimits.SUPPORTED_COVER_CONTENT_TYPES ->
+                        ManualReleaseCoverValidationState.UnsupportedType
+                    longestSidePx != null && longestSidePx < ManualReleaseLimits.MIN_COVER_LONGEST_SIDE_PX ->
+                        ManualReleaseCoverValidationState.TooSmallDimensions
+                    longestSidePx != null && longestSidePx > ManualReleaseLimits.MAX_COVER_LONGEST_SIDE_PX ->
+                        ManualReleaseCoverValidationState.TooLargeDimensions
+                    else -> ManualReleaseCoverValidationState.Valid
+                }
             }
+
+    private val coverLongestSidePx: Int?
+        get() =
+            listOfNotNull(coverWidthPx, coverHeightPx)
+                .maxOrNull()
 
     val hasAnyInput: Boolean
         get() =
@@ -300,4 +322,6 @@ enum class ManualReleaseCoverValidationState {
     UnknownType,
     UnsupportedType,
     TooLarge,
+    TooSmallDimensions,
+    TooLargeDimensions,
 }

@@ -68,6 +68,32 @@ def test_lock_draft_capacity_for_user_is_noop_for_non_postgres_dialects() -> Non
     assert db_session.executed == []
 
 
+def test_update_draft_cover_persists_cover_metadata(db_session: Session) -> None:
+    repository = ManualReleaseRepository()
+    draft = repository.create_draft(
+        db_session,
+        user_id="user-a",
+        form_data=ManualReleaseFormData(title="Partial"),
+    )
+
+    updated = repository.update_draft_cover(
+        db_session,
+        draft,
+        cover_storage_key="manual-release-covers/user-a/draft-1/cover.png",
+        cover_image_url="/media/manual-release-covers/user-a/draft-1/cover.png",
+        cover_thumbnail_url="/media/manual-release-covers/user-a/draft-1/cover.png",
+        cover_content_type="image/png",
+        cover_size_bytes=1024,
+    )
+
+    db_session.refresh(updated)
+    assert updated.cover_storage_key == "manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_image_url == "/media/manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_thumbnail_url == "/media/manual-release-covers/user-a/draft-1/cover.png"
+    assert updated.cover_content_type == "image/png"
+    assert updated.cover_size_bytes == 1024
+
+
 def test_manual_release_save_preserves_collection_and_history_boundaries(
     db_session: Session,
 ) -> None:

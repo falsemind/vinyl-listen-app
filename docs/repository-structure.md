@@ -237,7 +237,7 @@ All routes are nested under `/api/v1`.
 | `POST /manual-releases/drafts` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft create with draft cap validation. |
 | `PUT /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` partial draft update scoped to the current user. |
 | `DELETE /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` draft delete scoped to the current user. |
-| `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover upload validation contract. |
+| `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover validation, local storage, and draft metadata update. |
 | `POST /manual-releases` | `api/routes/manual_releases.py` | `ManualReleaseService` complete manual release validation and user-owned save. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |

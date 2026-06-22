@@ -23,7 +23,6 @@ from app.services.manual_release_policy import (
     ManualReleaseDraftLimitExceeded,
 )
 from app.services.manual_release_service import (
-    ManualReleaseCoverStorageNotConfiguredError,
     ManualReleaseNotFoundError,
     ManualReleaseService,
     ManualReleaseValidationError,
@@ -169,20 +168,24 @@ async def upload_manual_release_draft_cover(
 
     content = await file.read(MAX_MANUAL_RELEASE_COVER_BYTES + 1)
     try:
-        result = service.validate_cover_upload(content_type=file.content_type, size_bytes=len(content))
+        result = service.upload_cover(
+            db,
+            draft_id=draft_id,
+            user_id=current_user.account.id,
+            content_type=file.content_type,
+            image_bytes=content,
+        )
     except ManualReleaseCoverValidationError as error:
-        status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if "3 MB" in str(error) else status.HTTP_400_BAD_REQUEST
+        status_code = (
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if "500 KB" in str(error) else status.HTTP_400_BAD_REQUEST
+        )
         return _error_response(
             status_code=status_code,
             code="manual_release_cover_invalid",
             message=str(error),
         )
-    except ManualReleaseCoverStorageNotConfiguredError:
-        return _error_response(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            code="manual_release_cover_storage_not_configured",
-            message="Manual release cover storage is not configured yet.",
-        )
+    except ManualReleaseNotFoundError:
+        return _not_found_response()
     return ManualReleaseCoverUploadResponse(content_type=result.content_type, size_bytes=result.size_bytes)
 
 

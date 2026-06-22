@@ -407,7 +407,7 @@ Manual releases remain separate from Discogs-backed releases until a future repl
 
 ### Cover upload contract
 
-Cover upload endpoints currently validate file type and size through `manual_release_policy.py`, with a 3 MB image limit. Until durable cover storage is wired, valid uploads return a typed `manual_release_cover_storage_not_configured` error instead of silently accepting data.
+Cover upload endpoints validate file type, size, and dimensions through `manual_release_policy.py`, with a 500 KB image limit and a 100..1200 px longest-side range. Valid manual release covers are stored on the server under the configured manual release cover storage directory and draft cover metadata is updated with the served image URL.
 
 ### Test coverage status
 

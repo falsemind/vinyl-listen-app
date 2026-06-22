@@ -1053,9 +1053,9 @@ Validation errors include field-level details:
 
 ## POST /manual-releases/drafts/{draft_id}/cover
 
-Validates a cover image upload for a draft owned by the authenticated user.
+Validates and stores a cover image upload for a draft owned by the authenticated user.
 
-Current Phase 10B behavior validates ownership, content type, and size. Valid uploads return a typed storage error until the cover storage backend is configured.
+The backend stores valid images under the configured manual release cover storage directory, updates the draft cover metadata, and serves the stored file from the configured manual release cover public URL prefix.
 
 ### Request
 
@@ -1063,7 +1063,7 @@ Current Phase 10B behavior validates ownership, content type, and size. Valid up
 
 | Part | Type | Notes |
 | --- | --- | --- |
-| `file` | file | One `JPEG`, `PNG`, or `WebP` image, max 3 MB |
+| `file` | file | One `JPEG`, `PNG`, or `WebP` image, max 500 KB; longest side must be 100..1200 px |
 
 ### Response
 
@@ -1080,10 +1080,9 @@ When storage is configured later, the response shape is:
 
 | Status | Code | Meaning |
 | --- | --- | --- |
-| `400 Bad Request` | `manual_release_cover_invalid` | Unsupported content type or missing content type. |
+| `400 Bad Request` | `manual_release_cover_invalid` | Unsupported content type, missing content type, unreadable image data, or invalid dimensions. |
 | `404 Not Found` | `manual_release_draft_not_found` | The draft does not exist or belongs to another user. |
-| `413 Request Entity Too Large` | `manual_release_cover_invalid` | The image exceeds 3 MB. |
-| `501 Not Implemented` | `manual_release_cover_storage_not_configured` | Upload validated, but cover storage is not configured yet. |
+| `413 Request Entity Too Large` | `manual_release_cover_invalid` | The image exceeds 500 KB. |
 
 ---
 

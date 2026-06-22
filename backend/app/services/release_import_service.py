@@ -128,7 +128,7 @@ class ReleaseImportService:
         logger.info("Loading release release_id=%s", release_id)
         release = self._repository.get_by_id(db, release_id)
         if release is None:
-            logger.info("Release not found release_id=%s", release_id)
+            logger.debug("Release not found in Discogs-backed releases release_id=%s", release_id)
         return release
 
     def refresh_release(

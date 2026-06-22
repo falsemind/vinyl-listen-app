@@ -562,7 +562,7 @@ class VinylApiClient(
                                     format = "Vinyl",
                                     rating = 0,
                                     lastPlayed = "",
-                                    coverImageUrl = item.optNullableString("thumbnail_url"),
+                                    coverImageUrl = item.optResolvedMediaUrl("thumbnail_url"),
                                 ),
                             plays = item.optInt("plays", 0),
                             averageRating = item.optNullableDouble("average_rating")?.let { String.format(Locale.US, "%.1f", it) } ?: "-",
@@ -601,7 +601,7 @@ class VinylApiClient(
                                         format = "Vinyl",
                                         rating = 0,
                                         lastPlayed = "",
-                                        coverImageUrl = item.optNullableString("thumbnail_url"),
+                                        coverImageUrl = item.optResolvedMediaUrl("thumbnail_url"),
                                     ),
                                 plays = item.optInt("plays", 0),
                                 averageRating =
@@ -1276,7 +1276,7 @@ private fun JSONObject.toRecordSummary(): RecordSummary =
         barcode = optNullableString("barcode"),
         genres = optJSONArray("genres").orEmpty().mapStrings(),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
-        coverImageUrl = optNullableString("cover_image_url"),
+        coverImageUrl = optResolvedMediaUrl("cover_image_url"),
         availableSides = optJSONArray("available_sides").orEmpty().mapStrings(),
         availableSideOptions = optJSONArray("available_side_options").orEmpty().toReleaseSideOptions(),
         inCollection = optBoolean("in_collection", true),
@@ -1359,7 +1359,7 @@ internal fun JSONObject.toManualReleaseDraft(): ManualReleaseDraft {
         completionState = summary.completionState,
         updatedAt = summary.updatedAt,
         formData = optJSONObject("form_data").orEmpty().toManualReleaseFormData(),
-        coverImageUrl = optNullableString("cover_image_url"),
+        coverImageUrl = optResolvedMediaUrl("cover_image_url"),
         coverContentType = optNullableString("cover_content_type"),
         coverSizeBytes = optNullableInt("cover_size_bytes"),
         createdAt = optString("created_at", summary.updatedAt),
@@ -1388,7 +1388,7 @@ private fun JSONObject.toManualReleaseDraftSummary(): ManualReleaseDraftSummary 
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
         format = optNullableString("format"),
-        coverThumbnailUrl = optNullableString("cover_thumbnail_url"),
+        coverThumbnailUrl = optResolvedMediaUrl("cover_thumbnail_url"),
         completionState = optJSONObject("completion_state")?.toManualReleaseCompletionState(),
         updatedAt = optString("updated_at", ""),
     )
@@ -1437,7 +1437,7 @@ private fun JSONObject.toReleaseSearchResult(): ReleaseSearchResult =
         year = optNullableInt("year"),
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
-        thumbnailUrl = optNullableString("thumbnail_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumbnail_url"),
         format = optNullableString("format"),
     )
 
@@ -1469,7 +1469,7 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
-        thumbnailUrl = optNullableString("thumb_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumb_url"),
         collectionAddedAt = optNullableString("collection_added_at"),
         inCollection = optBoolean("in_collection", false),
         isFavorite = optBoolean("is_favorite", false),
@@ -1516,7 +1516,7 @@ internal fun JSONObject.toListeningSession(
         playedAt = optNullableString("played_at") ?: optNullableString("date") ?: "Unknown date",
         mood = optNullableString("mood") ?: "Unspecified",
         rating = optNullableInt("rating") ?: 0,
-        thumbnailUrl = optNullableString("thumbnail_url"),
+        thumbnailUrl = optResolvedMediaUrl("thumbnail_url"),
         side = optNullableString("side") ?: optNullableString("vinyl_side"),
         hasNotes = optBoolean("has_notes", false) || !notes.isNullOrBlank(),
         notes = notes,
@@ -1585,7 +1585,7 @@ private fun JSONObject.toAnalyticsRecordSummary(): RecordSummary =
         format = "Vinyl",
         rating = 0,
         lastPlayed = "",
-        coverImageUrl = optNullableString("thumbnail_url"),
+        coverImageUrl = optResolvedMediaUrl("thumbnail_url"),
     )
 
 private fun JSONObject.putNullable(
@@ -1793,7 +1793,7 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
             year = candidate.optNullableInt("year"),
             catalogNumber = candidate.optNullableString("catalog_number"),
             barcode = candidate.optNullableString("barcode"),
-            coverImageUrl = candidate.optNullableString("cover_image_url"),
+            coverImageUrl = candidate.optResolvedMediaUrl("cover_image_url"),
             format = candidate.optNullableString("format"),
             matchSource = candidate.optNullableString("match_source"),
             matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
@@ -1801,6 +1801,21 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
     }
 
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
+
+private fun JSONObject.optResolvedMediaUrl(name: String): String? = optNullableString(name)?.toResolvedMediaUrl()
+
+private fun String.toResolvedMediaUrl(): String =
+    when {
+        startsWith("/") -> "${BuildConfig.VINYL_API_BASE_URL.toOriginUrl().trimEnd('/')}$this"
+        else -> this
+    }
+
+private fun String.toOriginUrl(): String =
+    runCatching {
+        val url = URL(this)
+        val port = if (url.port >= 0) ":${url.port}" else ""
+        "${url.protocol}://${url.host}$port"
+    }.getOrElse { trimEnd('/') }
 
 private fun JSONObject.optNullableInt(name: String): Int? = if (isNull(name)) null else optInt(name)
 
@@ -2010,8 +2025,8 @@ private fun JSONArray.toRecordFlowReleaseSummaries(): List<RecordFlowReleaseSumm
             artist = item.optString("artist", "Unknown artist"),
             title = item.optString("title", "Unknown title"),
             year = item.optNullableInt("year"),
-            thumbnailUrl = item.optNullableString("thumbnail_url"),
-            coverImageUrl = item.optNullableString("cover_image_url"),
+            thumbnailUrl = item.optResolvedMediaUrl("thumbnail_url"),
+            coverImageUrl = item.optResolvedMediaUrl("cover_image_url"),
             styles = item.optJSONArray("styles").orEmpty().mapStrings(),
             count = item.optInt("count", 0),
         )

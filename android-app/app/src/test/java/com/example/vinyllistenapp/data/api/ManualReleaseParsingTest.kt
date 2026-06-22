@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.data.api
 
+import com.example.vinyllistenapp.BuildConfig
 import com.example.vinyllistenapp.domain.ManualReleaseCoverValidationState
 import com.example.vinyllistenapp.domain.ManualReleaseFormData
 import com.example.vinyllistenapp.domain.ManualReleaseFormState
@@ -29,7 +30,7 @@ class ManualReleaseParsingTest {
                   "label": "Room Tone",
                   "catalog_number": "RT-12",
                   "format": "Vinyl",
-                  "cover_thumbnail_url": "https://example.com/thumb.jpg",
+                  "cover_thumbnail_url": "/media/manual-release-covers/user-1/draft-1/cover.jpg",
                   "completion_state": {
                     "required_complete": true
                   },
@@ -61,7 +62,7 @@ class ManualReleaseParsingTest {
                       }
                     ]
                   },
-                  "cover_image_url": "https://example.com/full.jpg",
+                  "cover_image_url": "/media/manual-release-covers/user-1/draft-1/cover.jpg",
                   "cover_content_type": "image/jpeg",
                   "cover_size_bytes": 1024
                 }
@@ -72,7 +73,11 @@ class ManualReleaseParsingTest {
         assertEquals("Gradient Sync", draft.artist)
         assertEquals("RT-12", draft.catalogNumber)
         assertTrue(draft.completionState?.requiredComplete == true)
-        assertEquals("https://example.com/full.jpg", draft.coverImageUrl)
+        val expectedCoverUrl =
+            BuildConfig.VINYL_API_BASE_URL
+                .removeSuffix("/api/v1")
+                .trimEnd('/') + "/media/manual-release-covers/user-1/draft-1/cover.jpg"
+        assertEquals(expectedCoverUrl, draft.coverImageUrl)
         assertEquals("image/jpeg", draft.coverContentType)
         assertEquals(1024, draft.coverSizeBytes)
         assertEquals(ManualReleaseFormat.Vinyl, draft.formData.format)
@@ -108,7 +113,7 @@ class ManualReleaseParsingTest {
                       "label": "Room Tone",
                       "catalog_number": "RT-12",
                       "format": "Vinyl",
-                      "cover_thumbnail_url": null,
+                      "cover_thumbnail_url": "/media/manual-release-covers/user-1/draft-1/cover.jpg",
                       "completion_state": {
                         "required_complete": false
                       },
@@ -122,6 +127,7 @@ class ManualReleaseParsingTest {
             ).toManualReleaseDraftList()
 
         assertEquals(1, list.items.size)
+        assertEquals(expectedCoverUrl, list.items.first().coverThumbnailUrl)
         assertEquals(5, list.limit)
         assertEquals(4, list.remainingSlots)
         assertFalse(
@@ -231,6 +237,8 @@ class ManualReleaseParsingTest {
                 coverUri = "content://covers/draft-1",
                 coverContentType = "image/gif",
                 coverSizeBytes = 4 * 1024 * 1024,
+                coverWidthPx = 500,
+                coverHeightPx = 500,
                 dirtyFields = setOf("title", "cover"),
                 fieldErrors = mapOf("title" to "Backend title error."),
             )
@@ -238,7 +246,7 @@ class ManualReleaseParsingTest {
         assertEquals(setOf("title", "cover"), state.dirtyFields)
         assertEquals(ManualReleaseCoverValidationState.TooLarge, state.coverValidationState)
         assertEquals("Backend title error.", state.localFieldErrors["title"])
-        assertEquals("Cover image must be 3 MB or smaller.", state.localFieldErrors["cover"])
+        assertEquals("Cover image must be 500 KB or smaller.", state.localFieldErrors["cover"])
 
         val unknownTypeState =
             state.copy(
@@ -248,6 +256,26 @@ class ManualReleaseParsingTest {
 
         assertEquals(ManualReleaseCoverValidationState.UnknownType, unknownTypeState.coverValidationState)
         assertEquals("Cover image type could not be detected.", unknownTypeState.localFieldErrors["cover"])
+
+        val tooSmallDimensionsState =
+            state.copy(
+                coverContentType = "image/jpeg",
+                coverSizeBytes = 1024,
+                coverWidthPx = 99,
+                coverHeightPx = 80,
+            )
+
+        assertEquals(ManualReleaseCoverValidationState.TooSmallDimensions, tooSmallDimensionsState.coverValidationState)
+        assertEquals("Cover image longest side must be at least 100 px.", tooSmallDimensionsState.localFieldErrors["cover"])
+
+        val tooLargeDimensionsState =
+            tooSmallDimensionsState.copy(
+                coverWidthPx = 1201,
+                coverHeightPx = 100,
+            )
+
+        assertEquals(ManualReleaseCoverValidationState.TooLargeDimensions, tooLargeDimensionsState.coverValidationState)
+        assertEquals("Cover image longest side must be 1200 px or smaller.", tooLargeDimensionsState.localFieldErrors["cover"])
     }
 }
 
