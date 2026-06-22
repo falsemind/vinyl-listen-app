@@ -7,6 +7,7 @@ from app.api.routes.collection import (
     get_collection_folders_repository,
     get_collection_settings_repository,
     get_collection_sync_job_service,
+    get_manual_release_repository,
     get_provider_integration_repository,
     get_releases_repository,
 )
@@ -142,6 +143,86 @@ class StubReleasesRepository:
             }
         )
         return self.releases[offset : offset + limit]
+
+
+class StubManualReleaseRepository:
+    def __init__(self, releases: list[SimpleNamespace] | None = None) -> None:
+        self.releases = releases or []
+
+    def list_collection_releases(
+        self,
+        _db,
+        *,
+        user_id: str,
+        limit: int,
+        offset: int,
+        include_removed: bool = False,
+        artist: str | None = None,
+        label: str | None = None,
+        favorite: bool = False,
+        folder_id: int | None = None,
+    ):
+        _ = user_id, include_removed, artist
+        if folder_id is not None:
+            return []
+        releases = self._filtered_releases(label=label, favorite=favorite)
+        return releases[offset : offset + limit]
+
+    def count_collection_releases(
+        self,
+        _db,
+        *,
+        user_id: str,
+        include_removed: bool = False,
+        artist: str | None = None,
+        label: str | None = None,
+        favorite: bool = False,
+        folder_id: int | None = None,
+    ) -> int:
+        _ = user_id, include_removed, artist
+        if folder_id is not None:
+            return 0
+        return len(self._filtered_releases(label=label, favorite=favorite))
+
+    def search_collection_releases(
+        self,
+        _db,
+        *,
+        user_id: str,
+        artist: str | None = None,
+        title: str | None = None,
+        catalog: str | None = None,
+        barcode: str | None = None,
+        year: int | None = None,
+        limit: int,
+        offset: int,
+    ):
+        _ = user_id, barcode
+        if year is not None:
+            return []
+        releases = self.releases
+        if artist is not None:
+            releases = [release for release in releases if artist.lower() in release.artist.lower()]
+        if title is not None:
+            releases = [release for release in releases if title.lower() in release.title.lower()]
+        if catalog is not None:
+            releases = [release for release in releases if catalog.lower() in release.catalog_number.lower()]
+        return releases[offset : offset + limit]
+
+    def has_favorite_collection_releases(self, _db, *, user_id: str) -> bool:
+        _ = user_id
+        return any(release.in_collection and release.is_favorite for release in self.releases)
+
+    def _filtered_releases(
+        self,
+        *,
+        label: str | None,
+        favorite: bool,
+    ) -> list[SimpleNamespace]:
+        releases = [release for release in self.releases if release.is_favorite] if favorite else self.releases
+        if label is not None:
+            releases = [release for release in releases if release.label == label]
+        return releases
 
 
 class StubCollectionSettingsRepository:
@@ -509,6 +590,38 @@ def test_list_collection_releases_uses_release_id_when_membership_has_own_id() -
     assert response.json()["items"][0]["is_favorite"] is True
 
 
+def test_list_collection_releases_includes_manual_releases() -> None:
+    repository = StubReleasesRepository([_release("release-1", 101, "Imported")])
+    manual_repository = StubManualReleaseRepository([_manual_release("manual-release-1", "Manual Test")])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/collection/releases")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == ["manual-release-1", "release-1"]
+    assert response.json()["items"][0] == {
+        "id": "manual-release-1",
+        "discogs_release_id": 0,
+        "title": "Manual Test",
+        "artist": "Manual Artist",
+        "year": None,
+        "format": "Vinyl",
+        "label": "Manual Label",
+        "catalog_number": "MAN-1",
+        "styles": ["Techno"],
+        "thumb_url": None,
+        "collection_added_at": "2026-06-21T12:00:00Z",
+        "in_collection": True,
+        "is_favorite": False,
+    }
+    assert response.json()["total"] == 2
+
+
 def test_list_collection_releases_filters_by_artist() -> None:
     repository = StubReleasesRepository([_release("release-1", 101, "First")])
     _override_db()
@@ -746,6 +859,42 @@ def test_search_collection_releases_returns_internal_release_results() -> None:
     ]
 
 
+def test_search_collection_releases_includes_manual_release_results() -> None:
+    repository = StubReleasesRepository([])
+    manual_repository = StubManualReleaseRepository([_manual_release("manual-release-1", "Manual Test")])
+    _override_db()
+    app.dependency_overrides[get_releases_repository] = lambda: repository
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/collection/search",
+            params={"artist": "Manual Artist", "catalog": "MAN", "limit": 10, "offset": 0},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {
+                "release_id": "manual-release-1",
+                "discogs_release_id": 0,
+                "artist": "Manual Artist",
+                "title": "Manual Test",
+                "year": None,
+                "label": "Manual Label",
+                "catalog_number": "MAN-1",
+                "thumbnail_url": None,
+                "format": "Vinyl",
+            }
+        ],
+        "limit": 10,
+        "offset": 0,
+        "has_more": False,
+    }
+
+
 def test_search_collection_releases_reports_has_more() -> None:
     repository = StubReleasesRepository(
         [
@@ -788,6 +937,7 @@ def _override_db() -> None:
         yield object()
 
     app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_manual_release_repository] = lambda: StubManualReleaseRepository()
 
 
 def _job_response(
@@ -833,6 +983,23 @@ def _release(
         in_collection=in_collection,
         is_favorite=is_favorite,
         folder_ids=folder_ids or [],
+    )
+
+
+def _manual_release(release_id: str, title: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=release_id,
+        title=title,
+        artist="Manual Artist",
+        format="Vinyl",
+        label="Manual Label",
+        catalog_number="MAN-1",
+        styles=["Techno"],
+        cover_image_url=None,
+        cover_thumbnail_url=None,
+        collection_added_at=datetime(2026, 6, 21, 12, 0, tzinfo=UTC),
+        in_collection=True,
+        is_favorite=False,
     )
 
 

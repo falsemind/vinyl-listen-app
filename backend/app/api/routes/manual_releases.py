@@ -55,6 +55,20 @@ def list_manual_release_drafts(
     )
 
 
+@router.get("/drafts/{draft_id}", response_model=ManualReleaseDraftResponse)
+def get_manual_release_draft(
+    draft_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    service: Annotated[ManualReleaseService, Depends(get_manual_release_service)],
+) -> ManualReleaseDraftResponse | JSONResponse:
+    try:
+        draft = service.get_draft(db, draft_id, user_id=current_user.account.id)
+    except ManualReleaseNotFoundError:
+        return _not_found_response()
+    return _draft_response(draft)
+
+
 @router.post("/drafts", response_model=ManualReleaseDraftResponse, status_code=status.HTTP_201_CREATED)
 def create_manual_release_draft(
     payload: ManualReleaseDraftPayload,

@@ -101,6 +101,23 @@ def test_create_manual_release_draft_enforces_draft_cap() -> None:
     assert service.user_ids == ["test-user"]
 
 
+def test_get_manual_release_draft_returns_full_draft() -> None:
+    service = StubManualReleaseService()
+    _override_db()
+    app.dependency_overrides[get_manual_release_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/manual-releases/drafts/draft-1")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "draft-1"
+    assert response.json()["form_data"]["artists"] == ["Artist"]
+    assert response.json()["form_data"]["title"] == "Title"
+    assert service.user_ids == ["test-user"]
+
+
 def test_update_manual_release_draft_returns_not_found_for_other_user() -> None:
     service = StubManualReleaseService()
     service.raise_not_found = True

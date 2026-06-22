@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.database.session import get_db
+from app.models.releases import ManualRelease
+from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.schemas.releases import (
     ClientDiscogsReleaseImportRequest,
@@ -64,6 +66,10 @@ def get_sessions_service() -> SessionsService:
 
 def get_releases_repository() -> ReleasesRepository:
     return ReleasesRepository()
+
+
+def get_manual_release_repository() -> ManualReleaseRepository:
+    return ManualReleaseRepository()
 
 
 @router.get("/")
@@ -281,13 +287,21 @@ def get_release(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release '{release_id}' was not found.",
+        manual_release = manual_release_repository.get_release(
+            db,
+            release_id,
+            user_id=current_user.account.id,
         )
+        if manual_release is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Release '{release_id}' was not found.",
+            )
+        return _manual_release_response(manual_release)
 
     return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
 
@@ -300,13 +314,18 @@ def update_release_favorite(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release '{release_id}' was not found.",
+        manual_release = _manual_release_or_404(
+            db,
+            manual_release_repository,
+            release_id,
+            user_id=current_user.account.id,
         )
+        manual_release_repository.set_favorite(db, manual_release, is_favorite=payload.is_favorite)
+        return _manual_release_response(manual_release)
 
     repository.set_favorite(db, release, user_id=current_user.account.id, is_favorite=payload.is_favorite)
     return _release_response(db, service, release, user_id=current_user.account.id, repository=repository)
@@ -319,13 +338,22 @@ def deactivate_release_collection_membership(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release '{release_id}' was not found.",
+        manual_release = _manual_release_or_404(
+            db,
+            manual_release_repository,
+            release_id,
+            user_id=current_user.account.id,
         )
+        manual_release_repository.deactivate_collection_membership(
+            db,
+            manual_release,
+            removed_at=datetime.now(UTC),
+        )
+        return _manual_release_response(manual_release)
 
     repository.deactivate_collection_membership(
         db,
@@ -343,13 +371,22 @@ def reactivate_release_collection_membership(
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[ReleaseImportService, Depends(get_release_import_service)],
     repository: Annotated[ReleasesRepository, Depends(get_releases_repository)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
 ):
     release = service.get_release(db, release_id)
     if release is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release '{release_id}' was not found.",
+        manual_release = _manual_release_or_404(
+            db,
+            manual_release_repository,
+            release_id,
+            user_id=current_user.account.id,
         )
+        manual_release_repository.reactivate_collection_membership(
+            db,
+            manual_release,
+            added_at=datetime.now(UTC),
+        )
+        return _manual_release_response(manual_release)
 
     repository.reactivate_collection_membership(
         db,
@@ -424,6 +461,54 @@ def _release_response(
     return ReleaseResponse.model_validate(release).model_copy(update=update_data)
 
 
+def _manual_release_response(release: ManualRelease) -> ReleaseResponse:
+    return ReleaseResponse(
+        id=release.id,
+        discogs_release_id=0,
+        artist=release.artist,
+        title=release.title,
+        year=None,
+        format=release.format,
+        label=release.label,
+        catalog_number=release.catalog_number,
+        barcode=release.barcode,
+        genres=release.genres,
+        styles=release.styles,
+        thumbnail_url=release.cover_thumbnail_url,
+        cover_image_url=release.cover_image_url,
+        in_collection=release.in_collection,
+        collection_added_at=release.collection_added_at,
+        collection_removed_at=release.collection_removed_at,
+        last_discogs_sync_at=None,
+        discogs_instance_id=None,
+        is_favorite=release.is_favorite,
+        has_full_discogs_info=False,
+        available_sides=[],
+        available_side_options=[],
+        tracklist=[_manual_track_response(track) for track in release.tracklist],
+        discogs_artists=[],
+        created_at=release.created_at,
+        updated_at=release.updated_at,
+    )
+
+
+def _manual_track_response(track: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "position": track.get("position") or "",
+        "title": track.get("title") or "",
+        "duration": track.get("duration"),
+        "artists": [],
+        "extra_artists": [
+            {
+                "name": credit.get("name") or "",
+                "role": credit.get("role"),
+            }
+            for credit in track.get("credits", [])
+            if credit.get("name")
+        ],
+    }
+
+
 @router.get(
     "/{release_id}/flow-insights",
     response_model=RecordFlowInsightsResponse,
@@ -434,6 +519,7 @@ def get_release_flow_insights(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     limit: int = Query(default=5, ge=1, le=10),
     period: str = Query(default="3m"),
 ):
@@ -451,6 +537,15 @@ def get_release_flow_insights(
             content={"error": {"code": error.code, "message": error.message}},
         )
     except ReleaseNotFoundError as error:
+        if _manual_release_exists(db, manual_release_repository, release_id, user_id=current_user.account.id):
+            return RecordFlowInsightsResponse(
+                release_id=release_id,
+                before=[],
+                after=[],
+                mood_transitions=[],
+                sample_size=0,
+                confidence="low",
+            )
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": {"code": "release_not_found", "message": str(error)}},
@@ -501,6 +596,7 @@ def get_release_sessions(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
+    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     limit: int = Query(default=20),
     offset: int = Query(default=0),
 ):
@@ -518,6 +614,8 @@ def get_release_sessions(
             content={"error": {"code": error.code, "message": error.message}},
         )
     except ReleaseNotFoundError as error:
+        if _manual_release_exists(db, manual_release_repository, release_id, user_id=current_user.account.id):
+            return ReleaseSessionsResponse(sessions=[])
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": {"code": "release_not_found", "message": str(error)}},
@@ -557,3 +655,29 @@ def get_release_sessions(
             for session in sessions
         ]
     )
+
+
+def _manual_release_exists(
+    db: Session,
+    repository: ManualReleaseRepository,
+    release_id: str,
+    *,
+    user_id: str,
+) -> bool:
+    return repository.get_release(db, release_id, user_id=user_id) is not None
+
+
+def _manual_release_or_404(
+    db: Session,
+    repository: ManualReleaseRepository,
+    release_id: str,
+    *,
+    user_id: str,
+) -> ManualRelease:
+    manual_release = repository.get_release(db, release_id, user_id=user_id)
+    if manual_release is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{release_id}' was not found.",
+        )
+    return manual_release
