@@ -498,7 +498,7 @@ def _map_session_response(
 ) -> SessionResponse:
     return SessionResponse(
         id=session.id,
-        release_id=session.release_id,
+        release_id=session.release_id or session.manual_release_id,
         session_group_id=session.session_group_id,
         rating=session.rating,
         mood=session.mood,

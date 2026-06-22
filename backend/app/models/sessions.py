@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -60,10 +60,17 @@ class Sessions(Base):
 
     __tablename__ = "sessions"
     __table_args__ = (
+        CheckConstraint(
+            "(release_id IS NOT NULL AND manual_release_id IS NULL) "
+            "OR (release_id IS NULL AND manual_release_id IS NOT NULL)",
+            name="ck_sessions_exactly_one_release_target",
+        ),
         Index("idx_sessions_user_id", "user_id"),
         Index("idx_sessions_user_release_id", "user_id", "release_id"),
+        Index("idx_sessions_user_manual_release_id", "user_id", "manual_release_id"),
         Index("idx_sessions_user_played_at", "user_id", "played_at"),
         Index("idx_sessions_release_id", "release_id"),
+        Index("idx_sessions_manual_release_id", "manual_release_id"),
         Index("idx_sessions_played_at", "played_at"),
         Index("idx_sessions_session_group_id", "session_group_id"),
     )
@@ -75,8 +82,15 @@ class Sessions(Base):
         default=lambda: str(uuid4()),
     )
 
-    # Foreign key to releases table.
-    release_id: Mapped[str] = mapped_column(String, ForeignKey("releases.id"), nullable=False)
+    # Foreign key to shared Discogs-backed releases table.
+    release_id: Mapped[str | None] = mapped_column(String, ForeignKey("releases.id"), nullable=True)
+
+    # Foreign key to user-owned manual releases table.
+    manual_release_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("manual_releases.id", ondelete="CASCADE"),
+        nullable=True,
+    )
 
     # Owner account for multi-user data isolation. Nullable only for legacy rows before backfill.
     user_id: Mapped[str | None] = mapped_column(

@@ -30,6 +30,20 @@ class SessionsRepository:
         return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
+    def get_by_manual_release_id(
+        db: Session,
+        manual_release_id: str,
+        *,
+        user_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[Sessions]:
+        query = db.query(Sessions).filter(Sessions.manual_release_id == manual_release_id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        return query.order_by(Sessions.played_at.desc(), Sessions.created_at.desc()).offset(offset).limit(limit).all()
+
+    @staticmethod
     def get_flow_insight_sessions(
         db: Session,
         *,
@@ -138,17 +152,19 @@ class SessionsRepository:
         db: Session,
         *,
         user_id: str | None,
-        release_id: str,
+        release_id: str | None,
         session_group_id: str | None,
         rating: int | None,
         mood: str | None,
         notes: str | None,
         played_at: datetime,
         vinyl_side: str | None,
+        manual_release_id: str | None = None,
     ) -> Sessions:
         session = Sessions(
             user_id=user_id,
             release_id=release_id,
+            manual_release_id=manual_release_id,
             session_group_id=session_group_id,
             rating=rating,
             mood=mood,

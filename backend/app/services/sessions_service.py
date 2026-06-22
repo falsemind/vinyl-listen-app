@@ -7,10 +7,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.releases import Releases
+from app.models.releases import ManualRelease, Releases
 from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.repositories.discogs_release_repository import DiscogsReleaseRepository
+from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
@@ -121,7 +122,8 @@ class SessionTrackSnapshot:
 
 @dataclass(frozen=True)
 class CreateSessionData:
-    release_id: str
+    release_id: str | None
+    manual_release_id: str | None
     session_group_id: str | None
     rating: int | None
     mood: str | None
@@ -214,6 +216,7 @@ class SessionsService:
         self,
         sessions_repository: SessionsRepository | None = None,
         releases_repository: ReleasesRepository | None = None,
+        manual_release_repository: ManualReleaseRepository | None = None,
         discogs_repository: DiscogsReleaseRepository | None = None,
         moods_repository: SessionsMoodsRepository | None = None,
         session_groups_service: SessionGroupsService | None = None,
@@ -222,6 +225,7 @@ class SessionsService:
     ) -> None:
         self._sessions_repository = sessions_repository or SessionsRepository()
         self._releases_repository = releases_repository or ReleasesRepository()
+        self._manual_release_repository = manual_release_repository or ManualReleaseRepository()
         self._discogs_repository = discogs_repository or DiscogsReleaseRepository()
         self._moods_repository = moods_repository or SessionsMoodsRepository()
         self._session_groups_service = session_groups_service or SessionGroupsService()
@@ -259,6 +263,7 @@ class SessionsService:
             db,
             user_id=user_id,
             release_id=validated.release_id,
+            manual_release_id=validated.manual_release_id,
             session_group_id=validated.session_group_id,
             rating=validated.rating,
             mood=validated.mood,
@@ -355,11 +360,22 @@ class SessionsService:
             raise SessionValidationError("invalid_pagination", "offset cannot be negative.")
 
         release = self._releases_repository.get_by_id(db, release_id)
-        if release is None:
+        manual_release = None
+        if release is None and user_id is not None:
+            manual_release = self._manual_release_repository.get_release(db, release_id, user_id=user_id)
+        if release is None and manual_release is None:
             logger.info("Release not found during sessions lookup release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
         logger.info("Loading sessions release_id=%s limit=%s offset=%s", release_id, limit, offset)
+        if manual_release is not None:
+            return self._sessions_repository.get_by_manual_release_id(
+                db,
+                manual_release.id,
+                user_id=user_id,
+                limit=limit,
+                offset=offset,
+            )
         return self._sessions_repository.get_by_release_id(
             db,
             release_id,
@@ -376,6 +392,8 @@ class SessionsService:
 
     def get_session_tracks_for_response(self, db: Session, session: Sessions) -> list[SessionTrackSnapshot]:
         tracks = self._sessions_repository.get_tracks_by_session_id(db, session.id)
+        if session.release_id is None:
+            return [_session_track_snapshot(track) for track in tracks]
         release = self._releases_repository.get_by_id(db, session.release_id)
         return self._enrich_track_artists(db, release, tracks)
 
@@ -665,31 +683,56 @@ class SessionsService:
         normalized_notes = self._normalize_optional_text(notes)
 
         release = self._releases_repository.get_by_id(db, release_id)
-        if release is None:
+        manual_release = None
+        if release is None and user_id is not None:
+            manual_release = self._manual_release_repository.get_release(db, release_id, user_id=user_id)
+        if release is None and manual_release is None:
             logger.info("Release not found during session create release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
-        if not release.in_collection and release.collection_removed_at is not None:
+        if release is not None and not release.in_collection and release.collection_removed_at is not None:
             logger.info("Rejecting session create for inactive collection release_id=%s", release_id)
             raise SessionValidationError(
                 "release_not_in_collection",
                 "Release must be added back to collection before logging a new session.",
             )
+        if manual_release is not None and not manual_release.in_collection:
+            logger.info("Rejecting session create for inactive manual_release_id=%s", manual_release.id)
+            raise SessionValidationError(
+                "release_not_in_collection",
+                "Release must be added back to collection before logging a new session.",
+            )
 
-        self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
+        if release is not None:
+            self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=release_id)
+        elif manual_release is not None:
+            normalized_side = self._validate_manual_release_side(
+                manual_release=manual_release,
+                normalized_side=normalized_side,
+                context_id=release_id,
+            )
         normalized_session_group_id = self._session_groups_service.validate_active_session_group(
             db,
             session_group_id,
             user_id=user_id,
         )
-        tracks = self._validate_track_selection(
-            db,
-            release=release,
-            normalized_side=normalized_side,
-            track_positions=track_positions,
+        tracks = (
+            self._validate_track_selection(
+                db,
+                release=release,
+                normalized_side=normalized_side,
+                track_positions=track_positions,
+            )
+            if release is not None
+            else self._validate_manual_track_selection(
+                manual_release=manual_release,
+                normalized_side=normalized_side,
+                track_positions=track_positions,
+            )
         )
 
         return CreateSessionData(
-            release_id=release_id,
+            release_id=release.id if release is not None else None,
+            manual_release_id=manual_release.id if manual_release is not None else None,
             session_group_id=normalized_session_group_id,
             rating=rating,
             mood=normalized_mood,
@@ -718,21 +761,37 @@ class SessionsService:
         )
         normalized_notes = self._normalize_optional_text(fields["notes"]) if "notes" in fields else session.notes
 
-        release = self._releases_repository.get_by_id(db, session.release_id)
-        if release is None:
-            raise ReleaseNotFoundError(session.release_id)
+        release = (
+            self._releases_repository.get_by_id(db, session.release_id) if session.release_id is not None else None
+        )
+        manual_release = None
+        if session.manual_release_id is not None and user_id is not None:
+            manual_release = self._manual_release_repository.get_release(db, session.manual_release_id, user_id=user_id)
+        if release is None and manual_release is None:
+            raise ReleaseNotFoundError(session.release_id or session.manual_release_id or session.id)
 
-        self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=session.id)
-        tracks = (
-            self._validate_track_selection(
+        if release is not None:
+            self._validate_release_side(db, release=release, normalized_side=normalized_side, context_id=session.id)
+        elif manual_release is not None:
+            normalized_side = self._validate_manual_release_side(
+                manual_release=manual_release,
+                normalized_side=normalized_side,
+                context_id=session.id,
+            )
+        tracks = None
+        if "track_positions" in fields and release is not None:
+            tracks = self._validate_track_selection(
                 db,
                 release=release,
                 normalized_side=normalized_side,
                 track_positions=fields["track_positions"],
             )
-            if "track_positions" in fields
-            else None
-        )
+        elif "track_positions" in fields and manual_release is not None:
+            tracks = self._validate_manual_track_selection(
+                manual_release=manual_release,
+                normalized_side=normalized_side,
+                track_positions=fields["track_positions"],
+            )
 
         return UpdateSessionData(
             rating=rating,
@@ -766,6 +825,39 @@ class SessionsService:
                 "invalid_side",
                 f"Side '{normalized_side}' does not exist for release '{release.id}'.",
             )
+
+    def _validate_manual_release_side(
+        self,
+        *,
+        manual_release: ManualRelease,
+        normalized_side: str | None,
+        context_id: str,
+    ) -> str | None:
+        if normalized_side is None:
+            return None
+
+        available_sides = {
+            side
+            for track in manual_release.tracklist or []
+            if isinstance(track, dict)
+            for side in [self._track_side_prefix(str(track.get("position") or ""))]
+            if side is not None
+        }
+        if not available_sides:
+            return None
+
+        if normalized_side not in available_sides:
+            logger.info(
+                "Rejecting manual session side context_id=%s invalid_side=%s available_sides=%s",
+                context_id,
+                normalized_side,
+                sorted(available_sides),
+            )
+            raise SessionValidationError(
+                "invalid_side",
+                f"Side '{normalized_side}' does not exist for release '{manual_release.id}'.",
+            )
+        return normalized_side
 
     def _validate_track_selection(
         self,
@@ -822,6 +914,61 @@ class SessionsService:
 
         return sorted(selected_tracks, key=lambda track: track.sequence)
 
+    def _validate_manual_track_selection(
+        self,
+        *,
+        manual_release: ManualRelease,
+        normalized_side: str | None,
+        track_positions: list[str] | None,
+    ) -> list[SessionTrackSelection]:
+        normalized_positions = self._normalize_track_positions(track_positions)
+        if not normalized_positions:
+            return []
+
+        tracks_by_position: dict[str, list[tuple[int, dict]]] = {}
+        for sequence, track in enumerate(manual_release.tracklist or [], start=1):
+            if not isinstance(track, dict):
+                continue
+            position = str(track.get("position") or "").strip()
+            title = str(track.get("title") or "").strip()
+            if not position or not title:
+                continue
+            tracks_by_position.setdefault(position.upper(), []).append((sequence, track))
+
+        selected_tracks: list[SessionTrackSelection] = []
+        for position in normalized_positions:
+            matches = tracks_by_position.get(position)
+            if not matches:
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{position}' does not exist for release '{manual_release.id}'.",
+                )
+            if len(matches) > 1:
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{position}' is ambiguous for release '{manual_release.id}'.",
+                )
+
+            sequence, track = matches[0]
+            track_position = str(track.get("position") or "").strip()
+            track_side = self._track_side_prefix(track_position)
+            if normalized_side is not None and track_side is not None and track_side != normalized_side.split(":")[-1]:
+                raise SessionValidationError(
+                    "invalid_tracks",
+                    f"Track '{track_position}' is not on side '{normalized_side}'.",
+                )
+            selected_tracks.append(
+                SessionTrackSelection(
+                    position=track_position,
+                    artist=None,
+                    title=str(track.get("title") or "").strip(),
+                    duration=self._manual_track_duration(track),
+                    sequence=sequence,
+                )
+            )
+
+        return sorted(selected_tracks, key=lambda track: track.sequence)
+
     def _normalize_track_positions(self, value: list[str] | None) -> list[str]:
         if value is None:
             return []
@@ -841,6 +988,13 @@ class SessionsService:
             seen_positions.add(normalized)
             normalized_positions.append(normalized)
         return normalized_positions
+
+    def _manual_track_duration(self, track: dict) -> str | None:
+        duration = track.get("duration")
+        if not isinstance(duration, str):
+            return None
+        normalized = duration.strip()
+        return normalized or None
 
     def _track_belongs_to_side(self, track_position: str, normalized_side: str) -> bool:
         expected_side = normalized_side.split(":")[-1]

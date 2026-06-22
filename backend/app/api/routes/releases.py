@@ -596,7 +596,6 @@ def get_release_sessions(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
-    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     limit: int = Query(default=20),
     offset: int = Query(default=0),
 ):
@@ -614,8 +613,6 @@ def get_release_sessions(
             content={"error": {"code": error.code, "message": error.message}},
         )
     except ReleaseNotFoundError as error:
-        if _manual_release_exists(db, manual_release_repository, release_id, user_id=current_user.account.id):
-            return ReleaseSessionsResponse(sessions=[])
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": {"code": "release_not_found", "message": str(error)}},

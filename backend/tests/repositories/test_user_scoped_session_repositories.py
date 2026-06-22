@@ -41,7 +41,8 @@ def db_session() -> Iterator[Session]:
         connection.execute(text("""
                 CREATE TABLE sessions (
                     id TEXT PRIMARY KEY,
-                    release_id TEXT NOT NULL,
+                    release_id TEXT,
+                    manual_release_id TEXT,
                     user_id TEXT,
                     session_group_id TEXT,
                     rating INTEGER,
@@ -119,6 +120,46 @@ def test_sessions_repository_filters_by_user(db_session: Session) -> None:
     assert [session.id for session in user_a_sessions] == [user_a_session.id]
     assert repository.get_by_id(db_session, user_a_session.id, user_id="user-b") is None
     assert repository.count_all(db_session, user_id="user-a") == 1
+
+
+def test_sessions_repository_filters_manual_release_sessions_by_user(db_session: Session) -> None:
+    repository = SessionsRepository()
+    played_at = datetime(2026, 5, 12, 10, 0, tzinfo=UTC)
+
+    user_a_session = repository.create(
+        db_session,
+        user_id="user-a",
+        release_id=None,
+        manual_release_id="manual-release-1",
+        session_group_id=None,
+        rating=5,
+        mood="Focused",
+        notes="A note",
+        played_at=played_at,
+        vinyl_side=None,
+    )
+    repository.create(
+        db_session,
+        user_id="user-b",
+        release_id=None,
+        manual_release_id="manual-release-1",
+        session_group_id=None,
+        rating=4,
+        mood="Calm",
+        notes=None,
+        played_at=played_at,
+        vinyl_side=None,
+    )
+
+    user_a_sessions = repository.get_by_manual_release_id(
+        db_session,
+        "manual-release-1",
+        user_id="user-a",
+        limit=10,
+        offset=0,
+    )
+
+    assert [session.id for session in user_a_sessions] == [user_a_session.id]
 
 
 def test_analytics_repository_filters_by_user(db_session: Session) -> None:

@@ -88,6 +88,7 @@ def test_create_session_persists_validated_session(
     assert result.status == "success"
     assert repository.created_payload == {
         "release_id": "release-123",
+        "manual_release_id": None,
         "session_group_id": None,
         "rating": 5,
         "mood": "Calm",
@@ -95,6 +96,84 @@ def test_create_session_persists_validated_session(
         "played_at": datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
         "vinyl_side": "A",
     }
+
+
+def test_create_session_persists_manual_release_target(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    repository = sessions_repository_factory()
+    manual_release = build_manual_release(
+        tracklist=[{"position": "1", "title": "Manual Track", "duration": "5:08"}],
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[],
+        manual_releases=[manual_release],
+    )
+
+    result = service.create_session(
+        db=object(),
+        user_id=manual_release.user_id,
+        release_id=manual_release.id,
+        rating=4,
+        mood="Calm",
+        notes=None,
+        played_at="2026-03-14T19:21:00Z",
+        side="A",
+        track_positions=["1"],
+    )
+
+    assert result.session_id == "session-123"
+    assert repository.created_payload is not None
+    assert repository.created_payload["release_id"] is None
+    assert repository.created_payload["manual_release_id"] == manual_release.id
+    assert repository.created_payload["vinyl_side"] is None
+    assert repository.tracks_by_session_id["session-123"][0].track_title == "Manual Track"
+    assert repository.tracks_by_session_id["session-123"][0].track_position == "1"
+
+
+def test_create_session_rejects_manual_release_owned_by_other_user(
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    manual_release = build_manual_release(user_id="user-a")
+    service = build_sessions_service(releases=[], manual_releases=[manual_release])
+
+    with pytest.raises(ReleaseNotFoundError):
+        service.create_session(
+            db=object(),
+            user_id="user-b",
+            release_id=manual_release.id,
+            rating=4,
+            mood="Calm",
+            notes=None,
+            played_at="2026-03-14T19:21:00Z",
+            side=None,
+        )
+
+
+def test_create_session_rejects_inactive_manual_release(
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    manual_release = build_manual_release(in_collection=False)
+    service = build_sessions_service(releases=[], manual_releases=[manual_release])
+
+    with pytest.raises(SessionValidationError) as exc_info:
+        service.create_session(
+            db=object(),
+            user_id=manual_release.user_id,
+            release_id=manual_release.id,
+            rating=4,
+            mood="Calm",
+            notes=None,
+            played_at="2026-03-14T19:21:00Z",
+            side=None,
+        )
+
+    assert exc_info.value.code == "release_not_in_collection"
 
 
 def test_create_session_attaches_active_session_group(
@@ -679,6 +758,58 @@ def test_get_sessions_by_release_returns_paginated_results(
     )
 
     assert [session.id for session in sessions] == ["session-2"]
+
+
+def test_get_sessions_by_release_returns_manual_release_sessions(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    repository = sessions_repository_factory()
+    manual_release = build_manual_release(user_id="user-1")
+    repository.sessions.extend(
+        [
+            Sessions(
+                id="session-1",
+                user_id="user-1",
+                release_id=None,
+                manual_release_id=manual_release.id,
+                rating=5,
+                mood="Calm",
+                notes=None,
+                played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+                vinyl_side=None,
+                created_at=datetime(2026, 4, 19, tzinfo=UTC),
+            ),
+            Sessions(
+                id="session-2",
+                user_id="user-2",
+                release_id=None,
+                manual_release_id=manual_release.id,
+                rating=4,
+                mood=None,
+                notes=None,
+                played_at=datetime(2026, 3, 13, 19, 21, tzinfo=UTC),
+                vinyl_side=None,
+                created_at=datetime(2026, 4, 18, tzinfo=UTC),
+            ),
+        ]
+    )
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[],
+        manual_releases=[manual_release],
+    )
+
+    sessions = service.get_sessions_by_release(
+        db=object(),
+        release_id=manual_release.id,
+        user_id="user-1",
+        limit=20,
+        offset=0,
+    )
+
+    assert [session.id for session in sessions] == ["session-1"]
 
 
 def test_custom_moods_are_persisted_and_listed(
