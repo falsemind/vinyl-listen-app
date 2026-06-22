@@ -10,6 +10,7 @@ from app.main import app
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
 from app.services.release_import_service import ReleaseImportResult
 from app.services.sessions_service import ReleaseNotFoundError
+from tests.fixtures.api_stubs import SessionStub
 
 
 def _manual_release_stub() -> SimpleNamespace:
@@ -830,26 +831,41 @@ def test_get_release_flow_insights_endpoint_returns_empty_for_manual_release(
     }
 
 
-def test_get_release_sessions_endpoint_returns_empty_for_manual_release(
+def test_get_release_sessions_endpoint_returns_manual_release_sessions(
     build_stub_sessions_service,
     override_sessions_service,
 ) -> None:
     service = build_stub_sessions_service()
-    service.list_error = ReleaseNotFoundError("manual-release-1")
+    service.release_sessions = [
+        SessionStub(
+            id="manual-session-1",
+            release_id=None,
+            manual_release_id="manual-release-1",
+            rating=5,
+            mood="Focused",
+            notes=None,
+            played_at=datetime(2026, 3, 14, 19, 21, tzinfo=UTC),
+            vinyl_side=None,
+            created_at=datetime(2026, 4, 19, 8, 30, tzinfo=UTC),
+        )
+    ]
+    service.tracks_by_session_id = {
+        "manual-session-1": [
+            SimpleNamespace(
+                track_position="1",
+                track_artist=None,
+                track_title="Manual Track",
+                track_duration="5:08",
+                track_sequence=1,
+            )
+        ]
+    }
     override_sessions_service(service)
 
-    class ManualReleaseRepositoryStub:
-        def get_release(self, _db, release_id: str, *, user_id: str):
-            if release_id == "manual-release-1" and user_id == "test-user":
-                return SimpleNamespace(id=release_id)
-            return None
-
-    app.dependency_overrides[get_manual_release_repository] = lambda: ManualReleaseRepositoryStub()
-    try:
-        with TestClient(app) as client:
-            response = client.get("/api/v1/releases/manual-release-1/sessions")
-    finally:
-        app.dependency_overrides.pop(get_manual_release_repository, None)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/manual-release-1/sessions")
 
     assert response.status_code == 200
-    assert response.json() == {"sessions": []}
+    assert response.json()["sessions"][0]["session_id"] == "manual-session-1"
+    assert response.json()["sessions"][0]["tracks"][0]["position"] == "1"
+    assert service.list_calls == [("manual-release-1", 20, 0)]

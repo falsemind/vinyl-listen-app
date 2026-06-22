@@ -54,7 +54,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
     fun requireAuthFromSignedOutState() {
         resetMainNavigationToHome()
         passwordReentryError = null
-        authState = AuthGateUiState.NeedsAuth
+        authState = AuthGateUiState.NeedsAuth(startOnSignIn = true)
     }
 
     val tokenRefreshCoordinator =
@@ -136,10 +136,11 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 onAccountDeleted = ::requireAuthFromSignedOutState,
                 modifier = modifier,
             )
-        AuthGateUiState.NeedsAuth ->
+        is AuthGateUiState.NeedsAuth ->
             AuthFlowScreen(
                 authRepository = authAccountRepository,
                 apiClient = apiClient,
+                startOnSignIn = state.startOnSignIn,
                 onAuthenticated = {
                     resetMainNavigationToHome()
                     authState = AuthGateUiState.Ready
@@ -191,7 +192,9 @@ private sealed interface AuthGateUiState {
 
     data object Ready : AuthGateUiState
 
-    data object NeedsAuth : AuthGateUiState
+    data class NeedsAuth(
+        val startOnSignIn: Boolean = false,
+    ) : AuthGateUiState
 
     data object NeedsPasswordReentry : AuthGateUiState
 
@@ -203,7 +206,7 @@ private sealed interface AuthGateUiState {
 private fun AuthStartupResult.toUiState(): AuthGateUiState =
     when (this) {
         AuthStartupResult.Ready -> AuthGateUiState.Ready
-        AuthStartupResult.NeedsAuth -> AuthGateUiState.NeedsAuth
+        AuthStartupResult.NeedsAuth -> AuthGateUiState.NeedsAuth()
         AuthStartupResult.NeedsPasswordReentry -> AuthGateUiState.NeedsPasswordReentry
         is AuthStartupResult.RetryableError -> AuthGateUiState.RetryableError(message)
     }

@@ -406,13 +406,14 @@ class StubDiscogsSearchService:
 @dataclass
 class SessionStub:
     id: str
-    release_id: str
+    release_id: str | None
     rating: int | None
     mood: str | None
     notes: str | None
     played_at: datetime | None
     vinyl_side: str | None
     created_at: datetime
+    manual_release_id: str | None = None
     session_group_id: str | None = None
 
 

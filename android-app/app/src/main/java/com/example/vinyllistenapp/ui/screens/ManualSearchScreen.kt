@@ -1,5 +1,10 @@
 package com.example.vinyllistenapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,15 +22,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +61,7 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.theme.VinylColors
 import com.example.vinyllistenapp.ui.theme.VinylShapes
 import com.example.vinyllistenapp.ui.theme.VinylSpacing
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.time.Year
 
@@ -73,6 +84,7 @@ fun ManualSearchScreen(
     val pageSize = 10
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val resultsScrollState = rememberScrollState()
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
     var catalogQuery by rememberSaveable { mutableStateOf("") }
@@ -84,6 +96,7 @@ fun ManualSearchScreen(
     var selectingDiscogsReleaseId by remember { mutableStateOf<Long?>(null) }
     var retryError by remember { mutableStateOf<String?>(null) }
     var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
+    var searchControlsVisible by rememberSaveable { mutableStateOf(true) }
     val yearValidationError = validateReleaseYear(yearQuery)
     val barcodeValidationError = if (mode == ManualSearchMode.Discogs) validateBarcode(barcodeQuery) else null
     val effectiveBarcodeQuery = if (mode == ManualSearchMode.Discogs) barcodeQuery else ""
@@ -200,6 +213,19 @@ fun ManualSearchScreen(
         }
     }
 
+    LaunchedEffect(resultsScrollState) {
+        var previousScrollValue = resultsScrollState.value
+        snapshotFlow { resultsScrollState.value }
+            .collect { scrollValue ->
+                val canCollapse = resultsScrollState.maxValue > 0
+                when {
+                    !canCollapse || scrollValue <= 0 -> searchControlsVisible = true
+                    scrollValue > previousScrollValue -> searchControlsVisible = false
+                }
+                previousScrollValue = scrollValue
+            }
+    }
+
     Column(
         modifier =
             Modifier
@@ -208,97 +234,131 @@ fun ManualSearchScreen(
                 .padding(horizontal = VinylSpacing.SpaceMd),
     ) {
         ManualSearchHeader(onDismiss = onDismiss)
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            text = mode.title,
-            color = VinylColors.TextSecondary,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        LocalTimedSessionBanner.current?.let { banner ->
-            Spacer(Modifier.height(VinylSpacing.SpaceLg))
-            banner()
-        }
-        retryError?.let { message ->
-            Spacer(Modifier.height(VinylSpacing.SpaceLg))
-            ErrorRetryCard(
-                message = message,
-                onRetry = {
-                    failedImportResult?.let(::selectResult) ?: runSearch()
-                },
-            )
-        }
-        Spacer(Modifier.height(VinylSpacing.SpaceLg))
-        Column(
-            verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        AnimatedVisibility(
+            visible = searchControlsVisible,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
         ) {
-            ManualSearchField(
-                label = "Artist",
-                placeholder = "Search by artist name",
-                value = artistQuery,
-                onValueChange = { artistQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
-            )
-            ManualSearchField(
-                label = "Title",
-                placeholder = "Search by album title",
-                value = titleQuery,
-                onValueChange = { titleQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
-            )
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
             ) {
-                ManualSearchField(
-                    label = "Catalog Number",
-                    placeholder = "Cat #",
-                    value = catalogQuery,
-                    onValueChange = { catalogQuery = it },
-                    modifier = Modifier.weight(1f),
+                Text(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = mode.title,
+                    color = VinylColors.TextSecondary,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
-                ManualSearchField(
-                    label = "Year",
-                    placeholder = "Year",
-                    value = yearQuery,
-                    onValueChange = { yearQuery = it.digitsOnly(maxLength = RELEASE_YEAR_DIGITS) },
-                    modifier = Modifier.weight(1f),
-                    error = yearValidationError,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                LocalTimedSessionBanner.current?.let { banner ->
+                    Spacer(Modifier.height(VinylSpacing.SpaceLg))
+                    banner()
+                }
+                retryError?.let { message ->
+                    Spacer(Modifier.height(VinylSpacing.SpaceLg))
+                    ErrorRetryCard(
+                        message = message,
+                        onRetry = {
+                            failedImportResult?.let(::selectResult) ?: runSearch()
+                        },
+                    )
+                }
+                Spacer(Modifier.height(VinylSpacing.SpaceLg))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                ) {
+                    ManualSearchField(
+                        label = "Artist",
+                        placeholder = "Search by artist name",
+                        value = artistQuery,
+                        onValueChange = { artistQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
+                    )
+                    ManualSearchField(
+                        label = "Title",
+                        placeholder = "Search by album title",
+                        value = titleQuery,
+                        onValueChange = { titleQuery = it.take(MANUAL_SEARCH_TEXT_MAX_CHARS) },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                    ) {
+                        ManualSearchField(
+                            label = "Catalog Number",
+                            placeholder = "Cat #",
+                            value = catalogQuery,
+                            onValueChange = { catalogQuery = it },
+                            modifier = Modifier.weight(1f),
+                        )
+                        ManualSearchField(
+                            label = "Year",
+                            placeholder = "Year",
+                            value = yearQuery,
+                            onValueChange = { yearQuery = it.digitsOnly(maxLength = RELEASE_YEAR_DIGITS) },
+                            modifier = Modifier.weight(1f),
+                            error = yearValidationError,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                    }
+                    if (mode == ManualSearchMode.Discogs) {
+                        ManualSearchField(
+                            label = "Barcode",
+                            placeholder = "Search by barcode",
+                            value = barcodeQuery,
+                            onValueChange = { barcodeQuery = it.digitsOnly(maxLength = BARCODE_MAX_DIGITS) },
+                            error = barcodeValidationError,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(VinylSpacing.SpaceLg))
+                GlassPrimaryButton(
+                    label = if (state == ManualSearchUiState.Loading) "Searching" else "Search",
+                    enabled = canSearch,
+                    onClick = {
+                        if (canSearch) {
+                            focusManager.clearFocus()
+                            runSearch()
+                        }
+                    },
                 )
+                Spacer(Modifier.height(VinylSpacing.SpaceXl))
             }
-            if (mode == ManualSearchMode.Discogs) {
-                ManualSearchField(
-                    label = "Barcode",
-                    placeholder = "Search by barcode",
-                    value = barcodeQuery,
-                    onValueChange = { barcodeQuery = it.digitsOnly(maxLength = BARCODE_MAX_DIGITS) },
-                    error = barcodeValidationError,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                modifier = Modifier.align(Alignment.CenterStart),
+                text = "Results",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (!searchControlsVisible) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Show search fields",
+                    tint = VinylColors.AccentGreen,
+                    modifier =
+                        Modifier
+                            .align(Alignment.Center)
+                            .clip(VinylShapes.Chip)
+                            .clickable(
+                                onClickLabel = "Show search fields",
+                                role = Role.Button,
+                                onClick = {
+                                    searchControlsVisible = true
+                                    scope.launch { resultsScrollState.animateScrollTo(0) }
+                                },
+                            ).padding(VinylSpacing.SpaceSm),
                 )
             }
         }
-        Spacer(Modifier.height(VinylSpacing.SpaceLg))
-        GlassPrimaryButton(
-            label = if (state == ManualSearchUiState.Loading) "Searching" else "Search",
-            enabled = canSearch,
-            onClick = {
-                if (canSearch) {
-                    focusManager.clearFocus()
-                    runSearch()
-                }
-            },
-        )
-        Spacer(Modifier.height(VinylSpacing.SpaceXl))
-        Text(
-            text = "Results",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
         Spacer(Modifier.height(VinylSpacing.SpaceMd))
         Column(
             modifier =
                 Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(resultsScrollState),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
         ) {
             when (val currentState = state) {

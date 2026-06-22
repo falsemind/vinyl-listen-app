@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models.releases import Releases
+from app.models.releases import ManualRelease, Releases
 from app.models.sessions import Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.services.session_groups_service import SessionGroupsService
@@ -19,6 +19,7 @@ class InMemorySessionsRepository:
         self.sessions: list[Sessions] = []
         self.tracks_by_session_id: dict[str, list[SessionTracks]] = {}
         self.flow_insight_since_calls: list[datetime | None] = []
+        self.manual_releases: dict[str, ManualRelease] = {}
 
     def create(self, _db, **kwargs) -> Sessions:
         self.created_payload = {key: value for key, value in kwargs.items() if key != "user_id" or value is not None}
@@ -26,6 +27,7 @@ class InMemorySessionsRepository:
             id="session-123",
             user_id=kwargs.get("user_id"),
             release_id=kwargs["release_id"],
+            manual_release_id=kwargs.get("manual_release_id"),
             session_group_id=kwargs.get("session_group_id"),
             rating=kwargs["rating"],
             mood=kwargs["mood"],
@@ -91,6 +93,39 @@ class InMemorySessionsRepository:
         ]
         return matching[offset : offset + limit]
 
+    def get_by_manual_release_id(
+        self,
+        _db,
+        manual_release_id: str,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None = None,
+    ) -> list[Sessions]:
+        matching = [
+            session
+            for session in self.sessions
+            if session.manual_release_id == manual_release_id and (user_id is None or session.user_id == user_id)
+        ]
+        return matching[offset : offset + limit]
+
+    def get_recent_with_releases(self, _db, *, user_id: str | None = None, limit: int):
+        releases = getattr(self, "releases", {})
+        rows = [
+            (session, releases[session.release_id])
+            for session in self.sessions
+            if session.release_id in releases and (user_id is None or session.user_id == user_id)
+        ]
+        return sorted(rows, key=lambda row: row[0].played_at or row[0].created_at, reverse=True)[:limit]
+
+    def get_recent_with_manual_releases(self, _db, *, user_id: str | None = None, limit: int):
+        rows = [
+            (session, self.manual_releases[session.manual_release_id])
+            for session in self.sessions
+            if session.manual_release_id in self.manual_releases and (user_id is None or session.user_id == user_id)
+        ]
+        return sorted(rows, key=lambda row: row[0].played_at or row[0].created_at, reverse=True)[:limit]
+
     def get_flow_insight_sessions(
         self,
         _db,
@@ -104,6 +139,54 @@ class InMemorySessionsRepository:
             sessions = [session for session in sessions if (session.played_at or session.created_at) >= since]
         return sorted(sessions, key=lambda session: session.played_at or session.created_at)
 
+    def count_all(self, _db, *, user_id: str | None = None) -> int:
+        return len([session for session in self.sessions if user_id is None or session.user_id == user_id])
+
+    def count_distinct_releases_since(self, _db, *, user_id: str | None = None, since: datetime) -> int:
+        release_ids = {
+            session.release_id
+            for session in self.sessions
+            if session.release_id is not None
+            and (session.played_at or session.created_at) >= since
+            and (user_id is None or session.user_id == user_id)
+        }
+        return len(release_ids)
+
+    def count_distinct_manual_releases_since(self, _db, *, user_id: str | None = None, since: datetime) -> int:
+        release_ids = {
+            session.manual_release_id
+            for session in self.sessions
+            if session.manual_release_id is not None
+            and (session.played_at or session.created_at) >= since
+            and (user_id is None or session.user_id == user_id)
+        }
+        return len(release_ids)
+
+    def get_top_release_stats(self, _db, *, user_id: str | None = None, limit: int):
+        releases = getattr(self, "releases", {})
+        rows = []
+        for release_id, release in releases.items():
+            sessions = [
+                session
+                for session in self.sessions
+                if session.release_id == release_id and (user_id is None or session.user_id == user_id)
+            ]
+            if sessions:
+                rows.append((release, len(sessions), _average_rating(sessions)))
+        return sorted(rows, key=lambda row: (row[1], row[2] or 0), reverse=True)[:limit]
+
+    def get_top_manual_release_stats(self, _db, *, user_id: str | None = None, limit: int):
+        rows = []
+        for release_id, release in self.manual_releases.items():
+            sessions = [
+                session
+                for session in self.sessions
+                if session.manual_release_id == release_id and (user_id is None or session.user_id == user_id)
+            ]
+            if sessions:
+                rows.append((release, len(sessions), _average_rating(sessions)))
+        return sorted(rows, key=lambda row: (row[1], row[2] or 0), reverse=True)[:limit]
+
     def get_mood_by_name(self, _db, name: str, *, user_id: str | None = None) -> str | None:
         for session in sorted(self.sessions, key=lambda item: item.created_at):
             if (
@@ -115,6 +198,13 @@ class InMemorySessionsRepository:
         return None
 
 
+def _average_rating(sessions: list[Sessions]) -> float | None:
+    ratings = [session.rating for session in sessions if session.rating is not None]
+    if not ratings:
+        return None
+    return sum(ratings) / len(ratings)
+
+
 class InMemoryReleasesRepository:
     def __init__(self, releases: list[Releases]) -> None:
         self.releases = {release.id: release for release in releases}
@@ -124,6 +214,14 @@ class InMemoryReleasesRepository:
 
     def get_by_ids(self, _db, release_ids: list[str]) -> list[Releases]:
         return [release for release_id, release in self.releases.items() if release_id in release_ids]
+
+
+class InMemoryManualReleaseRepository:
+    def __init__(self, releases: list[ManualRelease]) -> None:
+        self.releases = {(release.id, release.user_id): release for release in releases}
+
+    def get_release(self, _db, release_id: str, *, user_id: str) -> ManualRelease | None:
+        return self.releases.get((release_id, user_id))
 
 
 class StubDiscogsRepository:
@@ -189,6 +287,42 @@ def build_release() -> Callable[[str, int], Releases]:
 
 
 @pytest.fixture
+def build_manual_release() -> Callable[..., ManualRelease]:
+    def _build_manual_release(
+        release_id: str = "manual-release-123",
+        *,
+        user_id: str = "user-123",
+        in_collection: bool = True,
+        tracklist: list[dict] | None = None,
+    ) -> ManualRelease:
+        return ManualRelease(
+            id=release_id,
+            user_id=user_id,
+            artist="Manual Artist",
+            title="Manual Title",
+            year=2026,
+            label="Manual Label",
+            catalog_number="MAN-1",
+            barcode=None,
+            format="Vinyl",
+            genres=["Electronic"],
+            styles=["Techno"],
+            artists=[{"name": "Manual Artist"}],
+            labels=[{"name": "Manual Label", "catalog_number": "MAN-1"}],
+            identifiers={"catalog_number": "MAN-1", "barcode": None},
+            format_details={"format": "Vinyl", "vinyl_size": "12", "vinyl_speed": "45", "vinyl_disc_count": 1},
+            tracklist=tracklist or [{"position": "1", "title": "Manual Track", "duration": "5:08"}],
+            in_collection=in_collection,
+            collection_added_at=datetime(2026, 4, 19, tzinfo=UTC),
+            collection_removed_at=None,
+            created_at=datetime(2026, 4, 19, tzinfo=UTC),
+            updated_at=datetime(2026, 4, 19, tzinfo=UTC),
+        )
+
+    return _build_manual_release
+
+
+@pytest.fixture
 def sessions_repository_factory() -> Callable[[], InMemorySessionsRepository]:
     def _factory() -> InMemorySessionsRepository:
         return InMemorySessionsRepository()
@@ -207,10 +341,12 @@ def sessions_moods_repository_factory() -> Callable[[], InMemorySessionsMoodsRep
 @pytest.fixture
 def build_sessions_service(
     build_release: Callable[[str, int], Releases],
+    build_manual_release: Callable[..., ManualRelease],
 ) -> Callable[
     [
         InMemorySessionsRepository | None,
         list[Releases] | None,
+        list[ManualRelease] | None,
         dict[int, dict] | None,
         InMemorySessionsMoodsRepository | None,
         SessionGroupsService | None,
@@ -221,14 +357,21 @@ def build_sessions_service(
     def _build_service(
         sessions_repository: InMemorySessionsRepository | None = None,
         releases: list[Releases] | None = None,
+        manual_releases: list[ManualRelease] | None = None,
         payload_by_discogs_id: dict[int, dict] | None = None,
         moods_repository: InMemorySessionsMoodsRepository | None = None,
         session_groups_service: SessionGroupsService | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> SessionsService:
+        repository = sessions_repository or InMemorySessionsRepository()
+        shared_releases = releases or [build_release()]
+        owned_manual_releases = manual_releases or [build_manual_release()]
+        repository.releases = {release.id: release for release in shared_releases}
+        repository.manual_releases = {release.id: release for release in owned_manual_releases}
         return SessionsService(
-            sessions_repository=sessions_repository or InMemorySessionsRepository(),
-            releases_repository=InMemoryReleasesRepository(releases or [build_release()]),
+            sessions_repository=repository,
+            releases_repository=InMemoryReleasesRepository(shared_releases),
+            manual_release_repository=InMemoryManualReleaseRepository(owned_manual_releases),
             discogs_repository=StubDiscogsRepository(payload_by_discogs_id or {}),
             moods_repository=moods_repository or InMemorySessionsMoodsRepository(),
             session_groups_service=session_groups_service,

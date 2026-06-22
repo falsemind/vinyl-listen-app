@@ -314,15 +314,14 @@ fun SettingsScreen(
         }
     }
 
-    fun deleteAccount() {
+    fun deleteAccount(password: String) {
         val repository = authAccountRepository ?: return
-        if (isDeletingAccount || deleteAccountPassword.isBlank()) return
+        if (isDeletingAccount || password.isBlank()) return
         isDeletingAccount = true
         accountErrorMessage = null
         scope.launch {
-            runCatching { repository.deleteAccount(deleteAccountPassword) }
+            runCatching { repository.deleteAccount(password) }
                 .onSuccess {
-                    deleteAccountPassword = ""
                     onAccountDeleted()
                 }.onFailure { error ->
                     accountErrorMessage = error.toUserMessage("Could not delete account.")
@@ -411,7 +410,10 @@ fun SettingsScreen(
             onConfirmPasswordReset = ::confirmPasswordReset,
             onLogoutClick = { showLogoutConfirmation = true },
             onLogoutAllClick = { showLogoutAllConfirmation = true },
-            onDeleteAccountClick = { showDeleteAccountConfirmation = true },
+            onDeleteAccountClick = {
+                deleteAccountPassword = ""
+                showDeleteAccountConfirmation = true
+            },
             innerPadding = innerPadding,
         )
     }
@@ -548,7 +550,10 @@ fun SettingsScreen(
     }
     if (showDeleteAccountConfirmation) {
         AlertDialog(
-            onDismissRequest = { showDeleteAccountConfirmation = false },
+            onDismissRequest = {
+                showDeleteAccountConfirmation = false
+                deleteAccountPassword = ""
+            },
             title = { Text("Delete account") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
@@ -569,8 +574,10 @@ fun SettingsScreen(
                 TextButton(
                     enabled = !isDeletingAccount && deleteAccountPassword.isNotBlank(),
                     onClick = {
+                        val password = deleteAccountPassword
+                        deleteAccountPassword = ""
                         showDeleteAccountConfirmation = false
-                        deleteAccount()
+                        deleteAccount(password)
                     },
                 ) {
                     Text("Delete")
