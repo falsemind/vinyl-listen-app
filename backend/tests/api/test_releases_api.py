@@ -9,6 +9,7 @@ from app.api.routes.releases import get_manual_release_repository, get_releases_
 from app.main import app
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
 from app.services.release_import_service import ReleaseImportResult
+from app.services.sessions_service import RecordFlowReleaseSummary
 from tests.fixtures.api_stubs import SessionStub
 
 
@@ -831,9 +832,18 @@ def test_get_release_flow_insights_endpoint_passes_manual_release_to_service(
     override_sessions_service,
 ) -> None:
     service = build_stub_sessions_service()
+    manual_before_release = SimpleNamespace(
+        id="manual-before",
+        artist="Manual Artist",
+        title="Manual Before",
+        year=2026,
+        cover_thumbnail_url="/media/manual-release-covers/user/draft/thumb.jpg",
+        cover_image_url="/media/manual-release-covers/user/draft/cover.jpg",
+        styles=["Electronic"],
+    )
     service.flow_insights = service.flow_insights.__class__(
         release_id="manual-release-1",
-        before=service.flow_insights.before,
+        before=[RecordFlowReleaseSummary(release=manual_before_release, count=1)],
         after=service.flow_insights.after,
         mood_transitions=service.flow_insights.mood_transitions,
         sample_size=service.flow_insights.sample_size,
@@ -846,7 +856,8 @@ def test_get_release_flow_insights_endpoint_passes_manual_release_to_service(
 
     assert response.status_code == 200
     assert response.json()["release_id"] == "manual-release-1"
-    assert response.json()["before"]
+    assert response.json()["before"][0]["thumbnail_url"] == "/media/manual-release-covers/user/draft/thumb.jpg"
+    assert response.json()["before"][0]["cover_image_url"] == "/media/manual-release-covers/user/draft/cover.jpg"
     assert response.json()["after"]
     assert response.json()["mood_transitions"]
     assert service.flow_calls == [("manual-release-1", 5, "3m")]

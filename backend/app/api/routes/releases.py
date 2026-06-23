@@ -590,7 +590,8 @@ def _record_flow_release_response(summary) -> RecordFlowReleaseSummaryResponse:
         artist=summary.release.artist,
         title=summary.release.title,
         year=summary.release.year,
-        thumbnail_url=getattr(summary.release, "thumbnail_url", None),
+        thumbnail_url=getattr(summary.release, "thumbnail_url", None)
+        or getattr(summary.release, "cover_thumbnail_url", None),
         cover_image_url=summary.release.cover_image_url,
         styles=summary.release.styles,
         count=summary.count,
