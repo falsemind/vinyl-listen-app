@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -85,6 +86,8 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.ZoomSuggestionOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.Executors
@@ -103,6 +106,7 @@ fun CaptureRecordScreen(
     val hapticFeedback = LocalHapticFeedback.current
     val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
+    val textRecognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     var showCaptureInfo by rememberSaveable { mutableStateOf(false) }
     var showDiscogsTokenInfo by rememberSaveable { mutableStateOf(false) }
     var backendIdentifyEnabled by rememberSaveable { mutableStateOf(false) }
@@ -111,17 +115,20 @@ fun CaptureRecordScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
+    var isRecognizingText by rememberSaveable { mutableStateOf(false) }
     var barcodeScanMode by rememberSaveable { mutableStateOf(false) }
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
     var capturedBarcode by remember { mutableStateOf<String?>(null) }
+    var textRecognitionResult by remember { mutableStateOf<TextRecognitionPrototypeResult?>(null) }
     var cameraPrivacyBlocked by rememberSaveable { mutableStateOf(false) }
     var cameraRetryAttempt by rememberSaveable { mutableStateOf(0) }
     val photoCaptured = capturedImageUri != null
     val barcodeCaptured = capturedBarcode != null
     val captureComplete = photoCaptured || barcodeCaptured
-    val normalCaptureActionsEnabled = !isTakingPhoto && !captureComplete && !barcodeScanMode
+    val normalCaptureActionsEnabled = !isTakingPhoto && !isRecognizingText && !captureComplete && !barcodeScanMode
     val photoCaptureActionsEnabled = backendIdentifyEnabled && normalCaptureActionsEnabled
+    val textRecognitionActionsEnabled = !isTakingPhoto && !isRecognizingText && !captureComplete && !barcodeScanMode
     LaunchedEffect(Unit) {
         runCatching { apiClient.getDiscogsIntegrationStatus() }
             .onSuccess { status ->
@@ -177,6 +184,9 @@ fun CaptureRecordScreen(
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
+    DisposableEffect(textRecognizer) {
+        onDispose { textRecognizer.close() }
+    }
 
     fun takePhotoInApp() {
         if (photoCaptured) return
@@ -218,6 +228,90 @@ fun CaptureRecordScreen(
                     isTakingPhoto = false
                     imageFile.delete()
                     captureError = "Photo could not be captured. Try again."
+                }
+            },
+        )
+    }
+
+    fun scanTextFromStillFrame() {
+        if (!textRecognitionActionsEnabled) return
+        if (!refreshCameraPermission(markDenied = true)) {
+            captureError = null
+            return
+        }
+        if (cameraPrivacyBlocked) {
+            captureError = CAMERA_PRIVACY_BLOCKED_MESSAGE
+            return
+        }
+        val capture = imageCapture
+        if (capture == null) {
+            captureError = "Camera is starting. Try again in a moment."
+            return
+        }
+
+        val imageFile = createImageCaptureFile(context)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(imageFile).build()
+        val startedAtMillis = System.currentTimeMillis()
+        isRecognizingText = true
+        textRecognitionResult = null
+        captureError = null
+        capture.takePicture(
+            outputOptions,
+            mainExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    if (imageFile.isLikelyCameraPrivacyPlaceholder()) {
+                        imageFile.delete()
+                        isRecognizingText = false
+                        captureError = "No text found. Make sure the label is visible and well lit."
+                        return
+                    }
+
+                    val inputImage =
+                        runCatching { InputImage.fromFilePath(context, Uri.fromFile(imageFile)) }
+                            .getOrElse {
+                                imageFile.delete()
+                                isRecognizingText = false
+                                captureError = "Text could not be read from this photo."
+                                return
+                            }
+                    val imageSizeLabel = imageFile.readImageSizeLabel()
+                    textRecognizer
+                        .process(inputImage)
+                        .addOnSuccessListener(mainExecutor) { recognizedText ->
+                            val lines =
+                                recognizedText
+                                    .textBlocks
+                                    .flatMap { block -> block.lines.map { line -> line.text.trim() } }
+                                    .filter { it.isNotBlank() }
+                            val elapsedMillis = System.currentTimeMillis() - startedAtMillis
+                            textRecognitionResult =
+                                TextRecognitionPrototypeResult(
+                                    lines = lines,
+                                    imageSizeLabel = imageSizeLabel,
+                                    processingTimeMillis = elapsedMillis,
+                                )
+                            val linePreview = lines.take(20).joinToString(" | ")
+                            Log.d(
+                                TEXT_RECOGNITION_TAG,
+                                "ML Kit text recognized ${lines.size} lines in ${elapsedMillis}ms " +
+                                    "from $imageSizeLabel: $linePreview",
+                            )
+                            if (lines.isEmpty()) {
+                                captureError = "No text found. Try a clearer still frame."
+                            }
+                        }.addOnFailureListener(mainExecutor) {
+                            captureError = "Text recognition failed. Try again."
+                        }.addOnCompleteListener(mainExecutor) {
+                            isRecognizingText = false
+                            imageFile.delete()
+                        }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    isRecognizingText = false
+                    imageFile.delete()
+                    captureError = "Photo could not be captured for text recognition."
                 }
             },
         )
@@ -340,27 +434,49 @@ fun CaptureRecordScreen(
                 )
             }
             Spacer(Modifier.height(VinylSpacing.SpaceLg))
-            CaptureSecondaryButton(
-                label = if (barcodeScanMode) "Cancel Barcode Scan" else "Scan Barcode",
-                accentColor = VinylColors.AccentPurple,
-                onClick = {
-                    if (!isTakingPhoto && !captureComplete) {
-                        if (barcodeScanMode) {
-                            barcodeScanMode = false
-                            torchEnabled = false
-                            captureError = null
-                        } else if (cameraPrivacyBlocked) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+            ) {
+                CaptureSecondaryButton(
+                    label = if (barcodeScanMode) "Cancel Barcode" else "Scan Barcode",
+                    accentColor = VinylColors.AccentPurple,
+                    onClick = {
+                        if (!isTakingPhoto && !isRecognizingText && !captureComplete) {
+                            if (barcodeScanMode) {
+                                barcodeScanMode = false
+                                torchEnabled = false
+                                captureError = null
+                            } else if (cameraPrivacyBlocked) {
+                                retryCameraPrivacyAccess()
+                            } else if (refreshCameraPermission(markDenied = false)) {
+                                captureError = null
+                                textRecognitionResult = null
+                                barcodeScanMode = true
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }
+                    },
+                    enabled = !isTakingPhoto && !isRecognizingText && !captureComplete,
+                    modifier = Modifier.weight(1f),
+                )
+                CaptureSecondaryButton(
+                    label = if (isRecognizingText) "Reading Text..." else "Scan Text",
+                    accentColor = VinylColors.AccentOrange,
+                    onClick = {
+                        if (cameraPrivacyBlocked) {
                             retryCameraPrivacyAccess()
                         } else if (refreshCameraPermission(markDenied = false)) {
-                            captureError = null
-                            barcodeScanMode = true
+                            scanTextFromStillFrame()
                         } else {
                             permissionLauncher.launch(Manifest.permission.CAMERA)
                         }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
+                    },
+                    enabled = textRecognitionActionsEnabled,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             if (barcodeScanMode) {
                 Spacer(Modifier.height(VinylSpacing.SpaceMd))
                 CaptureSecondaryButton(
@@ -369,6 +485,10 @@ fun CaptureRecordScreen(
                     onClick = { torchEnabled = !torchEnabled },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            textRecognitionResult?.let { result ->
+                Spacer(Modifier.height(VinylSpacing.SpaceMd))
+                TextRecognitionPrototypeResultCard(result = result)
             }
             Spacer(Modifier.height(VinylSpacing.SpaceMd))
             Row(
@@ -427,10 +547,31 @@ private fun createImageCaptureUri(
     imageFile: File,
 ): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
 
+private data class TextRecognitionPrototypeResult(
+    val lines: List<String>,
+    val imageSizeLabel: String,
+    val processingTimeMillis: Long,
+)
+
+private fun File.readImageSizeLabel(): String {
+    val options =
+        BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+    BitmapFactory.decodeFile(absolutePath, options)
+    return if (options.outWidth > 0 && options.outHeight > 0) {
+        "${options.outWidth}x${options.outHeight}"
+    } else {
+        "unknown size"
+    }
+}
+
 private fun Context.hasCameraPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
+private const val TEXT_RECOGNITION_TAG = "CaptureTextRecognition"
 private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by system privacy controls."
+private const val TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT = 8
 private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
 private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
 private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
@@ -940,6 +1081,47 @@ private fun CaptureHintCard(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+@Composable
+private fun TextRecognitionPrototypeResultCard(
+    result: TextRecognitionPrototypeResult,
+    modifier: Modifier = Modifier,
+) {
+    val previewLines = result.lines.take(TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT)
+    Column(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(VinylShapes.Card)
+                .background(VinylColors.SurfacePrimary.copy(alpha = 0.88f))
+                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                .padding(VinylSpacing.SpaceMd),
+        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    ) {
+        Text(
+            text = "ML Kit text: ${result.lines.size} lines - ${result.processingTimeMillis}ms - ${result.imageSizeLabel}",
+            color = VinylColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (previewLines.isEmpty()) {
+            Text(
+                text = "No text lines found.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            previewLines.forEach { line ->
+                Text(
+                    text = line,
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
