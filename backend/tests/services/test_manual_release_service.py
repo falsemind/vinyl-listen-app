@@ -230,6 +230,27 @@ def test_save_release_rejects_whitespace_only_artist() -> None:
     assert exc_info.value.field_errors["artists"] == "At least one artist is required."
 
 
+def test_save_release_requires_track_position_for_vinyl() -> None:
+    service = ManualReleaseService(FakeManualReleaseRepository())
+    form_data = ManualReleaseFormData(
+        artists=["Artist"],
+        title="Title",
+        label="Label",
+        format="Vinyl",
+        vinyl_size="12",
+        vinyl_speed="33 1/3",
+        vinyl_disc_count=1,
+        genres=["Electronic"],
+        styles=["Techno"],
+        tracklist=[{"title": "Track"}],
+    )
+
+    with pytest.raises(ManualReleaseValidationError) as exc_info:
+        service.save_release(object(), user_id="user-1", form_data=form_data)
+
+    assert exc_info.value.field_errors["tracklist.0.position"] == "Track position is required for vinyl releases."
+
+
 def test_save_release_accepts_complete_vinyl_form_data() -> None:
     repository = FakeManualReleaseRepository()
     service = ManualReleaseService(repository)
@@ -243,7 +264,7 @@ def test_save_release_accepts_complete_vinyl_form_data() -> None:
         vinyl_disc_count=2,
         genres=["Electronic"],
         styles=["Techno"],
-        tracklist=[{"title": "A1", "duration": "6:30"}],
+        tracklist=[{"title": "A1", "position": "A1", "duration": "6:30"}],
     )
 
     release = service.save_release(object(), user_id="user-1", form_data=form_data)

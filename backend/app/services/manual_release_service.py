@@ -206,6 +206,8 @@ class ManualReleaseService:
         for index, track in enumerate(form_data.tracklist):
             if not track.title:
                 field_errors[f"tracklist.{index}.title"] = "Track title is required."
+            if form_data.format == ManualReleaseFormat.VINYL and not track.position:
+                field_errors[f"tracklist.{index}.position"] = "Track position is required for vinyl releases."
             if track.duration and re.fullmatch(r"\d{1,2}:\d{2}(?::\d{2})?", track.duration) is None:
                 field_errors[f"tracklist.{index}.duration"] = "Track duration must use m:ss or h:mm:ss."
             for credit_index, credit in enumerate(track.credits):

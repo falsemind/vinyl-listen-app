@@ -53,6 +53,18 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun sessionSideOptionsDoesNotInventSidesForManualNumericTracksWhenFallbackSuppressed() {
+        val record =
+            recordSummary(
+                availableSides = emptyList(),
+                availableSideOptions = emptyList(),
+                tracklist = listOf(ReleaseTrack("1", "Manual Track")),
+            )
+
+        assertEquals(emptyList<SessionSideOption>(), sessionSideOptions(record, usePrototypeFallback = false))
+    }
+
+    @Test
     fun displaySessionSideAddsReadablePrefix() {
         assertEquals("Side AA", displaySessionSide("AA"))
     }
@@ -92,6 +104,39 @@ class SessionSideOptionsTest {
             listOf(SessionTrackOption("X2", "X2: S.O.U.R 5:12")),
             sessionTrackOptions(record, SessionSideOption("1:X", "Disc 1 - Side X")),
         )
+    }
+
+    @Test
+    fun sessionTrackOptionsShowsAllTracksWhenNoSideOptionsExist() {
+        val record =
+            recordSummary(
+                availableSides = emptyList(),
+                availableSideOptions = emptyList(),
+                tracklist =
+                    listOf(
+                        ReleaseTrack("1", "Manual Track"),
+                        ReleaseTrack("2", "Manual Track Two", "4:12"),
+                    ),
+            )
+
+        assertEquals(
+            listOf(
+                SessionTrackOption("1", "1: Manual Track"),
+                SessionTrackOption("2", "2: Manual Track Two 4:12"),
+            ),
+            sessionTrackOptions(record, selectedSide = null),
+        )
+    }
+
+    @Test
+    fun sessionTrackOptionsDoesNotShowAllTracksWhenSideOptionsExistButNoSideSelected() {
+        val record =
+            recordSummary(
+                availableSides = listOf("A"),
+                tracklist = listOf(ReleaseTrack("A1", "Side Track")),
+            )
+
+        assertEquals(emptyList<SessionTrackOption>(), sessionTrackOptions(record, selectedSide = null))
     }
 
     @Test

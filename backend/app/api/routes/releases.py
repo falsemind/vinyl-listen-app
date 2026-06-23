@@ -462,6 +462,7 @@ def _release_response(
 
 
 def _manual_release_response(release: ManualRelease) -> ReleaseResponse:
+    available_sides = _manual_available_sides(release.tracklist)
     return ReleaseResponse(
         id=release.id,
         discogs_release_id=0,
@@ -483,8 +484,8 @@ def _manual_release_response(release: ManualRelease) -> ReleaseResponse:
         discogs_instance_id=None,
         is_favorite=release.is_favorite,
         has_full_discogs_info=False,
-        available_sides=[],
-        available_side_options=[],
+        available_sides=available_sides,
+        available_side_options=[{"value": side, "label": f"Side {side}", "side": side} for side in available_sides],
         tracklist=[_manual_track_response(track) for track in release.tracklist],
         discogs_artists=[],
         created_at=release.created_at,
@@ -507,6 +508,26 @@ def _manual_track_response(track: dict[str, Any]) -> dict[str, Any]:
             if credit.get("name")
         ],
     }
+
+
+def _manual_available_sides(tracklist: list[dict[str, Any]]) -> list[str]:
+    sides: list[str] = []
+    for track in tracklist:
+        side = _manual_track_side_prefix(track.get("position") or "")
+        if side is not None and side not in sides:
+            sides.append(side)
+    return sides
+
+
+def _manual_track_side_prefix(position: str) -> str | None:
+    letters: list[str] = []
+    for character in position.strip().upper():
+        if character.isalpha():
+            letters.append(character)
+            continue
+        if letters:
+            break
+    return "".join(letters) or None
 
 
 @router.get(

@@ -204,13 +204,28 @@ class ManualReleaseParsingTest {
                         styles = listOf("Techno"),
                         tracklist =
                             listOf(
-                                ManualReleaseTrackInput(title = "Low Ceiling"),
+                                ManualReleaseTrackInput(title = "Low Ceiling", position = "A1"),
                             ),
                     ),
             )
 
         assertTrue(releaseState.requiredComplete)
         assertEquals(ManualReleasePrimaryAction.SaveRelease, releaseState.primaryAction)
+    }
+
+    @Test
+    fun vinylManualReleaseRequiresTrackPositionBeforeSaveRelease() {
+        val state =
+            ManualReleaseFormState(
+                formData =
+                    validManualReleaseFormData().copy(
+                        tracklist = listOf(ManualReleaseTrackInput(title = "Low Ceiling")),
+                    ),
+            )
+
+        assertFalse(state.requiredComplete)
+        assertEquals(ManualReleasePrimaryAction.SaveDraft, state.primaryAction)
+        assertEquals("Track position is required for vinyl releases.", state.localFieldErrors["tracklist.0.position"])
     }
 
     @Test
@@ -223,6 +238,7 @@ class ManualReleaseParsingTest {
                             listOf(
                                 ManualReleaseTrackInput(
                                     title = "Low Ceiling",
+                                    position = "A1",
                                     duration = "5m",
                                     credits = listOf(ManualReleaseTrackCreditInput(ManualReleaseTrackCreditRole.Remix)),
                                 ),
@@ -296,5 +312,5 @@ private fun validManualReleaseFormData(): ManualReleaseFormData =
         vinylDiscCount = 2,
         genres = listOf("Electronic"),
         styles = listOf("Techno"),
-        tracklist = listOf(ManualReleaseTrackInput(title = "Low Ceiling")),
+        tracklist = listOf(ManualReleaseTrackInput(title = "Low Ceiling", position = "A1")),
     )

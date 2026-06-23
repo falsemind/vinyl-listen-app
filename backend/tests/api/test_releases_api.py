@@ -557,6 +557,34 @@ def test_get_release_endpoint_returns_manual_release_metadata(
     assert manual_repository.lookup_calls == [("manual-release-1", "test-user")]
 
 
+def test_get_release_endpoint_derives_manual_side_options_from_prefixed_tracks(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+    manual_release = _manual_release_stub()
+    manual_release.tracklist = [
+        {"position": "A1", "title": "Open", "duration": None, "credits": []},
+        {"position": "A2", "title": "Build", "duration": None, "credits": []},
+        {"position": "B1", "title": "Flip", "duration": None, "credits": []},
+    ]
+    manual_repository = ManualReleaseRepositoryStub(manual_release)
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/releases/manual-release-1")
+    finally:
+        app.dependency_overrides.pop(get_manual_release_repository, None)
+
+    assert response.status_code == 200
+    assert response.json()["available_sides"] == ["A", "B"]
+    assert response.json()["available_side_options"] == [
+        {"value": "A", "label": "Side A", "side": "A", "disc_number": None},
+        {"value": "B", "label": "Side B", "side": "B", "disc_number": None},
+    ]
+
+
 def test_update_release_favorite_endpoint_updates_release(
     build_stub_release_import_service,
     override_release_import_service,
