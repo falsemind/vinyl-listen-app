@@ -107,7 +107,7 @@ fun SessionLoggingScreen(
     val fallbackRecord = MockVinylData.record(releaseId)
     var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: fallbackRecord
-    val sideOptions = sessionSideOptions(record, usePrototypeFallback = releaseId == null)
+    val sideOptions = sessionSideOptions(record, usePrototypeFallback = shouldUsePrototypeSideFallback(releaseId))
     val moods = BUILT_IN_SESSION_MOODS
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
@@ -337,7 +337,11 @@ fun EditSessionScreen(
     var loadedSession by remember(sessionId) { mutableStateOf<ListeningSession?>(null) }
     var loadedRecord by remember(sessionId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: MockVinylData.record(loadedSession?.releaseId)
-    val sideOptions = sessionSideOptions(record, usePrototypeFallback = loadedRecord != null)
+    val sideOptions =
+        sessionSideOptions(
+            record,
+            usePrototypeFallback = shouldUsePrototypeSideFallback(loadedSession?.releaseId),
+        )
     val moods = BUILT_IN_SESSION_MOODS
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(sessionId) { mutableStateOf("") }
@@ -1051,6 +1055,8 @@ internal fun sessionSideOptions(
         usePrototypeFallback -> listOf("A", "B").map { SessionSideOption(it, displaySessionSide(it)) }
         else -> emptyList()
     }
+
+internal fun shouldUsePrototypeSideFallback(releaseId: String?): Boolean = releaseId == null
 
 private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
 

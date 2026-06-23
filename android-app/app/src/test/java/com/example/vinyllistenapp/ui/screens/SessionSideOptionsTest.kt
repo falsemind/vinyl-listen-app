@@ -65,6 +65,12 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun prototypeSideFallbackIsDisabledForRealSessionTargets() {
+        assertTrue(shouldUsePrototypeSideFallback(null))
+        assertFalse(shouldUsePrototypeSideFallback("manual-release-123"))
+    }
+
+    @Test
     fun displaySessionSideAddsReadablePrefix() {
         assertEquals("Side AA", displaySessionSide("AA"))
     }
