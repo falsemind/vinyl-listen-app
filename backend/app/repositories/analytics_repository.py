@@ -238,20 +238,20 @@ class AnalyticsRepository:
 
     @staticmethod
     def get_style_distribution(db: Session, *, user_id: str | None = None):
-        query = db.query(Releases.styles).join(Sessions, Sessions.release_id == Releases.id)
+        query = db.query(Releases.styles, Releases.genres).join(Sessions, Sessions.release_id == Releases.id)
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        style_rows = query.filter(Releases.styles.isnot(None)).all()
-        manual_query = db.query(ManualRelease.styles).join(
+        style_rows = query.all()
+        manual_query = db.query(ManualRelease.styles, ManualRelease.genres).join(
             Sessions,
             Sessions.manual_release_id == ManualRelease.id,
         )
         if user_id is not None:
             manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
-        style_rows += manual_query.filter(ManualRelease.styles.isnot(None)).all()
+        style_rows += manual_query.all()
         style_counts: dict[str, tuple[str, int]] = {}
-        for (styles,) in style_rows:
-            for style in AnalyticsRepository._release_styles(styles):
+        for styles, genres in style_rows:
+            for style in AnalyticsRepository._release_style_tags(styles, genres):
                 style_key = style.lower()
                 existing_style, count = style_counts.get(style_key, (style, 0))
                 style_counts[style_key] = (existing_style, count + 1)
@@ -280,8 +280,7 @@ class AnalyticsRepository:
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
         style_rows = [
-            (AnalyticsRepository._discogs_release_summary(release), session_id)
-            for release, session_id in query.filter(Releases.styles.isnot(None)).all()
+            (AnalyticsRepository._discogs_release_summary(release), session_id) for release, session_id in query.all()
         ]
         manual_query = db.query(ManualRelease, Sessions.id).join(
             Sessions,
@@ -291,11 +290,11 @@ class AnalyticsRepository:
             manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
         style_rows += [
             (AnalyticsRepository._manual_release_summary(release), session_id)
-            for release, session_id in manual_query.filter(ManualRelease.styles.isnot(None)).all()
+            for release, session_id in manual_query.all()
         ]
         release_counts: dict[str, tuple[AnalyticsReleaseSummary, int]] = {}
         for release, _session_id in style_rows:
-            if not AnalyticsRepository._styles_include(release.styles, target_style):
+            if not AnalyticsRepository._styles_include(release.styles, release.genres, target_style):
                 continue
             existing_release, count = release_counts.get(release.target_key, (release, 0))
             release_counts[release.target_key] = (existing_release, count + 1)
@@ -500,7 +499,7 @@ class AnalyticsRepository:
             label=release.label,
             catalog_number=release.catalog_number,
             genres=release.genres,
-            styles=release.styles,
+            styles=AnalyticsRepository._release_style_tags(release.styles, release.genres),
             thumbnail_url=release.thumbnail_url,
             cover_image_url=release.cover_image_url,
         )
@@ -518,16 +517,16 @@ class AnalyticsRepository:
             label=release.label,
             catalog_number=release.catalog_number,
             genres=release.genres,
-            styles=release.styles,
+            styles=AnalyticsRepository._release_style_tags(release.styles, release.genres),
             thumbnail_url=release.cover_thumbnail_url,
             cover_image_url=release.cover_image_url,
         )
 
     @staticmethod
-    def _styles_include(styles, target_style: str) -> bool:
+    def _styles_include(styles, genres, target_style: str) -> bool:
         return any(
             AnalyticsRepository._normalized_label(style) == target_style
-            for style in AnalyticsRepository._release_styles(styles)
+            for style in AnalyticsRepository._release_style_tags(styles, genres)
         )
 
     @staticmethod
@@ -540,6 +539,13 @@ class AnalyticsRepository:
             return []
         parsed_styles = AnalyticsRepository._parse_serialized_styles(styles) if isinstance(styles, str) else styles
         return [str(style).strip() for style in parsed_styles if style is not None and str(style).strip()]
+
+    @staticmethod
+    def _release_style_tags(styles, genres) -> list[str]:
+        parsed_styles = AnalyticsRepository._release_styles(styles)
+        if parsed_styles:
+            return parsed_styles
+        return AnalyticsRepository._release_styles(genres)
 
     @staticmethod
     def _parse_serialized_styles(styles: str) -> list[str]:

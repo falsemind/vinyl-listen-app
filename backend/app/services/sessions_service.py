@@ -173,7 +173,7 @@ class HomeSummary:
 
 @dataclass(frozen=True)
 class RecordFlowReleaseSummary:
-    release: Releases
+    release: Releases | ManualRelease
     count: int
 
 
@@ -197,7 +197,7 @@ class RecordFlowInsights:
 
 @dataclass
 class _RecordFlowBlock:
-    release: Releases
+    release: Releases | ManualRelease
     moods: list[str | None]
 
     @property
@@ -208,7 +208,7 @@ class _RecordFlowBlock:
 @dataclass(frozen=True)
 class _RecordFlowItem:
     session: Sessions
-    release: Releases
+    release: Releases | ManualRelease
 
 
 class SessionsService:
@@ -443,24 +443,37 @@ class SessionsService:
             raise SessionValidationError("invalid_limit", "limit must be between 1 and 10.")
         since = self._flow_insights_since(period)
 
-        release = self._releases_repository.get_by_id(db, release_id)
+        release: Releases | ManualRelease | None = self._releases_repository.get_by_id(db, release_id)
+        if release is None and user_id is not None:
+            release = self._manual_release_repository.get_release(db, release_id, user_id=user_id)
         if release is None:
             logger.info("Release not found during flow insights lookup release_id=%s", release_id)
             raise ReleaseNotFoundError(release_id)
 
         sessions = self._sessions_repository.get_flow_insight_sessions(db, user_id=user_id, since=since)
+        discogs_release_ids = list({session.release_id for session in sessions if session.release_id is not None})
+        manual_release_ids = list(
+            {session.manual_release_id for session in sessions if session.manual_release_id is not None}
+        )
         releases = {
             release.id: release
             for release in self._releases_repository.get_by_ids(
                 db,
-                list({session.release_id for session in sessions}),
+                discogs_release_ids,
             )
         }
-        items = [
-            _RecordFlowItem(session=session, release=releases[session.release_id])
-            for session in sessions
-            if session.release_id in releases
-        ]
+        if user_id is not None:
+            releases.update(
+                {
+                    release.id: release
+                    for release in self._manual_release_repository.get_releases_by_ids(
+                        db,
+                        manual_release_ids,
+                        user_id=user_id,
+                    )
+                }
+            )
+        items = self._record_flow_items(sessions, releases)
         sequences = self._flow_sequences(items)
 
         before_counts: Counter[str] = Counter()
@@ -508,6 +521,19 @@ class SessionsService:
             sample_size=sample_size,
             confidence=self._flow_confidence(sample_size),
         )
+
+    @staticmethod
+    def _record_flow_items(
+        sessions: list[Sessions],
+        releases: dict[str, Releases | ManualRelease],
+    ) -> list[_RecordFlowItem]:
+        items: list[_RecordFlowItem] = []
+        for session in sessions:
+            release_id = session.release_id or session.manual_release_id
+            if release_id is None or release_id not in releases:
+                continue
+            items.append(_RecordFlowItem(session=session, release=releases[release_id]))
+        return items
 
     @staticmethod
     def _flow_sequences(items: list[_RecordFlowItem]) -> list[list[_RecordFlowBlock]]:
@@ -563,7 +589,7 @@ class SessionsService:
     @staticmethod
     def _release_flow_summaries(
         counts: Counter[str],
-        release_by_id: dict[str, Releases],
+        release_by_id: dict[str, Releases | ManualRelease],
         limit: int,
     ) -> list[RecordFlowReleaseSummary]:
         return [

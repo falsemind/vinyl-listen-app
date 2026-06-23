@@ -43,7 +43,8 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
-backend/storage/
+backend/storage/*
+!backend/storage/.gitkeep
 nosetests.xml
 coverage.xml
 *.cover

@@ -540,7 +540,6 @@ def get_release_flow_insights(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
     service: Annotated[SessionsService, Depends(get_sessions_service)],
-    manual_release_repository: Annotated[ManualReleaseRepository, Depends(get_manual_release_repository)],
     limit: int = Query(default=5, ge=1, le=10),
     period: str = Query(default="3m"),
 ):
@@ -558,15 +557,6 @@ def get_release_flow_insights(
             content={"error": {"code": error.code, "message": error.message}},
         )
     except ReleaseNotFoundError as error:
-        if _manual_release_exists(db, manual_release_repository, release_id, user_id=current_user.account.id):
-            return RecordFlowInsightsResponse(
-                release_id=release_id,
-                before=[],
-                after=[],
-                mood_transitions=[],
-                sample_size=0,
-                confidence="low",
-            )
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": {"code": "release_not_found", "message": str(error)}},

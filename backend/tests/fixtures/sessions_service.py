@@ -223,6 +223,11 @@ class InMemoryManualReleaseRepository:
     def get_release(self, _db, release_id: str, *, user_id: str) -> ManualRelease | None:
         return self.releases.get((release_id, user_id))
 
+    def get_releases_by_ids(self, _db, release_ids: list[str], *, user_id: str) -> list[ManualRelease]:
+        return [
+            release for release_id in release_ids if (release := self.releases.get((release_id, user_id))) is not None
+        ]
+
 
 class StubDiscogsRepository:
     def __init__(self, payload_by_discogs_id: dict[int, dict]) -> None:
