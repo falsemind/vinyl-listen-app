@@ -315,6 +315,7 @@ def _to_collection_release_response(record) -> CollectionReleaseResponse:
         format=release.format,
         label=clean_discogs_label_name(release.label),
         catalog_number=release.catalog_number,
+        genres=release.genres,
         styles=release.styles,
         thumb_url=(
             getattr(release, "thumbnail_url", None)

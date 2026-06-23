@@ -75,6 +75,7 @@ class CollectionReleaseResponse(BaseModel):
     format: str | None = None
     label: str | None = None
     catalog_number: str | None = None
+    genres: list[str] | None = None
     styles: list[str] | None = None
     thumb_url: str | None = None
     collection_added_at: datetime | None = None

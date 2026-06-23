@@ -1471,6 +1471,7 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         format = optNullableString("format") ?: "Vinyl",
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
+        genres = optJSONArray("genres").orEmpty().mapStrings(),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
         thumbnailUrl = optResolvedMediaUrl("thumb_url"),
         collectionAddedAt = optNullableString("collection_added_at"),

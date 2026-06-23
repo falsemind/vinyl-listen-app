@@ -850,6 +850,12 @@ fun BottomNavBar(
     drawTopBorder: Boolean = true,
 ) {
     val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomPadding =
+        if (navigationBottomPadding > 0.dp) {
+            navigationBottomPadding + VinylSpacing.SpaceXs
+        } else {
+            VinylSpacing.SpaceMd
+        }
 
     Surface(
         modifier =
@@ -876,7 +882,7 @@ fun BottomNavBar(
                         horizontal = VinylSpacing.SpaceLg,
                     ).padding(
                         top = VinylSpacing.SpaceMd,
-                        bottom = VinylSpacing.SpaceMd + navigationBottomPadding,
+                        bottom = bottomPadding,
                     ),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
