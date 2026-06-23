@@ -118,6 +118,27 @@ class SessionsRepository:
         )
 
     @staticmethod
+    def get_recent_notes_with_manual_releases(
+        db: Session,
+        *,
+        user_id: str | None = None,
+        limit: int,
+    ):
+        query = db.query(Sessions, ManualRelease).join(
+            ManualRelease,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        return (
+            query.filter(Sessions.notes.isnot(None))
+            .filter(Sessions.notes != "")
+            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
     def count_all(db: Session, *, user_id: str | None = None) -> int:
         query = db.query(func.count(Sessions.id))
         if user_id is not None:

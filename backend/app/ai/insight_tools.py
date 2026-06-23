@@ -63,6 +63,8 @@ class AiInsightToolRunner:
 
     def _recent_sessions(self, db: Session, *, user_id: str) -> AiChatToolResult:
         rows = self.sessions_repository.get_recent_with_releases(db, user_id=user_id, limit=5)
+        rows += self.sessions_repository.get_recent_with_manual_releases(db, user_id=user_id, limit=5)
+        rows = self._sort_recent_session_rows(rows)[:5]
         if not rows:
             return AiChatToolResult(name="get_recent_sessions", content="No listening sessions are logged yet.")
 
@@ -81,6 +83,8 @@ class AiInsightToolRunner:
 
     def _session_notes(self, db: Session, *, user_id: str) -> AiChatToolResult:
         rows = self.sessions_repository.get_recent_notes_with_releases(db, user_id=user_id, limit=8)
+        rows += self.sessions_repository.get_recent_notes_with_manual_releases(db, user_id=user_id, limit=8)
+        rows = self._sort_recent_session_rows(rows)[:8]
         if not rows:
             return AiChatToolResult(name="get_session_notes", content="No saved session notes are available yet.")
 
@@ -115,6 +119,14 @@ class AiInsightToolRunner:
                 f"average_rating={average_rating}, styles={styles}"
             )
         return AiChatToolResult(name="get_top_records", content="\n".join(lines))
+
+    @staticmethod
+    def _sort_recent_session_rows(rows):
+        return sorted(
+            rows,
+            key=lambda row: (row[0].played_at or row[0].created_at, row[0].created_at),
+            reverse=True,
+        )
 
     def _style_distribution(self, db: Session, *, user_id: str) -> AiChatToolResult:
         distribution = self.analytics_service.get_style_distribution(db, user_id=user_id)

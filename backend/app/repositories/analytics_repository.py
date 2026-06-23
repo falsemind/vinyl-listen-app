@@ -1,10 +1,32 @@
 import json
+from dataclasses import dataclass
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.releases import Releases
+from app.models.releases import ManualRelease, Releases
 from app.models.sessions import Sessions, SessionTracks
+
+
+@dataclass(frozen=True)
+class AnalyticsReleaseSummary:
+    id: str
+    source: str
+    discogs_release_id: int
+    artist: str
+    title: str
+    year: int | None
+    format: str | None
+    label: str | None
+    catalog_number: str | None
+    genres: list[str] | None
+    styles: list[str] | None
+    thumbnail_url: str | None
+    cover_image_url: str | None
+
+    @property
+    def target_key(self) -> str:
+        return f"{self.source}:{self.id}"
 
 
 class AnalyticsRepository:
@@ -25,19 +47,37 @@ class AnalyticsRepository:
         month: str,
         limit: int,
         offset: int,
-    ) -> list[tuple[Sessions, Releases]]:
+    ) -> list[tuple[Sessions, AnalyticsReleaseSummary]]:
         month_expression = AnalyticsRepository._month_expression(db)
         query = db.query(Sessions, Releases).join(Releases, Sessions.release_id == Releases.id)
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        return (
+        discogs_rows = (
             query.filter(Sessions.played_at.isnot(None))
             .filter(month_expression == month)
             .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
-            .offset(offset)
-            .limit(limit)
             .all()
         )
+        manual_query = db.query(Sessions, ManualRelease).join(
+            ManualRelease,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        manual_rows = (
+            manual_query.filter(Sessions.played_at.isnot(None))
+            .filter(month_expression == month)
+            .order_by(Sessions.played_at.desc(), Sessions.created_at.desc())
+            .all()
+        )
+        rows = [
+            (session, AnalyticsRepository._discogs_release_summary(release)) for session, release in discogs_rows
+        ] + [(session, AnalyticsRepository._manual_release_summary(release)) for session, release in manual_rows]
+        rows.sort(
+            key=lambda item: (item[0].played_at, item[0].created_at),
+            reverse=True,
+        )
+        return rows[offset : offset + limit]
 
     @staticmethod
     def get_tracks_by_session_ids(db: Session, session_ids: list[str]) -> dict[str, list[SessionTracks]]:
@@ -74,19 +114,35 @@ class AnalyticsRepository:
         query = db.query(Releases, plays, average_rating).join(Sessions, Sessions.release_id == Releases.id)
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        rows = (
-            query.group_by(Releases.id)
-            .order_by(
-                plays.desc(), func.coalesce(average_rating, 0).desc(), Releases.artist.asc(), Releases.title.asc()
-            )
-            .limit(limit)
-            .all()
+        discogs_rows = query.group_by(Releases.id).all()
+        manual_query = db.query(ManualRelease, plays, average_rating).join(
+            Sessions,
+            Sessions.manual_release_id == ManualRelease.id,
         )
-        release_ids = [release.id for release, _plays, _average_rating in rows]
-        top_tracks = AnalyticsRepository._get_top_tracks_by_release(db, release_ids, user_id=user_id)
-        top_moods = AnalyticsRepository._get_top_moods_by_release(db, release_ids, user_id=user_id)
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        manual_rows = manual_query.group_by(ManualRelease.id).all()
+        rows = [
+            (AnalyticsRepository._discogs_release_summary(release), int(row_plays), average_rating)
+            for release, row_plays, average_rating in discogs_rows
+        ] + [
+            (AnalyticsRepository._manual_release_summary(release), int(row_plays), average_rating)
+            for release, row_plays, average_rating in manual_rows
+        ]
+        rows.sort(
+            key=lambda item: (
+                -item[1],
+                -(float(item[2]) if item[2] is not None else 0),
+                item[0].artist.lower(),
+                item[0].title.lower(),
+            )
+        )
+        rows = rows[:limit]
+        releases = [release for release, _plays, _average_rating in rows]
+        top_tracks = AnalyticsRepository._get_top_tracks_by_release(db, releases, user_id=user_id)
+        top_moods = AnalyticsRepository._get_top_moods_by_release(db, releases, user_id=user_id)
         return [
-            (release, plays, average_rating, top_tracks.get(release.id), top_moods.get(release.id))
+            (release, plays, average_rating, top_tracks.get(release.target_key), top_moods.get(release.target_key))
             for release, plays, average_rating in rows
         ]
 
@@ -98,26 +154,13 @@ class AnalyticsRepository:
         rating: int,
         limit: int,
         offset: int,
-    ) -> list[tuple[Releases, int]]:
-        count = func.count(Sessions.id).label("count")
-        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
-        if user_id is not None:
-            query = query.filter(Sessions.user_id == user_id)
-        return (
-            query.filter(Sessions.rating == rating)
-            .group_by(Releases.id)
-            .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
+        records = AnalyticsRepository._get_rating_record_counts(db, rating=rating, user_id=user_id)
+        return records[offset : offset + limit]
 
     @staticmethod
     def count_records_for_rating(db: Session, *, rating: int, user_id: str | None = None) -> int:
-        query = db.query(Releases.id).join(Sessions, Sessions.release_id == Releases.id)
-        if user_id is not None:
-            query = query.filter(Sessions.user_id == user_id)
-        return query.filter(Sessions.rating == rating).group_by(Releases.id).count()
+        return len(AnalyticsRepository._get_rating_record_counts(db, rating=rating, user_id=user_id))
 
     @staticmethod
     def get_rating_distribution(db: Session, *, user_id: str | None = None):
@@ -135,34 +178,13 @@ class AnalyticsRepository:
         mood: str,
         limit: int,
         offset: int,
-    ) -> list[tuple[Releases, int]]:
-        count = func.count(Sessions.id).label("count")
-        normalized_mood = AnalyticsRepository._normalized_label(mood)
-        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
-        if user_id is not None:
-            query = query.filter(Sessions.user_id == user_id)
-        return (
-            query.filter(Sessions.mood.isnot(None))
-            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
-            .group_by(Releases.id)
-            .order_by(count.desc(), Releases.artist.asc(), Releases.title.asc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
+        records = AnalyticsRepository._get_mood_record_counts(db, mood=mood, user_id=user_id)
+        return records[offset : offset + limit]
 
     @staticmethod
     def count_records_for_mood(db: Session, *, mood: str, user_id: str | None = None) -> int:
-        normalized_mood = AnalyticsRepository._normalized_label(mood)
-        query = db.query(Releases.id).join(Sessions, Sessions.release_id == Releases.id)
-        if user_id is not None:
-            query = query.filter(Sessions.user_id == user_id)
-        return (
-            query.filter(Sessions.mood.isnot(None))
-            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
-            .group_by(Releases.id)
-            .count()
-        )
+        return len(AnalyticsRepository._get_mood_record_counts(db, mood=mood, user_id=user_id))
 
     @staticmethod
     def get_mood_distribution(db: Session, *, user_id: str | None = None):
@@ -188,7 +210,7 @@ class AnalyticsRepository:
         style: str,
         limit: int,
         offset: int,
-    ) -> list[tuple[Releases, int]]:
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
         records, _total = AnalyticsRepository.get_records_for_style_page(
             db,
             user_id=user_id,
@@ -206,7 +228,7 @@ class AnalyticsRepository:
         style: str,
         limit: int,
         offset: int,
-    ) -> tuple[list[tuple[Releases, int]], int]:
+    ) -> tuple[list[tuple[AnalyticsReleaseSummary, int]], int]:
         records = AnalyticsRepository._get_style_record_counts(db, style=style, user_id=user_id)
         return records[offset : offset + limit], len(records)
 
@@ -220,6 +242,13 @@ class AnalyticsRepository:
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
         style_rows = query.filter(Releases.styles.isnot(None)).all()
+        manual_query = db.query(ManualRelease.styles).join(
+            Sessions,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        style_rows += manual_query.filter(ManualRelease.styles.isnot(None)).all()
         style_counts: dict[str, tuple[str, int]] = {}
         for (styles,) in style_rows:
             for style in AnalyticsRepository._release_styles(styles):
@@ -242,7 +271,7 @@ class AnalyticsRepository:
         *,
         style: str,
         user_id: str | None = None,
-    ) -> list[tuple[Releases, int]]:
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
         target_style = AnalyticsRepository._normalized_label(style)
         if not target_style:
             return []
@@ -250,13 +279,26 @@ class AnalyticsRepository:
         query = db.query(Releases, Sessions.id).join(Sessions, Sessions.release_id == Releases.id)
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        style_rows = query.filter(Releases.styles.isnot(None)).all()
-        release_counts: dict[str, tuple[Releases, int]] = {}
+        style_rows = [
+            (AnalyticsRepository._discogs_release_summary(release), session_id)
+            for release, session_id in query.filter(Releases.styles.isnot(None)).all()
+        ]
+        manual_query = db.query(ManualRelease, Sessions.id).join(
+            Sessions,
+            Sessions.manual_release_id == ManualRelease.id,
+        )
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        style_rows += [
+            (AnalyticsRepository._manual_release_summary(release), session_id)
+            for release, session_id in manual_query.filter(ManualRelease.styles.isnot(None)).all()
+        ]
+        release_counts: dict[str, tuple[AnalyticsReleaseSummary, int]] = {}
         for release, _session_id in style_rows:
             if not AnalyticsRepository._styles_include(release.styles, target_style):
                 continue
-            existing_release, count = release_counts.get(release.id, (release, 0))
-            release_counts[release.id] = (existing_release, count + 1)
+            existing_release, count = release_counts.get(release.target_key, (release, 0))
+            release_counts[release.target_key] = (existing_release, count + 1)
 
         return sorted(
             release_counts.values(),
@@ -266,75 +308,220 @@ class AnalyticsRepository:
     @staticmethod
     def _get_top_tracks_by_release(
         db: Session,
-        release_ids: list[str],
+        releases: list[AnalyticsReleaseSummary],
         *,
         user_id: str | None = None,
     ) -> dict[str, str]:
-        if not release_ids:
+        if not releases:
             return {}
 
+        discogs_ids = [release.id for release in releases if release.source == "discogs"]
+        manual_ids = [release.id for release in releases if release.source == "manual"]
+        rows: list[tuple[str, str | None]] = []
         query = db.query(Sessions.release_id, SessionTracks.track_title).join(
             SessionTracks,
             SessionTracks.session_id == Sessions.id,
         )
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        rows = (
-            query.filter(Sessions.release_id.in_(release_ids))
-            .filter(SessionTracks.track_title.isnot(None))
-            .filter(func.trim(SessionTracks.track_title) != "")
-            .all()
+        if discogs_ids:
+            rows.extend(
+                (f"discogs:{release_id}", track_title)
+                for release_id, track_title in query.filter(Sessions.release_id.in_(discogs_ids))
+                .filter(SessionTracks.track_title.isnot(None))
+                .filter(func.trim(SessionTracks.track_title) != "")
+                .all()
+            )
+        manual_query = db.query(Sessions.manual_release_id, SessionTracks.track_title).join(
+            SessionTracks,
+            SessionTracks.session_id == Sessions.id,
         )
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id)
+        if manual_ids:
+            rows.extend(
+                (f"manual:{release_id}", track_title)
+                for release_id, track_title in manual_query.filter(Sessions.manual_release_id.in_(manual_ids))
+                .filter(SessionTracks.track_title.isnot(None))
+                .filter(func.trim(SessionTracks.track_title) != "")
+                .all()
+            )
         track_counts: dict[str, dict[str, tuple[str, int]]] = {}
-        for release_id, track_title in rows:
+        for target_key, track_title in rows:
             canonical_title = track_title.strip()
             if not canonical_title:
                 continue
             track_key = canonical_title.lower()
-            release_counts = track_counts.setdefault(release_id, {})
+            release_counts = track_counts.setdefault(target_key, {})
             existing_title, count = release_counts.get(track_key, (canonical_title, 0))
             release_counts[track_key] = (existing_title, count + 1)
 
         return {
-            release_id: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
-            for release_id, counts in track_counts.items()
+            target_key: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
+            for target_key, counts in track_counts.items()
             if counts
         }
 
     @staticmethod
     def _get_top_moods_by_release(
         db: Session,
-        release_ids: list[str],
+        releases: list[AnalyticsReleaseSummary],
         *,
         user_id: str | None = None,
     ) -> dict[str, str]:
-        if not release_ids:
+        if not releases:
             return {}
 
+        discogs_ids = [release.id for release in releases if release.source == "discogs"]
+        manual_ids = [release.id for release in releases if release.source == "manual"]
+        rows: list[tuple[str, str | None]] = []
         query = db.query(Sessions.release_id, Sessions.mood)
         if user_id is not None:
             query = query.filter(Sessions.user_id == user_id)
-        rows = (
-            query.filter(Sessions.release_id.in_(release_ids))
-            .filter(Sessions.mood.isnot(None))
-            .filter(func.trim(Sessions.mood) != "")
-            .all()
-        )
+        if discogs_ids:
+            rows.extend(
+                (f"discogs:{release_id}", mood)
+                for release_id, mood in query.filter(Sessions.release_id.in_(discogs_ids))
+                .filter(Sessions.mood.isnot(None))
+                .filter(func.trim(Sessions.mood) != "")
+                .all()
+            )
+        manual_query = db.query(Sessions.manual_release_id, Sessions.mood)
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id)
+        if manual_ids:
+            rows.extend(
+                (f"manual:{release_id}", mood)
+                for release_id, mood in manual_query.filter(Sessions.manual_release_id.in_(manual_ids))
+                .filter(Sessions.mood.isnot(None))
+                .filter(func.trim(Sessions.mood) != "")
+                .all()
+            )
         mood_counts: dict[str, dict[str, tuple[str, int]]] = {}
-        for release_id, mood in rows:
+        for target_key, mood in rows:
             canonical_mood = mood.strip()
             if not canonical_mood:
                 continue
             mood_key = canonical_mood.lower()
-            release_counts = mood_counts.setdefault(release_id, {})
+            release_counts = mood_counts.setdefault(target_key, {})
             existing_mood, count = release_counts.get(mood_key, (canonical_mood, 0))
             release_counts[mood_key] = (existing_mood, count + 1)
 
         return {
-            release_id: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
-            for release_id, counts in mood_counts.items()
+            target_key: sorted(counts.values(), key=lambda item: (-item[1], item[0].lower()))[0][0]
+            for target_key, counts in mood_counts.items()
             if counts
         }
+
+    @staticmethod
+    def _get_rating_record_counts(
+        db: Session,
+        *,
+        rating: int,
+        user_id: str | None = None,
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
+        count = func.count(Sessions.id).label("count")
+        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        discogs_rows = query.filter(Sessions.rating == rating).group_by(Releases.id).all()
+        manual_query = db.query(ManualRelease, count).join(Sessions, Sessions.manual_release_id == ManualRelease.id)
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        manual_rows = manual_query.filter(Sessions.rating == rating).group_by(ManualRelease.id).all()
+        return AnalyticsRepository._sort_record_counts(
+            [
+                (AnalyticsRepository._discogs_release_summary(release), int(row_count))
+                for release, row_count in discogs_rows
+            ]
+            + [
+                (AnalyticsRepository._manual_release_summary(release), int(row_count))
+                for release, row_count in manual_rows
+            ]
+        )
+
+    @staticmethod
+    def _get_mood_record_counts(
+        db: Session,
+        *,
+        mood: str,
+        user_id: str | None = None,
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
+        count = func.count(Sessions.id).label("count")
+        normalized_mood = AnalyticsRepository._normalized_label(mood)
+        query = db.query(Releases, count).join(Sessions, Sessions.release_id == Releases.id)
+        if user_id is not None:
+            query = query.filter(Sessions.user_id == user_id)
+        discogs_rows = (
+            query.filter(Sessions.mood.isnot(None))
+            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
+            .group_by(Releases.id)
+            .all()
+        )
+        manual_query = db.query(ManualRelease, count).join(Sessions, Sessions.manual_release_id == ManualRelease.id)
+        if user_id is not None:
+            manual_query = manual_query.filter(Sessions.user_id == user_id, ManualRelease.user_id == user_id)
+        manual_rows = (
+            manual_query.filter(Sessions.mood.isnot(None))
+            .filter(func.lower(func.trim(Sessions.mood)) == normalized_mood)
+            .group_by(ManualRelease.id)
+            .all()
+        )
+        return AnalyticsRepository._sort_record_counts(
+            [
+                (AnalyticsRepository._discogs_release_summary(release), int(row_count))
+                for release, row_count in discogs_rows
+            ]
+            + [
+                (AnalyticsRepository._manual_release_summary(release), int(row_count))
+                for release, row_count in manual_rows
+            ]
+        )
+
+    @staticmethod
+    def _sort_record_counts(
+        records: list[tuple[AnalyticsReleaseSummary, int]],
+    ) -> list[tuple[AnalyticsReleaseSummary, int]]:
+        return sorted(
+            records,
+            key=lambda item: (-item[1], item[0].artist.lower(), item[0].title.lower()),
+        )
+
+    @staticmethod
+    def _discogs_release_summary(release: Releases) -> AnalyticsReleaseSummary:
+        return AnalyticsReleaseSummary(
+            id=release.id,
+            source="discogs",
+            discogs_release_id=release.discogs_release_id,
+            artist=release.artist,
+            title=release.title,
+            year=release.year,
+            format=release.format,
+            label=release.label,
+            catalog_number=release.catalog_number,
+            genres=release.genres,
+            styles=release.styles,
+            thumbnail_url=release.thumbnail_url,
+            cover_image_url=release.cover_image_url,
+        )
+
+    @staticmethod
+    def _manual_release_summary(release: ManualRelease) -> AnalyticsReleaseSummary:
+        return AnalyticsReleaseSummary(
+            id=release.id,
+            source="manual",
+            discogs_release_id=0,
+            artist=release.artist,
+            title=release.title,
+            year=release.year,
+            format=release.format,
+            label=release.label,
+            catalog_number=release.catalog_number,
+            genres=release.genres,
+            styles=release.styles,
+            thumbnail_url=release.cover_thumbnail_url,
+            cover_image_url=release.cover_image_url,
+        )
 
     @staticmethod
     def _styles_include(styles, target_style: str) -> bool:

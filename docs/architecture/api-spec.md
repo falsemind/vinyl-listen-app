@@ -1969,6 +1969,7 @@ Endpoints used by the **Analytics screen charts**.
 
 Backend calculates metrics using configurable time windows (e.g. last 90 days).
 Drilldown endpoints use the same pagination envelope as View All screens.
+Analytics rows include sessions for both Discogs-backed releases and user-owned manual releases. Manual release rows use the manual release UUID in `release_id`, return `discogs_release_id: 0`, and expose the saved manual artist/title/year/label/catalog/cover/style metadata where the response shape supports it.
 
 ---
 
