@@ -646,7 +646,7 @@ private fun CollectionListContent(
                 }
                 if (collectionFolders.isNotEmpty()) {
                     CollectionActionMenuGroupAction(
-                        label = "Collection folders",
+                        label = "My Discogs folders",
                         expanded = isCollectionFoldersExpanded,
                         onClick = { onCollectionFoldersExpandedChange(!isCollectionFoldersExpanded) },
                     )
