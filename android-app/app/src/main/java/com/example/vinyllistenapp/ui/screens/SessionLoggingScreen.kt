@@ -652,22 +652,9 @@ private fun SessionRecordCard(record: RecordSummary) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                sessionRecordMetadata(record)?.let { metadata ->
                     Text(
-                        text = record.year.toString(),
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = "-",
-                        color = VinylColors.BorderDefault,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = record.label,
+                        text = metadata,
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
@@ -1057,6 +1044,12 @@ internal fun sessionSideOptions(
     }
 
 internal fun shouldUsePrototypeSideFallback(releaseId: String?): Boolean = releaseId == null
+
+internal fun sessionRecordMetadata(record: RecordSummary): String? =
+    listOfNotNull(
+        record.year?.toString(),
+        record.label.takeIf { it.isNotBlank() },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" - ")
 
 private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
 

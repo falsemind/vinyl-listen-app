@@ -71,6 +71,16 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun sessionRecordMetadataOmitsMissingYear() {
+        assertEquals("2026 - Label", sessionRecordMetadata(recordSummary(availableSides = emptyList())))
+        assertEquals(
+            "Manual Label",
+            sessionRecordMetadata(recordSummary(availableSides = emptyList(), year = null, label = "Manual Label")),
+        )
+        assertEquals(null, sessionRecordMetadata(recordSummary(availableSides = emptyList(), year = null, label = "")))
+    }
+
+    @Test
     fun displaySessionSideAddsReadablePrefix() {
         assertEquals("Side AA", displaySessionSide("AA"))
     }
@@ -234,13 +244,15 @@ class SessionSideOptionsTest {
         availableSideOptions: List<ReleaseSideOption> = emptyList(),
         tracklist: List<ReleaseTrack> = emptyList(),
         hasFullDiscogsInfo: Boolean = false,
+        year: Int? = 2026,
+        label: String = "Label",
     ) = RecordSummary(
         releaseId = "release-123",
         discogsReleaseId = 555123,
         artist = "Artist",
         title = "Title",
-        label = "Label",
-        year = 2026,
+        label = label,
+        year = year,
         format = "Vinyl",
         rating = 0,
         lastPlayed = "Not logged yet",

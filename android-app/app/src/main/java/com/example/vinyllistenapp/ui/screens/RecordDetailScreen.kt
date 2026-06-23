@@ -234,6 +234,9 @@ fun RecordDetailScreen(
     }
 
     suspend fun updateFavorite(isFavorite: Boolean) {
+        if (!record.inCollection) {
+            return
+        }
         runCatching { apiClient.setReleaseFavorite(record.releaseId, isFavorite) }
             .onSuccess { updatedRecord ->
                 record = updatedRecord
@@ -543,14 +546,16 @@ fun RecordDetailScreen(
                         },
                     )
                 }
-                ActionMenuAction(
-                    label = if (record.isFavorite) "Remove from favorites" else "Add to favorites",
-                    icon = if (record.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    onClick = {
-                        isActionMenuOpen = false
-                        scope.launch { updateFavorite(!record.isFavorite) }
-                    },
-                )
+                if (record.inCollection) {
+                    ActionMenuAction(
+                        label = if (record.isFavorite) "Remove from favorites" else "Add to favorites",
+                        icon = if (record.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        onClick = {
+                            isActionMenuOpen = false
+                            scope.launch { updateFavorite(!record.isFavorite) }
+                        },
+                    )
+                }
                 ActionMenuAction(
                     label =
                         when {
@@ -1079,7 +1084,8 @@ private fun RecordDetailHeroCard(
                 )
             }
             val totalPlayTime = releaseTotalPlayTimeText(record)?.removePrefix("Total time: ")
-            if (record.styles.isNotEmpty() || totalPlayTime != null) {
+            val styleTags = recordDetailStyleTags(record)
+            if (styleTags.isNotEmpty() || totalPlayTime != null) {
                 Spacer(
                     modifier =
                         Modifier
@@ -1087,7 +1093,7 @@ private fun RecordDetailHeroCard(
                             .height(1.dp)
                             .background(VinylColors.BorderDefault),
                 )
-                RecordStylesLine(styles = record.styles, totalPlayTime = totalPlayTime)
+                RecordStylesLine(styles = styleTags, totalPlayTime = totalPlayTime)
             }
         }
     }
@@ -1319,6 +1325,8 @@ internal fun releaseTotalPlayTimeText(record: RecordSummary): String? {
         }
     return "Total time: $formattedTime"
 }
+
+internal fun recordDetailStyleTags(record: RecordSummary): List<String> = record.styles.ifEmpty { record.genres }
 
 private fun parseReleaseTrackDurationSeconds(duration: String?): Int? {
     val parts =

@@ -179,6 +179,25 @@ class RecordDetailHistoricalStateTest {
     }
 
     @Test
+    fun recordDetailStyleTagsPreferStylesAndFallbackToGenres() {
+        val record =
+            recordWithTracks(
+                hasFullDiscogsInfo = true,
+                tracklist = listOf(ReleaseTrack(position = "A1", title = "Track", duration = "3:12")),
+            )
+
+        assertEquals(
+            listOf("Techno"),
+            recordDetailStyleTags(record.copy(genres = listOf("Electronic"), styles = listOf("Techno"))),
+        )
+        assertEquals(
+            listOf("Electronic"),
+            recordDetailStyleTags(record.copy(genres = listOf("Electronic"), styles = emptyList())),
+        )
+        assertTrue(recordDetailStyleTags(record.copy(genres = emptyList(), styles = emptyList())).isEmpty())
+    }
+
+    @Test
     fun trackCreditsDisplayRoleAndArtistNames() {
         val track =
             ReleaseTrack(
