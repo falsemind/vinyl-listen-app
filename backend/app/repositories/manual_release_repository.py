@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -60,6 +61,25 @@ class ManualReleaseRepository:
                 ManualRelease.user_id == user_id,
             )
             .one_or_none()
+        )
+
+    def get_releases_by_ids(
+        self,
+        db: Session,
+        release_ids: Sequence[str],
+        *,
+        user_id: str,
+    ) -> list[ManualRelease]:
+        if not release_ids:
+            return []
+
+        return (
+            db.query(ManualRelease)
+            .filter(
+                ManualRelease.id.in_(release_ids),
+                ManualRelease.user_id == user_id,
+            )
+            .all()
         )
 
     def list_collection_releases(

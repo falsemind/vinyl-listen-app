@@ -510,7 +510,7 @@ Replace the placeholder manual-entry screen with a small, app-owned release crea
 | Format | Yes | Optional | Start with `Vinyl`, `CD`, `Tape`, `Other`. |
 | Vinyl details | Required only when format is `Vinyl` | Optional | Size, speed, and disc count for first slice. |
 | Cover art | Optional | Optional | Allow one uploaded image as the manual release cover; validate file type and size before upload/save. |
-| Tracklist | At least one track title for save | Optional | Position and duration can remain optional; track credits are optional. |
+| Tracklist | At least one track title for save; vinyl tracks also require position | Optional | Duration can remain optional; track credits are optional. |
 | Track credits | Optional | Optional | Use a constrained role dropdown such as `Featuring`, `Remix`, `Producer`, `Written-By`, `Other`. |
 | Genre | Yes | Optional | Keep first genre list small and stable. |
 | Style | Required only when genre is `Electronic` | Optional | First version can use a constrained style list. |
@@ -540,7 +540,7 @@ Backend validation is the source of truth. Android must mirror the same limits f
 | Vinyl disc count | integer | 1-6 | Required when format is `Vinyl`; covers common 2xLP/3xLP without box-set modeling. | Use stepper/input with min/max guard. |
 | Track count | list | 1-100 tracks | Require at least one track title for release save. | Prevent adding over 100 tracks. |
 | Track title | string | 1-200 chars | Required per saved track. | Validate each visible track row. |
-| Track position | string | 0-16 chars | Optional; reject control characters. | Keep optional and length-limited. |
+| Track position | string | 0-16 chars | Required for each saved vinyl track; optional for non-vinyl formats; reject control characters. | Show required state when format is `Vinyl`; keep length-limited. |
 | Track duration | string | `m:ss` or `h:mm:ss`; 0-8 chars | Optional; validate only when present. | Validate format before save when entered. |
 | Track credit role | enum | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` | Optional; reject unknown roles. | Use dropdown only. |
 | Track credit name | string | 1-200 chars when role is present | Required when a credit role is added. | Validate paired role/name rows. |
@@ -586,6 +586,22 @@ Backend validation is the source of truth. Android must mirror the same limits f
 - Keep draft persistence separate from committed collection membership so drafts do not appear in collection, analytics, listening history, or insights.
 - Design create/update draft APIs so Android can autosave later, even if the first UI uses explicit **Save draft**.
 - Add validation in the backend/domain layer, with Android mirroring required-field state for user feedback.
+
+### Manual Release Session Support Requirements
+
+- Manual releases must become first-class session targets without moving them into the shared Discogs-backed `releases` table.
+- A listening session must target exactly one release source: either a shared Discogs-backed release or a user-owned manual release.
+- Backend schema should add an explicit manual release session target, such as nullable `sessions.manual_release_id`, make the existing shared-release target nullable, and enforce an exactly-one-target database check.
+- Manual session writes must validate that the manual release belongs to the current user and is active in the user's collection.
+- Existing Discogs-backed sessions must migrate unchanged and keep using the shared `releases.id` foreign key.
+- Session create, update, delete, and release-history APIs must work for both release sources using the same user-facing behavior.
+- Analytics repositories must stop assuming every session joins directly to the shared `releases` table. Aggregations should combine Discogs-backed sessions and manual-release sessions through an explicit source-aware query or adapter.
+- Manual release metadata available for analytics includes artist, title, year, label, format, genre, style, cover, and tracklist. Missing optional fields must not break analytics rows.
+- Record Details for manual releases must support **Log Session**, session history, and post-save refresh behavior, but must continue hiding Discogs-only external actions.
+- Manual track positions must be preserved from user input. Plain numeric positions like `1`, `2`, `3` must not be converted into default A/B side options.
+- When manual track positions include side prefixes such as `A1`, `B2`, or `C1`, backend and Android may derive side selectors from those prefixes.
+- When manual track positions do not include side prefixes, Android Log Session should show a neutral track selector without the default Discogs A/B side fallback.
+- Multi-disc vinyl support remains limited to a single manual release with a vinyl disc count and track positions entered by the user. Box sets and multiple-release packages remain out of scope.
 
 ### First-Slice Non-Goals
 
@@ -672,6 +688,35 @@ Current Phase 10C status:
 | Wire **Save Release** | 4-8h | Backend save contract | Complete form creates the manual release, adds it to collection, removes the draft when applicable, opens Record Details, and keeps the back path returning to Collection. |
 | Add Android verification | 4-6h | Save flows | Focused tests or compile checks cover draft hub state, form action state, validation, and save response handling. |
 
+### Phase 10H: Backend Manual Release Session Domain
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add source-aware session target schema | 4-8h | Phase 10A | Sessions can reference either `releases.id` or `manual_releases.id`, with an exactly-one-target constraint, indexes for both targets, and unchanged migration behavior for existing Discogs-backed sessions. |
+| Update session target resolution | 4-8h | Session target schema | Session create/update paths resolve manual release IDs for the current user, reject another user's manual release, and reject inactive or missing collection items. |
+| Update session persistence and history queries | 4-8h | Target resolution | Session create, update, delete, and release-history queries work for manual releases without joining manual IDs through the shared `releases` table. |
+| Add manual session API tests | 4-8h | Persistence updates | Tests cover successful manual session logging, ownership isolation, inactive/manual-missing errors, delete behavior, and release-history retrieval. |
+| Update session API docs | 2-4h | API tests | API docs describe how session endpoints represent Discogs-backed and manual release targets. |
+
+### Phase 10I: Manual Track Mapping and Android Log Session
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Define manual track side derivation | 2-4h | Phase 10H | Backend preserves manual track positions, derives side options only from prefixed positions, and avoids default A/B sides for plain numeric positions. |
+| Update manual Record Details track response | 4-6h | Side derivation | Manual release details expose tracklist and available side/track options that Android can consume without Discogs-specific fallback logic. |
+| Update Android Log Session manual release state | 4-8h | Track response | Log Session opens for manual releases, shows the correct track dropdown, avoids default A/B for plain positions, and saves manual sessions successfully. |
+| Add track mapping tests | 4-6h | Android state | Backend tests cover numeric and prefixed positions; Android tests cover manual track dropdown state and save request mapping. |
+
+### Phase 10J: Manual Sessions in Analytics and Insights
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Refactor analytics queries for mixed session targets | 6-12h | Phase 10H | Monthly plays, top records, recent activity, and session rollups include both Discogs-backed and manual sessions. |
+| Add manual release metadata to analytics rows | 4-8h | Mixed target queries | Analytics responses can render manual artist, title, year, label, format, cover, genre, and style where available. |
+| Update style and record drilldowns | 4-8h | Metadata rows | Style, mood, rating, and record-level drilldowns include manual sessions without requiring Discogs release joins. |
+| Extend deterministic insight facts | 4-8h | Analytics support | Insight fact builders include manual sessions through the same combined analytics layer used for UI summaries. |
+| Add analytics and insight tests | 6-10h | Query updates | Tests prove manual sessions affect expected counts, top-record rankings, style filters, history, and insight facts. |
+
 ### Phase 10 Dependency Map
 
 ```text
@@ -682,6 +727,9 @@ Backend schema/domain
   -> Draft hub
   -> Overflow form
   -> Cover upload and save flows
+  -> Backend manual release session domain
+  -> Manual track mapping and Android Log Session
+  -> Manual sessions in analytics and insights
 ```
 
 ## Recommended Implementation Order
@@ -711,5 +759,10 @@ Backend schema/domain
 23. Android **Manual Submissions** draft hub, draft cards, **Add Release** CTA, draft delete confirmation, and draft cap dialog.
 24. Android overflow form, inputs, dropdowns, tracklist editor, and bottom action states.
 25. Android cover picker, cover validation, **Save Draft**, **Save Release**, and focused verification.
+26. Backend manual release session target schema, migration, ownership validation, session persistence, and release-history queries.
+27. Backend manual track side derivation and Record Details track response for numeric and prefixed manual positions.
+28. Android Log Session support for manual releases, including track dropdown mapping and save request handling.
+29. Backend analytics query refactor for mixed Discogs/manual session targets.
+30. Manual session analytics, drilldowns, insight facts, and focused backend/Android verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.

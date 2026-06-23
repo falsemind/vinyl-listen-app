@@ -107,7 +107,7 @@ fun SessionLoggingScreen(
     val fallbackRecord = MockVinylData.record(releaseId)
     var loadedRecord by remember(releaseId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: fallbackRecord
-    val sideOptions = sessionSideOptions(record, usePrototypeFallback = releaseId == null || loadedRecord != null)
+    val sideOptions = sessionSideOptions(record, usePrototypeFallback = shouldUsePrototypeSideFallback(releaseId))
     val moods = BUILT_IN_SESSION_MOODS
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(releaseId) { mutableStateOf("") }
@@ -223,22 +223,25 @@ fun SessionLoggingScreen(
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceXl),
         ) {
             SessionRecordCard(record = record)
-            SessionFieldLabel("Side Played")
             Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                SessionSideSelector(
-                    selectedSide = selectedSideOption,
-                    sideOptions = sideOptions,
-                    onSideSelected = {
-                        selectedSide = it
-                        val selectedOption = sideOptions.firstOrNull { option -> option.value == it }
-                        selectedTrackPositions =
-                            sessionTrackOptions(record, selectedOption)
-                                .singleOrNull()
-                                ?.let { trackOption -> listOf(trackOption.position) }
-                                ?: emptyList()
-                    },
-                )
+                if (sideOptions.isNotEmpty()) {
+                    SessionFieldLabel("Side Played")
+                    SessionSideSelector(
+                        selectedSide = selectedSideOption,
+                        sideOptions = sideOptions,
+                        onSideSelected = {
+                            selectedSide = it
+                            val selectedOption = sideOptions.firstOrNull { option -> option.value == it }
+                            selectedTrackPositions =
+                                sessionTrackOptions(record, selectedOption)
+                                    .singleOrNull()
+                                    ?.let { trackOption -> listOf(trackOption.position) }
+                                    ?: emptyList()
+                        },
+                    )
+                }
                 if (trackOptions.isNotEmpty()) {
+                    SessionFieldLabel("Track Played")
                     SessionTrackSelector(
                         trackOptions = trackOptions,
                         selectedPositions = selectedTrackPositions,
@@ -334,7 +337,11 @@ fun EditSessionScreen(
     var loadedSession by remember(sessionId) { mutableStateOf<ListeningSession?>(null) }
     var loadedRecord by remember(sessionId) { mutableStateOf<RecordSummary?>(null) }
     val record = loadedRecord ?: MockVinylData.record(loadedSession?.releaseId)
-    val sideOptions = sessionSideOptions(record, usePrototypeFallback = loadedRecord != null)
+    val sideOptions =
+        sessionSideOptions(
+            record,
+            usePrototypeFallback = shouldUsePrototypeSideFallback(loadedSession?.releaseId),
+        )
     val moods = BUILT_IN_SESSION_MOODS
     var customMoods by remember { mutableStateOf(emptyList<String>()) }
     var selectedSide by rememberSaveable(sessionId) { mutableStateOf("") }
@@ -645,22 +652,9 @@ private fun SessionRecordCard(record: RecordSummary) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                sessionRecordMetadata(record)?.let { metadata ->
                     Text(
-                        text = record.year.toString(),
-                        color = VinylColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = "-",
-                        color = VinylColors.BorderDefault,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = record.label,
+                        text = metadata,
                         color = VinylColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
@@ -1049,6 +1043,14 @@ internal fun sessionSideOptions(
         else -> emptyList()
     }
 
+internal fun shouldUsePrototypeSideFallback(releaseId: String?): Boolean = releaseId == null
+
+internal fun sessionRecordMetadata(record: RecordSummary): String? =
+    listOfNotNull(
+        record.year?.toString(),
+        record.label.takeIf { it.isNotBlank() },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" - ")
+
 private fun ReleaseSideOption.toSessionSideOption(): SessionSideOption = SessionSideOption(value = value, label = label)
 
 internal suspend fun loadSessionRecord(
@@ -1075,15 +1077,19 @@ internal fun sessionTrackOptions(
             ?.substringAfterLast(":")
             ?.takeIf { it.isNotBlank() }
             ?.uppercase()
-            ?: return emptyList()
-    return record.tracklist
-        .filter { track -> track.sidePrefix() == selectedSideKey }
-        .map { track ->
-            SessionTrackOption(
-                position = track.position,
-                label = displaySessionTrack(track),
-            )
+    val tracks =
+        if (selectedSideKey == null) {
+            record.tracklist.takeIf { record.availableSides.isEmpty() && record.availableSideOptions.isEmpty() }
+                ?: emptyList()
+        } else {
+            record.tracklist.filter { track -> track.sidePrefix() == selectedSideKey }
         }
+    return tracks.map { track ->
+        SessionTrackOption(
+            position = track.position,
+            label = displaySessionTrack(track),
+        )
+    }
 }
 
 internal fun displaySessionTrack(track: ReleaseTrack): String =

@@ -9,7 +9,7 @@ from app.api.routes.releases import get_manual_release_repository, get_releases_
 from app.main import app
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
 from app.services.release_import_service import ReleaseImportResult
-from app.services.sessions_service import ReleaseNotFoundError
+from app.services.sessions_service import RecordFlowReleaseSummary
 from tests.fixtures.api_stubs import SessionStub
 
 
@@ -557,6 +557,34 @@ def test_get_release_endpoint_returns_manual_release_metadata(
     assert manual_repository.lookup_calls == [("manual-release-1", "test-user")]
 
 
+def test_get_release_endpoint_derives_manual_side_options_from_prefixed_tracks(
+    build_stub_release_import_service,
+    override_release_import_service,
+) -> None:
+    service = build_stub_release_import_service()
+    override_release_import_service(service)
+    manual_release = _manual_release_stub()
+    manual_release.tracklist = [
+        {"position": "A1", "title": "Open", "duration": None, "credits": []},
+        {"position": "A2", "title": "Build", "duration": None, "credits": []},
+        {"position": "B1", "title": "Flip", "duration": None, "credits": []},
+    ]
+    manual_repository = ManualReleaseRepositoryStub(manual_release)
+    app.dependency_overrides[get_manual_release_repository] = lambda: manual_repository
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/releases/manual-release-1")
+    finally:
+        app.dependency_overrides.pop(get_manual_release_repository, None)
+
+    assert response.status_code == 200
+    assert response.json()["available_sides"] == ["A", "B"]
+    assert response.json()["available_side_options"] == [
+        {"value": "A", "label": "Side A", "side": "A", "disc_number": None},
+        {"value": "B", "label": "Side B", "side": "B", "disc_number": None},
+    ]
+
+
 def test_update_release_favorite_endpoint_updates_release(
     build_stub_release_import_service,
     override_release_import_service,
@@ -799,36 +827,41 @@ def test_get_release_flow_insights_endpoint_returns_record_flow_summary(
     assert service.flow_calls == [("release-123", 3, "6m")]
 
 
-def test_get_release_flow_insights_endpoint_returns_empty_for_manual_release(
+def test_get_release_flow_insights_endpoint_passes_manual_release_to_service(
     build_stub_sessions_service,
     override_sessions_service,
 ) -> None:
     service = build_stub_sessions_service()
-    service.list_error = ReleaseNotFoundError("manual-release-1")
+    manual_before_release = SimpleNamespace(
+        id="manual-before",
+        artist="Manual Artist",
+        title="Manual Before",
+        year=2026,
+        cover_thumbnail_url="/media/manual-release-covers/user/draft/thumb.jpg",
+        cover_image_url="/media/manual-release-covers/user/draft/cover.jpg",
+        styles=["Electronic"],
+    )
+    service.flow_insights = service.flow_insights.__class__(
+        release_id="manual-release-1",
+        before=[RecordFlowReleaseSummary(release=manual_before_release, count=1)],
+        after=service.flow_insights.after,
+        mood_transitions=service.flow_insights.mood_transitions,
+        sample_size=service.flow_insights.sample_size,
+        confidence=service.flow_insights.confidence,
+    )
     override_sessions_service(service)
 
-    class ManualReleaseRepositoryStub:
-        def get_release(self, _db, release_id: str, *, user_id: str):
-            if release_id == "manual-release-1" and user_id == "test-user":
-                return SimpleNamespace(id=release_id)
-            return None
-
-    app.dependency_overrides[get_manual_release_repository] = lambda: ManualReleaseRepositoryStub()
-    try:
-        with TestClient(app) as client:
-            response = client.get("/api/v1/releases/manual-release-1/flow-insights")
-    finally:
-        app.dependency_overrides.pop(get_manual_release_repository, None)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/releases/manual-release-1/flow-insights")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "release_id": "manual-release-1",
-        "before": [],
-        "after": [],
-        "mood_transitions": [],
-        "sample_size": 0,
-        "confidence": "low",
-    }
+    assert response.json()["release_id"] == "manual-release-1"
+    assert response.json()["before"][0]["thumbnail_url"] == "/media/manual-release-covers/user/draft/thumb.jpg"
+    assert response.json()["before"][0]["cover_image_url"] == "/media/manual-release-covers/user/draft/cover.jpg"
+    assert response.json()["after"]
+    assert response.json()["mood_transitions"]
+    assert service.flow_calls == [("manual-release-1", 5, "3m")]
+    assert service.user_id_calls == ["test-user"]
 
 
 def test_get_release_sessions_endpoint_returns_manual_release_sessions(

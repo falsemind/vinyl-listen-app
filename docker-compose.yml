@@ -112,6 +112,7 @@ services:
     volumes:
       - ./backend/auth-local-email-outbox:/app/backend/auth-local-email-outbox
       - ./backend/identify_ocr_images:/app/backend/identify_ocr_images
+      - ./backend/storage:/app/backend/storage
       - ./spotify_import:/app/backend/spotify_import
     ports:
       - "8000:8000"

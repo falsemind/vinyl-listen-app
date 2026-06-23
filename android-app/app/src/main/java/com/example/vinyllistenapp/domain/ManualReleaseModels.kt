@@ -208,6 +208,12 @@ data class ManualReleaseFormState(
                             "Track title must be ${ManualReleaseLimits.TRACK_TITLE_MAX_LENGTH} characters or fewer.",
                         )
                     }
+                    if (formData.format == ManualReleaseFormat.Vinyl &&
+                        track.title?.isNotBlank() == true &&
+                        track.position.isNullOrBlank()
+                    ) {
+                        put("tracklist.$trackIndex.position", "Track position is required for vinyl releases.")
+                    }
                     if ((track.position?.length ?: 0) > ManualReleaseLimits.TRACK_POSITION_MAX_LENGTH) {
                         put(
                             "tracklist.$trackIndex.position",
@@ -305,7 +311,7 @@ data class ManualReleaseFormState(
                 !formData.label.isNullOrBlank() &&
                 formData.format != null &&
                 formData.genres.any { it.isNotBlank() } &&
-                formData.tracklist.any { !it.title.isNullOrBlank() } &&
+                formData.tracklist.any { it.isCompleteForFormat(formData.format) } &&
                 (formData.format != ManualReleaseFormat.Vinyl || hasRequiredVinylDetails) &&
                 (!formData.genres.contains("Electronic") || formData.styles.any { it.isNotBlank() }) &&
                 localFieldErrors.isEmpty()
@@ -323,6 +329,9 @@ data class ManualReleaseFormState(
     private val hasRequiredVinylDetails: Boolean
         get() = formData.vinylSize != null && formData.vinylSpeed != null && formData.vinylDiscCount != null
 }
+
+private fun ManualReleaseTrackInput.isCompleteForFormat(format: ManualReleaseFormat?): Boolean =
+    !title.isNullOrBlank() && (format != ManualReleaseFormat.Vinyl || !position.isNullOrBlank())
 
 enum class ManualReleasePrimaryAction {
     DisabledSave,

@@ -63,6 +63,62 @@ def test_tool_runner_prioritizes_session_notes_for_recommendations() -> None:
     assert 'note="Warm and loose, best for late-night focus."' in rendered_context
 
 
+def test_tool_runner_includes_manual_sessions_in_insight_facts() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    session_factory = sessionmaker(bind=engine)
+    _create_collection_tables(engine)
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql("""
+            INSERT INTO manual_releases (
+                id, user_id, artist, title, year, label, catalog_number, format, genres, styles, created_at, updated_at
+            )
+            VALUES (
+                'manual-release-1',
+                'user-a',
+                'Manual Artist',
+                'Manual Record',
+                2026,
+                'Manual Label',
+                'MAN-001',
+                'Vinyl',
+                '["Electronic"]',
+                '["Techno"]',
+                '2026-01-04',
+                '2026-01-04'
+            )
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO sessions (
+                id, user_id, release_id, manual_release_id, rating, mood, notes, played_at, vinyl_side, created_at
+            )
+            VALUES (
+                'manual-session-1',
+                'user-a',
+                NULL,
+                'manual-release-1',
+                5,
+                'Focused',
+                'Manual note for a self-submitted record.',
+                '2026-01-04T10:00:00+00:00',
+                'A',
+                '2026-01-04T10:00:00+00:00'
+            )
+            """)
+
+    with session_factory() as db:
+        results = AiInsightToolRunner().run(
+            db,
+            user_id="user-a",
+            message="Any recent notes, top records, and style patterns?",
+        )
+
+    rendered_context = "\n".join(result.content for result in results)
+    assert "Manual Artist - Manual Record" in rendered_context
+    assert 'note="Manual note for a self-submitted record."' in rendered_context
+    assert "Techno: 1" in rendered_context
+
+
 def test_tool_runner_uses_spotify_overlap_and_time_patterns() -> None:
     engine = create_engine("sqlite:///:memory:")
     session_factory = sessionmaker(bind=engine)
@@ -139,7 +195,8 @@ def _create_collection_tables(engine) -> None:
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY,
                 user_id TEXT,
-                release_id TEXT NOT NULL,
+                release_id TEXT,
+                manual_release_id TEXT,
                 session_group_id TEXT,
                 rating INTEGER,
                 mood TEXT,
@@ -147,6 +204,37 @@ def _create_collection_tables(engine) -> None:
                 played_at TIMESTAMP,
                 vinyl_side TEXT,
                 created_at TIMESTAMP
+            )
+            """)
+        connection.exec_driver_sql("""
+            CREATE TABLE manual_releases (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                title TEXT NOT NULL,
+                year INTEGER,
+                label TEXT NOT NULL,
+                catalog_number TEXT,
+                barcode TEXT,
+                format TEXT NOT NULL,
+                genres TEXT,
+                styles TEXT,
+                artists TEXT NOT NULL DEFAULT '[]',
+                labels TEXT NOT NULL DEFAULT '[]',
+                identifiers TEXT NOT NULL DEFAULT '{}',
+                format_details TEXT NOT NULL DEFAULT '{}',
+                tracklist TEXT NOT NULL DEFAULT '[]',
+                cover_storage_key TEXT,
+                cover_image_url TEXT,
+                cover_thumbnail_url TEXT,
+                cover_content_type TEXT,
+                cover_size_bytes INTEGER,
+                in_collection BOOLEAN NOT NULL DEFAULT 1,
+                collection_added_at TIMESTAMP,
+                collection_removed_at TIMESTAMP,
+                is_favorite BOOLEAN NOT NULL DEFAULT 0,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
             )
             """)
         connection.exec_driver_sql("""
@@ -170,15 +258,17 @@ def _create_collection_tables(engine) -> None:
                  '["House"]', '2026-01-01', '2026-01-01')
             """)
         connection.exec_driver_sql("""
-            INSERT INTO sessions (id, user_id, release_id, rating, mood, notes, played_at, vinyl_side, created_at)
+            INSERT INTO sessions (
+                id, user_id, release_id, manual_release_id, rating, mood, notes, played_at, vinyl_side, created_at
+            )
             VALUES
-                ('session-1', 'user-a', 'release-1', 5, 'Focused',
+                ('session-1', 'user-a', 'release-1', NULL, 5, 'Focused',
                  'Huge low end, felt meditative after a long day.',
                  '2026-01-03T10:00:00+00:00', 'A', '2026-01-03T10:00:00+00:00'),
-                ('session-2', 'user-a', 'release-1', 4, 'Focused',
+                ('session-2', 'user-a', 'release-1', NULL, 4, 'Focused',
                  NULL,
                  '2026-01-02T10:00:00+00:00', 'B', '2026-01-02T10:00:00+00:00'),
-                ('session-3', 'user-a', 'release-2', 5, 'Late Night',
+                ('session-3', 'user-a', 'release-2', NULL, 5, 'Late Night',
                  'Warm and loose, best for late-night focus.',
                  '2026-01-01T10:00:00+00:00', 'A', '2026-01-01T10:00:00+00:00')
             """)

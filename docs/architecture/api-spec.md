@@ -879,7 +879,7 @@ Supported enums:
 | `vinyl_speed` | `33 1/3`, `45`, `78`, `Other` |
 | `credits[].role` | `Featuring`, `Remix`, `Producer`, `Written-By`, `Other` |
 
-`year` is optional and must be an integer between `1900` and `2100` when provided.
+`year` is optional and must be an integer between `1900` and `2100` when provided. `tracklist[].position` is required for saved `Vinyl` releases so record details and log-session side/track mapping can be derived; it remains optional for non-vinyl formats.
 
 ## GET /manual-releases/drafts
 
@@ -1008,6 +1008,7 @@ Save directly from form data:
     "styles": ["Techno"],
     "tracklist": [
       {
+        "position": "A1",
         "title": "Track Title"
       }
     ]
@@ -1051,7 +1052,8 @@ Validation errors include field-level details:
     "code": "manual_release_validation_failed",
     "message": "Manual release validation failed.",
     "field_errors": {
-      "title": "This field is required."
+      "title": "This field is required.",
+      "tracklist.0.position": "Track position is required for vinyl releases."
     }
   }
 }
@@ -1967,6 +1969,7 @@ Endpoints used by the **Analytics screen charts**.
 
 Backend calculates metrics using configurable time windows (e.g. last 90 days).
 Drilldown endpoints use the same pagination envelope as View All screens.
+Analytics rows include sessions for both Discogs-backed releases and user-owned manual releases. Manual release rows use the manual release UUID in `release_id`, return `discogs_release_id: 0`, and expose the saved manual artist/title/year/label/catalog/cover/style metadata where the response shape supports it.
 
 ---
 

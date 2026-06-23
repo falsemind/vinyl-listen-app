@@ -1,6 +1,7 @@
 import logging
 import math
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +25,10 @@ from app.core.runtime_dependencies import log_runtime_dependency_statuses
 logger = logging.getLogger(__name__)
 
 
+def _ensure_static_directory(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # ---- Startup ----
@@ -38,6 +43,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Vinyl Listening App API", version="0.1.0", lifespan=lifespan)
+_ensure_static_directory(settings.manual_release_cover_storage_dir)
 app.mount(
     settings.manual_release_cover_public_url_prefix,
     StaticFiles(directory=settings.manual_release_cover_storage_dir, check_dir=False),

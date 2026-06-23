@@ -35,9 +35,10 @@ class StubSessionGroupsService:
 
 def _session(
     session_id: str,
-    release_id: str,
+    release_id: str | None,
     played_at: datetime,
     *,
+    manual_release_id: str | None = None,
     user_id: str | None = None,
     session_group_id: str | None = None,
     mood: str | None = None,
@@ -46,6 +47,7 @@ def _session(
         id=session_id,
         user_id=user_id,
         release_id=release_id,
+        manual_release_id=manual_release_id,
         session_group_id=session_group_id,
         rating=None,
         mood=mood,
@@ -1135,6 +1137,66 @@ def test_record_flow_insights_defaults_to_three_month_window(
     assert insights.sample_size == 1
     assert [(item.release.id, item.count) for item in insights.before] == [(before_release.id, 1)]
     assert [(item.release.id, item.count) for item in insights.after] == [(after_release.id, 1)]
+
+
+def test_record_flow_insights_includes_manual_release_sessions(
+    sessions_repository_factory,
+    build_sessions_service,
+    build_manual_release,
+) -> None:
+    before_release = build_manual_release("manual-before", user_id="test-user")
+    target_release = build_manual_release("manual-target", user_id="test-user")
+    after_release = build_manual_release("manual-after", user_id="test-user")
+    repository = sessions_repository_factory()
+    repository.sessions = [
+        _session(
+            "manual-before-session",
+            None,
+            datetime(2026, 5, 2, 22, 0, tzinfo=UTC),
+            manual_release_id=before_release.id,
+            user_id="test-user",
+            session_group_id="manual-flow",
+            mood="Calm",
+        ),
+        _session(
+            "manual-target-session",
+            None,
+            datetime(2026, 5, 2, 22, 15, tzinfo=UTC),
+            manual_release_id=target_release.id,
+            user_id="test-user",
+            session_group_id="manual-flow",
+            mood="Focused",
+        ),
+        _session(
+            "manual-after-session",
+            None,
+            datetime(2026, 5, 2, 22, 35, tzinfo=UTC),
+            manual_release_id=after_release.id,
+            user_id="test-user",
+            session_group_id="manual-flow",
+            mood="Energetic",
+        ),
+    ]
+    service = build_sessions_service(
+        sessions_repository=repository,
+        releases=[],
+        manual_releases=[before_release, target_release, after_release],
+    )
+
+    insights = service.get_record_flow_insights(db=object(), release_id=target_release.id, user_id="test-user")
+
+    assert insights.sample_size == 1
+    assert [(item.release.id, item.count) for item in insights.before] == [(before_release.id, 1)]
+    assert [(item.release.id, item.count) for item in insights.after] == [(after_release.id, 1)]
+    assert [
+        (
+            transition.previous_mood,
+            transition.current_mood,
+            transition.next_mood,
+            transition.count,
+        )
+        for transition in insights.mood_transitions
+    ] == [("Calm", "Focused", "Energetic", 1)]
 
 
 def test_record_flow_insights_can_use_full_history(

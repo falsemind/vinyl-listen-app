@@ -53,6 +53,34 @@ class SessionSideOptionsTest {
     }
 
     @Test
+    fun sessionSideOptionsDoesNotInventSidesForManualNumericTracksWhenFallbackSuppressed() {
+        val record =
+            recordSummary(
+                availableSides = emptyList(),
+                availableSideOptions = emptyList(),
+                tracklist = listOf(ReleaseTrack("1", "Manual Track")),
+            )
+
+        assertEquals(emptyList<SessionSideOption>(), sessionSideOptions(record, usePrototypeFallback = false))
+    }
+
+    @Test
+    fun prototypeSideFallbackIsDisabledForRealSessionTargets() {
+        assertTrue(shouldUsePrototypeSideFallback(null))
+        assertFalse(shouldUsePrototypeSideFallback("manual-release-123"))
+    }
+
+    @Test
+    fun sessionRecordMetadataOmitsMissingYear() {
+        assertEquals("2026 - Label", sessionRecordMetadata(recordSummary(availableSides = emptyList())))
+        assertEquals(
+            "Manual Label",
+            sessionRecordMetadata(recordSummary(availableSides = emptyList(), year = null, label = "Manual Label")),
+        )
+        assertEquals(null, sessionRecordMetadata(recordSummary(availableSides = emptyList(), year = null, label = "")))
+    }
+
+    @Test
     fun displaySessionSideAddsReadablePrefix() {
         assertEquals("Side AA", displaySessionSide("AA"))
     }
@@ -92,6 +120,39 @@ class SessionSideOptionsTest {
             listOf(SessionTrackOption("X2", "X2: S.O.U.R 5:12")),
             sessionTrackOptions(record, SessionSideOption("1:X", "Disc 1 - Side X")),
         )
+    }
+
+    @Test
+    fun sessionTrackOptionsShowsAllTracksWhenNoSideOptionsExist() {
+        val record =
+            recordSummary(
+                availableSides = emptyList(),
+                availableSideOptions = emptyList(),
+                tracklist =
+                    listOf(
+                        ReleaseTrack("1", "Manual Track"),
+                        ReleaseTrack("2", "Manual Track Two", "4:12"),
+                    ),
+            )
+
+        assertEquals(
+            listOf(
+                SessionTrackOption("1", "1: Manual Track"),
+                SessionTrackOption("2", "2: Manual Track Two 4:12"),
+            ),
+            sessionTrackOptions(record, selectedSide = null),
+        )
+    }
+
+    @Test
+    fun sessionTrackOptionsDoesNotShowAllTracksWhenSideOptionsExistButNoSideSelected() {
+        val record =
+            recordSummary(
+                availableSides = listOf("A"),
+                tracklist = listOf(ReleaseTrack("A1", "Side Track")),
+            )
+
+        assertEquals(emptyList<SessionTrackOption>(), sessionTrackOptions(record, selectedSide = null))
     }
 
     @Test
@@ -183,13 +244,15 @@ class SessionSideOptionsTest {
         availableSideOptions: List<ReleaseSideOption> = emptyList(),
         tracklist: List<ReleaseTrack> = emptyList(),
         hasFullDiscogsInfo: Boolean = false,
+        year: Int? = 2026,
+        label: String = "Label",
     ) = RecordSummary(
         releaseId = "release-123",
         discogsReleaseId = 555123,
         artist = "Artist",
         title = "Title",
-        label = "Label",
-        year = 2026,
+        label = label,
+        year = year,
         format = "Vinyl",
         rating = 0,
         lastPlayed = "Not logged yet",

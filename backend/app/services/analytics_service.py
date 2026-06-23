@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.releases import Releases
 from app.models.sessions import Sessions, SessionTracks
-from app.repositories.analytics_repository import AnalyticsRepository
+from app.repositories.analytics_repository import AnalyticsReleaseSummary, AnalyticsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ class MonthlyPlayCount:
 
 @dataclass(frozen=True)
 class AnalyticsTopRecord:
-    release: Releases
+    release: AnalyticsReleaseSummary
     plays: int
     average_rating: float | None
     top_track: str | None
@@ -50,7 +49,7 @@ class AnalyticsPagination:
 @dataclass(frozen=True)
 class AnalyticsSession:
     session: Sessions
-    release: Releases
+    release: AnalyticsReleaseSummary
     tracks: list[SessionTracks]
 
 
@@ -62,7 +61,7 @@ class AnalyticsSessionPage:
 
 @dataclass(frozen=True)
 class AnalyticsRecordCount:
-    release: Releases
+    release: AnalyticsReleaseSummary
     count: int
 
 

@@ -5,6 +5,40 @@ from sqlalchemy.orm import sessionmaker
 from app.repositories.analytics_repository import AnalyticsRepository
 
 
+def _create_manual_releases_table(connection: Connection) -> None:
+    connection.exec_driver_sql("""
+        CREATE TABLE manual_releases (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            title TEXT NOT NULL,
+            label TEXT NOT NULL,
+            catalog_number TEXT,
+            barcode TEXT,
+            year INTEGER,
+            format TEXT NOT NULL,
+            genres TEXT,
+            styles TEXT,
+            artists TEXT,
+            labels TEXT,
+            identifiers TEXT,
+            format_details TEXT,
+            tracklist TEXT,
+            cover_storage_key TEXT,
+            cover_image_url TEXT,
+            cover_thumbnail_url TEXT,
+            cover_content_type TEXT,
+            cover_size_bytes INTEGER,
+            in_collection BOOLEAN,
+            collection_added_at TIMESTAMP,
+            collection_removed_at TIMESTAMP,
+            is_favorite BOOLEAN,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """)
+
+
 def test_get_monthly_play_counts_uses_sqlite_month_expression() -> None:
     engine = create_engine("sqlite:///:memory:")
     session_factory = sessionmaker(bind=engine)
@@ -13,7 +47,10 @@ def test_get_monthly_play_counts_uses_sqlite_month_expression() -> None:
         connection.exec_driver_sql("""
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY,
-                release_id TEXT NOT NULL,
+                release_id TEXT,
+                manual_release_id TEXT,
+                user_id TEXT,
+                session_group_id TEXT,
                 rating INTEGER,
                 mood TEXT,
                 notes TEXT,
@@ -44,7 +81,10 @@ def test_get_mood_distribution_combines_case_variants() -> None:
         connection.exec_driver_sql("""
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY,
-                release_id TEXT NOT NULL,
+                release_id TEXT,
+                manual_release_id TEXT,
+                user_id TEXT,
+                session_group_id TEXT,
                 rating INTEGER,
                 mood TEXT,
                 notes TEXT,
@@ -78,13 +118,17 @@ def test_get_style_distribution_counts_release_styles_per_session() -> None:
                 discogs_release_id INTEGER NOT NULL,
                 artist TEXT NOT NULL,
                 title TEXT NOT NULL,
+                genres TEXT,
                 styles TEXT
             )
             """)
         connection.exec_driver_sql("""
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY,
-                release_id TEXT NOT NULL,
+                release_id TEXT,
+                manual_release_id TEXT,
+                user_id TEXT,
+                session_group_id TEXT,
                 rating INTEGER,
                 mood TEXT,
                 notes TEXT,
@@ -93,26 +137,33 @@ def test_get_style_distribution_counts_release_styles_per_session() -> None:
                 created_at TIMESTAMP
             )
             """)
+        _create_manual_releases_table(connection)
         connection.exec_driver_sql("""
-            INSERT INTO releases (id, discogs_release_id, artist, title, styles)
+            INSERT INTO releases (id, discogs_release_id, artist, title, genres, styles)
             VALUES
-                ('release-1', 101, 'Rhythm & Sound', 'Carrier', '["Dub Techno", "Minimal"]'),
-                ('release-2', 102, 'Moodymann', 'Silentintroduction', '["House", "Deep House"]'),
-                ('release-3', 103, 'Basic Channel', 'Phylyps Trak', '["dub techno"]')
+                ('release-1', 101, 'Rhythm & Sound', 'Carrier', NULL, '["Dub Techno", "Minimal"]'),
+                ('release-2', 102, 'Moodymann', 'Silentintroduction', NULL, '["House", "Deep House"]'),
+                ('release-3', 103, 'Basic Channel', 'Phylyps Trak', NULL, '["dub techno"]')
             """)
         connection.exec_driver_sql("""
-            INSERT INTO sessions (id, release_id, created_at)
+            INSERT INTO manual_releases (id, user_id, artist, title, label, format, genres, styles)
+            VALUES ('manual-release-1', 'user-1', 'Manual Artist', 'Genre Only', 'Manual Label', 'Vinyl',
+                    '["Electronic"]', NULL)
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO sessions (id, release_id, manual_release_id, user_id, created_at)
             VALUES
-                ('session-1', 'release-1', '2026-01-02T10:00:00+00:00'),
-                ('session-2', 'release-1', '2026-01-03T10:00:00+00:00'),
-                ('session-3', 'release-2', '2026-01-04T10:00:00+00:00'),
-                ('session-4', 'release-3', '2026-01-05T10:00:00+00:00')
+                ('session-1', 'release-1', NULL, NULL, '2026-01-02T10:00:00+00:00'),
+                ('session-2', 'release-1', NULL, NULL, '2026-01-03T10:00:00+00:00'),
+                ('session-3', 'release-2', NULL, NULL, '2026-01-04T10:00:00+00:00'),
+                ('session-4', 'release-3', NULL, NULL, '2026-01-05T10:00:00+00:00'),
+                ('session-5', NULL, 'manual-release-1', 'user-1', '2026-01-06T10:00:00+00:00')
             """)
 
     with session_factory() as db:
         rows = AnalyticsRepository.get_style_distribution(db)
 
-    assert rows == [("Dub Techno", 3), ("Minimal", 2), ("Deep House", 1), ("House", 1)]
+    assert rows == [("Dub Techno", 3), ("Minimal", 2), ("Deep House", 1), ("Electronic", 1), ("House", 1)]
 
 
 def test_get_sessions_for_month_returns_paged_joined_rows() -> None:
@@ -256,20 +307,33 @@ def test_get_records_for_style_matches_serialized_styles_case_insensitively() ->
         _create_drilldown_tables(connection)
         _insert_drilldown_releases(connection)
         connection.exec_driver_sql("""
-            INSERT INTO sessions (id, release_id, played_at, created_at)
+            INSERT INTO manual_releases (id, user_id, artist, title, label, format, genres, styles)
+            VALUES ('manual-release-1', 'user-1', 'Manual Artist', 'Genre Only', 'Manual Label', 'Vinyl',
+                    '["Electronic"]', NULL)
+            """)
+        connection.exec_driver_sql("""
+            INSERT INTO sessions (id, release_id, manual_release_id, user_id, played_at, created_at)
             VALUES
-                ('session-1', 'release-1', '2026-05-02T10:00:00+00:00', '2026-05-02T10:00:00+00:00'),
-                ('session-2', 'release-1', '2026-05-03T10:00:00+00:00', '2026-05-03T10:00:00+00:00'),
-                ('session-3', 'release-2', '2026-05-04T10:00:00+00:00', '2026-05-04T10:00:00+00:00'),
-                ('session-4', 'release-3', '2026-05-05T10:00:00+00:00', '2026-05-05T10:00:00+00:00')
+                ('session-1', 'release-1', NULL, NULL, '2026-05-02T10:00:00+00:00', '2026-05-02T10:00:00+00:00'),
+                ('session-2', 'release-1', NULL, NULL, '2026-05-03T10:00:00+00:00', '2026-05-03T10:00:00+00:00'),
+                ('session-3', 'release-2', NULL, NULL, '2026-05-04T10:00:00+00:00', '2026-05-04T10:00:00+00:00'),
+                ('session-4', 'release-3', NULL, NULL, '2026-05-05T10:00:00+00:00', '2026-05-05T10:00:00+00:00'),
+                ('session-5', NULL, 'manual-release-1', 'user-1', '2026-05-06T10:00:00+00:00',
+                 '2026-05-06T10:00:00+00:00')
             """)
 
     with session_factory() as db:
         rows = AnalyticsRepository.get_records_for_style(db, style="dub techno", limit=10, offset=0)
         total = AnalyticsRepository.count_records_for_style(db, style="dub techno")
+        genre_rows = AnalyticsRepository.get_records_for_style(db, style="electronic", limit=10, offset=0)
+        genre_total = AnalyticsRepository.count_records_for_style(db, style="electronic")
 
     assert total == 2
     assert [(release.title, count) for release, count in rows] == [("Carrier", 2), ("Phylyps Trak", 1)]
+    assert genre_total == 1
+    assert [(release.title, release.styles, count) for release, count in genre_rows] == [
+        ("Genre Only", ["Electronic"], 1)
+    ]
 
 
 def test_get_records_for_style_page_returns_slice_and_total_from_one_result_set() -> None:
@@ -346,14 +410,19 @@ def _create_drilldown_tables(connection: Connection) -> None:
             collection_removed_at TIMESTAMP,
             last_discogs_sync_at TIMESTAMP,
             discogs_instance_id INTEGER,
+            is_favorite BOOLEAN,
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
         """)
+    _create_manual_releases_table(connection)
     connection.exec_driver_sql("""
         CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
-            release_id TEXT NOT NULL,
+            release_id TEXT,
+            manual_release_id TEXT,
+            user_id TEXT,
+            session_group_id TEXT,
             rating INTEGER,
             mood TEXT,
             notes TEXT,

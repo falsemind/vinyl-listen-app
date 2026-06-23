@@ -739,6 +739,7 @@ private fun ManualReleaseTracklistSection(
             ManualTrackCard(
                 index = index,
                 track = track,
+                format = formState.formData.format,
                 expanded = index in expandedTrackIndexes,
                 canDelete = visibleTracks.size > 1 || track.hasTrackInput(),
                 fieldErrors = formState.localFieldErrors,
@@ -804,6 +805,7 @@ private fun ManualReleaseTracklistSection(
 private fun ManualTrackCard(
     index: Int,
     track: ManualReleaseTrackInput,
+    format: ManualReleaseFormat?,
     expanded: Boolean,
     canDelete: Boolean,
     fieldErrors: Map<String, String>,
@@ -858,6 +860,7 @@ private fun ManualTrackCard(
             )
             ManualTextInput(
                 label = "Position",
+                required = format == ManualReleaseFormat.Vinyl,
                 value = track.position.orEmpty(),
                 error = fieldErrors["tracklist.$index.position"],
                 onValueChange = { value -> onUpdate(track.copy(position = value.toOptionalText())) },

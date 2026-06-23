@@ -705,14 +705,15 @@ Each time a user listens to a record, a session is created.
 
 Sessions can optionally belong to a timed listening session group. Existing and standalone sessions keep `session_group_id = null`.
 
-Current sessions target shared Discogs-backed releases through `sessions.release_id -> releases.id`. Manual releases are user-owned rows in `manual_releases` and are not valid session targets until a later session-domain migration adds a manual-release reference or polymorphic release target.
+Sessions target exactly one release source: either a shared Discogs-backed release through `sessions.release_id -> releases.id` or a user-owned manual release through `sessions.manual_release_id -> manual_releases.id`. Analytics and insight queries treat both targets as record activity while preserving manual release ownership checks.
 
 ### Columns
 
 |Column|Type|Notes|
 |---|---|---|
 |id|UUID|Primary key|
-|release_id|UUID|FK → releases.id|
+|release_id|UUID|Nullable FK -> releases.id; set for Discogs-backed sessions|
+|manual_release_id|UUID|Nullable FK -> manual_releases.id; set for manual release sessions|
 |user_id|UUID|Nullable FK -> user_accounts.id; null means legacy unassigned session|
 |session_group_id|UUID|Nullable FK -> session_groups.id|
 |rating|INTEGER|1–5 rating|
@@ -725,7 +726,8 @@ Current sessions target shared Discogs-backed releases through `sessions.release
 ### Foreign Keys
 
 ```
-release_id → releases.id
+release_id -> releases.id
+manual_release_id -> manual_releases.id ON DELETE CASCADE
 user_id -> user_accounts.id ON DELETE CASCADE
 session_group_id -> session_groups.id ON DELETE SET NULL
 ```
@@ -737,9 +739,13 @@ PRIMARY KEY (id)
 
 INDEX (release_id)
 
+INDEX (manual_release_id)
+
 INDEX (user_id)
 
 INDEX (user_id, release_id)
+
+INDEX (user_id, manual_release_id)
 
 INDEX (user_id, played_at)
 
