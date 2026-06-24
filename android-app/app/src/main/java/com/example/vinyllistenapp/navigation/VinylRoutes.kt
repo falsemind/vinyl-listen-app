@@ -18,9 +18,11 @@ object VinylRoutes {
     const val FLOW_MODE_SESSION = "session"
     const val FLOW_MODE_COLLECTION_ADD = "collection_add"
     const val MANUAL_SEARCH = "manual_search"
-    const val MANUAL_SEARCH_PATTERN = "$MANUAL_SEARCH?barcode={barcode}"
+    const val MANUAL_SEARCH_PATTERN = "$MANUAL_SEARCH?barcode={barcode}&catalog={catalog}"
     const val BARCODE = "barcode"
+    const val CATALOG = "catalog"
     const val COLLECTION_MANUAL_SEARCH = "collection_manual_search"
+    const val COLLECTION_MANUAL_SEARCH_PATTERN = "$COLLECTION_MANUAL_SEARCH?catalog={catalog}"
     const val COLLECTION_MANUAL_ENTRY = "collection_manual_entry"
     const val COLLECTION_MANUAL_FORM = "collection_manual_form"
     const val COLLECTION_MANUAL_FORM_PATTERN = "$COLLECTION_MANUAL_FORM?draftId={draftId}"
@@ -111,6 +113,10 @@ object VinylRoutes {
     fun matchConfirmation(flowMode: String = FLOW_MODE_SESSION): String = "$MATCH_CONFIRMATION?$FLOW_MODE=$flowMode"
 
     fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${Uri.encode(barcode)}"
+
+    fun manualSearchCatalog(catalog: String): String = "$MANUAL_SEARCH?$CATALOG=${Uri.encode(catalog)}"
+
+    fun collectionManualSearchCatalog(catalog: String): String = "$COLLECTION_MANUAL_SEARCH?$CATALOG=${Uri.encode(catalog)}"
 
     fun manualReleaseForm(draftId: String? = null): String =
         if (draftId.isNullOrBlank()) {

@@ -67,6 +67,12 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun manualSearchRoutesExposeCatalogQueryArgument() {
+        assertEquals("manual_search?barcode={barcode}&catalog={catalog}", VinylRoutes.MANUAL_SEARCH_PATTERN)
+        assertEquals("collection_manual_search?catalog={catalog}", VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN)
+    }
+
+    @Test
     fun identifyRoutesCarryCollectionAddFlowMode() {
         assertEquals("capture_record?flowMode=collection_add", VinylRoutes.captureRecord(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
         assertEquals(

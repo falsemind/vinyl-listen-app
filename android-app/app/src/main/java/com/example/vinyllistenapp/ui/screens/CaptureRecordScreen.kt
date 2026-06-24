@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -72,6 +74,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.domain.CatalogNumberCandidate
+import com.example.vinyllistenapp.domain.CatalogNumberExtractor
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
@@ -98,7 +102,7 @@ import kotlin.math.max
 fun CaptureRecordScreen(
     apiClient: VinylApiClient,
     onImageSelected: (Uri) -> Unit,
-    onManualSearch: () -> Unit,
+    onManualSearch: (String?) -> Unit,
     onBarcodeDetected: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -121,6 +125,7 @@ fun CaptureRecordScreen(
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
     var capturedBarcode by remember { mutableStateOf<String?>(null) }
     var textRecognitionResult by remember { mutableStateOf<TextRecognitionPrototypeResult?>(null) }
+    var editableCatalogNumber by rememberSaveable { mutableStateOf("") }
     var cameraPrivacyBlocked by rememberSaveable { mutableStateOf(false) }
     var cameraRetryAttempt by rememberSaveable { mutableStateOf(0) }
     val photoCaptured = capturedImageUri != null
@@ -254,6 +259,7 @@ fun CaptureRecordScreen(
         val startedAtMillis = System.currentTimeMillis()
         isRecognizingText = true
         textRecognitionResult = null
+        editableCatalogNumber = ""
         captureError = null
         capture.takePicture(
             outputOptions,
@@ -285,17 +291,20 @@ fun CaptureRecordScreen(
                                     .flatMap { block -> block.lines.map { line -> line.text.trim() } }
                                     .filter { it.isNotBlank() }
                             val elapsedMillis = System.currentTimeMillis() - startedAtMillis
+                            val catalogCandidates = CatalogNumberExtractor.extract(lines)
                             textRecognitionResult =
                                 TextRecognitionPrototypeResult(
                                     lines = lines,
+                                    catalogCandidates = catalogCandidates,
                                     imageSizeLabel = imageSizeLabel,
                                     processingTimeMillis = elapsedMillis,
                                 )
+                            editableCatalogNumber = catalogCandidates.firstOrNull()?.value.orEmpty()
                             val linePreview = lines.take(20).joinToString(" | ")
                             Log.d(
                                 TEXT_RECOGNITION_TAG,
                                 "ML Kit text recognized ${lines.size} lines in ${elapsedMillis}ms " +
-                                    "from $imageSizeLabel: $linePreview",
+                                    "from $imageSizeLabel with ${catalogCandidates.size} catalog candidates: $linePreview",
                             )
                             if (lines.isEmpty()) {
                                 captureError = "No text found. Try a clearer still frame."
@@ -452,6 +461,7 @@ fun CaptureRecordScreen(
                             } else if (refreshCameraPermission(markDenied = false)) {
                                 captureError = null
                                 textRecognitionResult = null
+                                editableCatalogNumber = ""
                                 barcodeScanMode = true
                             } else {
                                 permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -488,7 +498,18 @@ fun CaptureRecordScreen(
             }
             textRecognitionResult?.let { result ->
                 Spacer(Modifier.height(VinylSpacing.SpaceMd))
-                TextRecognitionPrototypeResultCard(result = result)
+                TextRecognitionPrototypeResultCard(
+                    result = result,
+                    catalogNumber = editableCatalogNumber,
+                    onCatalogNumberChange = { editableCatalogNumber = it },
+                    onAcceptCatalogNumber = {
+                        val catalogNumber = editableCatalogNumber.trim()
+                        if (catalogNumber.isNotBlank()) {
+                            onManualSearch(catalogNumber)
+                        }
+                    },
+                    onClearCatalogNumber = { editableCatalogNumber = "" },
+                )
             }
             Spacer(Modifier.height(VinylSpacing.SpaceMd))
             Row(
@@ -511,7 +532,7 @@ fun CaptureRecordScreen(
                     accentColor = VinylColors.AccentOrange,
                     onClick = {
                         if (normalCaptureActionsEnabled) {
-                            onManualSearch()
+                            onManualSearch(null)
                         }
                     },
                     enabled = normalCaptureActionsEnabled,
@@ -549,6 +570,7 @@ private fun createImageCaptureUri(
 
 private data class TextRecognitionPrototypeResult(
     val lines: List<String>,
+    val catalogCandidates: List<CatalogNumberCandidate>,
     val imageSizeLabel: String,
     val processingTimeMillis: Long,
 )
@@ -572,6 +594,7 @@ private fun Context.hasCameraPermission(): Boolean =
 private const val TEXT_RECOGNITION_TAG = "CaptureTextRecognition"
 private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by system privacy controls."
 private const val TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT = 8
+private const val CATALOG_CANDIDATE_PREVIEW_COUNT = 3
 private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
 private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
 private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
@@ -1087,9 +1110,14 @@ private fun CaptureHintCard(
 @Composable
 private fun TextRecognitionPrototypeResultCard(
     result: TextRecognitionPrototypeResult,
+    catalogNumber: String,
+    onCatalogNumberChange: (String) -> Unit,
+    onAcceptCatalogNumber: () -> Unit,
+    onClearCatalogNumber: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val previewLines = result.lines.take(TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT)
+    val catalogCandidates = result.catalogCandidates.take(CATALOG_CANDIDATE_PREVIEW_COUNT)
     Column(
         modifier =
             modifier
@@ -1101,10 +1129,96 @@ private fun TextRecognitionPrototypeResultCard(
         verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
     ) {
         Text(
-            text = "ML Kit text: ${result.lines.size} lines - ${result.processingTimeMillis}ms - ${result.imageSizeLabel}",
+            text =
+                "ML Kit text: ${result.lines.size} lines - " +
+                    "${result.catalogCandidates.size} catalog candidates - " +
+                    "${result.processingTimeMillis}ms - ${result.imageSizeLabel}",
             color = VinylColors.TextPrimary,
             style = MaterialTheme.typography.bodyMedium,
         )
+        Text(
+            text = "Catalog number",
+            color = VinylColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(VinylShapes.Card)
+                    .background(VinylColors.SurfacePrimary)
+                    .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
+                    .padding(horizontal = VinylSpacing.SpaceMd),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            BasicTextField(
+                value = catalogNumber,
+                onValueChange = onCatalogNumberChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        color = VinylColors.TextPrimary,
+                    ),
+                cursorBrush = SolidColor(VinylColors.AccentOrange),
+                decorationBox = { innerTextField ->
+                    if (catalogNumber.isEmpty()) {
+                        Text(
+                            text = "No catalog candidate selected",
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                },
+            )
+        }
+        if (catalogCandidates.isEmpty()) {
+            Text(
+                text = "No catalog-number candidates found.",
+                color = VinylColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            catalogCandidates.forEach { candidate ->
+                Text(
+                    text = "${candidate.value} (${candidate.score})",
+                    color = VinylColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier =
+                        Modifier.clickable(
+                            onClickLabel = "Use catalog number ${candidate.value}",
+                            role = Role.Button,
+                        ) {
+                            onCatalogNumberChange(candidate.value)
+                        },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+        ) {
+            CaptureSecondaryButton(
+                label = "Search Catalog",
+                accentColor = VinylColors.AccentOrange,
+                onClick = onAcceptCatalogNumber,
+                enabled = catalogNumber.isNotBlank(),
+                modifier = Modifier.weight(1f),
+            )
+            CaptureSecondaryButton(
+                label = "Clear",
+                accentColor = VinylColors.AccentPurple,
+                onClick = onClearCatalogNumber,
+                enabled = catalogNumber.isNotBlank(),
+                modifier = Modifier.weight(1f),
+            )
+        }
         if (previewLines.isEmpty()) {
             Text(
                 text = "No text lines found.",

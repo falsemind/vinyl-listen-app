@@ -235,7 +235,7 @@ fun VinylNavHost(
                 CaptureRecordScreen(
                     apiClient = activeApiClient,
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
-                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
+                    onManualSearch = { catalogNumber -> navController.navigate(flowMode.manualSearchRoute(catalogNumber)) },
                     onBarcodeDetected = { barcode ->
                         navController.navigate(VinylRoutes.barcodeProcessing(barcode, flowMode)) {
                             popUpTo(VinylRoutes.CAPTURE_RECORD_PATTERN) { inclusive = true }
@@ -385,11 +385,16 @@ fun VinylNavHost(
                             type = NavType.StringType
                             defaultValue = ""
                         },
+                        navArgument(VinylRoutes.CATALOG) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
                     ),
             ) { backStackEntry ->
                 ManualSearchScreen(
                     apiClient = activeApiClient,
                     initialBarcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty(),
+                    initialCatalog = backStackEntry.arguments?.getString(VinylRoutes.CATALOG).orEmpty(),
                     onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onDismiss = {
                         navController.navigate(VinylRoutes.HOME) {
@@ -398,10 +403,20 @@ fun VinylNavHost(
                     },
                 )
             }
-            composable(VinylRoutes.COLLECTION_MANUAL_SEARCH) {
+            composable(
+                route = VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.CATALOG) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) { backStackEntry ->
                 ManualSearchScreen(
                     apiClient = activeApiClient,
                     mode = ManualSearchMode.Collection,
+                    initialCatalog = backStackEntry.arguments?.getString(VinylRoutes.CATALOG).orEmpty(),
                     onSelectRecord = { releaseId ->
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
                             popUpTo(VinylRoutes.COLLECTION_MANUAL_SEARCH) { inclusive = true }
@@ -791,6 +806,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
+            VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_ENTRY,
             VinylRoutes.COLLECTION_MANUAL_FORM_PATTERN,
             VinylRoutes.SESSION_LOGGING_PATTERN,
@@ -816,12 +832,20 @@ private fun String?.asIdentifyFlowMode(): String =
         else -> VinylRoutes.FLOW_MODE_SESSION
     }
 
-private fun String.manualSearchRoute(): String =
-    if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
-        VinylRoutes.COLLECTION_MANUAL_SEARCH
-    } else {
+private fun String.manualSearchRoute(catalogNumber: String? = null): String {
+    val catalog = catalogNumber.orEmpty()
+    return if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+        if (catalog.isBlank()) {
+            VinylRoutes.COLLECTION_MANUAL_SEARCH
+        } else {
+            VinylRoutes.collectionManualSearchCatalog(catalog)
+        }
+    } else if (catalog.isBlank()) {
         VinylRoutes.MANUAL_SEARCH
+    } else {
+        VinylRoutes.manualSearchCatalog(catalog)
     }
+}
 
 private fun String.toMatchConfirmationMode(): MatchConfirmationMode =
     if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {

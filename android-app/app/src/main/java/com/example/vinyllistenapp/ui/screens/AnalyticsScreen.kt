@@ -113,7 +113,7 @@ fun AnalyticsScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = true, onClick = {}),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = true, onClick = {}),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem(
                             "Collection",

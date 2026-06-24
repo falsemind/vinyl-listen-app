@@ -286,7 +286,7 @@ fun CollectionScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onStats),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = false, onClick = onStats),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem("Collection", Icons.Filled.LibraryMusic, selected = true, onClick = {}),
                     ),
