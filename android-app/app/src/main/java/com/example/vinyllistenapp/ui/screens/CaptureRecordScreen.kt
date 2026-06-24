@@ -503,7 +503,7 @@ fun CaptureRecordScreen(
                     catalogNumber = editableCatalogNumber,
                     onCatalogNumberChange = { editableCatalogNumber = it },
                     onAcceptCatalogNumber = {
-                        val catalogNumber = editableCatalogNumber.trim()
+                        val catalogNumber = editableCatalogNumber.trim().repairCatalogNumberForManualSearch()
                         if (catalogNumber.isNotBlank()) {
                             onManualSearch(catalogNumber)
                         }
@@ -587,6 +587,9 @@ private fun File.readImageSizeLabel(): String {
         "unknown size"
     }
 }
+
+private fun String.repairCatalogNumberForManualSearch(): String =
+    CatalogNumberExtractor.extract(listOf(this), limit = 1).firstOrNull()?.value ?: trim()
 
 private fun Context.hasCameraPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED

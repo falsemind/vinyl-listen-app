@@ -19,6 +19,7 @@ object CatalogNumberExtractor {
     private val catalogContextKeywords =
         listOf("CAT", "CATALOG", "CATALOGUE", "CAT NO", "CAT.", "NO.", "MATRIX", "LABEL")
     private val joinedPrefixAndDigitLikeSuffixPattern = Regex("([A-Z]{2,})(O[0-9]+)$")
+    private val joinedPrefixAndSuffixedNumberPattern = Regex("([A-Z]{2,})O([0-9]{2,}[A-Z]{0,3})$")
     private val leadingDigitLikeOcrPattern = Regex("^O(?=[0-9])")
 
     fun extract(
@@ -117,12 +118,16 @@ object CatalogNumberExtractor {
                 .joinToString("-") { part ->
                     when {
                         part.any(Char::isDigit) && part.all { it == 'O' || it.isDigit() } -> part.replace('O', '0')
-                        else ->
-                            part
-                                .replace(leadingDigitLikeOcrPattern, "0")
-                                .replace(joinedPrefixAndDigitLikeSuffixPattern) { match ->
-                                    match.groupValues[1] + match.groupValues[2].replace('O', '0')
+                        else -> {
+                            val leadingRepaired = part.replace(leadingDigitLikeOcrPattern, "0")
+                            val suffixedRepaired =
+                                leadingRepaired.replace(joinedPrefixAndSuffixedNumberPattern) { match ->
+                                    match.groupValues[1] + "0" + match.groupValues[2]
                                 }
+                            suffixedRepaired.replace(joinedPrefixAndDigitLikeSuffixPattern) { match ->
+                                match.groupValues[1] + match.groupValues[2].replace('O', '0')
+                            }
+                        }
                     }
                 }
         }

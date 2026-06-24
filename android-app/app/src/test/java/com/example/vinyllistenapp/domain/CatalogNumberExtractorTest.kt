@@ -63,10 +63,12 @@ class CatalogNumberExtractorTest {
         val separatedCandidate = CatalogNumberExtractor.extract(listOf("DAT o88")).first()
         val joinedCandidate = CatalogNumberExtractor.extract(listOf("DATO88")).first()
         val suffixedCandidate = CatalogNumberExtractor.extract(listOf("RUPLDN O02LP")).first()
+        val joinedSuffixCandidate = CatalogNumberExtractor.extract(listOf("RUFFCUTO06")).first()
 
         assertEquals("DAT 088", separatedCandidate.value)
         assertEquals("DAT088", joinedCandidate.value)
         assertEquals("RUPLDN 002LP", suffixedCandidate.value)
+        assertEquals("RUFFCUT006", joinedSuffixCandidate.value)
     }
 
     @Test
