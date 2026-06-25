@@ -198,13 +198,15 @@ The current job TTL is 24 hours.
 
 Text-only jobs are intended for Android ML Kit OCR output. They accept extracted lines plus optional selected catalog number or barcode hints, but they do not persist an uploaded image and do not enter image-only phases such as `upload_received`, `preprocessing_image`, or `extracting_text`. The request contract bounds OCR input to 1-200 lines, 500 characters per line, and 10,000 normalized characters total before service admission runs.
 
+Text-only processing parses the submitted lines into the same `ExtractedIdentifiers` model used by the image OCR pipeline. Selected catalog and barcode hints are folded into those identifiers before the service reuses local candidate lookup, Discogs search planning, and ranking.
+
 ### Background processing
 
 `process_job(job_id, image_bytes, filename, content_type)` opens a fresh database session, loads the job, and runs `IdentifyService.identify` with a database-backed progress reporter.
 
 The reporter persists status and message updates at each major identify phase. On success, the service stores the serialized `IdentifyResponse` in `result` and marks the job `completed`.
 
-`process_text_job(job_id, request)` opens a fresh database session and releases the same admission ticket used by image jobs. In the initial text-contract phase, it marks the job as `parsing_identifiers` and then fails with `text_identify_not_implemented`. A later phase will reuse the identifier parser and candidate search path to complete text-only jobs.
+`process_text_job(job_id, request)` opens a fresh database session and releases the same admission ticket used by image jobs. It skips image preprocessing and OCR, then emits `parsing_identifiers`, `searching_local`, `searching_discogs`, and `ranking_candidates` updates as the reused parser/search path runs.
 
 ### Cancellation flow
 
@@ -228,7 +230,6 @@ Failures are persisted as `status="failed"` with an error payload:
 - Upload validation failures use `failed_step="upload"`.
 - Image preprocessing, OCR, and identifier parsing failures use `failed_step="extract"`.
 - Discogs and candidate lookup failures use `failed_step="search"`.
-- Text-only contract placeholders use `failed_step="parse"` with error code `text_identify_not_implemented` until parser/search execution is implemented.
 - Unknown failures use `failed_step="unknown"`.
 
 Expired jobs raise `IdentifyJobExpiredError`; missing jobs raise `IdentifyJobNotFoundError`. API routes map those to `410` and `404`.

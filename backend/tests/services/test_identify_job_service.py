@@ -17,7 +17,13 @@ from app.services.identify_job_service import (
     IdentifyJobNotFoundError,
     IdentifyJobService,
 )
-from app.services.identify_service import IdentifyCanceledError, IdentifyResult, IdentifyValidationError
+from app.services.identify_service import (
+    IdentifyCanceledError,
+    IdentifyResult,
+    IdentifyService,
+    IdentifyValidationError,
+)
+from tests.fixtures.identify_service import StubDiscogsService, StubReleasesRepository
 
 
 class SuccessfulIdentifyService:
@@ -383,10 +389,28 @@ def test_identify_job_service_creates_text_job_contract() -> None:
     ]
 
 
-def test_identify_job_service_processes_text_job_contract_as_placeholder_failure() -> None:
+def test_identify_job_service_processes_text_job_with_parser_and_search_reuse() -> None:
     session_factory = _build_session_factory()
+    discogs_service = StubDiscogsService(
+        payload={
+            "results": [
+                {
+                    "id": 456,
+                    "title": "Air (10) - Moon Safari",
+                    "year": "1998",
+                    "label": ["Source"],
+                    "catno": "7243 8 44978 1 8",
+                    "cover_image": "https://img.discogs.com/external.jpg",
+                    "format": ["Vinyl", "LP"],
+                }
+            ]
+        }
+    )
     service = IdentifyJobService(
-        identify_service=SuccessfulIdentifyService(),
+        identify_service=IdentifyService(
+            repository=StubReleasesRepository(),
+            discogs_service=discogs_service,
+        ),
         session_factory=session_factory,
     )
 
@@ -394,19 +418,24 @@ def test_identify_job_service_processes_text_job_contract_as_placeholder_failure
         job = service.create_text_job(
             db,
             user_id="user-a",
-            text_lines=["CAT No: SW038"],
+            text_lines=["Artist: Air", "Title: Moon Safari", "Source"],
             client_key="client-a",
         )
 
-    service.process_text_job(job.job_id, text_lines=["CAT No: SW038"], selected_catalog_number="SW038")
+    service.process_text_job(
+        job.job_id,
+        text_lines=["Artist: Air", "Title: Moon Safari", "Source"],
+        selected_catalog_number="7243 8 44978 1 8",
+    )
 
     with session_factory() as db:
-        failed = service.get_job(db, job.job_id, user_id="user-a")
+        completed = service.get_job(db, job.job_id, user_id="user-a")
 
-    assert failed.status == "failed"
-    assert failed.error is not None
-    assert failed.error.code == "text_identify_not_implemented"
-    assert failed.error.failed_step == "parse"
+    assert completed.status == "completed"
+    assert completed.result is not None
+    assert [candidate.discogs_release_id for candidate in completed.result.candidates] == [456]
+    assert set(completed.result.candidates[0].matched_on) >= {"catalog_number", "artist", "title"}
+    assert discogs_service.search_release_calls == [{"limit": 5, "catalog_number": "7243 8 44978 1 8"}]
 
 
 def test_identify_job_service_scopes_job_access_by_user() -> None:

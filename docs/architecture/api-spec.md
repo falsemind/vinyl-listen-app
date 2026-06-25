@@ -451,7 +451,7 @@ Before enforcing the active-job limit, the backend expires stale active job rows
 
 Creates an async identify job from OCR text that Android extracted on device.
 
-This endpoint is separate from image upload identify. Backend Phase 1 accepts and tracks the text-only job contract; parser/search reuse is added in a later phase.
+This endpoint is separate from image upload identify. The backend parses submitted text into the same identifier model used by image OCR, then reuses local lookup, Discogs search, ranking, polling, and cancellation behavior.
 
 ### Request
 
@@ -486,7 +486,7 @@ This endpoint is separate from image upload identify. Backend Phase 1 accepts an
 }
 ```
 
-Text-only jobs use the same `GET /identify/jobs/{job_id}` and cancel endpoints as image jobs. Image-only states such as `upload_received`, `preprocessing_image`, and `extracting_text` are skipped.
+Text-only jobs use the same `GET /identify/jobs/{job_id}` and cancel endpoints as image jobs. Image-only states such as `upload_received`, `preprocessing_image`, and `extracting_text` are skipped. Text jobs begin at `text_received`, then can move through `parsing_identifiers`, `searching_local`, `searching_discogs`, `ranking_candidates`, and terminal states.
 
 ## GET /identify/jobs/{job_id}
 
