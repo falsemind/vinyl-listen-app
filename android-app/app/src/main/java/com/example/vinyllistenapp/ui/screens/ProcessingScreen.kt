@@ -42,12 +42,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.vinyllistenapp.data.MockVinylData
 import com.example.vinyllistenapp.data.api.ApiErrorKind
 import com.example.vinyllistenapp.data.api.ApiException
 import com.example.vinyllistenapp.data.api.DiscogsApiClient
 import com.example.vinyllistenapp.data.api.IdentifyJobState
 import com.example.vinyllistenapp.data.api.IdentifyJobStatus
+import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.domain.ReleaseSearchResult
@@ -195,6 +195,7 @@ fun BarcodeProcessingScreen(
 @Composable
 fun ProcessingScreen(
     imageUri: String?,
+    textIdentifyInput: TextIdentifyJobInput? = null,
     apiClient: VinylApiClient,
     onComplete: (List<MatchCandidate>) -> Unit,
     onManualSearch: () -> Unit,
@@ -202,10 +203,11 @@ fun ProcessingScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isTextIdentify = textIdentifyInput != null || imageUri?.isBlank() == true
     var retryKey by rememberSaveable { mutableIntStateOf(0) }
-    var state by remember(imageUri, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
-    var currentJobId by rememberSaveable(imageUri, retryKey) { mutableStateOf<String?>(null) }
-    var cancelRequested by rememberSaveable(imageUri, retryKey) { mutableStateOf(false) }
+    var state by remember(imageUri, textIdentifyInput, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
+    var currentJobId by rememberSaveable(imageUri, textIdentifyInput, retryKey) { mutableStateOf<String?>(null) }
+    var cancelRequested by rememberSaveable(imageUri, textIdentifyInput, retryKey) { mutableStateOf(false) }
 
     suspend fun cancelAndLeave(jobId: String) {
         val cancelResult =
@@ -251,14 +253,12 @@ fun ProcessingScreen(
         // Active identify jobs leave through the explicit cancel action only.
     }
 
-    LaunchedEffect(imageUri, retryKey) {
+    LaunchedEffect(imageUri, textIdentifyInput, retryKey) {
         cancelRequested = false
         state = IdentifyUiState.Loading()
-        if (imageUri == null) {
-            val candidates = MockVinylData.matchCandidates
-            state = IdentifyUiState.Success(candidates)
-            delay(SUCCESS_CONFIRMATION_DELAY_MS)
-            onComplete(candidates)
+        val normalizedImageUri = imageUri?.takeIf { it.isNotBlank() }
+        if (normalizedImageUri == null && textIdentifyInput == null) {
+            state = IdentifyUiState.Error("Identify request is missing. Go back and try again.")
             return@LaunchedEffect
         }
 
@@ -267,7 +267,9 @@ fun ProcessingScreen(
                 var job =
                     currentJobId
                         ?.let { apiClient.getIdentifyJobStatus(it) }
-                        ?: apiClient.startIdentifyJob(context, Uri.parse(imageUri))
+                        ?: textIdentifyInput
+                            ?.let { apiClient.startTextIdentifyJob(it) }
+                        ?: apiClient.startIdentifyJob(context, Uri.parse(normalizedImageUri))
                 currentJobId = job.jobId
                 if (cancelRequested) {
                     state = IdentifyUiState.Canceling(job.status)
@@ -352,7 +354,7 @@ fun ProcessingScreen(
             }
             Text(
                 modifier = Modifier.weight(1f),
-                text = "Identifying Record",
+                text = if (isTextIdentify) "Identifying Text" else "Identifying Record",
                 color = VinylColors.TextPrimary,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.headlineLarge,
@@ -367,7 +369,7 @@ fun ProcessingScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (state is IdentifyUiState.Success) {
-                SuccessStatusFeedback(message = processingSubtitle(state))
+                SuccessStatusFeedback(message = processingSubtitle(state, isTextIdentify = isTextIdentify))
             } else {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -376,7 +378,7 @@ fun ProcessingScreen(
                     ProcessingStateIndicator(state)
                     Text(
                         modifier = Modifier.width(260.dp),
-                        text = processingSubtitle(state),
+                        text = processingSubtitle(state, isTextIdentify = isTextIdentify),
                         color = processingSubtitleColor(state),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium,
@@ -468,11 +470,14 @@ private val IdentifyUiState.showsTopLeftAction: Boolean
             this is IdentifyUiState.Empty ||
             this is IdentifyUiState.Canceled
 
-private fun processingSubtitle(state: IdentifyUiState): String =
+private fun processingSubtitle(
+    state: IdentifyUiState,
+    isTextIdentify: Boolean,
+): String =
     when (state) {
         is IdentifyUiState.Canceling -> "Canceling identify"
         IdentifyUiState.Canceled -> "Identify canceled"
-        is IdentifyUiState.Loading -> state.status.toProcessingMessage()
+        is IdentifyUiState.Loading -> state.status.toProcessingMessage(isTextIdentify)
         is IdentifyUiState.Success -> "Matches found"
         IdentifyUiState.Empty -> "No matches found"
         is IdentifyUiState.Error -> state.message
@@ -531,13 +536,14 @@ private fun Throwable.toBarcodeSearchErrorMessage(): String {
 private fun processingSubtitleColor(state: IdentifyUiState) =
     if (state is IdentifyUiState.Error) VinylColors.AccentOrange else VinylColors.TextSecondary
 
-private fun IdentifyJobStatus?.toProcessingMessage(): String =
+private fun IdentifyJobStatus?.toProcessingMessage(isTextIdentify: Boolean): String =
     when (this) {
         null,
         IdentifyJobStatus.Queued,
-        -> "Uploading image"
+        -> if (isTextIdentify) "Sending recognized text" else "Uploading image"
 
         IdentifyJobStatus.UploadReceived -> "Image received by server"
+        IdentifyJobStatus.TextReceived -> "Text received by server"
         IdentifyJobStatus.PreprocessingImage -> "Preparing image"
         IdentifyJobStatus.ExtractingText -> "Extracting text"
         IdentifyJobStatus.ParsingIdentifiers -> "Reading label details"

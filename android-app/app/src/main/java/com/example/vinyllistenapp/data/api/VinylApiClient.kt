@@ -247,6 +247,11 @@ class VinylApiClient(
             response.toIdentifyJobState()
         }
 
+    suspend fun startTextIdentifyJob(input: TextIdentifyJobInput): IdentifyJobState =
+        apiCall {
+            postJson("identify/text/jobs", input.toJson()).toIdentifyJobState()
+        }
+
     suspend fun getIdentifyJobStatus(jobId: String): IdentifyJobState =
         apiCall {
             getJson("identify/jobs/${Uri.encode(jobId)}").toIdentifyJobState()
@@ -1646,6 +1651,13 @@ private fun ManualReleaseTrackCreditInput.toJson(): JSONObject =
 
 private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> forEach { items.put(it) } }
 
+private fun TextIdentifyJobInput.toJson(): JSONObject =
+    JSONObject()
+        .put("lines", lines.toJsonArray())
+        .putNullable("selected_catalog_number", selectedCatalogNumber?.takeIf { it.isNotBlank() })
+        .putNullable("selected_barcode", selectedBarcode?.takeIf { it.isNotBlank() })
+        .put("source_type", sourceType)
+
 data class IdentifyJobState(
     val jobId: String,
     val status: IdentifyJobStatus,
@@ -1655,11 +1667,19 @@ data class IdentifyJobState(
     val cancelRequested: Boolean = false,
 )
 
+data class TextIdentifyJobInput(
+    val lines: List<String>,
+    val selectedCatalogNumber: String? = null,
+    val selectedBarcode: String? = null,
+    val sourceType: String = "ANDROID_MLKIT_TEXT",
+)
+
 enum class IdentifyJobStatus(
     val wireValue: String,
 ) {
     Queued("queued"),
     UploadReceived("upload_received"),
+    TextReceived("text_received"),
     PreprocessingImage("preprocessing_image"),
     ExtractingText("extracting_text"),
     ParsingIdentifiers("parsing_identifiers"),

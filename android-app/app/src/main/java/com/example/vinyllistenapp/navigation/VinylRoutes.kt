@@ -105,6 +105,8 @@ object VinylRoutes {
         flowMode: String = FLOW_MODE_SESSION,
     ): String = "processing?imageUri=${Uri.encode(imageUri.toString())}&$FLOW_MODE=${Uri.encode(flowMode)}"
 
+    fun textProcessing(flowMode: String = FLOW_MODE_SESSION): String = "processing?imageUri=&$FLOW_MODE=$flowMode"
+
     fun barcodeProcessing(
         barcode: String,
         flowMode: String = FLOW_MODE_SESSION,

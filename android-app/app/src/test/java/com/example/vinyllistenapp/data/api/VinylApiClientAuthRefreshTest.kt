@@ -4,6 +4,7 @@ import com.example.vinyllistenapp.data.auth.AuthSessionRefreshResult
 import com.example.vinyllistenapp.domain.ManualReleaseFormData
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
@@ -136,6 +137,53 @@ class VinylApiClientAuthRefreshTest {
                     assertEquals("This field is required.", error.fieldErrors["title"])
                     assertEquals("Track title is required.", error.fieldErrors["tracklist.0.title"])
                 }
+            } finally {
+                server.stop(0)
+            }
+        }
+
+    @Test
+    fun textIdentifyJobPostsRecognizedLinesAndHints() =
+        runBlocking {
+            var requestBody = ""
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/api/v1/identify/text/jobs") { exchange ->
+                requestBody = exchange.requestBody.bufferedReader().use { it.readText() }
+                exchange.respond(
+                    status = 202,
+                    body =
+                        """
+                        {
+                          "job_id": "job-text-123",
+                          "status": "text_received",
+                          "message": "Text input received",
+                          "created_at": "2026-06-25T12:00:00Z",
+                          "updated_at": "2026-06-25T12:00:00Z",
+                          "cancel_requested": false,
+                          "result": null,
+                          "error": null
+                        }
+                        """.trimIndent(),
+                )
+            }
+            server.start()
+            try {
+                val client = VinylApiClient(baseUrl = "http://127.0.0.1:${server.address.port}/api/v1")
+
+                val state =
+                    client.startTextIdentifyJob(
+                        TextIdentifyJobInput(
+                            lines = listOf("CAT No: SW038", "Nebula"),
+                            selectedCatalogNumber = "SW038",
+                        ),
+                    )
+
+                val body = JSONObject(requestBody)
+                assertEquals(IdentifyJobStatus.TextReceived, state.status)
+                assertEquals("CAT No: SW038", body.getJSONArray("lines").getString(0))
+                assertEquals("Nebula", body.getJSONArray("lines").getString(1))
+                assertEquals("SW038", body.getString("selected_catalog_number"))
+                assertEquals("ANDROID_MLKIT_TEXT", body.getString("source_type"))
             } finally {
                 server.stop(0)
             }

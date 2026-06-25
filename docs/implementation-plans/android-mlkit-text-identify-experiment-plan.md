@@ -239,6 +239,12 @@ Tasks:
 | Add candidate handoff to match confirmation/import | 4-8h | Backend candidates | User can review backend candidates from ML Kit text input |
 | Add observability counters | 2-4h | End-to-end flow | Logs/metrics separate ML Kit text identify from image identify |
 
+Current implementation:
+
+- Android can submit ML Kit OCR lines and an optional edited catalog hint to `POST /identify/text/jobs`.
+- The existing Processing screen starts text jobs, polls shared identify job status, supports cancel/retry/manual fallback, and hands candidates to match confirmation.
+- Capture logging separates ML Kit text recognition metrics from text-identify submission events.
+
 Rollout criteria:
 
 - Catalog-number local prototype shows enough value to justify backend integration

@@ -75,6 +75,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
+import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.CatalogNumberCandidate
 import com.example.vinyllistenapp.domain.CatalogNumberExtractor
@@ -109,6 +110,7 @@ import kotlin.math.max
 fun CaptureRecordScreen(
     apiClient: VinylApiClient,
     onImageSelected: (Uri) -> Unit,
+    onTextIdentifyRequested: (TextIdentifyJobInput) -> Unit,
     onManualSearch: (String?) -> Unit,
     onBarcodeDetected: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -498,7 +500,21 @@ fun CaptureRecordScreen(
                             onManualSearch(catalogNumber)
                         }
                     },
+                    onIdentifyText = {
+                        val catalogNumber = editableCatalogNumber.trim().repairCatalogNumberForManualSearch()
+                        Log.d(
+                            TEXT_RECOGNITION_TAG,
+                            "Submitting ML Kit text identify lines=${result.lines.size} catalogHint=${catalogNumber.isNotBlank()}",
+                        )
+                        onTextIdentifyRequested(
+                            TextIdentifyJobInput(
+                                lines = result.lines,
+                                selectedCatalogNumber = catalogNumber.takeIf { it.isNotBlank() },
+                            ),
+                        )
+                    },
                     onClearCatalogNumber = { editableCatalogNumber = "" },
+                    textIdentifyEnabled = backendIdentifyEnabled && result.lines.isNotEmpty(),
                 )
             }
             Spacer(Modifier.height(VinylSpacing.SpaceMd))
@@ -1259,7 +1275,9 @@ private fun TextRecognitionPrototypeResultCard(
     catalogNumber: String,
     onCatalogNumberChange: (String) -> Unit,
     onAcceptCatalogNumber: () -> Unit,
+    onIdentifyText: () -> Unit,
     onClearCatalogNumber: () -> Unit,
+    textIdentifyEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val previewLines = result.lines.take(TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT)
@@ -1351,6 +1369,13 @@ private fun TextRecognitionPrototypeResultCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
         ) {
+            CaptureSecondaryButton(
+                label = "Identify Text",
+                accentColor = VinylColors.AccentGreen,
+                onClick = onIdentifyText,
+                enabled = textIdentifyEnabled,
+                modifier = Modifier.weight(1f),
+            )
             CaptureSecondaryButton(
                 label = "Search Catalog",
                 accentColor = VinylColors.AccentOrange,
