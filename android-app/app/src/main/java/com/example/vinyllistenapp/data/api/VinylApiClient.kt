@@ -1651,12 +1651,42 @@ private fun ManualReleaseTrackCreditInput.toJson(): JSONObject =
 
 private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> forEach { items.put(it) } }
 
+private const val IDENTIFY_TEXT_JOB_MAX_LINES = 80
+private const val IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 240
+private const val IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 4_000
+
 private fun TextIdentifyJobInput.toJson(): JSONObject =
     JSONObject()
-        .put("lines", lines.toJsonArray())
+        .put("lines", lines.normalizedForTextIdentify().toJsonArray())
         .putNullable("selected_catalog_number", selectedCatalogNumber?.takeIf { it.isNotBlank() })
         .putNullable("selected_barcode", selectedBarcode?.takeIf { it.isNotBlank() })
         .put("source_type", sourceType)
+
+private fun List<String>.normalizedForTextIdentify(): List<String> {
+    val normalizedLines =
+        asSequence()
+            .map { line -> line.trim().take(IDENTIFY_TEXT_JOB_MAX_LINE_CHARS).trim() }
+            .filter { line -> line.isNotEmpty() }
+            .take(IDENTIFY_TEXT_JOB_MAX_LINES)
+            .toList()
+
+    val cappedLines = mutableListOf<String>()
+    var totalChars = 0
+    for (line in normalizedLines) {
+        if (totalChars >= IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS) break
+        val remainingChars = IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS - totalChars
+        val cappedLine =
+            if (line.length <= remainingChars) {
+                line
+            } else {
+                line.take(remainingChars).trim()
+            }
+        if (cappedLine.isEmpty()) continue
+        cappedLines += cappedLine
+        totalChars += cappedLine.length
+    }
+    return cappedLines
+}
 
 data class IdentifyJobState(
     val jobId: String,
