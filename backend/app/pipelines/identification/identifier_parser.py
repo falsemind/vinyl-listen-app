@@ -52,6 +52,10 @@ SPACED_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([A-Z]{2,}\s+\d{2,5}(?:LP|EP)?)(?![A-Z0-9])",
     re.IGNORECASE,
 )
+SPACED_SEPARATOR_CATALOG_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Z0-9])([A-Z]{2,}[A-Z0-9]*\s*[-/.]\s*\d[A-Z0-9]{0,5}(?:LP|EP)?)(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 LIMITED_EDITION_CATALOG_TOKEN_PATTERN = re.compile(
     r"(?<![A-Z0-9])([A-Z]{2,}\s+LIMITED\s+\d{2,5}(?:LP|EP)?)(?![A-Z0-9])",
     re.IGNORECASE,
@@ -178,6 +182,10 @@ CREDIT_LINE_TERMS = (
     " mastered ",
     " engineered ",
 )
+CREDIT_OCR_TOKEN_CORRECTIONS = {
+    "prodyction": "production",
+    "prodyctions": "productions",
+}
 MAX_PLAUSIBLE_YEAR = datetime.now(UTC).year + 1
 CATALOG_OCR_CORRECTIONS = {
     "o": "0",
@@ -210,7 +218,8 @@ class IdentifierParser:
         year, blocked_year_lines = _extract_year(cleaned_lines)
         label, blocked_label_lines = _extract_label(cleaned_lines)
         blocked_catalog_lines = _catalog_source_lines(cleaned_lines, catalog_numbers)
-        blocked_lines = blocked_year_lines | blocked_label_lines | blocked_catalog_lines
+        blocked_credit_lines = _credit_source_lines(cleaned_lines)
+        blocked_lines = blocked_year_lines | blocked_label_lines | blocked_catalog_lines | blocked_credit_lines
         artist, title = _extract_artist_and_title(cleaned_lines, blocked_values=blocked_lines)
         text_fragments = _extract_text_fragments(
             cleaned_lines,
@@ -240,6 +249,17 @@ class IdentifierParser:
                 text_fragments=text_fragments,
             ),
         )
+
+    def normalize_catalog_number_hint(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        cleaned_value = " ".join(value.strip().split())
+        if not cleaned_value:
+            return None
+        if _looks_like_selected_catalog_number_noise(cleaned_value):
+            return None
+        return cleaned_value
 
 
 def _clean_lines(raw_text: str) -> list[str]:
@@ -363,8 +383,22 @@ def _extract_catalog_numbers(raw_text: str, cleaned_lines: list[str]) -> tuple[s
             continue
 
         if noisy_ocr_text:
+            for token, _span in _extract_spaced_separator_catalog_number_tokens(
+                line,
+                track_prefix_end=_track_listing_prefix_end(line),
+            ):
+                _append_catalog_number_candidates(token, detected_catalog_numbers, seen, scores)
             if _looks_like_standalone_compact_catalog_line(line):
                 _append_catalog_number_candidates(line, detected_catalog_numbers, seen, scores)
+            continue
+
+        spaced_separator_tokens = _extract_spaced_separator_catalog_number_tokens(
+            line,
+            track_prefix_end=_track_listing_prefix_end(line),
+        )
+        if spaced_separator_tokens:
+            for token, _span in spaced_separator_tokens:
+                _append_catalog_number_candidates(token, detected_catalog_numbers, seen, scores)
             continue
 
         if _looks_like_numbered_track_listing(line):
@@ -463,6 +497,52 @@ def _catalog_source_lines(cleaned_lines: list[str], catalog_numbers: tuple[str, 
             break
 
     return blocked_lines
+
+
+def _credit_source_lines(cleaned_lines: list[str]) -> set[str]:
+    blocked_lines: set[str] = set()
+    credit_continuation_budget = 0
+
+    for line in cleaned_lines:
+        lowered_line = line.lower()
+        if _looks_like_credit_line(line):
+            blocked_lines.add(lowered_line)
+            credit_continuation_budget = 2 if _credit_line_expects_continuation(line) else 0
+            continue
+
+        if credit_continuation_budget > 0 and _looks_like_credit_continuation_line(line):
+            blocked_lines.add(lowered_line)
+            credit_continuation_budget -= 1
+            continue
+
+        credit_continuation_budget = 0
+
+    return blocked_lines
+
+
+def _credit_line_expects_continuation(value: str) -> bool:
+    normalized_value = _normalize_credit_line(value)
+    return normalized_value.endswith(" by") or normalized_value.endswith(" for")
+
+
+def _looks_like_credit_continuation_line(value: str) -> bool:
+    if _looks_like_catalog_number(value):
+        return False
+    if _looks_like_track_listing(value):
+        return False
+    if _looks_like_contact_or_url_line(value):
+        return False
+    if _looks_like_side_marker_line(value):
+        return False
+
+    normalized_value = _normalize_credit_line(value)
+    if not normalized_value:
+        return False
+    if normalized_value.startswith(NOISE_PREFIXES):
+        return True
+    if " for " in f" {normalized_value} ":
+        return True
+    return _looks_like_company_year_catalog_noise(value)
 
 
 def _looks_like_noisy_ocr_text(cleaned_lines: list[str]) -> bool:
@@ -758,7 +838,8 @@ def _select_repeated_track_listing_title(cleaned_lines: list[str]) -> str | None
 
 def _select_single_track_listing_title(candidate_entries: list[tuple[str, bool]]) -> str | None:
     track_titles = [value for value, is_track in candidate_entries if is_track]
-    if len(track_titles) != 1:
+    non_track_candidates = [value for value, is_track in candidate_entries if not is_track]
+    if len(track_titles) != 1 or len(non_track_candidates) > 1:
         return None
     return track_titles[0]
 
@@ -920,6 +1001,12 @@ def _looks_like_catalog_number(value: str) -> bool:
     )
 
 
+def _looks_like_selected_catalog_number_noise(value: str) -> bool:
+    if YEAR_PATTERN.fullmatch(value):
+        return True
+    return _looks_like_company_year_catalog_noise(value) or _looks_like_legal_rights_line(value)
+
+
 def _is_candidate_metadata_line(value: str) -> bool:
     lowered_value = value.lower()
     if len(value) < 3 or len(value) > 80:
@@ -967,7 +1054,22 @@ def _looks_like_credit_line(value: str) -> bool:
 
 
 def _looks_like_side_marker_line(value: str) -> bool:
-    return re.fullmatch(rf"\s*{SIDE_MARKER_PATTERN}[.)]?\s*side\s*", value, re.IGNORECASE) is not None
+    return (
+        re.fullmatch(rf"\s*{SIDE_MARKER_PATTERN}[.)]?\s*side\s*", value, re.IGNORECASE) is not None
+        or re.fullmatch(
+            rf"\s*(?:this|that|other)\s+side(?:\s*\(?{SIDE_MARKER_PATTERN}\)?)?\s*",
+            value,
+            re.IGNORECASE,
+        )
+        is not None
+        or re.fullmatch(rf"\s*side\s*\(?{SIDE_MARKER_PATTERN}\)?\s*", value, re.IGNORECASE) is not None
+        or _looks_like_ocr_side_marker_noise(value)
+    )
+
+
+def _looks_like_ocr_side_marker_noise(value: str) -> bool:
+    normalized_value = _normalize_credit_line(value)
+    return normalized_value in {"sihl so", "sihl side", "edis siht", "edis rehto"}
 
 
 def _has_unbalanced_bracket_edge(value: str) -> bool:
@@ -998,7 +1100,7 @@ def _looks_like_company_year_catalog_noise(value: str) -> bool:
     if _extract_year_from_value(value) is None:
         return False
 
-    tokens = {token.lower() for token in TOKEN_PATTERN.findall(value)}
+    tokens = set(_normalized_credit_tokens(value))
     return bool(tokens & {"music", "production", "productions", "records", "recordings", "copyright"})
 
 
@@ -1009,7 +1111,13 @@ def _looks_like_copyright_year_line(value: str) -> bool:
 
 
 def _normalize_credit_line(value: str) -> str:
-    return " ".join(token.lower() for token in TOKEN_PATTERN.findall(value))
+    return " ".join(_normalized_credit_tokens(value))
+
+
+def _normalized_credit_tokens(value: str) -> tuple[str, ...]:
+    return tuple(
+        CREDIT_OCR_TOKEN_CORRECTIONS.get(token.lower(), token.lower()) for token in TOKEN_PATTERN.findall(value)
+    )
 
 
 def _is_strict_metadata_line(value: str) -> bool:
@@ -1402,6 +1510,17 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         spaced_catalog_spans.append(match.span(0))
         tokens.append(token)
 
+    for token, span in _extract_spaced_separator_catalog_number_tokens(
+        value,
+        track_prefix_end=track_prefix_end,
+        spaced_catalog_spans=spaced_catalog_spans,
+    ):
+        if token.lower() in seen or not _looks_like_catalog_number(token):
+            continue
+        seen.add(token.lower())
+        spaced_catalog_spans.append(span)
+        tokens.append(token)
+
     for match in CATALOG_TOKEN_PATTERN.finditer(value):
         if track_prefix_end is not None and match.start(0) < track_prefix_end:
             continue
@@ -1423,6 +1542,31 @@ def _extract_catalog_number_tokens(value: str) -> tuple[str, ...]:
         seen.add(token.lower())
         tokens.append(token)
 
+    return tuple(tokens)
+
+
+def _extract_spaced_separator_catalog_number_tokens(
+    value: str,
+    *,
+    track_prefix_end: int | None,
+    spaced_catalog_spans: Iterable[tuple[int, int]] = (),
+) -> tuple[tuple[str, tuple[int, int]], ...]:
+    tokens: list[tuple[str, tuple[int, int]]] = []
+    for match in SPACED_SEPARATOR_CATALOG_TOKEN_PATTERN.finditer(value):
+        span = match.span(1)
+        if _is_span_inside_spaced_catalog(span, spaced_catalog_spans):
+            continue
+        if _catalog_span_is_inline_year_phrase(value, span):
+            continue
+        if _catalog_span_is_track_title(value, span, track_prefix_end):
+            continue
+        raw_token = " ".join(match.group(1).strip(EDGE_JUNK_CHARACTERS).split())
+        if not raw_token:
+            continue
+        token = re.sub(r"\s*([-/.])\s*", r"\1", raw_token).upper()
+        if not _looks_like_catalog_number(token):
+            continue
+        tokens.append((token, span))
     return tuple(tokens)
 
 
@@ -1546,7 +1690,7 @@ def _looks_like_numbered_track_listing(value: str) -> bool:
 
 
 def _is_side_heading(value: str) -> bool:
-    return value.strip().lower() in {"this side", "that side", "other side"}
+    return value.strip().lower() in {"this side", "that side", "other side"} or _looks_like_side_marker_line(value)
 
 
 def _is_track_index_heading(value: str) -> bool:

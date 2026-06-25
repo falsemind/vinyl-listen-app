@@ -49,4 +49,25 @@ class IdentifyJobStateParsingTest {
         assertFalse(state.cancelRequested)
         assertFalse(state.status.isTerminal)
     }
+
+    @Test
+    fun parsesTextReceivedStatus() {
+        val state =
+            JSONObject(
+                """
+                {
+                  "job_id": "job-text-123",
+                  "status": "text_received",
+                  "message": "Text input received",
+                  "cancel_requested": false,
+                  "result": null,
+                  "error": null
+                }
+                """.trimIndent(),
+            ).toIdentifyJobState()
+
+        assertEquals(IdentifyJobStatus.TextReceived, state.status)
+        assertEquals("Text input received", state.message)
+        assertFalse(state.status.isTerminal)
+    }
 }

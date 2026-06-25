@@ -122,6 +122,32 @@ class StubIdentifyJobService:
             raise self.create_error
         return self.response
 
+    def create_text_job(
+        self,
+        _db,
+        *,
+        user_id: str,
+        text_lines: list[str],
+        client_key: str = "unknown",
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> IdentifyJobStatusResponse:
+        _ = client_key
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "text_lines": text_lines,
+                "source_type": source_type,
+            }
+        )
+        if self.create_error is not None:
+            raise self.create_error
+        return self.response.model_copy(
+            update={
+                "status": IdentifyJobStatus.TEXT_RECEIVED,
+                "message": "Text input received",
+            }
+        )
+
     def acquire_sync_identify_slot(self):
         if isinstance(self.create_error, IdentifyCapacityExceededError):
             raise self.create_error
@@ -140,6 +166,25 @@ class StubIdentifyJobService:
                 "size_bytes": len(image_bytes),
                 "filename": filename,
                 "content_type": content_type,
+            }
+        )
+
+    def process_text_job(
+        self,
+        job_id: str,
+        *,
+        text_lines: list[str],
+        selected_catalog_number: str | None = None,
+        selected_barcode: str | None = None,
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> None:
+        self.process_calls.append(
+            {
+                "job_id": job_id,
+                "text_lines": text_lines,
+                "selected_catalog_number": selected_catalog_number,
+                "selected_barcode": selected_barcode,
+                "source_type": source_type,
             }
         )
 

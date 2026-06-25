@@ -2,7 +2,11 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.identify import get_identify_service
 from app.main import app
-from app.schemas.identify import IdentifyJobStatus
+from app.schemas.identify import (
+    IDENTIFY_TEXT_JOB_MAX_LINE_CHARS,
+    IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS,
+    IdentifyJobStatus,
+)
 from app.services.entitlement_service import FeatureGateError
 from app.services.identify_job_service import IdentifyCapacityExceededError, IdentifyJobNotFoundError
 from app.services.identify_service import DEFAULT_MAX_UPLOAD_SIZE_BYTES, IdentifyValidationError
@@ -192,6 +196,79 @@ def test_identify_job_endpoint_returns_accepted_status(
     assert service.process_calls == [
         {"job_id": "job-123", "size_bytes": 12, "filename": "cover.jpg", "content_type": "image/jpeg"}
     ]
+
+
+def test_text_identify_job_endpoint_returns_accepted_status(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/text/jobs",
+            json={
+                "lines": ["CAT No: SW038", "NEBULA"],
+                "selected_catalog_number": "SW038",
+                "source_type": "ANDROID_MLKIT_TEXT",
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "job-123"
+    assert response.json()["status"] == "text_received"
+    assert service.calls == [
+        {
+            "user_id": "test-user",
+            "text_lines": ["CAT No: SW038", "NEBULA"],
+            "source_type": "ANDROID_MLKIT_TEXT",
+        }
+    ]
+    assert service.process_calls == [
+        {
+            "job_id": "job-123",
+            "text_lines": ["CAT No: SW038", "NEBULA"],
+            "selected_catalog_number": "SW038",
+            "selected_barcode": None,
+            "source_type": "ANDROID_MLKIT_TEXT",
+        }
+    ]
+
+
+def test_text_identify_job_endpoint_rejects_oversized_line(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/text/jobs",
+            json={"lines": ["A" * (IDENTIFY_TEXT_JOB_MAX_LINE_CHARS + 1)]},
+        )
+
+    assert response.status_code == 422
+    assert service.calls == []
+    assert service.process_calls == []
+
+
+def test_text_identify_job_endpoint_rejects_oversized_total_payload(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+    line = "A" * IDENTIFY_TEXT_JOB_MAX_LINE_CHARS
+    lines = [line] * ((IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS // IDENTIFY_TEXT_JOB_MAX_LINE_CHARS) + 1)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/identify/text/jobs", json={"lines": lines})
+
+    assert response.status_code == 422
+    assert service.calls == []
+    assert service.process_calls == []
 
 
 def test_identify_job_endpoint_returns_validation_errors(

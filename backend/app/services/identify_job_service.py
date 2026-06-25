@@ -3,7 +3,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.db import SessionLocal
 from app.models.identify_job import IdentifyJob
+from app.pipelines.identification import ExtractedIdentifiers, IdentifierEvidence, IdentifierParser
 from app.repositories.identify_job_repository import TERMINAL_IDENTIFY_JOB_STATUSES, IdentifyJobRepository
 from app.schemas.identify import (
     IdentifyCandidateResponse,
@@ -37,6 +38,7 @@ IDENTIFY_CAPACITY_EXCEEDED_MESSAGE = "Identify capacity is full. Please retry la
 ACTIVE_IDENTIFY_JOB_STATUSES = {
     IdentifyJobStatus.QUEUED.value,
     IdentifyJobStatus.UPLOAD_RECEIVED.value,
+    IdentifyJobStatus.TEXT_RECEIVED.value,
     IdentifyJobStatus.PREPROCESSING_IMAGE.value,
     IdentifyJobStatus.EXTRACTING_TEXT.value,
     IdentifyJobStatus.PARSING_IDENTIFIERS.value,
@@ -156,6 +158,7 @@ class IdentifyJobService:
         repository: IdentifyJobRepository | None = None,
         entitlement_service: EntitlementService | None = None,
         admission_controller: IdentifyAdmissionController | None = None,
+        identifier_parser: IdentifierParser | None = None,
         session_factory: Callable[[], Session] = SessionLocal,
         now_provider: Callable[[], datetime] | None = None,
         job_ttl: timedelta = DEFAULT_IDENTIFY_JOB_TTL,
@@ -169,6 +172,7 @@ class IdentifyJobService:
         self._admission_controller = admission_controller or IdentifyAdmissionController(
             max_concurrent_jobs=settings.identify_max_concurrent_jobs,
         )
+        self._identifier_parser = identifier_parser or IdentifierParser()
         self._session_factory = session_factory
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._service_started_at = self._now_provider()
@@ -194,6 +198,57 @@ class IdentifyJobService:
             filename=filename,
             content_type=content_type,
         )
+        return self._create_admitted_job(
+            db,
+            user_id=user_id,
+            status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
+            message="Image upload received",
+            client_key=client_key,
+            filename=filename,
+            content_type=content_type,
+            event_source="async_identify",
+        )
+
+    def create_text_job(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        text_lines: list[str],
+        client_key: str = "unknown",
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> IdentifyJobStatusResponse:
+        if not any(line.strip() for line in text_lines):
+            raise IdentifyValidationError(
+                message="At least one non-empty OCR text line is required.",
+                status_code=422,
+                code="empty_text_lines",
+            )
+        return self._create_admitted_job(
+            db,
+            user_id=user_id,
+            status=IdentifyJobStatus.TEXT_RECEIVED.value,
+            message="Text input received",
+            client_key=client_key,
+            filename=source_type,
+            content_type="application/json",
+            event_source="text_identify",
+            consume_usage=False,
+        )
+
+    def _create_admitted_job(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        status: str,
+        message: str,
+        client_key: str,
+        filename: str,
+        content_type: str,
+        event_source: str,
+        consume_usage: bool = True,
+    ) -> IdentifyJobStatusResponse:
         now = self._now_provider()
         with self._admission_controller.db_admission_lock(client_key):
             self._expire_stale_active_jobs(db, now=now)
@@ -234,18 +289,19 @@ class IdentifyJobService:
             admission_ticket = self._admission_controller.acquire_global_slot()
             job_id = str(uuid4())
             try:
-                self._entitlement_service.consume_usage(
-                    db,
-                    user_id=user_id,
-                    capability=OCR_IDENTIFY_CAPABILITY,
-                    event_metadata={"source": "async_identify"},
-                )
+                if consume_usage:
+                    self._entitlement_service.consume_usage(
+                        db,
+                        user_id=user_id,
+                        capability=OCR_IDENTIFY_CAPABILITY,
+                        event_metadata={"source": event_source},
+                    )
                 job = self._repository.create(
                     db,
                     job_id=job_id,
                     user_id=user_id,
-                    status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
-                    message="Image upload received",
+                    status=status,
+                    message=message,
                     client_key=client_key,
                     filename=filename,
                     content_type=content_type,
@@ -409,6 +465,129 @@ class IdentifyJobService:
             if admission_ticket is not None:
                 admission_ticket.release()
 
+    def process_text_job(
+        self,
+        job_id: str,
+        *,
+        text_lines: list[str],
+        selected_catalog_number: str | None = None,
+        selected_barcode: str | None = None,
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> None:
+        started_at = time.monotonic()
+        admission_ticket = self._pop_admission_ticket(job_id)
+        try:
+            with self._session_factory() as db:
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Text identify job disappeared before processing job_id=%s", job_id)
+                    return
+
+                cancellation_token = IdentifyJobCancellationToken(
+                    db=db,
+                    job_id=job_id,
+                    repository=self._repository,
+                )
+                if cancellation_token.is_cancel_requested():
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    return
+
+                progress_reporter = DatabaseIdentifyProgressReporter(
+                    db=db,
+                    job=job,
+                    repository=self._repository,
+                    now_provider=self._now_provider,
+                )
+
+                try:
+                    result = self._identify_text(
+                        db,
+                        text_lines=text_lines,
+                        selected_catalog_number=selected_catalog_number,
+                        selected_barcode=selected_barcode,
+                        source_type=source_type,
+                        user_id=job.user_id,
+                        progress_reporter=progress_reporter,
+                        cancellation_token=cancellation_token,
+                    )
+                except IdentifyCanceledError:
+                    job = self._repository.get(db, job_id)
+                    if job is None:
+                        logger.warning("Text identify job disappeared before cancellation job_id=%s", job_id)
+                        return
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    logger.info(
+                        "Text identify job canceled job_id=%s duration_seconds=%.3f",
+                        job_id,
+                        time.monotonic() - started_at,
+                    )
+                    return
+                except Exception as error:  # noqa: BLE001
+                    job = self._repository.get(db, job_id)
+                    failure = _map_exception_to_failure(error, job.status if job else None)
+                    logger.exception(
+                        "Text identify job failed job_id=%s code=%s duration_seconds=%.3f",
+                        job_id,
+                        failure.code,
+                        time.monotonic() - started_at,
+                    )
+                    if job is not None:
+                        self._repository.fail(
+                            db,
+                            job,
+                            error={
+                                "code": failure.code,
+                                "message": failure.message,
+                                "failed_step": failure.failed_step,
+                            },
+                            message=failure.message,
+                            updated_at=self._now_provider(),
+                        )
+                    return
+
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Text identify job disappeared before completion job_id=%s", job_id)
+                    return
+                if cancellation_token.is_cancel_requested():
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    logger.info(
+                        "Text identify job canceled before completion job_id=%s duration_seconds=%.3f",
+                        job_id,
+                        time.monotonic() - started_at,
+                    )
+                    return
+                self._repository.complete(
+                    db,
+                    job,
+                    result=_identify_result_to_payload(result),
+                    message="Identify completed",
+                    updated_at=self._now_provider(),
+                )
+                logger.info(
+                    "Text identify job completed job_id=%s duration_seconds=%.3f",
+                    job_id,
+                    time.monotonic() - started_at,
+                )
+        finally:
+            if admission_ticket is not None:
+                admission_ticket.release()
+
     def acquire_sync_identify_slot(self) -> IdentifyAdmissionTicket:
         try:
             ticket = self._admission_controller.acquire_global_slot()
@@ -425,6 +604,56 @@ class IdentifyJobService:
     def _pop_admission_ticket(self, job_id: str) -> IdentifyAdmissionTicket | None:
         with self._admission_tickets_lock:
             return self._admission_tickets.pop(job_id, None)
+
+    def _identify_text(
+        self,
+        db: Session,
+        *,
+        text_lines: list[str],
+        selected_catalog_number: str | None,
+        selected_barcode: str | None,
+        source_type: str,
+        user_id: str | None,
+        progress_reporter: DatabaseIdentifyProgressReporter,
+        cancellation_token: IdentifyJobCancellationToken,
+    ) -> IdentifyResult:
+        _raise_if_job_cancel_requested(cancellation_token)
+        progress_reporter.update(IdentifyJobStatus.PARSING_IDENTIFIERS.value, "Parsing identifiers from submitted text")
+        raw_text = "\n".join(line.strip() for line in text_lines if line.strip())
+        identifiers = self._identifier_parser.parse(
+            raw_text,
+            barcodes=_selected_values(selected_barcode),
+        )
+        identifiers = _with_selected_catalog_number(
+            identifiers,
+            identifier_parser=self._identifier_parser,
+            selected_catalog_number=selected_catalog_number,
+            source_type=source_type,
+        )
+
+        _raise_if_job_cancel_requested(cancellation_token)
+        progress_reporter.update(IdentifyJobStatus.SEARCHING_LOCAL.value, "Searching local releases")
+        local_candidates = self._identify_service._find_local_candidates(db, identifiers)
+        _raise_if_job_cancel_requested(cancellation_token)
+        if local_candidates:
+            progress_reporter.update(IdentifyJobStatus.RANKING_CANDIDATES.value, "Ranking candidate releases")
+            ranked_candidates = self._identify_service._rank_candidates(local_candidates, identifiers)
+            _raise_if_job_cancel_requested(cancellation_token)
+            return IdentifyResult(candidates=tuple(ranked_candidates))
+
+        _raise_if_job_cancel_requested(cancellation_token)
+        progress_reporter.update(IdentifyJobStatus.SEARCHING_DISCOGS.value, "Searching Discogs candidates")
+        external_result = self._identify_service._find_external_candidates(
+            db,
+            identifiers,
+            user_id=user_id,
+            cancellation_checker=cancellation_token.is_cancel_requested,
+        )
+        _raise_if_job_cancel_requested(cancellation_token)
+        progress_reporter.update(IdentifyJobStatus.RANKING_CANDIDATES.value, "Ranking candidate releases")
+        ranked_candidates = self._identify_service._rank_candidates(external_result.candidates, identifiers)
+        _raise_if_job_cancel_requested(cancellation_token)
+        return IdentifyResult(candidates=tuple(ranked_candidates))
 
     def _expire_stale_active_jobs(self, db: Session, *, now: datetime) -> int:
         if self._stale_active_job_timeout.total_seconds() <= 0:
@@ -528,3 +757,63 @@ def _map_exception_to_failure(error: Exception, status: str | None) -> IdentifyJ
         message="Identify processing failed. Retry or use Manual Search.",
         failed_step="unknown",
     )
+
+
+def _raise_if_job_cancel_requested(cancellation_token: IdentifyJobCancellationToken) -> None:
+    if cancellation_token.is_cancel_requested():
+        raise IdentifyCanceledError
+
+
+def _selected_values(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    stripped = value.strip()
+    return (stripped,) if stripped else ()
+
+
+def _with_selected_catalog_number(
+    identifiers: ExtractedIdentifiers,
+    *,
+    identifier_parser: IdentifierParser,
+    selected_catalog_number: str | None,
+    source_type: str,
+) -> ExtractedIdentifiers:
+    selected_values = _selected_values(selected_catalog_number)
+    if not selected_values:
+        return identifiers
+
+    selected = identifier_parser.normalize_catalog_number_hint(selected_values[0])
+    if selected is None:
+        logger.info(
+            "Ignoring invalid selected catalog candidate value=%s source_type=%s",
+            selected_values[0],
+            source_type,
+        )
+        return identifiers
+
+    selected_key = _identifier_key(selected)
+    catalog_numbers = (
+        selected,
+        *(
+            catalog_number
+            for catalog_number in identifiers.catalog_numbers
+            if _identifier_key(catalog_number) != selected_key
+        ),
+    )
+    evidence = (
+        IdentifierEvidence(kind="catalog_number", value=selected, source=source_type),
+        *(
+            item
+            for item in identifiers.identifier_evidence
+            if item.kind != "catalog_number" or _identifier_key(item.value) != selected_key
+        ),
+    )
+    return replace(
+        identifiers,
+        catalog_numbers=catalog_numbers,
+        identifier_evidence=evidence,
+    )
+
+
+def _identifier_key(value: str) -> str:
+    return "".join(character.lower() for character in value if character.isalnum())

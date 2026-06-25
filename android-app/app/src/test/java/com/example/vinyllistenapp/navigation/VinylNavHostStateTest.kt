@@ -1,5 +1,6 @@
 package com.example.vinyllistenapp.navigation
 
+import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.domain.MatchCandidate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +32,43 @@ class VinylNavHostStateTest {
         val restored = decodeMatchCandidatesFromSavedState(encodeMatchCandidatesForSavedState(candidates))
 
         assertEquals(candidates, restored)
+    }
+
+    @Test
+    fun emptyMatchCandidatePayloadDoesNotRestoreMockCandidates() {
+        val restored = decodeMatchCandidatesFromSavedState(emptyList())
+
+        assertTrue(restored.isEmpty())
+    }
+
+    @Test
+    fun textIdentifyInputRoundTripThroughSavedStatePayload() {
+        val input =
+            TextIdentifyJobInput(
+                lines = listOf("CAT No: SW038", "Nebula"),
+                selectedCatalogNumber = "SW038",
+            )
+
+        val restored = decodeTextIdentifyInputFromSavedState(encodeTextIdentifyInputForSavedState(input))
+
+        assertEquals(input, restored)
+    }
+
+    @Test
+    fun textIdentifyInputSavedStateCapsOversizedPayload() {
+        val input =
+            TextIdentifyJobInput(
+                lines = List(90) { index -> "  ${index.toString().padStart(2, '0')}-${"A".repeat(300)}  " },
+                selectedCatalogNumber = " SW038 ",
+            )
+
+        val restored = decodeTextIdentifyInputFromSavedState(encodeTextIdentifyInputForSavedState(input))
+
+        checkNotNull(restored)
+        assertTrue(restored.lines.size <= 80)
+        assertTrue(restored.lines.all { line -> line.length <= 240 })
+        assertTrue(restored.lines.sumOf { line -> line.length } <= 4_000)
+        assertEquals("SW038", restored.selectedCatalogNumber)
     }
 
     @Test
@@ -67,8 +105,15 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun manualSearchRoutesExposeCatalogQueryArgument() {
+        assertEquals("manual_search?barcode={barcode}&catalog={catalog}", VinylRoutes.MANUAL_SEARCH_PATTERN)
+        assertEquals("collection_manual_search?catalog={catalog}", VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN)
+    }
+
+    @Test
     fun identifyRoutesCarryCollectionAddFlowMode() {
         assertEquals("capture_record?flowMode=collection_add", VinylRoutes.captureRecord(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
+        assertEquals("processing?imageUri=&flowMode=collection_add", VinylRoutes.textProcessing(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
         assertEquals(
             "match_confirmation?flowMode=collection_add",
             VinylRoutes.matchConfirmation(VinylRoutes.FLOW_MODE_COLLECTION_ADD),

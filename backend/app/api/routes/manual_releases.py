@@ -199,7 +199,7 @@ def _draft_summary_response(draft: ManualReleaseDraft) -> ManualReleaseDraftSumm
         label=form_data.get("label"),
         catalog_number=form_data.get("catalog_number"),
         format=form_data.get("format"),
-        cover_thumbnail_url=draft.cover_thumbnail_url,
+        cover_thumbnail_url=draft.cover_thumbnail_url or draft.cover_image_url,
         completion_state=draft.completion_state,
         updated_at=draft.updated_at,
     )

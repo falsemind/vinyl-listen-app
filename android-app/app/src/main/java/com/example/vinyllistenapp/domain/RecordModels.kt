@@ -221,6 +221,7 @@ data class CollectionRecord(
     val format: String,
     val label: String?,
     val catalogNumber: String?,
+    val genres: List<String> = emptyList(),
     val styles: List<String>,
     val thumbnailUrl: String?,
     val collectionAddedAt: String?,

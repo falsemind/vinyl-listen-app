@@ -850,6 +850,12 @@ fun BottomNavBar(
     drawTopBorder: Boolean = true,
 ) {
     val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomPadding =
+        if (navigationBottomPadding > 0.dp) {
+            navigationBottomPadding + VinylSpacing.SpaceXs
+        } else {
+            VinylSpacing.SpaceMd
+        }
 
     Surface(
         modifier =
@@ -875,8 +881,8 @@ fun BottomNavBar(
                     .padding(
                         horizontal = VinylSpacing.SpaceLg,
                     ).padding(
-                        top = VinylSpacing.SpaceMd,
-                        bottom = VinylSpacing.SpaceMd + navigationBottomPadding,
+                        top = VinylSpacing.SpaceSm,
+                        bottom = bottomPadding,
                     ),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
@@ -919,7 +925,7 @@ private fun RowScope.BottomNavLabel(
         Text(
             text = item.label,
             color = color,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 14.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp, lineHeight = 13.sp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

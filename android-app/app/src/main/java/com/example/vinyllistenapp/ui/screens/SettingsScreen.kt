@@ -101,6 +101,7 @@ fun SettingsScreen(
     var tokenInput by rememberSaveable { mutableStateOf("") }
     var tokenEditMode by rememberSaveable { mutableStateOf(false) }
     var tokenManageMode by rememberSaveable { mutableStateOf(false) }
+    var accountManageMode by rememberSaveable { mutableStateOf(false) }
     var showDiscogsConfirmation by rememberSaveable { mutableStateOf(false) }
     var showDeleteTokenConfirmation by rememberSaveable { mutableStateOf(false) }
     var currentPassword by remember { mutableStateOf("") }
@@ -337,7 +338,7 @@ fun SettingsScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onStats),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = false, onClick = onStats),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem(
                             "Collection",
@@ -376,6 +377,7 @@ fun SettingsScreen(
             tokenInput = tokenInput,
             tokenEditMode = tokenEditMode,
             tokenManageMode = tokenManageMode,
+            accountManageMode = accountManageMode,
             errorMessage = errorMessage,
             onTokenInputChange = { tokenInput = it },
             onTokenClear = { tokenInput = "" },
@@ -410,6 +412,7 @@ fun SettingsScreen(
             onConfirmPasswordReset = ::confirmPasswordReset,
             onLogoutClick = { showLogoutConfirmation = true },
             onLogoutAllClick = { showLogoutAllConfirmation = true },
+            onAccountManageClick = { accountManageMode = !accountManageMode },
             onDeleteAccountClick = {
                 deleteAccountPassword = ""
                 showDeleteAccountConfirmation = true
@@ -625,6 +628,7 @@ private fun SettingsContent(
     tokenInput: String,
     tokenEditMode: Boolean,
     tokenManageMode: Boolean,
+    accountManageMode: Boolean,
     errorMessage: String?,
     onTokenInputChange: (String) -> Unit,
     onTokenClear: () -> Unit,
@@ -646,6 +650,7 @@ private fun SettingsContent(
     onConfirmPasswordReset: () -> Unit,
     onLogoutClick: () -> Unit,
     onLogoutAllClick: () -> Unit,
+    onAccountManageClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
     innerPadding: PaddingValues = PaddingValues(),
 ) {
@@ -671,9 +676,10 @@ private fun SettingsContent(
             onSourceOfTruthChanged = onSourceOfTruthChanged,
         )
 
-        SectionTitle("Account management")
+        SectionTitle("Account")
         AccountManagementCard(
             authAvailable = authAvailable,
+            expanded = accountManageMode,
             accountEmail = accountEmail,
             currentPassword = currentPassword,
             newPassword = newPassword,
@@ -702,6 +708,7 @@ private fun SettingsContent(
             onConfirmPasswordReset = onConfirmPasswordReset,
             onLogoutClick = onLogoutClick,
             onLogoutAllClick = onLogoutAllClick,
+            onManageClick = onAccountManageClick,
             onDeleteAccountClick = onDeleteAccountClick,
         )
     }
@@ -710,6 +717,7 @@ private fun SettingsContent(
 @Composable
 private fun AccountManagementCard(
     authAvailable: Boolean,
+    expanded: Boolean,
     accountEmail: String?,
     currentPassword: String,
     newPassword: String,
@@ -738,10 +746,16 @@ private fun AccountManagementCard(
     onConfirmPasswordReset: () -> Unit,
     onLogoutClick: () -> Unit,
     onLogoutAllClick: () -> Unit,
+    onManageClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
 ) {
     var isPasswordChangeExpanded by rememberSaveable { mutableStateOf(false) }
     var isPasswordResetExpanded by rememberSaveable { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else -90f,
+        animationSpec = tween(durationMillis = 180),
+        label = "accountManagementArrow",
+    )
     val passwordChangeEnabled =
         authAvailable &&
             !isChangingPassword &&
@@ -770,209 +784,252 @@ private fun AccountManagementCard(
             modifier = Modifier.align(Alignment.TopCenter),
         )
         Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg)) {
-            Text(
-                text = accountEmail?.takeIf { it.isNotBlank() } ?: "Signed-in account",
-                color = VinylColors.TextPrimary,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(
+            Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(1.dp)
-                        .background(VinylColors.BorderDefault),
-            )
-            if (!authAvailable) {
+                        .clickable(
+                            onClickLabel = if (expanded) "Collapse account management" else "Expand account management",
+                            role = Role.Button,
+                            onClick = onManageClick,
+                        ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = "Account actions are unavailable in preview mode.",
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(end = VinylSpacing.SpaceSm),
+                    text = "Account management",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    contentDescription = null,
+                    tint = VinylColors.TextSecondary,
+                    modifier =
+                        Modifier
+                            .size(24.dp)
+                            .graphicsLayer(rotationZ = arrowRotation),
                 )
             }
 
-            AccountActionHeader(
-                title = "Change password",
-                expanded = isPasswordChangeExpanded,
-                onClick = { isPasswordChangeExpanded = !isPasswordChangeExpanded },
-            )
-            if (isPasswordChangeExpanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
-                    PasswordTextField(
-                        value = currentPassword,
-                        onValueChange = onCurrentPasswordChange,
-                        label = "Current password",
-                        enabled = !isChangingPassword,
+            if (expanded) {
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(VinylColors.BorderDefault),
+                )
+                Text(
+                    text = accountEmail?.takeIf { it.isNotBlank() } ?: "Signed-in account",
+                    color = VinylColors.TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!authAvailable) {
+                    Text(
+                        text = "Account actions are unavailable in preview mode.",
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                    PasswordTextField(
-                        value = newPassword,
-                        onValueChange = onNewPasswordChange,
-                        label = "New password",
-                        enabled = !isChangingPassword,
-                    )
-                    PasswordTextField(
-                        value = confirmNewPassword,
-                        onValueChange = onConfirmNewPasswordChange,
-                        label = "Confirm new password",
-                        enabled = !isChangingPassword,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            modifier = Modifier.weight(1f).padding(end = VinylSpacing.SpaceMd),
-                            text = "Sign out everywhere",
-                            color = VinylColors.TextSecondary,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Switch(
-                            checked = signOutEverywhereOnPasswordChange,
+                }
+
+                AccountActionHeader(
+                    title = "Change password",
+                    expanded = isPasswordChangeExpanded,
+                    onClick = { isPasswordChangeExpanded = !isPasswordChangeExpanded },
+                )
+                if (isPasswordChangeExpanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                        PasswordTextField(
+                            value = currentPassword,
+                            onValueChange = onCurrentPasswordChange,
+                            label = "Current password",
                             enabled = !isChangingPassword,
-                            onCheckedChange = onSignOutEverywhereOnPasswordChange,
                         )
-                    }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = passwordChangeEnabled,
-                        shape = VinylShapes.Button,
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = VinylColors.AccentGreen,
-                                contentColor = VinylColors.TextOnAccent,
-                            ),
-                        onClick = onChangePassword,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                        PasswordTextField(
+                            value = newPassword,
+                            onValueChange = onNewPasswordChange,
+                            label = "New password",
+                            enabled = !isChangingPassword,
                         )
-                        Text(
-                            modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
-                            text = if (isChangingPassword) "Saving" else "Save password",
+                        PasswordTextField(
+                            value = confirmNewPassword,
+                            onValueChange = onConfirmNewPasswordChange,
+                            label = "Confirm new password",
+                            enabled = !isChangingPassword,
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                modifier = Modifier.weight(1f).padding(end = VinylSpacing.SpaceMd),
+                                text = "Sign out everywhere",
+                                color = VinylColors.TextSecondary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Switch(
+                                checked = signOutEverywhereOnPasswordChange,
+                                enabled = !isChangingPassword,
+                                onCheckedChange = onSignOutEverywhereOnPasswordChange,
+                            )
+                        }
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = passwordChangeEnabled,
+                            shape = VinylShapes.Button,
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor = VinylColors.AccentGreen,
+                                    contentColor = VinylColors.TextOnAccent,
+                                ),
+                            onClick = onChangePassword,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                                text = if (isChangingPassword) "Saving" else "Save password",
+                            )
+                        }
                     }
                 }
-            }
 
-            AccountActionHeader(
-                title = "Reset with email code",
-                expanded = isPasswordResetExpanded,
-                onClick = { isPasswordResetExpanded = !isPasswordResetExpanded },
-            )
-            if (isPasswordResetExpanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                AccountActionHeader(
+                    title = "Reset with email code",
+                    expanded = isPasswordResetExpanded,
+                    onClick = { isPasswordResetExpanded = !isPasswordResetExpanded },
+                )
+                if (isPasswordResetExpanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = authAvailable && !isRequestingReset,
+                            shape = VinylShapes.Button,
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor = VinylColors.SurfaceSecondary,
+                                    contentColor = VinylColors.TextPrimary,
+                                ),
+                            onClick = onRequestPasswordReset,
+                        ) {
+                            Text(if (isRequestingReset) "Sending code" else "Send reset code")
+                        }
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = resetCode,
+                            onValueChange = onResetCodeChange,
+                            enabled = !isConfirmingReset,
+                            singleLine = true,
+                            label = { Text("Reset code") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                        PasswordTextField(
+                            value = resetPassword,
+                            onValueChange = onResetPasswordChange,
+                            label = "New password",
+                            enabled = !isConfirmingReset,
+                        )
+                        PasswordTextField(
+                            value = resetConfirmPassword,
+                            onValueChange = onResetConfirmPasswordChange,
+                            label = "Confirm new password",
+                            enabled = !isConfirmingReset,
+                        )
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = passwordResetEnabled,
+                            shape = VinylShapes.Button,
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor = VinylColors.AccentGreen,
+                                    contentColor = VinylColors.TextOnAccent,
+                                ),
+                            onClick = onConfirmPasswordReset,
+                        ) {
+                            Text(if (isConfirmingReset) "Resetting" else "Reset password")
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
+                ) {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = authAvailable && !isRequestingReset,
+                        modifier = Modifier.weight(1f),
+                        enabled = authAvailable && !isLoggingOut,
                         shape = VinylShapes.Button,
                         colors =
                             ButtonDefaults.buttonColors(
                                 containerColor = VinylColors.SurfaceSecondary,
                                 contentColor = VinylColors.TextPrimary,
                             ),
-                        onClick = onRequestPasswordReset,
+                        onClick = onLogoutClick,
                     ) {
-                        Text(if (isRequestingReset) "Sending code" else "Send reset code")
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                            text = if (isLoggingOut) "Logging out" else "Log out",
+                        )
                     }
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = resetCode,
-                        onValueChange = onResetCodeChange,
-                        enabled = !isConfirmingReset,
-                        singleLine = true,
-                        label = { Text("Reset code") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    PasswordTextField(
-                        value = resetPassword,
-                        onValueChange = onResetPasswordChange,
-                        label = "New password",
-                        enabled = !isConfirmingReset,
-                    )
-                    PasswordTextField(
-                        value = resetConfirmPassword,
-                        onValueChange = onResetConfirmPasswordChange,
-                        label = "Confirm new password",
-                        enabled = !isConfirmingReset,
-                    )
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = passwordResetEnabled,
+                        modifier = Modifier.weight(1f),
+                        enabled = authAvailable && !isLoggingOutEverywhere,
                         shape = VinylShapes.Button,
                         colors =
                             ButtonDefaults.buttonColors(
-                                containerColor = VinylColors.AccentGreen,
-                                contentColor = VinylColors.TextOnAccent,
+                                containerColor = VinylColors.SurfaceSecondary,
+                                contentColor = VinylColors.TextSecondary,
                             ),
-                        onClick = onConfirmPasswordReset,
+                        onClick = onLogoutAllClick,
                     ) {
-                        Text(if (isConfirmingReset) "Resetting" else "Reset password")
+                        Text(if (isLoggingOutEverywhere) "Signing out" else "All devices")
                     }
                 }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-            ) {
                 Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = authAvailable && !isLoggingOut,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = authAvailable && !isDeletingAccount,
                     shape = VinylShapes.Button,
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = VinylColors.SurfaceSecondary,
-                            contentColor = VinylColors.TextPrimary,
+                            contentColor = VinylColors.AccentOrange,
                         ),
-                    onClick = onLogoutClick,
+                    onClick = onDeleteAccountClick,
                 ) {
-                    Icon(imageVector = Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(modifier = Modifier.padding(start = VinylSpacing.SpaceXs), text = if (isLoggingOut) "Logging out" else "Log out")
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                        text = if (isDeletingAccount) "Deleting" else "Delete account",
+                    )
                 }
-                Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = authAvailable && !isLoggingOutEverywhere,
-                    shape = VinylShapes.Button,
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = VinylColors.SurfaceSecondary,
-                            contentColor = VinylColors.TextSecondary,
-                        ),
-                    onClick = onLogoutAllClick,
-                ) {
-                    Text(if (isLoggingOutEverywhere) "Signing out" else "All devices")
+                message?.let {
+                    Text(text = it, color = VinylColors.AccentGreen, style = MaterialTheme.typography.bodyMedium)
                 }
-            }
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = authAvailable && !isDeletingAccount,
-                shape = VinylShapes.Button,
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = VinylColors.SurfaceSecondary,
-                        contentColor = VinylColors.AccentOrange,
-                    ),
-                onClick = onDeleteAccountClick,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
-                    text = if (isDeletingAccount) "Deleting" else "Delete account",
-                )
-            }
-            message?.let {
-                Text(text = it, color = VinylColors.AccentGreen, style = MaterialTheme.typography.bodyMedium)
-            }
-            errorMessage?.let {
-                Text(text = it, color = VinylColors.AccentOrange, style = MaterialTheme.typography.bodyMedium)
+                errorMessage?.let {
+                    Text(text = it, color = VinylColors.AccentOrange, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }

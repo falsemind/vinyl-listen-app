@@ -113,7 +113,7 @@ fun AnalyticsScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = true, onClick = {}),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = true, onClick = {}),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem(
                             "Collection",
@@ -523,10 +523,30 @@ private fun <T> DistributionBarCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(label(item), color = VinylColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .padding(end = VinylSpacing.SpaceMd),
+                        text = label(item),
+                        color = VinylColors.TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm)) {
-                        Text(countLabel(itemCount), color = VinylColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                        Text("$percent%", color = accentColor, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = countLabel(itemCount),
+                            color = VinylColors.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = "$percent%",
+                            color = accentColor,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                        )
                     }
                 }
                 ProgressTrack(

@@ -247,6 +247,11 @@ class VinylApiClient(
             response.toIdentifyJobState()
         }
 
+    suspend fun startTextIdentifyJob(input: TextIdentifyJobInput): IdentifyJobState =
+        apiCall {
+            postJson("identify/text/jobs", input.toJson()).toIdentifyJobState()
+        }
+
     suspend fun getIdentifyJobStatus(jobId: String): IdentifyJobState =
         apiCall {
             getJson("identify/jobs/${Uri.encode(jobId)}").toIdentifyJobState()
@@ -1471,6 +1476,7 @@ private fun JSONObject.toCollectionRecord(): CollectionRecord =
         format = optNullableString("format") ?: "Vinyl",
         label = optNullableString("label"),
         catalogNumber = optNullableString("catalog_number"),
+        genres = optJSONArray("genres").orEmpty().mapStrings(),
         styles = optJSONArray("styles").orEmpty().mapStrings(),
         thumbnailUrl = optResolvedMediaUrl("thumb_url"),
         collectionAddedAt = optNullableString("collection_added_at"),
@@ -1645,6 +1651,52 @@ private fun ManualReleaseTrackCreditInput.toJson(): JSONObject =
 
 private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> forEach { items.put(it) } }
 
+private const val IDENTIFY_TEXT_JOB_MAX_LINES = 80
+private const val IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 240
+private const val IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 4_000
+
+private fun TextIdentifyJobInput.toJson(): JSONObject {
+    val normalizedInput = normalizedForTextIdentifyContract()
+    return JSONObject()
+        .put("lines", normalizedInput.lines.toJsonArray())
+        .putNullable("selected_catalog_number", normalizedInput.selectedCatalogNumber)
+        .putNullable("selected_barcode", normalizedInput.selectedBarcode)
+        .put("source_type", normalizedInput.sourceType)
+}
+
+internal fun TextIdentifyJobInput.normalizedForTextIdentifyContract(): TextIdentifyJobInput =
+    copy(
+        lines = lines.normalizedForTextIdentify(),
+        selectedCatalogNumber = selectedCatalogNumber?.trim()?.takeIf { it.isNotBlank() },
+        selectedBarcode = selectedBarcode?.trim()?.takeIf { it.isNotBlank() },
+    )
+
+private fun List<String>.normalizedForTextIdentify(): List<String> {
+    val normalizedLines =
+        asSequence()
+            .map { line -> line.trim().take(IDENTIFY_TEXT_JOB_MAX_LINE_CHARS).trim() }
+            .filter { line -> line.isNotEmpty() }
+            .take(IDENTIFY_TEXT_JOB_MAX_LINES)
+            .toList()
+
+    val cappedLines = mutableListOf<String>()
+    var totalChars = 0
+    for (line in normalizedLines) {
+        if (totalChars >= IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS) break
+        val remainingChars = IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS - totalChars
+        val cappedLine =
+            if (line.length <= remainingChars) {
+                line
+            } else {
+                line.take(remainingChars).trim()
+            }
+        if (cappedLine.isEmpty()) continue
+        cappedLines += cappedLine
+        totalChars += cappedLine.length
+    }
+    return cappedLines
+}
+
 data class IdentifyJobState(
     val jobId: String,
     val status: IdentifyJobStatus,
@@ -1654,11 +1706,19 @@ data class IdentifyJobState(
     val cancelRequested: Boolean = false,
 )
 
+data class TextIdentifyJobInput(
+    val lines: List<String>,
+    val selectedCatalogNumber: String? = null,
+    val selectedBarcode: String? = null,
+    val sourceType: String = "ANDROID_MLKIT_TEXT",
+)
+
 enum class IdentifyJobStatus(
     val wireValue: String,
 ) {
     Queued("queued"),
     UploadReceived("upload_received"),
+    TextReceived("text_received"),
     PreprocessingImage("preprocessing_image"),
     ExtractingText("extracting_text"),
     ParsingIdentifiers("parsing_identifiers"),

@@ -286,7 +286,7 @@ fun CollectionScreen(
                 items =
                     listOf(
                         BottomNavItem("Home", Icons.Filled.Home, selected = false, onClick = onHome),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onStats),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = false, onClick = onStats),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onInsights),
                         BottomNavItem("Collection", Icons.Filled.LibraryMusic, selected = true, onClick = {}),
                     ),
@@ -646,7 +646,7 @@ private fun CollectionListContent(
                 }
                 if (collectionFolders.isNotEmpty()) {
                     CollectionActionMenuGroupAction(
-                        label = "Collection folders",
+                        label = "My Discogs folders",
                         expanded = isCollectionFoldersExpanded,
                         onClick = { onCollectionFoldersExpandedChange(!isCollectionFoldersExpanded) },
                     )
@@ -1202,6 +1202,8 @@ private fun CollectionRecordCard(
     record: CollectionRecord,
     onClick: () -> Unit,
 ) {
+    val styleOrGenreText = collectionRecordStyleOrGenreText(record)
+
     AccentCard(modifier = Modifier.clickable(onClick = onClick)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1264,9 +1266,9 @@ private fun CollectionRecordCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (record.styles.isNotEmpty()) {
+                if (styleOrGenreText.isNotEmpty()) {
                     Text(
-                        text = record.styles.joinToString(", "),
+                        text = styleOrGenreText,
                         color = VinylColors.AccentGreen,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
@@ -1284,6 +1286,11 @@ private fun collectionRecordMetadata(record: CollectionRecord): String =
         record.label,
         record.catalogNumber,
     ).joinToString(" • ")
+
+private fun collectionRecordStyleOrGenreText(record: CollectionRecord): String =
+    record.styles
+        .ifEmpty { record.genres }
+        .joinToString(", ")
 
 private fun CollectionSyncJobState.displayMessage(): String =
     message.ifBlank {

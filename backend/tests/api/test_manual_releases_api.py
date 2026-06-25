@@ -28,7 +28,7 @@ class StubManualReleaseService:
 
     def list_drafts(self, _db, *, user_id: str):
         self.user_ids.append(user_id)
-        return [_draft()]
+        return [_draft(cover_image_url="/media/manual-release-covers/test-user/draft-1/cover.jpg")]
 
     def create_draft(self, _db, *, user_id: str, form_data, completion_state=None):
         self.user_ids.append(user_id)
@@ -96,6 +96,9 @@ def test_list_manual_release_drafts_returns_user_owned_summaries() -> None:
     assert service.user_ids == ["test-user"]
     assert response.json()["items"][0]["id"] == "draft-1"
     assert response.json()["items"][0]["year"] == 1998
+    assert (
+        response.json()["items"][0]["cover_thumbnail_url"] == "/media/manual-release-covers/test-user/draft-1/cover.jpg"
+    )
     assert response.json()["remaining_slots"] == 4
 
 
@@ -241,6 +244,8 @@ def _draft(
     id: str = "draft-1",
     form_data: dict | None = None,
     completion_state: dict | None = None,
+    cover_image_url: str | None = None,
+    cover_thumbnail_url: str | None = None,
 ):
     now = datetime(2026, 6, 21, 12, 0, tzinfo=UTC)
     return SimpleNamespace(
@@ -254,8 +259,8 @@ def _draft(
             "format": "Vinyl",
         },
         completion_state=completion_state,
-        cover_thumbnail_url=None,
-        cover_image_url=None,
+        cover_thumbnail_url=cover_thumbnail_url,
+        cover_image_url=cover_image_url,
         cover_content_type=None,
         cover_size_bytes=None,
         created_at=now,

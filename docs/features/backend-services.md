@@ -15,7 +15,7 @@ description: This document explains the backend service layer in `backend/app/se
 | `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
 | `entitlement_service.py` | Check capability access and record user-scoped usage events for future gated features. | `AuthRepository`, `user_entitlements`, `usage_events`. |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
-| `identify_job_service.py` | Persist and expose async identify job status, enforce identify admission and usage limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller. |
+| `identify_job_service.py` | Persist and expose async image and text-only identify job status, enforce identify admission and usage limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller. |
 | `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
 | `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
 | `discogs_service.py` | Call Discogs search/release/collection APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
@@ -179,7 +179,7 @@ The ranker adds:
 
 ## IdentifyJobService
 
-`IdentifyJobService` powers `POST /api/v1/identify/jobs`, `GET /api/v1/identify/jobs/{job_id}`, and `POST /api/v1/identify/jobs/{job_id}/cancel`. It exists so clients can show server-backed Processing screen progress instead of guessing from local HTTP state.
+`IdentifyJobService` powers `POST /api/v1/identify/jobs`, `POST /api/v1/identify/text/jobs`, `GET /api/v1/identify/jobs/{job_id}`, and `POST /api/v1/identify/jobs/{job_id}/cancel`. It exists so clients can show server-backed Processing screen progress instead of guessing from local HTTP state.
 
 ### Create flow
 
@@ -194,11 +194,19 @@ The ranker adds:
 
 The current job TTL is 24 hours.
 
+`create_text_job(db, request)` uses the same stale-job, active-capacity, entitlement, expiration, status read, and cancellation infrastructure as image jobs. It creates an `identify_jobs` row with `status="text_received"`, stores source metadata with `event_source="text_identify"` and `source_type="ANDROID_MLKIT_TEXT"`, and returns an `IdentifyJobStatusResponse` immediately.
+
+Text-only jobs are intended for Android ML Kit OCR output. They accept extracted lines plus optional selected catalog number or barcode hints, but they do not persist an uploaded image and do not enter image-only phases such as `upload_received`, `preprocessing_image`, or `extracting_text`. The request contract bounds OCR input to 1-200 lines, 500 characters per line, and 10,000 normalized characters total before service admission runs.
+
+Text-only processing parses the submitted lines into the same `ExtractedIdentifiers` model used by the image OCR pipeline. Selected catalog and barcode hints are folded into those identifiers before the service reuses local candidate lookup, Discogs search planning, and ranking.
+
 ### Background processing
 
 `process_job(job_id, image_bytes, filename, content_type)` opens a fresh database session, loads the job, and runs `IdentifyService.identify` with a database-backed progress reporter.
 
 The reporter persists status and message updates at each major identify phase. On success, the service stores the serialized `IdentifyResponse` in `result` and marks the job `completed`.
+
+`process_text_job(job_id, request)` opens a fresh database session and releases the same admission ticket used by image jobs. It skips image preprocessing and OCR, then emits `parsing_identifiers`, `searching_local`, `searching_discogs`, and `ranking_candidates` updates as the reused parser/search path runs.
 
 ### Cancellation flow
 

@@ -1,10 +1,8 @@
 package com.example.vinyllistenapp.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,7 +37,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -70,6 +72,7 @@ private const val RELEASE_YEAR_DIGITS = 4
 private const val BARCODE_MIN_DIGITS = 8
 private const val BARCODE_MAX_DIGITS = 14
 private const val MANUAL_SEARCH_TEXT_MAX_CHARS = 100
+private val MANUAL_SEARCH_RESULTS_BOTTOM_SPACE = 360.dp
 
 @Composable
 fun ManualSearchScreen(
@@ -78,6 +81,7 @@ fun ManualSearchScreen(
     onDismiss: () -> Unit,
     mode: ManualSearchMode = ManualSearchMode.Discogs,
     initialBarcode: String = "",
+    initialCatalog: String = "",
 ) {
     val context = LocalContext.current
     val discogsApiClient = remember(context) { DiscogsApiClient(context) }
@@ -87,7 +91,7 @@ fun ManualSearchScreen(
     val resultsScrollState = rememberScrollState()
     var artistQuery by rememberSaveable { mutableStateOf("") }
     var titleQuery by rememberSaveable { mutableStateOf("") }
-    var catalogQuery by rememberSaveable { mutableStateOf("") }
+    var catalogQuery by rememberSaveable(initialCatalog) { mutableStateOf(initialCatalog.trim()) }
     var barcodeQuery by rememberSaveable(initialBarcode) {
         mutableStateOf(initialBarcode.digitsOnly(maxLength = BARCODE_MAX_DIGITS))
     }
@@ -97,6 +101,22 @@ fun ManualSearchScreen(
     var retryError by remember { mutableStateOf<String?>(null) }
     var failedImportResult by remember { mutableStateOf<ReleaseSearchResult?>(null) }
     var searchControlsVisible by rememberSaveable { mutableStateOf(true) }
+    var suppressTopAutoExpand by remember { mutableStateOf(false) }
+    val resultsNestedScrollConnection =
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (source == NestedScrollSource.UserInput && available.y < 0f && searchControlsVisible) {
+                    searchControlsVisible = false
+                    suppressTopAutoExpand = true
+                    scope.launch { resultsScrollState.scrollTo(0) }
+                    return available
+                }
+                return Offset.Zero
+            }
+        }
     val yearValidationError = validateReleaseYear(yearQuery)
     val barcodeValidationError = if (mode == ManualSearchMode.Discogs) validateBarcode(barcodeQuery) else null
     val effectiveBarcodeQuery = if (mode == ManualSearchMode.Discogs) barcodeQuery else ""
@@ -219,8 +239,12 @@ fun ManualSearchScreen(
             .collect { scrollValue ->
                 val canCollapse = resultsScrollState.maxValue > 0
                 when {
-                    !canCollapse || scrollValue <= 0 -> searchControlsVisible = true
-                    scrollValue > previousScrollValue -> searchControlsVisible = false
+                    !canCollapse -> {
+                        suppressTopAutoExpand = false
+                        searchControlsVisible = true
+                    }
+                    scrollValue > 0 -> suppressTopAutoExpand = false
+                    scrollValue <= 0 && !suppressTopAutoExpand -> searchControlsVisible = true
                 }
                 previousScrollValue = scrollValue
             }
@@ -236,8 +260,8 @@ fun ManualSearchScreen(
         ManualSearchHeader(onDismiss = onDismiss)
         AnimatedVisibility(
             visible = searchControlsVisible,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
+            enter = fadeIn(),
+            exit = fadeOut(),
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -346,8 +370,8 @@ fun ManualSearchScreen(
                                 onClickLabel = "Show search fields",
                                 role = Role.Button,
                                 onClick = {
+                                    suppressTopAutoExpand = false
                                     searchControlsVisible = true
-                                    scope.launch { resultsScrollState.animateScrollTo(0) }
                                 },
                             ).padding(VinylSpacing.SpaceSm),
                 )
@@ -358,6 +382,7 @@ fun ManualSearchScreen(
             modifier =
                 Modifier
                     .weight(1f)
+                    .nestedScroll(resultsNestedScrollConnection)
                     .verticalScroll(resultsScrollState),
             verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
         ) {
@@ -382,6 +407,7 @@ fun ManualSearchScreen(
                             onClick = { if (!currentState.isLoadingMore) runSearch(loadMore = true) },
                         )
                     }
+                    Spacer(Modifier.height(MANUAL_SEARCH_RESULTS_BOTTOM_SPACE))
                 }
             }
             Spacer(Modifier.height(VinylSpacing.SpaceXl))
@@ -591,13 +617,16 @@ private fun ManualSearchResultRow(
 ) {
     AccentCard(
         modifier =
-            Modifier.clickable(
-                enabled = enabled,
-                onClickLabel = "Select ${record.title}",
-                role = Role.Button,
-                onClick = onClick,
-            ),
+            Modifier
+                .clip(VinylShapes.Card)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = "Select ${record.title}",
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
     ) {
+        val metadata = manualSearchResultMetadata(record)
         Row(
             modifier =
                 Modifier
@@ -630,13 +659,15 @@ private fun ManualSearchResultRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = manualSearchResultMetadata(record),
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                metadata?.let {
+                    Text(
+                        text = it,
+                        color = VinylColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = record.format ?: "Unknown format",
                     color = VinylColors.TextSecondary,
@@ -649,9 +680,14 @@ private fun ManualSearchResultRow(
     }
 }
 
-private fun manualSearchResultMetadata(record: ReleaseSearchResult): String =
+private fun manualSearchResultMetadata(record: ReleaseSearchResult): String? =
     listOfNotNull(
         record.year?.toString(),
-        record.label,
-        record.catalogNumber,
-    ).joinToString(" • ").ifBlank { "Unknown release info" }
+        record.label.asVisibleMetadataValue(),
+        record.catalogNumber.asVisibleMetadataValue(),
+    ).joinToString(" • ").takeIf { it.isNotBlank() }
+
+private fun String?.asVisibleMetadataValue(): String? =
+    this
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("none", ignoreCase = true) }

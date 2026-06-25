@@ -21,8 +21,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
-import com.example.vinyllistenapp.data.MockVinylData
+import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.normalizedForTextIdentifyContract
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -81,7 +82,10 @@ fun VinylNavHost(
     val appScope = rememberCoroutineScope()
     val aiInsightsRequestScope = appScope
     var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
-        mutableStateOf(MockVinylData.matchCandidates)
+        mutableStateOf(emptyList())
+    }
+    var pendingTextIdentifyInput by rememberSaveable(stateSaver = TextIdentifyJobInputSaver) {
+        mutableStateOf<TextIdentifyJobInput?>(null)
     }
     var activeTimedSession by remember { mutableStateOf<TimedSessionGroup?>(null) }
     var isStartingTimedSession by remember { mutableStateOf(false) }
@@ -89,6 +93,11 @@ fun VinylNavHost(
     var autoAddTimedSessionRecords by rememberSaveable { mutableStateOf(true) }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != VinylRoutes.PROCESSING_PATTERN) {
+            pendingTextIdentifyInput = null
+        }
+    }
     LockPortraitOrientation(enabled = currentRoute.isPortraitLockedOverflowRoute())
 
     suspend fun refreshTimedSession() {
@@ -235,7 +244,11 @@ fun VinylNavHost(
                 CaptureRecordScreen(
                     apiClient = activeApiClient,
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
-                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
+                    onTextIdentifyRequested = { input ->
+                        pendingTextIdentifyInput = input.normalizedForTextIdentifyContract()
+                        navController.navigate(VinylRoutes.textProcessing(flowMode))
+                    },
+                    onManualSearch = { catalogNumber -> navController.navigate(flowMode.manualSearchRoute(catalogNumber)) },
                     onBarcodeDetected = { barcode ->
                         navController.navigate(VinylRoutes.barcodeProcessing(barcode, flowMode)) {
                             popUpTo(VinylRoutes.CAPTURE_RECORD_PATTERN) { inclusive = true }
@@ -313,6 +326,7 @@ fun VinylNavHost(
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 ProcessingScreen(
                     imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
+                    textIdentifyInput = pendingTextIdentifyInput,
                     apiClient = activeApiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
@@ -320,7 +334,9 @@ fun VinylNavHost(
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
                     },
-                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
+                    onManualSearch = {
+                        navController.navigate(flowMode.manualSearchRoute())
+                    },
                     onDismiss = {
                         if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
                             if (!navController.popBackStack(VinylRoutes.COLLECTION_PATTERN, inclusive = false)) {
@@ -385,11 +401,16 @@ fun VinylNavHost(
                             type = NavType.StringType
                             defaultValue = ""
                         },
+                        navArgument(VinylRoutes.CATALOG) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
                     ),
             ) { backStackEntry ->
                 ManualSearchScreen(
                     apiClient = activeApiClient,
                     initialBarcode = backStackEntry.arguments?.getString(VinylRoutes.BARCODE).orEmpty(),
+                    initialCatalog = backStackEntry.arguments?.getString(VinylRoutes.CATALOG).orEmpty(),
                     onSelectRecord = { releaseId -> navController.navigate(VinylRoutes.sessionLogging(releaseId)) },
                     onDismiss = {
                         navController.navigate(VinylRoutes.HOME) {
@@ -398,10 +419,20 @@ fun VinylNavHost(
                     },
                 )
             }
-            composable(VinylRoutes.COLLECTION_MANUAL_SEARCH) {
+            composable(
+                route = VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN,
+                arguments =
+                    listOf(
+                        navArgument(VinylRoutes.CATALOG) {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+            ) { backStackEntry ->
                 ManualSearchScreen(
                     apiClient = activeApiClient,
                     mode = ManualSearchMode.Collection,
+                    initialCatalog = backStackEntry.arguments?.getString(VinylRoutes.CATALOG).orEmpty(),
                     onSelectRecord = { releaseId ->
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
                             popUpTo(VinylRoutes.COLLECTION_MANUAL_SEARCH) { inclusive = true }
@@ -791,6 +822,7 @@ internal fun String?.isPortraitLockedOverflowRoute(): Boolean =
             VinylRoutes.MANUAL_SEARCH,
             VinylRoutes.MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_SEARCH,
+            VinylRoutes.COLLECTION_MANUAL_SEARCH_PATTERN,
             VinylRoutes.COLLECTION_MANUAL_ENTRY,
             VinylRoutes.COLLECTION_MANUAL_FORM_PATTERN,
             VinylRoutes.SESSION_LOGGING_PATTERN,
@@ -816,12 +848,20 @@ private fun String?.asIdentifyFlowMode(): String =
         else -> VinylRoutes.FLOW_MODE_SESSION
     }
 
-private fun String.manualSearchRoute(): String =
-    if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
-        VinylRoutes.COLLECTION_MANUAL_SEARCH
-    } else {
+private fun String.manualSearchRoute(catalogNumber: String? = null): String {
+    val catalog = catalogNumber.orEmpty()
+    return if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
+        if (catalog.isBlank()) {
+            VinylRoutes.COLLECTION_MANUAL_SEARCH
+        } else {
+            VinylRoutes.collectionManualSearchCatalog(catalog)
+        }
+    } else if (catalog.isBlank()) {
         VinylRoutes.MANUAL_SEARCH
+    } else {
+        VinylRoutes.manualSearchCatalog(catalog)
     }
+}
 
 private fun String.toMatchConfirmationMode(): MatchConfirmationMode =
     if (this == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
@@ -846,12 +886,47 @@ private fun collectionFolderFromArgs(
 }
 
 private const val MATCHED_ON_SEPARATOR = "\u001F"
+private const val TEXT_IDENTIFY_LINES_SEPARATOR = "\u001E"
 
 private val MatchCandidateListSaver: Saver<List<MatchCandidate>, List<List<String?>>> =
     Saver(
         save = { candidates -> encodeMatchCandidatesForSavedState(candidates) },
         restore = { value -> decodeMatchCandidatesFromSavedState(value) },
     )
+
+private val TextIdentifyJobInputSaver: Saver<TextIdentifyJobInput?, List<String>> =
+    Saver(
+        save = { input -> input?.let { encodeTextIdentifyInputForSavedState(it) }.orEmpty() },
+        restore = { value -> decodeTextIdentifyInputFromSavedState(value) },
+    )
+
+internal fun encodeTextIdentifyInputForSavedState(input: TextIdentifyJobInput): List<String> {
+    val normalizedInput = input.normalizedForTextIdentifyContract()
+    return listOf(
+        normalizedInput.lines.joinToString(TEXT_IDENTIFY_LINES_SEPARATOR),
+        normalizedInput.selectedCatalogNumber.orEmpty(),
+        normalizedInput.selectedBarcode.orEmpty(),
+        normalizedInput.sourceType,
+    )
+}
+
+internal fun decodeTextIdentifyInputFromSavedState(value: List<String>): TextIdentifyJobInput? {
+    val lines =
+        value
+            .getOrNull(0)
+            ?.split(TEXT_IDENTIFY_LINES_SEPARATOR)
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+    if (lines.isEmpty()) return null
+
+    return TextIdentifyJobInput(
+        lines = lines,
+        selectedCatalogNumber = value.getOrNull(1)?.takeIf { it.isNotBlank() },
+        selectedBarcode = value.getOrNull(2)?.takeIf { it.isNotBlank() },
+        sourceType = value.getOrNull(3)?.takeIf { it.isNotBlank() } ?: "ANDROID_MLKIT_TEXT",
+    ).normalizedForTextIdentifyContract()
+}
 
 internal fun encodeMatchCandidatesForSavedState(candidates: List<MatchCandidate>): List<List<String?>> =
     candidates.map { candidate ->
@@ -898,5 +973,5 @@ internal fun decodeMatchCandidatesFromSavedState(value: List<List<String?>>): Li
             )
         }
 
-    return decodedCandidates.ifEmpty { MockVinylData.matchCandidates }
+    return decodedCandidates
 }

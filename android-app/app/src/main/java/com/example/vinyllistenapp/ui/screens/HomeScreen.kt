@@ -154,7 +154,7 @@ fun HomeScreen(
                                 }
                             },
                         ),
-                        BottomNavItem("Stats", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
+                        BottomNavItem("Analytics", Icons.Filled.QueryStats, selected = false, onClick = onOpenAnalytics),
                         BottomNavItem("Insights", Icons.Filled.AutoAwesome, selected = false, onClick = onOpenInsights),
                         BottomNavItem(
                             "Collection",
