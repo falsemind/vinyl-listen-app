@@ -37,6 +37,7 @@ IDENTIFY_CAPACITY_EXCEEDED_MESSAGE = "Identify capacity is full. Please retry la
 ACTIVE_IDENTIFY_JOB_STATUSES = {
     IdentifyJobStatus.QUEUED.value,
     IdentifyJobStatus.UPLOAD_RECEIVED.value,
+    IdentifyJobStatus.TEXT_RECEIVED.value,
     IdentifyJobStatus.PREPROCESSING_IMAGE.value,
     IdentifyJobStatus.EXTRACTING_TEXT.value,
     IdentifyJobStatus.PARSING_IDENTIFIERS.value,
@@ -194,6 +195,55 @@ class IdentifyJobService:
             filename=filename,
             content_type=content_type,
         )
+        return self._create_admitted_job(
+            db,
+            user_id=user_id,
+            status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
+            message="Image upload received",
+            client_key=client_key,
+            filename=filename,
+            content_type=content_type,
+            event_source="async_identify",
+        )
+
+    def create_text_job(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        text_lines: list[str],
+        client_key: str = "unknown",
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> IdentifyJobStatusResponse:
+        if not any(line.strip() for line in text_lines):
+            raise IdentifyValidationError(
+                message="At least one non-empty OCR text line is required.",
+                status_code=422,
+                code="empty_text_lines",
+            )
+        return self._create_admitted_job(
+            db,
+            user_id=user_id,
+            status=IdentifyJobStatus.TEXT_RECEIVED.value,
+            message="Text input received",
+            client_key=client_key,
+            filename=source_type,
+            content_type="application/json",
+            event_source="text_identify",
+        )
+
+    def _create_admitted_job(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        status: str,
+        message: str,
+        client_key: str,
+        filename: str,
+        content_type: str,
+        event_source: str,
+    ) -> IdentifyJobStatusResponse:
         now = self._now_provider()
         with self._admission_controller.db_admission_lock(client_key):
             self._expire_stale_active_jobs(db, now=now)
@@ -238,14 +288,14 @@ class IdentifyJobService:
                     db,
                     user_id=user_id,
                     capability=OCR_IDENTIFY_CAPABILITY,
-                    event_metadata={"source": "async_identify"},
+                    event_metadata={"source": event_source},
                 )
                 job = self._repository.create(
                     db,
                     job_id=job_id,
                     user_id=user_id,
-                    status=IdentifyJobStatus.UPLOAD_RECEIVED.value,
-                    message="Image upload received",
+                    status=status,
+                    message=message,
                     client_key=client_key,
                     filename=filename,
                     content_type=content_type,
@@ -402,6 +452,76 @@ class IdentifyJobService:
                 )
                 logger.info(
                     "Identify job completed job_id=%s duration_seconds=%.3f",
+                    job_id,
+                    time.monotonic() - started_at,
+                )
+        finally:
+            if admission_ticket is not None:
+                admission_ticket.release()
+
+    def process_text_job(
+        self,
+        job_id: str,
+        *,
+        text_lines: list[str],
+        selected_catalog_number: str | None = None,
+        selected_barcode: str | None = None,
+        source_type: str = "ANDROID_MLKIT_TEXT",
+    ) -> None:
+        del text_lines, selected_catalog_number, selected_barcode, source_type
+
+        started_at = time.monotonic()
+        admission_ticket = self._pop_admission_ticket(job_id)
+        try:
+            with self._session_factory() as db:
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Text identify job disappeared before processing job_id=%s", job_id)
+                    return
+
+                cancellation_token = IdentifyJobCancellationToken(
+                    db=db,
+                    job_id=job_id,
+                    repository=self._repository,
+                )
+                if cancellation_token.is_cancel_requested():
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    return
+
+                job = self._repository.update_status(
+                    db,
+                    job,
+                    status=IdentifyJobStatus.PARSING_IDENTIFIERS.value,
+                    message="Parsing identifiers from submitted text",
+                    updated_at=self._now_provider(),
+                )
+                if cancellation_token.is_cancel_requested():
+                    self._repository.mark_canceled(
+                        db,
+                        job,
+                        message="Identify canceled",
+                        updated_at=self._now_provider(),
+                    )
+                    return
+
+                self._repository.fail(
+                    db,
+                    job,
+                    error={
+                        "code": "text_identify_not_implemented",
+                        "message": "Text-only identify parsing and search is not implemented yet.",
+                        "failed_step": "parse",
+                    },
+                    message="Text-only identify parsing and search is not implemented yet.",
+                    updated_at=self._now_provider(),
+                )
+                logger.info(
+                    "Text identify job accepted contract only job_id=%s duration_seconds=%.3f",
                     job_id,
                     time.monotonic() - started_at,
                 )

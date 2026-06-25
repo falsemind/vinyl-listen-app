@@ -354,6 +354,61 @@ def test_identify_job_service_records_usage_after_admission() -> None:
     ]
 
 
+def test_identify_job_service_creates_text_job_contract() -> None:
+    session_factory = _build_session_factory()
+    entitlement_service = StubEntitlementService()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        entitlement_service=entitlement_service,
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        job = service.create_text_job(
+            db,
+            user_id="user-a",
+            text_lines=["CAT No: SW038"],
+            client_key="client-a",
+        )
+
+    assert job.status == "text_received"
+    assert job.message == "Text input received"
+    assert entitlement_service.calls == [
+        {
+            "user_id": "user-a",
+            "capability": "ocr_identify",
+            "units": 1,
+            "event_metadata": {"source": "text_identify"},
+        }
+    ]
+
+
+def test_identify_job_service_processes_text_job_contract_as_placeholder_failure() -> None:
+    session_factory = _build_session_factory()
+    service = IdentifyJobService(
+        identify_service=SuccessfulIdentifyService(),
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        job = service.create_text_job(
+            db,
+            user_id="user-a",
+            text_lines=["CAT No: SW038"],
+            client_key="client-a",
+        )
+
+    service.process_text_job(job.job_id, text_lines=["CAT No: SW038"], selected_catalog_number="SW038")
+
+    with session_factory() as db:
+        failed = service.get_job(db, job.job_id, user_id="user-a")
+
+    assert failed.status == "failed"
+    assert failed.error is not None
+    assert failed.error.code == "text_identify_not_implemented"
+    assert failed.error.failed_step == "parse"
+
+
 def test_identify_job_service_scopes_job_access_by_user() -> None:
     session_factory = _build_session_factory()
     service = IdentifyJobService(

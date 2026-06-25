@@ -194,6 +194,44 @@ def test_identify_job_endpoint_returns_accepted_status(
     ]
 
 
+def test_text_identify_job_endpoint_returns_accepted_status(
+    build_stub_identify_job_service,
+    override_identify_job_service,
+) -> None:
+    service = build_stub_identify_job_service()
+    override_identify_job_service(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/identify/text/jobs",
+            json={
+                "lines": ["CAT No: SW038", "NEBULA"],
+                "selected_catalog_number": "SW038",
+                "source_type": "ANDROID_MLKIT_TEXT",
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "job-123"
+    assert response.json()["status"] == "text_received"
+    assert service.calls == [
+        {
+            "user_id": "test-user",
+            "text_lines": ["CAT No: SW038", "NEBULA"],
+            "source_type": "ANDROID_MLKIT_TEXT",
+        }
+    ]
+    assert service.process_calls == [
+        {
+            "job_id": "job-123",
+            "text_lines": ["CAT No: SW038", "NEBULA"],
+            "selected_catalog_number": "SW038",
+            "selected_barcode": None,
+            "source_type": "ANDROID_MLKIT_TEXT",
+        }
+    ]
+
+
 def test_identify_job_endpoint_returns_validation_errors(
     build_stub_identify_job_service,
     override_identify_job_service,

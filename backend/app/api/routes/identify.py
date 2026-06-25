@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.auth_dependencies import AuthenticatedUser, require_authenticated_user
 from app.core.config import settings
 from app.database.session import get_db
-from app.schemas.identify import IdentifyCandidateResponse, IdentifyJobStatusResponse, IdentifyResponse
+from app.schemas.identify import (
+    IdentifyCandidateResponse,
+    IdentifyJobStatusResponse,
+    IdentifyResponse,
+    IdentifyTextJobRequest,
+)
 from app.schemas.sessions import ErrorResponse
 from app.services.entitlement_service import (
     OCR_IDENTIFY_CAPABILITY,
@@ -170,6 +175,50 @@ async def create_identify_job(
         image_bytes=image_bytes,
         filename=filename,
         content_type=content_type,
+    )
+    return job
+
+
+@router.post(
+    "/text/jobs",
+    response_model=IdentifyJobStatusResponse,
+    status_code=202,
+    responses={
+        402: {"description": "Feature usage limit exceeded."},
+        422: {"model": ErrorResponse},
+    },
+)
+def create_text_identify_job(
+    payload: IdentifyTextJobRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    job_service: Annotated[IdentifyJobService, Depends(get_identify_job_service)],
+):
+    try:
+        client_key = request.app.state.client_key_resolver.resolve(request)
+        job = job_service.create_text_job(
+            db,
+            user_id=current_user.account.id,
+            text_lines=payload.lines,
+            client_key=client_key,
+            source_type=payload.source_type.value,
+        )
+    except IdentifyValidationError as error:
+        return _error_response(status_code=error.status_code, code=error.code, message=error.message)
+    except FeatureGateError as error:
+        return _feature_gate_error_response(error)
+    except IdentifyCapacityExceededError as error:
+        return _capacity_error_response(error)
+
+    background_tasks.add_task(
+        job_service.process_text_job,
+        job.job_id,
+        text_lines=payload.lines,
+        selected_catalog_number=payload.selected_catalog_number,
+        selected_barcode=payload.selected_barcode,
+        source_type=payload.source_type.value,
     )
     return job
 

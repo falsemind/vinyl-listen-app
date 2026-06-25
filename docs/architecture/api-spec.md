@@ -447,6 +447,47 @@ Clients should honor `Retry-After` before applying local exponential backoff.
 
 Before enforcing the active-job limit, the backend expires stale active job rows. Rows that predate the current backend service instance are treated as orphaned restart leftovers and do not keep blocking the same client.
 
+## POST /identify/text/jobs
+
+Creates an async identify job from OCR text that Android extracted on device.
+
+This endpoint is separate from image upload identify. Backend Phase 1 accepts and tracks the text-only job contract; parser/search reuse is added in a later phase.
+
+### Request
+
+```json
+{
+  "lines": ["CAT No: SW038", "NEBULA"],
+  "selected_catalog_number": "SW038",
+  "selected_barcode": null,
+  "source_type": "ANDROID_MLKIT_TEXT"
+}
+```
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| lines | string[] | Yes | OCR text lines extracted on device |
+| selected_catalog_number | string | No | User-selected or corrected catalog hint |
+| selected_barcode | string | No | User-selected or corrected barcode hint |
+| source_type | string | No | Source marker; defaults to `ANDROID_MLKIT_TEXT` |
+
+### Response
+
+```json
+{
+  "job_id": "4a36f17f-caf5-4ef3-8af0-1f55e5408f64",
+  "status": "text_received",
+  "message": "Text input received",
+  "created_at": "2026-05-11T20:00:00Z",
+  "updated_at": "2026-05-11T20:00:00Z",
+  "cancel_requested": false,
+  "result": null,
+  "error": null
+}
+```
+
+Text-only jobs use the same `GET /identify/jobs/{job_id}` and cancel endpoints as image jobs. Image-only states such as `upload_received`, `preprocessing_image`, and `extracting_text` are skipped.
+
 ## GET /identify/jobs/{job_id}
 
 Returns the current identify job status, terminal result, or terminal error.
