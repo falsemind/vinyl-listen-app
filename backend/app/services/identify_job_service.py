@@ -233,6 +233,7 @@ class IdentifyJobService:
             filename=source_type,
             content_type="application/json",
             event_source="text_identify",
+            consume_usage=False,
         )
 
     def _create_admitted_job(
@@ -246,6 +247,7 @@ class IdentifyJobService:
         filename: str,
         content_type: str,
         event_source: str,
+        consume_usage: bool = True,
     ) -> IdentifyJobStatusResponse:
         now = self._now_provider()
         with self._admission_controller.db_admission_lock(client_key):
@@ -287,12 +289,13 @@ class IdentifyJobService:
             admission_ticket = self._admission_controller.acquire_global_slot()
             job_id = str(uuid4())
             try:
-                self._entitlement_service.consume_usage(
-                    db,
-                    user_id=user_id,
-                    capability=OCR_IDENTIFY_CAPABILITY,
-                    event_metadata={"source": event_source},
-                )
+                if consume_usage:
+                    self._entitlement_service.consume_usage(
+                        db,
+                        user_id=user_id,
+                        capability=OCR_IDENTIFY_CAPABILITY,
+                        event_metadata={"source": event_source},
+                    )
                 job = self._repository.create(
                     db,
                     job_id=job_id,
@@ -623,6 +626,7 @@ class IdentifyJobService:
         )
         identifiers = _with_selected_catalog_number(
             identifiers,
+            identifier_parser=self._identifier_parser,
             selected_catalog_number=selected_catalog_number,
             source_type=source_type,
         )
@@ -770,6 +774,7 @@ def _selected_values(value: str | None) -> tuple[str, ...]:
 def _with_selected_catalog_number(
     identifiers: ExtractedIdentifiers,
     *,
+    identifier_parser: IdentifierParser,
     selected_catalog_number: str | None,
     source_type: str,
 ) -> ExtractedIdentifiers:
@@ -777,7 +782,15 @@ def _with_selected_catalog_number(
     if not selected_values:
         return identifiers
 
-    selected = selected_values[0]
+    selected = identifier_parser.normalize_catalog_number_hint(selected_values[0])
+    if selected is None:
+        logger.info(
+            "Ignoring invalid selected catalog candidate value=%s source_type=%s",
+            selected_values[0],
+            source_type,
+        )
+        return identifiers
+
     selected_key = _identifier_key(selected)
     catalog_numbers = (
         selected,

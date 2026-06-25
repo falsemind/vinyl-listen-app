@@ -379,14 +379,7 @@ def test_identify_job_service_creates_text_job_contract() -> None:
 
     assert job.status == "text_received"
     assert job.message == "Text input received"
-    assert entitlement_service.calls == [
-        {
-            "user_id": "user-a",
-            "capability": "ocr_identify",
-            "units": 1,
-            "event_metadata": {"source": "text_identify"},
-        }
-    ]
+    assert entitlement_service.calls == []
 
 
 def test_identify_job_service_processes_text_job_with_parser_and_search_reuse() -> None:
@@ -436,6 +429,54 @@ def test_identify_job_service_processes_text_job_with_parser_and_search_reuse() 
     assert [candidate.discogs_release_id for candidate in completed.result.candidates] == [456]
     assert set(completed.result.candidates[0].matched_on) >= {"catalog_number", "artist", "title"}
     assert discogs_service.search_release_calls == [{"limit": 5, "catalog_number": "7243 8 44978 1 8"}]
+
+
+def test_identify_job_service_rejects_copyright_year_selected_catalog_hint() -> None:
+    session_factory = _build_session_factory()
+    discogs_service = StubDiscogsService(
+        payload={
+            "results": [
+                {
+                    "id": 789,
+                    "title": "Kromestar - Deep Medi Musik",
+                    "year": "2006",
+                    "label": ["Deep Medi Musik"],
+                    "catno": "MEDI-01",
+                    "cover_image": "https://img.discogs.com/medi.jpg",
+                    "format": ["Vinyl", '12"'],
+                }
+            ]
+        }
+    )
+    service = IdentifyJobService(
+        identify_service=IdentifyService(
+            repository=StubReleasesRepository(),
+            discogs_service=discogs_service,
+        ),
+        session_factory=session_factory,
+    )
+
+    with session_factory() as db:
+        job = service.create_text_job(
+            db,
+            user_id="user-a",
+            text_lines=["DEEP MEDI MUSIK", "kromestar", "Copyright 2006", "medi - 01"],
+            client_key="client-a",
+        )
+
+    service.process_text_job(
+        job.job_id,
+        text_lines=["DEEP MEDI MUSIK", "kromestar", "Copyright 2006", "medi - 01"],
+        selected_catalog_number="COPYRIGHT 2006",
+    )
+
+    with session_factory() as db:
+        completed = service.get_job(db, job.job_id, user_id="user-a")
+
+    assert completed.status == "completed"
+    assert completed.result is not None
+    assert [candidate.discogs_release_id for candidate in completed.result.candidates] == [789]
+    assert discogs_service.search_release_calls == [{"limit": 5, "catalog_number": "MEDI-01"}]
 
 
 def test_identify_job_service_scopes_job_access_by_user() -> None:

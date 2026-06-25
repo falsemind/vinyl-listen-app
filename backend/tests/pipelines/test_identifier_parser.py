@@ -1074,6 +1074,69 @@ def test_identifier_parser_extracts_spaced_label_code_catalog_number() -> None:
     assert identifiers.catalog_numbers == ("TOVRI 001",)
 
 
+def test_identifier_parser_blocks_split_credit_lines_from_identity_candidates() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "Sientific",
+                "NEBULA",
+                "All tracks written and produced by",
+                "P. Saunders for Scientific Urban",
+                "Prodyctions 2024",
+                "A1- Interconnections",
+                "A2- Detached From",
+                "Reality",
+                "&O 2024 Scientific Wax",
+                "www.scientificwax.com",
+                "B1 Obliquity",
+                "B2- Virtual Oceans",
+                "CAT No: SWO38",
+            ]
+        )
+    )
+
+    assert identifiers.catalog_numbers == ("SWO38", "SW038")
+    assert "Prodyctions 2024" not in identifiers.catalog_numbers
+    assert identifiers.title is None
+    assert "P. Saunders for Scientific Urban" not in identifiers.text_fragments
+    assert "Prodyctions 2024" not in identifiers.text_fragments
+
+
+def test_identifier_parser_blocks_parenthesized_side_markers_from_identity_candidates() -> None:
+    parser = IdentifierParser()
+
+    identifiers = parser.parse(
+        "\n".join(
+            [
+                "SIHL SO",
+                "ONILSVI0v",
+                "ONGL",
+                "SUBJECTS",
+                "45 RPM",
+                "DAT 088",
+                "DEEP JUNGLE E 2024. ALL RIGHTS RESER",
+                "THIS SIDE (B)",
+                "Spaced Out",
+                "OTHER SIDE (A)",
+                "Mash Up",
+                "All tracks written & produced",
+                "by Lee Bogush & Anthony John",
+            ]
+        )
+    )
+
+    assert "DAT 088" in identifiers.catalog_numbers
+    assert identifiers.artist is None
+    assert identifiers.title is None
+    assert "SIHL SO" not in identifiers.text_fragments
+    assert "THIS SIDE (B)" not in identifiers.text_fragments
+    assert "OTHER SIDE (A)" not in identifiers.text_fragments
+    assert "Spaced Out" in identifiers.text_fragments
+    assert "Mash Up" in identifiers.text_fragments
+
+
 def test_identifier_parser_validates_and_repairs_ocr_barcode_checksums() -> None:
     parser = IdentifierParser()
 
