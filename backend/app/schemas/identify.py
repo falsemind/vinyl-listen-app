@@ -4,9 +4,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
-IDENTIFY_TEXT_JOB_MAX_LINES = 200
-IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 500
-IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 10_000
+IDENTIFY_TEXT_JOB_MAX_LINES = 80
+IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 240
+IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 4_000
 
 
 class IdentifyCandidateResponse(BaseModel):
