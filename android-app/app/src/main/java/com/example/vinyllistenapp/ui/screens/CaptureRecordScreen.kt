@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
@@ -76,6 +77,9 @@ import androidx.lifecycle.Observer
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.CatalogNumberCandidate
 import com.example.vinyllistenapp.domain.CatalogNumberExtractor
+import com.example.vinyllistenapp.domain.OcrInputSizing
+import com.example.vinyllistenapp.domain.OcrQualityMode
+import com.example.vinyllistenapp.domain.inputSizing
 import com.example.vinyllistenapp.ui.components.CardTopAccentLine
 import com.example.vinyllistenapp.ui.components.CloseCircleButton
 import com.example.vinyllistenapp.ui.components.GlassPrimaryButton
@@ -91,9 +95,11 @@ import com.google.mlkit.vision.barcode.ZoomSuggestionOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import java.io.File
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
@@ -256,7 +262,6 @@ fun CaptureRecordScreen(
 
         val imageFile = createImageCaptureFile(context)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(imageFile).build()
-        val startedAtMillis = System.currentTimeMillis()
         isRecognizingText = true
         textRecognitionResult = null
         editableCatalogNumber = ""
@@ -273,48 +278,32 @@ fun CaptureRecordScreen(
                         return
                     }
 
-                    val inputImage =
-                        runCatching { InputImage.fromFilePath(context, Uri.fromFile(imageFile)) }
-                            .getOrElse {
-                                imageFile.delete()
-                                isRecognizingText = false
-                                captureError = "Text could not be read from this photo."
-                                return
-                            }
-                    val imageSizeLabel = imageFile.readImageSizeLabel()
-                    textRecognizer
-                        .process(inputImage)
-                        .addOnSuccessListener(mainExecutor) { recognizedText ->
-                            val lines =
-                                recognizedText
-                                    .textBlocks
-                                    .flatMap { block -> block.lines.map { line -> line.text.trim() } }
-                                    .filter { it.isNotBlank() }
-                            val elapsedMillis = System.currentTimeMillis() - startedAtMillis
-                            val catalogCandidates = CatalogNumberExtractor.extract(lines)
-                            textRecognitionResult =
-                                TextRecognitionPrototypeResult(
-                                    lines = lines,
-                                    catalogCandidates = catalogCandidates,
-                                    imageSizeLabel = imageSizeLabel,
-                                    processingTimeMillis = elapsedMillis,
-                                )
-                            editableCatalogNumber = catalogCandidates.firstOrNull()?.value.orEmpty()
-                            val linePreview = lines.take(20).joinToString(" | ")
-                            Log.d(
-                                TEXT_RECOGNITION_TAG,
-                                "ML Kit text recognized ${lines.size} lines in ${elapsedMillis}ms " +
-                                    "from $imageSizeLabel with ${catalogCandidates.size} catalog candidates: $linePreview",
-                            )
-                            if (lines.isEmpty()) {
+                    runTextRecognitionQualityModes(
+                        context = context,
+                        imageFile = imageFile,
+                        textRecognizer = textRecognizer,
+                        mainExecutor = mainExecutor,
+                        onComplete = { results ->
+                            val selectedResult = selectTextRecognitionResult(results)
+                            textRecognitionResult = selectedResult
+                            editableCatalogNumber =
+                                selectedResult
+                                    ?.catalogCandidates
+                                    ?.firstOrNull()
+                                    ?.value
+                                    .orEmpty()
+                            if (selectedResult == null || selectedResult.lines.isEmpty()) {
                                 captureError = "No text found. Try a clearer still frame."
                             }
-                        }.addOnFailureListener(mainExecutor) {
-                            captureError = "Text recognition failed. Try again."
-                        }.addOnCompleteListener(mainExecutor) {
                             isRecognizingText = false
                             imageFile.delete()
-                        }
+                        },
+                        onFailure = {
+                            captureError = "Text recognition failed. Try again."
+                            isRecognizingText = false
+                            imageFile.delete()
+                        },
+                    )
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -569,23 +558,149 @@ private fun createImageCaptureUri(
 ): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
 
 private data class TextRecognitionPrototypeResult(
+    val qualityMode: OcrQualityMode,
     val lines: List<String>,
     val catalogCandidates: List<CatalogNumberCandidate>,
-    val imageSizeLabel: String,
+    val sourceImageSizeLabel: String,
+    val inputImageSizeLabel: String,
+    val inputSampleSize: Int,
     val processingTimeMillis: Long,
 )
 
-private fun File.readImageSizeLabel(): String {
+private data class TextRecognitionInput(
+    val image: InputImage,
+    val sizing: OcrInputSizing,
+    val bitmap: Bitmap?,
+) {
+    fun close() {
+        bitmap?.recycle()
+    }
+}
+
+private fun runTextRecognitionQualityModes(
+    context: Context,
+    imageFile: File,
+    textRecognizer: TextRecognizer,
+    mainExecutor: Executor,
+    onComplete: (List<TextRecognitionPrototypeResult>) -> Unit,
+    onFailure: () -> Unit,
+) {
+    val modes = OcrQualityMode.values().toList()
+    val results = mutableListOf<TextRecognitionPrototypeResult>()
+
+    fun runMode(index: Int) {
+        if (index >= modes.size) {
+            if (results.isEmpty()) {
+                onFailure()
+            } else {
+                onComplete(results)
+            }
+            return
+        }
+
+        val mode = modes[index]
+        val input =
+            imageFile
+                .createTextRecognitionInput(context, mode)
+                .getOrElse { error ->
+                    Log.w(TEXT_RECOGNITION_TAG, "ML Kit OCR mode=${mode.displayName} input failed", error)
+                    runMode(index + 1)
+                    return
+                }
+        val modeStartedAtMillis = System.currentTimeMillis()
+        textRecognizer
+            .process(input.image)
+            .addOnSuccessListener(mainExecutor) { recognizedText ->
+                val lines =
+                    recognizedText
+                        .textBlocks
+                        .flatMap { block -> block.lines.map { line -> line.text.trim() } }
+                        .filter { it.isNotBlank() }
+                val elapsedMillis = System.currentTimeMillis() - modeStartedAtMillis
+                val catalogCandidates = CatalogNumberExtractor.extract(lines)
+                val result =
+                    TextRecognitionPrototypeResult(
+                        qualityMode = mode,
+                        lines = lines,
+                        catalogCandidates = catalogCandidates,
+                        sourceImageSizeLabel = input.sizing.sourceSizeLabel,
+                        inputImageSizeLabel = input.sizing.inputSizeLabel,
+                        inputSampleSize = input.sizing.sampleSize,
+                        processingTimeMillis = elapsedMillis,
+                    )
+                results += result
+                logTextRecognitionResult(result)
+            }.addOnFailureListener(mainExecutor) { error ->
+                Log.w(TEXT_RECOGNITION_TAG, "ML Kit OCR mode=${mode.displayName} failed", error)
+            }.addOnCompleteListener(mainExecutor) {
+                input.close()
+                runMode(index + 1)
+            }
+    }
+
+    runMode(index = 0)
+}
+
+private fun selectTextRecognitionResult(results: List<TextRecognitionPrototypeResult>): TextRecognitionPrototypeResult? =
+    results.firstOrNull { it.qualityMode == DEFAULT_TEXT_RECOGNITION_QUALITY_MODE }
+        ?: results.firstOrNull { it.lines.isNotEmpty() }
+        ?: results.firstOrNull()
+
+private fun logTextRecognitionResult(result: TextRecognitionPrototypeResult) {
+    val linePreview = result.lines.take(20).joinToString(" | ")
+    Log.d(
+        TEXT_RECOGNITION_TAG,
+        "ML Kit OCR mode=${result.qualityMode.displayName} source=${result.sourceImageSizeLabel} " +
+            "input=${result.inputImageSizeLabel} sample=${result.inputSampleSize} " +
+            "time=${result.processingTimeMillis}ms lines=${result.lines.size} " +
+            "catalogCandidates=${result.catalogCandidates.size}: $linePreview",
+    )
+}
+
+private fun File.createTextRecognitionInput(
+    context: Context,
+    mode: OcrQualityMode,
+): Result<TextRecognitionInput> =
+    runCatching {
+        val bounds = readImageBounds()
+        val sizing = mode.inputSizing(bounds.width, bounds.height)
+        if (mode == OcrQualityMode.HIGH_ACCURACY || sizing.sampleSize == 1) {
+            TextRecognitionInput(
+                image = InputImage.fromFilePath(context, Uri.fromFile(this)),
+                sizing = sizing,
+                bitmap = null,
+            )
+        } else {
+            val bitmap =
+                BitmapFactory.decodeFile(
+                    absolutePath,
+                    BitmapFactory.Options().apply {
+                        inSampleSize = sizing.sampleSize
+                    },
+                ) ?: error("Bitmap decode returned null")
+            TextRecognitionInput(
+                image = InputImage.fromBitmap(bitmap, 0),
+                sizing = sizing.copy(inputWidth = bitmap.width, inputHeight = bitmap.height),
+                bitmap = bitmap,
+            )
+        }
+    }
+
+private data class ImageBounds(
+    val width: Int?,
+    val height: Int?,
+)
+
+private fun File.readImageBounds(): ImageBounds {
     val options =
         BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
     BitmapFactory.decodeFile(absolutePath, options)
-    return if (options.outWidth > 0 && options.outHeight > 0) {
-        "${options.outWidth}x${options.outHeight}"
-    } else {
-        "unknown size"
-    }
+    return ImageBounds(
+        width = options.outWidth.takeIf { it > 0 },
+        height = options.outHeight.takeIf { it > 0 },
+    )
 }
 
 private fun String.repairCatalogNumberForManualSearch(): String =
@@ -595,6 +710,7 @@ private fun Context.hasCameraPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 private const val TEXT_RECOGNITION_TAG = "CaptureTextRecognition"
+private val DEFAULT_TEXT_RECOGNITION_QUALITY_MODE = OcrQualityMode.BALANCED
 private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by system privacy controls."
 private const val TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT = 8
 private const val CATALOG_CANDIDATE_PREVIEW_COUNT = 3
@@ -1133,9 +1249,10 @@ private fun TextRecognitionPrototypeResultCard(
     ) {
         Text(
             text =
-                "ML Kit text: ${result.lines.size} lines - " +
+                "ML Kit ${result.qualityMode.displayName}: ${result.lines.size} lines - " +
                     "${result.catalogCandidates.size} catalog candidates - " +
-                    "${result.processingTimeMillis}ms - ${result.imageSizeLabel}",
+                    "${result.processingTimeMillis}ms - " +
+                    "${result.sourceImageSizeLabel} to ${result.inputImageSizeLabel}",
             color = VinylColors.TextPrimary,
             style = MaterialTheme.typography.bodyMedium,
         )

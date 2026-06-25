@@ -173,21 +173,21 @@ Android verification:
 
 ### Android Phase 3: OCR Quality Mode
 
-Goal: make the high-res versus low-res tradeoff measurable first, then user-visible later.
+Goal: keep balanced still-frame OCR as the default product path, while preserving enough internal measurement to revisit quality modes if small-text cases need it.
 
 Tasks:
 
 | Task | Effort | Depends On | Done Criteria |
 |------|--------|------------|---------------|
-| Implement internal quality modes | 4-8h | Phase 1 still-frame path | Balanced, high-accuracy, and fast input sizing can be selected internally |
-| Record timing and extraction metrics per mode | 2-4h | Quality modes | Logs show mode, source size, processing time, line count, and candidate count |
-| Add settings toggle when modes are proven useful | 4-8h | Metric comparison | User can choose balanced, high-accuracy, or fast mode from pipeline/settings |
+| Keep balanced OCR as the default | 2-4h | Phase 1 still-frame path | Catalog OCR uses bounded downscale as the normal path |
+| Record timing and extraction metrics | 2-4h | Balanced OCR path | Logs show source size, input size, processing time, line count, and candidate count |
+| Keep high-accuracy as an optional future fallback | 2-4h | Metric comparison | High-resolution processing is reserved for difficult small-text cases if testing proves it helps |
 
 Android verification:
 
-- Compare the same test photos across modes
-- Confirm high-accuracy improves small text when available
-- Confirm fast mode reduces latency on weaker devices
+- Compare balanced and high-accuracy on small catalog text before exposing any setting
+- Confirm balanced keeps catalog accuracy acceptable on average and older devices
+- Confirm fast mode stays diagnostic-only unless future evidence shows a clear product need
 
 ### Backend Phase 1: Text-Only Identify Contract
 
@@ -288,13 +288,15 @@ Recommended prototype tradeoff:
 
 If accuracy drops on catalog numbers, prefer a higher-resolution still frame for catalog mode. If latency is poor on cheaper devices, add a bounded downscale target instead of switching to continuous scanning.
 
-Later, expose this as an OCR quality mode in pipeline/settings:
+Testing on Pixel 8 and Galaxy S10 showed that balanced mode is the best default tradeoff so far. High accuracy produced very similar recognition results while costing more time, and fast mode was more likely to lose small catalog-number detail or confuse `0/O` in important tokens.
+
+Updated product direction:
 
 - `Balanced`: default mode; bounded downscale for reasonable speed and accuracy.
-- `High accuracy`: use a higher-resolution still frame for difficult small text, slower on cheaper devices.
-- `Fast`: use a lower-resolution frame for quicker extraction when the user prefers responsiveness.
+- `High accuracy`: optional future fallback for difficult small text, only if real examples show it helps.
+- `Fast`: internal diagnostic mode only; do not expose as the first user-facing setting.
 
-This should be a user-visible tradeoff, not an invisible optimization. The UI copy should make the behavior clear: higher accuracy may be slower, fast mode may miss small catalog numbers.
+Do not add a user-facing OCR quality toggle until testing shows a clear benefit. If a toggle is added later, the copy should make the tradeoff explicit: high accuracy may be slower, while fast mode may miss small catalog numbers.
 
 ## Catalog Candidate Quality Threshold
 
