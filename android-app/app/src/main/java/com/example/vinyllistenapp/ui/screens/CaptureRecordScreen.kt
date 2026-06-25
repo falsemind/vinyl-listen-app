@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -678,9 +679,10 @@ private fun File.createTextRecognitionInput(
                         inSampleSize = sizing.sampleSize
                     },
                 ) ?: error("Bitmap decode returned null")
+            val rotationDegrees = readExifRotationDegrees()
             TextRecognitionInput(
-                image = InputImage.fromBitmap(bitmap, 0),
-                sizing = sizing.copy(inputWidth = bitmap.width, inputHeight = bitmap.height),
+                image = InputImage.fromBitmap(bitmap, rotationDegrees),
+                sizing = sizing.withBitmapInputSize(bitmap, rotationDegrees),
                 bitmap = bitmap,
             )
         }
@@ -700,6 +702,31 @@ private fun File.readImageBounds(): ImageBounds {
     return ImageBounds(
         width = options.outWidth.takeIf { it > 0 },
         height = options.outHeight.takeIf { it > 0 },
+    )
+}
+
+private fun File.readExifRotationDegrees(): Int {
+    val orientation =
+        ExifInterface(absolutePath).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL,
+        )
+    return when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> 90
+        ExifInterface.ORIENTATION_ROTATE_180 -> 180
+        ExifInterface.ORIENTATION_ROTATE_270 -> 270
+        else -> 0
+    }
+}
+
+private fun OcrInputSizing.withBitmapInputSize(
+    bitmap: Bitmap,
+    rotationDegrees: Int,
+): OcrInputSizing {
+    val rotatedRightAngle = rotationDegrees == 90 || rotationDegrees == 270
+    return copy(
+        inputWidth = if (rotatedRightAngle) bitmap.height else bitmap.width,
+        inputHeight = if (rotatedRightAngle) bitmap.width else bitmap.height,
     )
 }
 
