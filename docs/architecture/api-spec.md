@@ -466,7 +466,7 @@ This endpoint is separate from image upload identify. Backend Phase 1 accepts an
 
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
-| lines | string[] | Yes | OCR text lines extracted on device |
+| lines | string[] | Yes | OCR text lines extracted on device. Accepts 1-200 lines, 500 characters per line, and 10,000 normalized characters total. |
 | selected_catalog_number | string | No | User-selected or corrected catalog hint |
 | selected_barcode | string | No | User-selected or corrected barcode hint |
 | source_type | string | No | Source marker; defaults to `ANDROID_MLKIT_TEXT` |

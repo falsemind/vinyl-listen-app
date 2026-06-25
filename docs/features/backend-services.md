@@ -196,7 +196,7 @@ The current job TTL is 24 hours.
 
 `create_text_job(db, request)` uses the same stale-job, active-capacity, entitlement, expiration, status read, and cancellation infrastructure as image jobs. It creates an `identify_jobs` row with `status="text_received"`, stores source metadata with `event_source="text_identify"` and `source_type="ANDROID_MLKIT_TEXT"`, and returns an `IdentifyJobStatusResponse` immediately.
 
-Text-only jobs are intended for Android ML Kit OCR output. They accept extracted lines plus optional selected catalog number or barcode hints, but they do not persist an uploaded image and do not enter image-only phases such as `upload_received`, `preprocessing_image`, or `extracting_text`.
+Text-only jobs are intended for Android ML Kit OCR output. They accept extracted lines plus optional selected catalog number or barcode hints, but they do not persist an uploaded image and do not enter image-only phases such as `upload_received`, `preprocessing_image`, or `extracting_text`. The request contract bounds OCR input to 1-200 lines, 500 characters per line, and 10,000 normalized characters total before service admission runs.
 
 ### Background processing
 
