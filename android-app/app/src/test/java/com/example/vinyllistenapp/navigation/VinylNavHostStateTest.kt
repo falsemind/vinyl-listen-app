@@ -59,7 +59,8 @@ class VinylNavHostStateTest {
         val input =
             TextIdentifyJobInput(
                 lines = List(90) { index -> "  ${index.toString().padStart(2, '0')}-${"A".repeat(300)}  " },
-                selectedCatalogNumber = " SW038 ",
+                selectedCatalogNumber = "  ${"C".repeat(140)}  ",
+                selectedBarcode = "  ${"1".repeat(48)}  ",
             )
 
         val restored = decodeTextIdentifyInputFromSavedState(encodeTextIdentifyInputForSavedState(input))
@@ -68,7 +69,8 @@ class VinylNavHostStateTest {
         assertTrue(restored.lines.size <= 80)
         assertTrue(restored.lines.all { line -> line.length <= 240 })
         assertTrue(restored.lines.sumOf { line -> line.length } <= 4_000)
-        assertEquals("SW038", restored.selectedCatalogNumber)
+        assertEquals("C".repeat(100), restored.selectedCatalogNumber)
+        assertEquals("1".repeat(32), restored.selectedBarcode)
     }
 
     @Test
