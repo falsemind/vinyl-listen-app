@@ -55,6 +55,23 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun textIdentifyInputSavedStateCapsOversizedPayload() {
+        val input =
+            TextIdentifyJobInput(
+                lines = List(90) { index -> "  ${index.toString().padStart(2, '0')}-${"A".repeat(300)}  " },
+                selectedCatalogNumber = " SW038 ",
+            )
+
+        val restored = decodeTextIdentifyInputFromSavedState(encodeTextIdentifyInputForSavedState(input))
+
+        checkNotNull(restored)
+        assertTrue(restored.lines.size <= 80)
+        assertTrue(restored.lines.all { line -> line.length <= 240 })
+        assertTrue(restored.lines.sumOf { line -> line.length } <= 4_000)
+        assertEquals("SW038", restored.selectedCatalogNumber)
+    }
+
+    @Test
     fun aiInsightsRouteIsPortraitLocked() {
         assertTrue(VinylRoutes.AI_INSIGHTS.isPortraitLockedOverflowRoute())
     }

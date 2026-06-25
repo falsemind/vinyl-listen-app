@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.data.api.VinylApiClient
+import com.example.vinyllistenapp.data.api.normalizedForTextIdentifyContract
 import com.example.vinyllistenapp.data.auth.AuthAccountRepository
 import com.example.vinyllistenapp.domain.CollectionFolder
 import com.example.vinyllistenapp.domain.MatchCandidate
@@ -244,7 +245,7 @@ fun VinylNavHost(
                     apiClient = activeApiClient,
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
                     onTextIdentifyRequested = { input ->
-                        pendingTextIdentifyInput = input
+                        pendingTextIdentifyInput = input.normalizedForTextIdentifyContract()
                         navController.navigate(VinylRoutes.textProcessing(flowMode))
                     },
                     onManualSearch = { catalogNumber -> navController.navigate(flowMode.manualSearchRoute(catalogNumber)) },
@@ -899,13 +900,15 @@ private val TextIdentifyJobInputSaver: Saver<TextIdentifyJobInput?, List<String>
         restore = { value -> decodeTextIdentifyInputFromSavedState(value) },
     )
 
-internal fun encodeTextIdentifyInputForSavedState(input: TextIdentifyJobInput): List<String> =
-    listOf(
-        input.lines.joinToString(TEXT_IDENTIFY_LINES_SEPARATOR),
-        input.selectedCatalogNumber.orEmpty(),
-        input.selectedBarcode.orEmpty(),
-        input.sourceType,
+internal fun encodeTextIdentifyInputForSavedState(input: TextIdentifyJobInput): List<String> {
+    val normalizedInput = input.normalizedForTextIdentifyContract()
+    return listOf(
+        normalizedInput.lines.joinToString(TEXT_IDENTIFY_LINES_SEPARATOR),
+        normalizedInput.selectedCatalogNumber.orEmpty(),
+        normalizedInput.selectedBarcode.orEmpty(),
+        normalizedInput.sourceType,
     )
+}
 
 internal fun decodeTextIdentifyInputFromSavedState(value: List<String>): TextIdentifyJobInput? {
     val lines =
@@ -922,7 +925,7 @@ internal fun decodeTextIdentifyInputFromSavedState(value: List<String>): TextIde
         selectedCatalogNumber = value.getOrNull(1)?.takeIf { it.isNotBlank() },
         selectedBarcode = value.getOrNull(2)?.takeIf { it.isNotBlank() },
         sourceType = value.getOrNull(3)?.takeIf { it.isNotBlank() } ?: "ANDROID_MLKIT_TEXT",
-    )
+    ).normalizedForTextIdentifyContract()
 }
 
 internal fun encodeMatchCandidatesForSavedState(candidates: List<MatchCandidate>): List<List<String?>> =

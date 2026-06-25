@@ -1655,12 +1655,21 @@ private const val IDENTIFY_TEXT_JOB_MAX_LINES = 80
 private const val IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 240
 private const val IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 4_000
 
-private fun TextIdentifyJobInput.toJson(): JSONObject =
-    JSONObject()
-        .put("lines", lines.normalizedForTextIdentify().toJsonArray())
-        .putNullable("selected_catalog_number", selectedCatalogNumber?.takeIf { it.isNotBlank() })
-        .putNullable("selected_barcode", selectedBarcode?.takeIf { it.isNotBlank() })
-        .put("source_type", sourceType)
+private fun TextIdentifyJobInput.toJson(): JSONObject {
+    val normalizedInput = normalizedForTextIdentifyContract()
+    return JSONObject()
+        .put("lines", normalizedInput.lines.toJsonArray())
+        .putNullable("selected_catalog_number", normalizedInput.selectedCatalogNumber)
+        .putNullable("selected_barcode", normalizedInput.selectedBarcode)
+        .put("source_type", normalizedInput.sourceType)
+}
+
+internal fun TextIdentifyJobInput.normalizedForTextIdentifyContract(): TextIdentifyJobInput =
+    copy(
+        lines = lines.normalizedForTextIdentify(),
+        selectedCatalogNumber = selectedCatalogNumber?.trim()?.takeIf { it.isNotBlank() },
+        selectedBarcode = selectedBarcode?.trim()?.takeIf { it.isNotBlank() },
+    )
 
 private fun List<String>.normalizedForTextIdentify(): List<String> {
     val normalizedLines =
