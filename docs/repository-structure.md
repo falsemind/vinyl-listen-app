@@ -222,6 +222,7 @@ All routes are nested under `/api/v1`.
 | `POST /auth/password-reset/confirm` | `api/routes/auth.py` | `AuthAccountService`. |
 | `POST /auth/password/change` | `api/routes/auth.py` | `AuthAccountService`. |
 | `DELETE /auth/account` | `api/routes/auth.py` | `AuthAccountService`. |
+| `DELETE /auth/account/data` | `api/routes/auth.py` | Account data reset through `AuthAccountService`. |
 | `POST /identify` | `api/routes/identify.py` | `IdentifyService` plus identify admission guard and `EntitlementService` usage gate. |
 | `POST /identify/jobs` | `api/routes/identify.py` | User-owned `IdentifyJobService` with per-user/client admission control and usage gate. |
 | `GET /identify/jobs/{job_id}` | `api/routes/identify.py` | User-owned `IdentifyJobService`. |

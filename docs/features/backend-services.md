@@ -44,10 +44,11 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions. Reset-request email delivery failures are logged and still return the generic accepted response.
 6. `change_password` verifies the current password, stores a fresh Argon2id hash, revokes other active sessions unless sign-out-everywhere is requested, and sends a best-effort security notification email after the DB commit succeeds.
 7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state including structured auth audit rows for that account, and retains only a minimal deletion audit receipt.
+8. `reset_account_data` verifies the password, hard-deletes user-owned app rows, provider tokens, and usage events while preserving the auth account, active sessions, security audit rows, and entitlement identity.
 
 Verification and reset confirmation track failed code attempts on the latest code row for the account. After the configured attempt limit, the flow returns a typed `429` until the lock window expires.
 
-`AuthRepository.record_auth_audit_event` stores structured audit rows for auth-sensitive operations. Current event coverage includes account registration, email verification/resend, sign-in success/failure, password reset request/confirmation, password change success/failure, account deletion rejection, auth session creation, refresh-token rotation/rejection, logout, and logout-all. Audit event details must stay non-secret: no plaintext emails, passwords, verification/reset codes, provider tokens, access tokens, or refresh tokens.
+`AuthRepository.record_auth_audit_event` stores structured audit rows for auth-sensitive operations. Current event coverage includes account registration, email verification/resend, sign-in success/failure, password reset request/confirmation, password change success/failure, account deletion rejection, account data reset success/rejection, auth session creation, refresh-token rotation/rejection, logout, and logout-all. Audit event details must stay non-secret: no plaintext emails, passwords, verification/reset codes, provider tokens, access tokens, or refresh tokens.
 
 `AuthTokenLifecycleService` owns session tokens:
 

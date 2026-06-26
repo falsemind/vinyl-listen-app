@@ -14,6 +14,8 @@ from app.database.session import get_db
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.auth import (
     AuthErrorResponse,
+    DeleteAccountDataRequest,
+    DeleteAccountDataResponse,
     DeleteAccountRequest,
     DeleteAccountResponse,
     LoginRequest,
@@ -35,6 +37,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.auth_account_service import (
+    AccountDataResetInvalidPasswordError,
     AuthAccountService,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
@@ -512,6 +515,37 @@ def delete_account(
         deleted=True,
         deletion_receipt_id=result.deletion_receipt_id,
         deleted_at=result.deleted_at,
+    )
+
+
+@router.delete(
+    "/account/data",
+    response_model=DeleteAccountDataResponse,
+    responses={401: {"model": AuthErrorResponse}},
+)
+def delete_account_data(
+    payload: DeleteAccountDataRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    account_service: Annotated[AuthAccountService, Depends(get_auth_account_service)],
+) -> DeleteAccountDataResponse:
+    try:
+        result = account_service.reset_account_data(
+            db,
+            user=current_user.account,
+            password=payload.password,
+        )
+    except AccountDataResetInvalidPasswordError:
+        raise_auth_error(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="invalid_credentials",
+            message="Password is invalid.",
+        )
+
+    return DeleteAccountDataResponse(
+        reset=True,
+        reset_receipt_id=result.reset_receipt_id,
+        reset_at=result.reset_at,
     )
 
 

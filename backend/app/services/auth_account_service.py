@@ -31,6 +31,7 @@ AUTH_AUDIT_PASSWORD_RESET_CONFIRMED = "password_reset_confirmed"
 AUTH_AUDIT_SIGN_IN = "sign_in"
 AUTH_AUDIT_PASSWORD_CHANGED = "password_changed"
 AUTH_AUDIT_ACCOUNT_DELETION_REJECTED = "account_deletion_rejected"
+AUTH_AUDIT_ACCOUNT_DATA_RESET_REJECTED = "account_data_reset_rejected"
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ class DeleteAccountInvalidPasswordError(AuthAccountError):
     pass
 
 
+class AccountDataResetInvalidPasswordError(AuthAccountError):
+    pass
+
+
 @dataclass(frozen=True)
 class RegisterAccountResult:
     user_id: str
@@ -139,6 +144,12 @@ class PasswordChangeResult:
 class DeleteAccountResult:
     deletion_receipt_id: str
     deleted_at: datetime
+
+
+@dataclass(frozen=True)
+class AccountDataResetResult:
+    reset_receipt_id: str
+    reset_at: datetime
 
 
 class AuthAccountService:
@@ -524,6 +535,35 @@ class AuthAccountService:
         deleted_at = audit.deleted_at
         db.commit()
         return DeleteAccountResult(deletion_receipt_id=deletion_receipt_id, deleted_at=deleted_at)
+
+    def reset_account_data(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        password: str,
+    ) -> AccountDataResetResult:
+        if not self._verify_password(user=user, password=password):
+            self._repository.record_auth_audit_event(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_ACCOUNT_DATA_RESET_REJECTED,
+                outcome="failure",
+                occurred_at=self._now_provider(),
+                event_details={"reason": "invalid_password"},
+            )
+            raise AccountDataResetInvalidPasswordError("password is invalid.")
+
+        reset_at = self._now_provider()
+        audit = self._repository.reset_user_owned_data(
+            db,
+            user=user,
+            reset_at=reset_at,
+            commit=False,
+        )
+        reset_receipt_id = audit.id
+        db.commit()
+        return AccountDataResetResult(reset_receipt_id=reset_receipt_id, reset_at=reset_at)
 
     def _create_email_verification_code(
         self,

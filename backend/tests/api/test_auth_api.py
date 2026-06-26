@@ -347,6 +347,36 @@ def test_delete_account_requires_password_and_invalidates_access(auth_api: AuthA
     assert protected_response.json()["error"]["code"] == "invalid_access_token"
 
 
+@pytest.mark.real_auth
+def test_delete_account_data_requires_password_and_preserves_access(auth_api: AuthApiContext) -> None:
+    token_payload = _verified_login(auth_api, email="alex@example.com", password="password")
+
+    wrong_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account/data",
+        json={"password": "wrong-password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    reset_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account/data",
+        json={"password": "password"},
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+    protected_response = auth_api.client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+
+    assert wrong_response.status_code == 401
+    assert wrong_response.json()["error"]["code"] == "invalid_credentials"
+    assert reset_response.status_code == 200
+    assert reset_response.json()["reset"] is True
+    assert reset_response.json()["reset_receipt_id"]
+    assert protected_response.status_code == 200
+    assert protected_response.json()["email"] == "alex@example.com"
+
+
 def _verified_login(auth_api: AuthApiContext, *, email: str, password: str) -> dict:
     auth_api.client.post("/api/v1/auth/register", json={"email": email, "password": password})
     code = auth_api.email_sender.messages[-1].code

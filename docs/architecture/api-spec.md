@@ -292,6 +292,30 @@ Protected endpoint. Requires password re-authentication, hard-deletes the accoun
 
 Wrong password returns `401 invalid_credentials`. After a successful deletion, existing access and refresh tokens are invalid and the client should clear local auth/cache state.
 
+## DELETE /auth/account/data
+
+Protected endpoint. Requires password re-authentication and hard-deletes user-owned app data while preserving the auth account, credentials, verification state, entitlement identity, and active auth sessions.
+
+### Request
+
+```json
+{
+  "password": "correct-horse-battery-staple"
+}
+```
+
+### Response
+
+```json
+{
+  "reset": true,
+  "reset_receipt_id": "6d3958c3-27c0-4459-b8e5-cf3fc5e18f43",
+  "reset_at": "2026-06-19T18:00:00Z"
+}
+```
+
+Wrong password returns `401 invalid_credentials`. After a successful reset, the existing auth session remains valid and the client should clear local app/provider/cache state before loading the empty signed-in account.
+
 ---
 
 # 2. Record Identification
