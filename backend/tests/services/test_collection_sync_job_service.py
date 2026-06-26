@@ -1,12 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models.auth import UserAccount
 from app.models.collection_sync_job import CollectionSyncJob
+from app.repositories.collection_sync_job_repository import CollectionSyncJobRepository
 from app.schemas.collection import CollectionSourceOfTruth
 from app.schemas.integrations import DiscogsIntegrationStatusResponse
 from app.services.collection_sync_job_service import CollectionSyncConfigurationError, CollectionSyncJobService
@@ -301,12 +302,89 @@ def test_collection_sync_job_service_returns_expired_when_polling_orphaned_job()
     assert expired_job.error.failed_step == "fetching"
 
 
+def test_collection_sync_job_repository_rechecks_status_before_expiring_loaded_candidate(tmp_path) -> None:
+    SessionFactory = _build_file_session_factory(tmp_path)
+    previous_process_time = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    completed_at = datetime(2026, 6, 4, 12, 45, tzinfo=UTC)
+    stale_check_time = datetime(2026, 6, 4, 13, 0, tzinfo=UTC)
+    repository = CollectionSyncJobRepository()
+    completed_candidate = False
+
+    with SessionFactory() as db:
+        db.add(
+            UserAccount(
+                id="user-a",
+                email="user-a@example.com",
+                password_hash="hash",
+                normalized_email="user-a@example.com",
+                password_hash_algorithm="argon2id",
+                email_verified_at=None,
+            )
+        )
+        db.add(
+            CollectionSyncJob(
+                id="loaded-candidate",
+                user_id="user-a",
+                status="running",
+                step="importing",
+                message="Importing data",
+                created_at=previous_process_time,
+                updated_at=previous_process_time,
+                expires_at=previous_process_time + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+    def complete_candidate_after_load(_session: Session, obj: object) -> None:
+        nonlocal completed_candidate
+        if completed_candidate or not isinstance(obj, CollectionSyncJob) or obj.id != "loaded-candidate":
+            return
+        completed_candidate = True
+        with SessionFactory() as other_db:
+            fresh_job = other_db.get(CollectionSyncJob, "loaded-candidate")
+            assert fresh_job is not None
+            fresh_job.status = "succeeded"
+            fresh_job.message = "Collection sync complete"
+            fresh_job.updated_at = completed_at
+            other_db.commit()
+
+    event.listen(Session, "loaded_as_persistent", complete_candidate_after_load)
+    try:
+        with SessionFactory() as db:
+            expired_count = repository.expire_stale_active(
+                db,
+                user_id="user-a",
+                stale_before=stale_check_time,
+                expires_at_or_before=stale_check_time,
+                updated_at=stale_check_time,
+            )
+    finally:
+        event.remove(Session, "loaded_as_persistent", complete_candidate_after_load)
+
+    assert completed_candidate is True
+    assert expired_count == 0
+    with SessionFactory() as db:
+        job = db.get(CollectionSyncJob, "loaded-candidate")
+
+    assert job is not None
+    assert job.status == "succeeded"
+    assert job.message == "Collection sync complete"
+    assert job.updated_at == completed_at.replace(tzinfo=None)
+
+
 def _build_session_factory():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    UserAccount.__table__.create(engine)
+    CollectionSyncJob.__table__.create(engine)
+    return sessionmaker(bind=engine)
+
+
+def _build_file_session_factory(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'collection-sync-jobs.db'}")
     UserAccount.__table__.create(engine)
     CollectionSyncJob.__table__.create(engine)
     return sessionmaker(bind=engine)
