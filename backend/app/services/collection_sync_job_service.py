@@ -10,6 +10,7 @@ from app.database.db import SessionLocal
 from app.models.collection_sync_job import CollectionSyncJob
 from app.repositories.collection_sync_job_repository import CollectionSyncJobRepository
 from app.schemas.collection import CollectionSyncJobStatusResponse
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.collection_sync_service import CollectionSyncError, CollectionSyncService
 from app.services.discogs_integration_service import DiscogsIntegrationService
 from app.services.discogs_service import DiscogsClientError, DiscogsConfigurationError
@@ -65,6 +66,7 @@ class CollectionSyncJobService:
             self._validate_discogs_config(db, user_id=user_id)
 
         created_at = self._now_provider()
+        lock_account_data_mutation(db, user_id=user_id)
         self._expire_stale_active_jobs(db, user_id=user_id, now=created_at)
         job = self._repository.create(
             db,
@@ -101,6 +103,7 @@ class CollectionSyncJobService:
 
         try:
             with self._session_factory() as db:
+                lock_account_data_mutation(db, user_id=user_id)
                 result = self._sync_service.sync_collection(
                     db,
                     user_id=user_id,
@@ -111,6 +114,7 @@ class CollectionSyncJobService:
             return
 
         with self._session_factory() as db:
+            lock_account_data_mutation(db, user_id=user_id)
             job = self._repository.get(db, job_id)
             if job is None:
                 logger.warning("Collection sync job disappeared before completion job_id=%s", job_id)
@@ -145,6 +149,11 @@ class CollectionSyncJobService:
             if job is None:
                 logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
                 return
+            lock_account_data_mutation(db, user_id=job.user_id)
+            job = self._repository.get(db, job_id)
+            if job is None:
+                logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
+                return
 
             self._repository.update_progress(
                 db,
@@ -161,6 +170,11 @@ class CollectionSyncJobService:
 
     def _fail_job(self, job_id: str, failure: CollectionSyncJobFailure) -> None:
         with self._session_factory() as db:
+            job = self._repository.get(db, job_id)
+            if job is None:
+                logger.warning("Collection sync job disappeared before failure update job_id=%s", job_id)
+                return
+            lock_account_data_mutation(db, user_id=job.user_id)
             job = self._repository.get(db, job_id)
             if job is None:
                 logger.warning("Collection sync job disappeared before failure update job_id=%s", job_id)

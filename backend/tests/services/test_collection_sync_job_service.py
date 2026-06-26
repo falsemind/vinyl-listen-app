@@ -84,6 +84,34 @@ def test_collection_sync_job_service_allows_job_with_saved_discogs_token() -> No
     assert job.status == "queued"
 
 
+def test_collection_sync_job_service_locks_account_data_for_create_and_process(monkeypatch) -> None:
+    SessionFactory = _build_session_factory()
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    service = CollectionSyncJobService(
+        sync_service=SuccessfulCollectionSyncService(),
+        session_factory=SessionFactory,
+        now_provider=lambda: now,
+        require_discogs_config=False,
+    )
+    locked_user_ids: list[str] = []
+
+    def record_account_data_lock(_db, *, user_id: str, repository=None) -> None:
+        _ = repository
+        locked_user_ids.append(user_id)
+
+    monkeypatch.setattr(
+        "app.services.collection_sync_job_service.lock_account_data_mutation",
+        record_account_data_lock,
+    )
+
+    with SessionFactory() as db:
+        job = service.create_job(db, user_id="user-a")
+
+    service.process_job(job.job_id)
+
+    assert locked_user_ids == ["user-a"] * 6
+
+
 def test_collection_sync_job_service_completes_job() -> None:
     SessionFactory = _build_session_factory()
     now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)

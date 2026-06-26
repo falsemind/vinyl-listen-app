@@ -15,6 +15,7 @@ from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.repositories.releases_repository import ReleasesRepository
 from app.repositories.sessions_moods_repository import SessionsMoodsRepository
 from app.repositories.sessions_repository import SessionsRepository
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.release_mapper import (
     ReleaseTrackArtistData,
     ReleaseTrackData,
@@ -259,6 +260,7 @@ class SessionsService:
             track_positions=track_positions,
             session_group_id=session_group_id,
         )
+        lock_account_data_mutation(db, user_id=user_id)
         session = self._sessions_repository.create(
             db,
             user_id=user_id,
@@ -321,6 +323,7 @@ class SessionsService:
             raise SessionEditWindowExpiredError(session_id)
 
         validated = self._validate_update_input(db, session=session, user_id=user_id, fields=fields)
+        lock_account_data_mutation(db, user_id=user_id)
         updated_session = self._sessions_repository.update(
             db,
             session,
@@ -734,10 +737,12 @@ class SessionsService:
         canonical_name = (
             self._sessions_repository.get_mood_by_name(db, normalized_name, user_id=user_id) or normalized_name
         )
+        lock_account_data_mutation(db, user_id=user_id)
         return self._moods_repository.create_custom(db, canonical_name, user_id=user_id)
 
     def delete_custom_mood(self, db: Session, name: str, *, user_id: str) -> None:
         normalized_name = self._normalize_custom_mood_name(name)
+        lock_account_data_mutation(db, user_id=user_id)
         self._moods_repository.delete_custom(db, normalized_name, user_id=user_id)
 
     def _validate_create_input(

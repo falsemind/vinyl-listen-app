@@ -10,26 +10,27 @@ description: This document explains the backend service layer in `backend/app/se
 | Service file | Main responsibility | Primary collaborators |
 | --- | --- | --- |
 | `auth_account_service.py` | Register accounts, verify email codes, sign in with password, resend verification, run password reset/change flows, and delete accounts after password re-authentication. | `AuthRepository`, `Argon2idPasswordHasher`, auth email sender. |
+| `account_data_mutation.py` | Shared guard for reset-deleted account data mutations. Locks the user account row so app-data writes serialize with full account data resets. | `AuthRepository`, `user_accounts`. |
 | `auth_token_service.py` | Issue access tokens, rotate refresh tokens, detect refresh-token reuse, and enforce inactivity re-auth. | `AuthRepository`, `AccessTokenService`, `consumed_refresh_tokens`. |
 | `auth_email_delivery.py` | Send auth verification/reset messages through local JSONL outbox or Mailgun Provider API. | Auth account service, Mailgun configuration, local outbox path. |
 | `password_hashing.py` | Hash and verify passwords with Argon2id plus versioned cost metadata. | Argon2 runtime settings. |
 | `entitlement_service.py` | Check capability access and record user-scoped usage events for future gated features. | `AuthRepository`, `user_entitlements`, `usage_events`. |
 | `identify_service.py` | Identify a vinyl release from an uploaded image. | Identification pipeline, `ReleasesRepository`, `DiscogsIntegrationService`, `DiscogsService`, `CandidateRanker`. |
-| `identify_job_service.py` | Persist and expose async image and text-only identify job status, enforce identify admission and usage limits, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller. |
-| `discogs_integration_service.py` | Validate, store, and expose sanitized Discogs integration state. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`. |
+| `identify_job_service.py` | Persist and expose async image and text-only identify job status, enforce identify admission and usage limits, serialize job admission with account data resets, and release processing capacity after terminal outcomes. | `IdentifyService`, `IdentifyJobRepository`, `EntitlementService`, `SessionLocal`, admission controller, account data mutation guard. |
+| `discogs_integration_service.py` | Validate, store, expose, and reset sanitized Discogs integration state under the account data mutation guard. | `ProviderIntegrationRepository`, `CollectionSettingsRepository`, `TokenCipher`, `DiscogsClient`, account data mutation guard. |
 | `token_cipher.py` | Encrypt and decrypt stored provider access tokens. | `DISCOGS_TOKEN_ENCRYPTION_KEY`. |
 | `discogs_service.py` | Call Discogs search/release/collection APIs with rate limiting, auth headers, and local release payload caching. | Explicit `DiscogsClient`, `DiscogsReleaseRepository`, settings for URL/user-agent/timeouts. |
 | `collection_sync_service.py` | Sync Discogs collection metadata and folder memberships while respecting the persisted collection source of truth. In `APP` mode, local membership is preserved even when Discogs returns empty or missing items. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `CollectionFoldersRepository`, `CollectionSettingsRepository`, `release_mapper.py`. |
-| `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`. |
+| `collection_sync_job_service.py` | Persist and expose manual collection sync job progress for Android polling while guarding queued, progress, completion, and failure writes against account data resets. | `CollectionSyncService`, `CollectionSyncJobRepository`, `SessionLocal`, account data mutation guard. |
 | `release_import_service.py` | Import, refresh, or fetch a Discogs release in the local `releases` table. | `DiscogsIntegrationService`, `DiscogsService`, `ReleasesRepository`, `DiscogsReleaseRepository`, `release_mapper.py`. |
-| `manual_release_service.py` | Create, validate, and manage user-owned manual release drafts and saved manual releases. | `ManualReleaseRepository`, `manual_release_policy.py`, `manual_releases`, `manual_release_drafts`. |
+| `manual_release_service.py` | Create, validate, and manage user-owned manual release drafts and saved manual releases under the account data mutation guard. | `ManualReleaseRepository`, `manual_release_policy.py`, `manual_releases`, `manual_release_drafts`, account data mutation guard. |
 | `manual_release_policy.py` | Shared manual entry validation constants for field limits, draft cap, supported formats, vinyl details, track roles, and cover uploads. | Manual release schemas and service validation. |
 | `release_mapper.py` | Convert raw Discogs release payloads into local release fields. | Pure mapping helpers. |
-| `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections, timed-session membership, and active collection membership checks. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`. |
-| `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups. | `SessionGroupsRepository`, `SessionsRepository`. |
-| `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, and report counts/errors. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory. |
+| `sessions_service.py` | Create, edit, and read listening sessions, including optional track selections, timed-session membership, active collection membership checks, and account-reset-safe session mutations. | `SessionsRepository`, `ReleasesRepository`, `DiscogsReleaseRepository`, `SessionGroupsService`, account data mutation guard. |
+| `session_groups_service.py` | Start, read, finish, and auto-expire optional timed listening session groups while serializing mutating paths with account data resets. | `SessionGroupsRepository`, `SessionsRepository`, account data mutation guard. |
+| `spotify_listening_import_service.py` | Import backend-local Spotify `end_song` exports, filter private/out-of-scope fields, dedupe events, rebuild rollups, and commit import batches under the account data mutation guard. | `SpotifyListeningRepository`, `SpotifyListeningRollupService`, configured import directory, account data mutation guard. |
 | `spotify_listening_rollup_service.py` | Rebuild Spotify summary tables and exact Spotify-to-vinyl collection matches. | `SpotifyListeningRepository`, `ReleasesRepository`. |
-| `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, and read-only tool context. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository. |
+| `ai_insights_service.py` | Own the AI Insights chat service boundary, provider fallback behavior, persistent history, read-only tool context, and account-reset-safe chat mutations. | `app/ai` runtime adapter, `AiInsightToolRunner`, chat repository, account data mutation guard. |
 
 ## Auth Services
 
@@ -47,6 +48,14 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 8. `reset_account_data` verifies the password and hard-deletes user-owned app rows and provider tokens while preserving the auth account, active sessions, security audit rows, entitlement identity, and usage quota ledger.
 
 Verification and reset confirmation track failed code attempts on the latest code row for the account. After the configured attempt limit, the flow returns a typed `429` until the lock window expires.
+
+### Account Data Reset Serialization
+
+`reset_account_data` locks the target `user_accounts` row while deleting resettable app data. Any service that creates, updates, or deletes reset-deleted user data must call `lock_account_data_mutation` before the first account-owned write so concurrent requests serialize with the reset. This includes manual release drafts/releases and cover metadata, identify jobs, Discogs provider tokens and collection settings, collection sync jobs and progress updates, listening sessions and timed session groups, Spotify listening imports and rollups, and AI chat history.
+
+The lock is transaction-scoped. When a mutation spans multiple reset-deleted tables, the service should keep related writes in one transaction where possible, or reacquire the guard before each later write and re-read the target row after locking. Long-running job callbacks, such as collection sync progress/completion/failure updates, guard each callback write and no-op if reset already removed the job.
+
+Usage quota and entitlement rows are intentionally not reset-deleted. Identify admission records usage and creates the resettable job in the same guarded transaction so a data reset cannot leave a post-reset job behind or clear a user's rolling quota ledger.
 
 `AuthRepository.record_auth_audit_event` stores structured audit rows for auth-sensitive operations. Current event coverage includes account registration, email verification/resend, sign-in success/failure, password reset request/confirmation, password change success/failure, account deletion rejection, account data reset success/rejection, auth session creation, refresh-token rotation/rejection, logout, and logout-all. Audit event details must stay non-secret: no plaintext emails, passwords, verification/reset codes, provider tokens, access tokens, or refresh tokens.
 

@@ -7,6 +7,7 @@ from app.models.sessions import SessionGroups
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.session_groups_repository import SessionGroupsRepository
 from app.repositories.sessions_repository import SessionsRepository
+from app.services.account_data_mutation import lock_account_data_mutation
 
 SESSION_GROUP_INACTIVITY_TIMEOUT = timedelta(minutes=30)
 SESSION_GROUP_EDIT_WINDOW = timedelta(minutes=15)
@@ -354,6 +355,4 @@ class SessionGroupsService:
         return self._as_aware_utc(self._now_provider())
 
     def _lock_user_for_account_mutation(self, db: Session, *, user_id: str | None) -> None:
-        if user_id is None:
-            return
-        self._auth_repository.lock_user_by_id(db, user_id)
+        lock_account_data_mutation(db, user_id=user_id, repository=self._auth_repository)

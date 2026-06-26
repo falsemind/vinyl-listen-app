@@ -182,6 +182,7 @@ class StubEntitlementService:
         capability: str,
         units: int = 1,
         event_metadata: dict | None = None,
+        commit: bool = True,
     ) -> None:
         self.calls.append(
             {
@@ -189,6 +190,7 @@ class StubEntitlementService:
                 "capability": capability,
                 "units": units,
                 "event_metadata": event_metadata,
+                "commit": commit,
             }
         )
 
@@ -327,6 +329,7 @@ def test_identify_job_service_rejects_per_client_active_job_over_capacity() -> N
             "capability": "ocr_identify",
             "units": 1,
             "event_metadata": {"source": "async_identify"},
+            "commit": False,
         }
     ]
 
@@ -356,6 +359,7 @@ def test_identify_job_service_records_usage_after_admission() -> None:
             "capability": "ocr_identify",
             "units": 1,
             "event_metadata": {"source": "async_identify"},
+            "commit": False,
         }
     ]
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.spotify_listening import SpotifyListeningEvent
 from app.repositories.spotify_listening_repository import SpotifyListeningRepository
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.spotify_listening_rollup_service import SpotifyListeningRollupService
 from app.utils.spotify_text import normalize_spotify_text, stable_spotify_key
 
@@ -71,7 +72,8 @@ class SpotifyListeningImportService:
             raise ValueError("batch_size must be greater than zero")
 
         source_paths = [str(Path(file_path)) for file_path in file_paths]
-        batch = self._repository.create_import_batch(db, user_id=user_id, source_paths=source_paths)
+        lock_account_data_mutation(db, user_id=user_id)
+        batch = self._repository.create_import_batch(db, user_id=user_id, source_paths=source_paths, commit=False)
         counts = _ImportCounts()
         error_summary: list[str] = []
         pending_events: list[SpotifyListeningEvent] = []
@@ -80,51 +82,39 @@ class SpotifyListeningImportService:
         logger.info("Importing Spotify listening history batch_id=%s files=%s", batch.id, len(source_paths))
 
         try:
-            for file_path in file_paths:
-                for item in self._load_items(Path(file_path)):
-                    counts.total_items += 1
-                    try:
-                        event = self._map_item(item, user_id=user_id, import_batch_id=batch.id)
-                    except SpotifyListeningImportItemError as error:
-                        counts.skipped_count += 1
-                        counts.error_count += 1
-                        self._append_error(error_summary, f"item {counts.total_items}: {error}")
-                        continue
+            with db.begin_nested():
+                for file_path in file_paths:
+                    for item in self._load_items(Path(file_path)):
+                        counts.total_items += 1
+                        try:
+                            event = self._map_item(item, user_id=user_id, import_batch_id=batch.id)
+                        except SpotifyListeningImportItemError as error:
+                            counts.skipped_count += 1
+                            counts.error_count += 1
+                            self._append_error(error_summary, f"item {counts.total_items}: {error}")
+                            continue
 
-                    if event is None:
-                        counts.skipped_count += 1
-                        continue
+                        if event is None:
+                            counts.skipped_count += 1
+                            continue
 
-                    if event.event_key in seen_event_keys:
-                        counts.duplicate_count += 1
-                        continue
+                        if event.event_key in seen_event_keys:
+                            counts.duplicate_count += 1
+                            continue
 
-                    seen_event_keys.add(event.event_key)
-                    pending_events.append(event)
+                        seen_event_keys.add(event.event_key)
+                        pending_events.append(event)
 
-                    if len(pending_events) >= batch_size:
-                        self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
-                        pending_events.clear()
+                        if len(pending_events) >= batch_size:
+                            self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
+                            pending_events.clear()
 
-            if pending_events:
-                self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
+                if pending_events:
+                    self._flush_events(db, user_id=user_id, events=pending_events, counts=counts)
 
-            if refresh_rollups:
-                self._rollup_service.refresh(db, user_id=user_id, commit=False)
-
-            completed_batch = self._repository.mark_completed(
-                db,
-                batch.id,
-                user_id=user_id,
-                total_items=counts.total_items,
-                imported_count=counts.imported_count,
-                duplicate_count=counts.duplicate_count,
-                skipped_count=counts.skipped_count,
-                error_count=counts.error_count,
-                error_summary=error_summary,
-            )
+                if refresh_rollups:
+                    self._rollup_service.refresh(db, user_id=user_id, commit=False)
         except Exception as error:
-            db.rollback()
             self._append_error(error_summary, str(error))
             self._repository.mark_failed(
                 db,
@@ -138,6 +128,18 @@ class SpotifyListeningImportService:
                 error_summary=error_summary,
             )
             raise
+
+        completed_batch = self._repository.mark_completed(
+            db,
+            batch.id,
+            user_id=user_id,
+            total_items=counts.total_items,
+            imported_count=counts.imported_count,
+            duplicate_count=counts.duplicate_count,
+            skipped_count=counts.skipped_count,
+            error_count=counts.error_count,
+            error_summary=error_summary,
+        )
 
         logger.info(
             "Imported Spotify listening history batch_id=%s imported=%s duplicates=%s skipped=%s errors=%s",

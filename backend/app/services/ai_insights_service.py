@@ -16,6 +16,7 @@ from app.ai.insight_tools import AiInsightToolRunner
 from app.core.config import settings
 from app.models.ai_chat import AiChatMessageRecord
 from app.repositories.ai_chat_repository import AiChatRepository
+from app.services.account_data_mutation import lock_account_data_mutation
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class AiInsightsService:
             raise AiInsightsValidationError("empty_message", "message must not be blank.")
 
         cleaned_conversation_id = self._conversation_id(conversation_id)
+        lock_account_data_mutation(db, user_id=user_id)
         started_at = perf_counter()
         prompt_history = [
             AiChatHistoryMessage(role=message_record.role, content=message_record.content)
@@ -173,6 +175,7 @@ class AiInsightsService:
         conversation_id: str | None = None,
     ) -> AiInsightsClearResult:
         cleaned_conversation_id = self._conversation_id(conversation_id)
+        lock_account_data_mutation(db, user_id=user_id)
         deleted_messages = self.repository.delete_conversation(
             db,
             user_id=user_id,
