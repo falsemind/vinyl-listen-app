@@ -94,46 +94,47 @@ class CollectionSyncJobService:
         return self._to_response(job)
 
     def process_job(self, job_id: str) -> None:
-        with self._session_factory() as db:
-            job = self._repository.get(db, job_id)
-            if job is None:
-                logger.warning("Collection sync job disappeared before processing job_id=%s", job_id)
-                return
-            user_id = job.user_id
-
         try:
             with self._session_factory() as db:
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Collection sync job disappeared before processing job_id=%s", job_id)
+                    return
+                user_id = job.user_id
                 lock_account_data_mutation(db, user_id=user_id)
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Collection sync job disappeared before processing job_id=%s", job_id)
+                    return
                 result = self._sync_service.sync_collection(
                     db,
                     user_id=user_id,
-                    progress_reporter=lambda **progress: self._update_progress(job_id, **progress),
+                    progress_reporter=lambda **progress: self._update_progress(db, job_id, **progress),
+                    commit=False,
+                )
+                job = self._repository.get(db, job_id)
+                if job is None:
+                    logger.warning("Collection sync job disappeared before completion job_id=%s", job_id)
+                    db.rollback()
+                    return
+                self._repository.complete(
+                    db,
+                    job,
+                    message="Collection sync complete",
+                    updated_at=self._now_provider(),
+                    total_items=result.total_items,
+                    processed_items=result.unique_releases,
+                    added_count=result.added_count,
+                    updated_count=result.updated_count,
+                    removed_count=result.removed_count,
                 )
         except Exception as error:  # noqa: BLE001
             self._fail_job(job_id, self._map_failure(error))
             return
 
-        with self._session_factory() as db:
-            lock_account_data_mutation(db, user_id=user_id)
-            job = self._repository.get(db, job_id)
-            if job is None:
-                logger.warning("Collection sync job disappeared before completion job_id=%s", job_id)
-                return
-
-            self._repository.complete(
-                db,
-                job,
-                message="Collection sync complete",
-                updated_at=self._now_provider(),
-                total_items=result.total_items,
-                processed_items=result.unique_releases,
-                added_count=result.added_count,
-                updated_count=result.updated_count,
-                removed_count=result.removed_count,
-            )
-
     def _update_progress(
         self,
+        db: Session,
         job_id: str,
         *,
         step: str,
@@ -144,29 +145,24 @@ class CollectionSyncJobService:
         updated_count: int | None = None,
         removed_count: int | None = None,
     ) -> None:
-        with self._session_factory() as db:
-            job = self._repository.get(db, job_id)
-            if job is None:
-                logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
-                return
-            lock_account_data_mutation(db, user_id=job.user_id)
-            job = self._repository.get(db, job_id)
-            if job is None:
-                logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
-                return
+        job = self._repository.get(db, job_id)
+        if job is None:
+            logger.warning("Collection sync job disappeared before progress update job_id=%s", job_id)
+            return
 
-            self._repository.update_progress(
-                db,
-                job,
-                step=step,
-                message=message,
-                updated_at=self._now_provider(),
-                total_items=total_items,
-                processed_items=processed_items,
-                added_count=added_count,
-                updated_count=updated_count,
-                removed_count=removed_count,
-            )
+        self._repository.update_progress(
+            db,
+            job,
+            step=step,
+            message=message,
+            updated_at=self._now_provider(),
+            total_items=total_items,
+            processed_items=processed_items,
+            added_count=added_count,
+            updated_count=updated_count,
+            removed_count=removed_count,
+            commit=False,
+        )
 
     def _fail_job(self, job_id: str, failure: CollectionSyncJobFailure) -> None:
         with self._session_factory() as db:

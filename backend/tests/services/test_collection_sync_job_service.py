@@ -14,8 +14,15 @@ from app.services.collection_sync_service import CollectionSyncError, Collection
 
 
 class SuccessfulCollectionSyncService:
-    def sync_collection(self, _db, *, user_id: str, progress_reporter=None) -> CollectionSyncResult:
-        _ = user_id
+    def sync_collection(
+        self,
+        _db,
+        *,
+        user_id: str,
+        progress_reporter=None,
+        commit: bool = True,
+    ) -> CollectionSyncResult:
+        _ = user_id, commit
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
             progress_reporter(step="importing", message="Importing data", total_items=3, processed_items=1)
@@ -36,11 +43,40 @@ class SuccessfulCollectionSyncService:
 
 
 class FailingCollectionSyncService:
-    def sync_collection(self, _db, *, user_id: str, progress_reporter=None) -> CollectionSyncResult:
-        _ = user_id
+    def sync_collection(
+        self,
+        _db,
+        *,
+        user_id: str,
+        progress_reporter=None,
+        commit: bool = True,
+    ) -> CollectionSyncResult:
+        _ = user_id, commit
         if progress_reporter is not None:
             progress_reporter(step="fetching", message="Fetching collection data")
         raise CollectionSyncError("Collection item is missing metadata.")
+
+
+class RecordingCollectionSyncService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def sync_collection(
+        self,
+        _db,
+        *,
+        user_id: str,
+        progress_reporter=None,
+        commit: bool = True,
+    ) -> CollectionSyncResult:
+        self.calls.append({"user_id": user_id, "commit": commit, "progress_reporter": progress_reporter})
+        return CollectionSyncResult(
+            total_items=0,
+            unique_releases=0,
+            added_count=0,
+            updated_count=0,
+            removed_count=0,
+        )
 
 
 class FakeDiscogsIntegrationService:
@@ -109,7 +145,36 @@ def test_collection_sync_job_service_locks_account_data_for_create_and_process(m
 
     service.process_job(job.job_id)
 
-    assert locked_user_ids == ["user-a"] * 6
+    assert locked_user_ids == ["user-a"] * 2
+
+
+def test_collection_sync_job_service_skips_processing_when_reset_deletes_job_before_lock(monkeypatch) -> None:
+    SessionFactory = _build_session_factory()
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=UTC)
+    sync_service = RecordingCollectionSyncService()
+    service = CollectionSyncJobService(
+        sync_service=sync_service,
+        session_factory=SessionFactory,
+        now_provider=lambda: now,
+        require_discogs_config=False,
+    )
+
+    with SessionFactory() as db:
+        job = service.create_job(db, user_id="user-a")
+
+    def delete_job_during_reset_lock(db, *, user_id: str, repository=None) -> None:
+        _ = user_id, repository
+        db.query(CollectionSyncJob).filter(CollectionSyncJob.id == job.job_id).delete()
+        db.flush()
+
+    monkeypatch.setattr(
+        "app.services.collection_sync_job_service.lock_account_data_mutation",
+        delete_job_during_reset_lock,
+    )
+
+    service.process_job(job.job_id)
+
+    assert sync_service.calls == []
 
 
 def test_collection_sync_job_service_completes_job() -> None:

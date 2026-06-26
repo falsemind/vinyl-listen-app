@@ -109,6 +109,7 @@ class CollectionSyncJobRepository:
         added_count: int | None = None,
         updated_count: int | None = None,
         removed_count: int | None = None,
+        commit: bool = True,
     ) -> CollectionSyncJob:
         job.status = "running"
         job.step = step
@@ -126,8 +127,11 @@ class CollectionSyncJobRepository:
             job.removed_count = removed_count
 
         db.add(job)
-        db.commit()
-        db.refresh(job)
+        if commit:
+            db.commit()
+            db.refresh(job)
+        else:
+            db.flush()
         return job
 
     @staticmethod
