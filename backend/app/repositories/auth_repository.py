@@ -566,7 +566,6 @@ class AuthRepository:
             )
 
         user_owned_models: tuple[type, ...] = (
-            UsageEvent,
             ProviderIntegration,
             CollectionSettings,
             ReleaseCollectionFolder,
@@ -600,6 +599,7 @@ class AuthRepository:
                 ConsumedRefreshToken,
                 EmailVerificationCode,
                 PasswordResetCode,
+                UsageEvent,
                 UserEntitlement,
                 AuthSession,
             ):

@@ -44,7 +44,7 @@ Auth is exposed through `/api/v1/auth/*` and guarded by `app/api/auth_dependenci
 5. `request_password_reset` and `confirm_password_reset` issue and consume reset codes. Reset confirmation updates the password hash and revokes existing sessions. Reset-request email delivery failures are logged and still return the generic accepted response.
 6. `change_password` verifies the current password, stores a fresh Argon2id hash, revokes other active sessions unless sign-out-everywhere is requested, and sends a best-effort security notification email after the DB commit succeeds.
 7. `delete_account` verifies the password, hard-deletes user-owned rows and auth state including structured auth audit rows for that account, and retains only a minimal deletion audit receipt.
-8. `reset_account_data` verifies the password, hard-deletes user-owned app rows, provider tokens, and usage events while preserving the auth account, active sessions, security audit rows, and entitlement identity.
+8. `reset_account_data` verifies the password and hard-deletes user-owned app rows and provider tokens while preserving the auth account, active sessions, security audit rows, entitlement identity, and usage quota ledger.
 
 Verification and reset confirmation track failed code attempts on the latest code row for the account. After the configured attempt limit, the flow returns a typed `429` until the lock window expires.
 

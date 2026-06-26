@@ -50,6 +50,12 @@ from app.services.auth_email_delivery import (
     AuthEmailSender,
     LocalDevEmailSender,
 )
+from app.services.entitlement_service import (
+    OCR_IDENTIFY_CAPABILITY,
+    CapabilityRule,
+    EntitlementService,
+    FeatureGateError,
+)
 from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashConfig
 
 AUTH_TABLES = [
@@ -759,6 +765,7 @@ def test_reset_account_data_requires_password_and_preserves_account_auth_state(
         assert db_session.query(ConsumedRefreshToken).count() == 1
         assert db_session.query(EmailVerificationCode).count() == 1
         assert db_session.query(UserEntitlement).count() == 1
+        assert db_session.query(UsageEvent).count() == 1
         assert db_session.query(AuthAuditEvent).count() >= 1
 
         for model in (
@@ -778,9 +785,47 @@ def test_reset_account_data_requires_password_and_preserves_account_auth_state(
             Sessions,
             SessionGroups,
             SessionsMoods,
-            UsageEvent,
         ):
             assert db_session.query(model).count() == 0
+    finally:
+        _drop_account_delete_tables(db_session)
+
+
+def test_reset_account_data_preserves_usage_limit_ledger(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+    clock: AuthTestClock,
+) -> None:
+    _create_account_delete_tables(db_session)
+    try:
+        registration = service.register_account(db_session, email="alex@example.com", password="password")
+        user = repository.get_user_by_id(db_session, registration.user_id)
+        assert user is not None
+
+        _seed_account_owned_data(db_session, repository=repository, user_id=user.id)
+        entitlement_service = EntitlementService(
+            repository=repository,
+            now_provider=clock.now,
+            rules={
+                OCR_IDENTIFY_CAPABILITY: CapabilityRule(
+                    capability=OCR_IDENTIFY_CAPABILITY,
+                    window=timedelta(days=1),
+                    plan_limits={},
+                    default_limit=2,
+                )
+            },
+        )
+        entitlement_service.consume_usage(db_session, user_id=user.id, capability=OCR_IDENTIFY_CAPABILITY)
+
+        service.reset_account_data(db_session, user=user, password="password")
+
+        with pytest.raises(FeatureGateError) as error:
+            entitlement_service.consume_usage(db_session, user_id=user.id, capability=OCR_IDENTIFY_CAPABILITY)
+
+        assert error.value.code == "feature_usage_limit_exceeded"
+        assert error.value.used == 2
+        assert db_session.query(UsageEvent).count() == 2
     finally:
         _drop_account_delete_tables(db_session)
 

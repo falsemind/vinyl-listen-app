@@ -294,7 +294,7 @@ Wrong password returns `401 invalid_credentials`. After a successful deletion, e
 
 ## DELETE /auth/account/data
 
-Protected endpoint. Requires password re-authentication and hard-deletes user-owned app data while preserving the auth account, credentials, verification state, entitlement identity, and active auth sessions.
+Protected endpoint. Requires password re-authentication and hard-deletes user-owned app data while preserving the auth account, credentials, verification state, entitlement identity, usage quota ledger, and active auth sessions.
 
 ### Request
 

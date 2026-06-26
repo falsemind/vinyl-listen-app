@@ -393,13 +393,13 @@ Implementation note: `EntitlementService` currently gates the `ocr_identify` cap
 Status: implemented for the backend API/service/repository contract.
 
 - Add `DELETE /api/v1/auth/account/data` for a full user-owned data reset that preserves the auth account.
-- Reuse the account deletion ownership graph for collection, settings, integrations/tokens, sync jobs, listening sessions, analytics, AI history, Spotify imports, manual releases, custom moods, usage inputs, app preferences, and other user-owned rows.
-- Preserve the user account row, email, password hash, verification state, current auth session, required security audit rows, and future billing/entitlement identity records.
+- Reuse the account deletion ownership graph for collection, settings, integrations/tokens, sync jobs, listening sessions, analytics, AI history, Spotify imports, manual releases, custom moods, app preferences, and other user-owned rows.
+- Preserve the user account row, email, password hash, verification state, current auth session, required security audit rows, usage quota ledger, and future billing/entitlement identity records.
 - Write a minimal reset audit event that records reset timing/status without retaining deleted user content or provider secrets.
 - Return a reset receipt/status so clients can clear local data and reload into an empty signed-in account state.
 - Done when the same account can immediately continue signed in after reset, cannot see pre-reset data, and can build a new collection from a clean state.
 
-Implementation note: `AuthAccountService.reset_account_data` verifies the current password, then `AuthRepository.reset_user_owned_data` reuses the user-owned deletion graph while preserving the account, auth sessions, auth/security rows, and entitlement identity. The endpoint returns a reset receipt from the structured auth audit event and leaves the current access token valid.
+Implementation note: `AuthAccountService.reset_account_data` verifies the current password, then `AuthRepository.reset_user_owned_data` reuses the user-owned deletion graph while preserving the account, auth sessions, auth/security rows, entitlement identity, and usage quota ledger. The endpoint returns a reset receipt from the structured auth audit event and leaves the current access token valid.
 
 ## Android Implementation Phases
 
