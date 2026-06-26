@@ -169,7 +169,11 @@ private fun buildDiscogsUserAgent(context: Context): String {
 }
 
 private fun JSONObject.toDiscogsReleaseSearchResultsPage(limit: Int): ReleaseSearchResultsPage {
-    val results = optJSONArray("results").orEmpty().mapObjects { item -> item.toDiscogsReleaseSearchResult() }
+    val results =
+        optJSONArray("results")
+            .orEmpty()
+            .mapObjects { item -> item.toDiscogsReleaseSearchResult() }
+            .filterNot { result -> isLikelyDigitalReleaseFormat(result.format) }
     val pagination = optJSONObject("pagination")
     val totalPages = pagination?.optInt("pages", 1) ?: 1
     val currentPage = pagination?.optInt("page", 1) ?: 1

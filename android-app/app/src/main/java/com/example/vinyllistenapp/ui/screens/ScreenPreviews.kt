@@ -15,6 +15,7 @@ private fun MatchConfirmationScreenPreview() {
             candidates = MockVinylData.matchCandidates,
             apiClient = VinylApiClient(),
             onConfirm = {},
+            onTryAgain = {},
             onManualSearch = {},
             onDismiss = {},
         )

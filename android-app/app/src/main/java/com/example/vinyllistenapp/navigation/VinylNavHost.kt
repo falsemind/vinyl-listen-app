@@ -87,6 +87,7 @@ fun VinylNavHost(
     var pendingTextIdentifyInput by rememberSaveable(stateSaver = TextIdentifyJobInputSaver) {
         mutableStateOf<TextIdentifyJobInput?>(null)
     }
+    var latestIdentifyMode by rememberSaveable { mutableStateOf<String?>(null) }
     var activeTimedSession by remember { mutableStateOf<TimedSessionGroup?>(null) }
     var isStartingTimedSession by remember { mutableStateOf(false) }
     var isStoppingTimedSession by remember { mutableStateOf(false) }
@@ -238,22 +239,33 @@ fun VinylNavHost(
                             type = NavType.StringType
                             defaultValue = VinylRoutes.FLOW_MODE_SESSION
                         },
+                        navArgument(VinylRoutes.IDENTIFY_MODE) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 CaptureRecordScreen(
                     apiClient = activeApiClient,
-                    onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
+                    initialIdentifyMode = backStackEntry.arguments?.getString(VinylRoutes.IDENTIFY_MODE),
+                    onImageSelected = { imageUri ->
+                        latestIdentifyMode = VinylRoutes.IDENTIFY_MODE_LABEL_COVER
+                        navController.navigate(VinylRoutes.processing(imageUri, flowMode))
+                    },
                     onTextIdentifyRequested = { input ->
                         pendingTextIdentifyInput = input.normalizedForTextIdentifyContract()
+                        latestIdentifyMode = VinylRoutes.IDENTIFY_MODE_CATALOG_NUMBER
                         navController.navigate(VinylRoutes.textProcessing(flowMode))
                     },
-                    onManualSearch = { catalogNumber -> navController.navigate(flowMode.manualSearchRoute(catalogNumber)) },
                     onBarcodeDetected = { barcode ->
+                        latestIdentifyMode = null
                         navController.navigate(VinylRoutes.barcodeProcessing(barcode, flowMode)) {
                             popUpTo(VinylRoutes.CAPTURE_RECORD_PATTERN) { inclusive = true }
                         }
                     },
+                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onDismiss = {
                         if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
                             navController.popBackStack()
@@ -281,6 +293,7 @@ fun VinylNavHost(
                     barcode = barcode,
                     onComplete = { candidates ->
                         latestCandidates = candidates
+                        latestIdentifyMode = null
                         navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
                             popUpTo(VinylRoutes.BARCODE_PROCESSING_PATTERN) { inclusive = true }
                         }
@@ -323,16 +336,37 @@ fun VinylNavHost(
                         },
                     ),
             ) { backStackEntry ->
+                val imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI)
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
+                val textIdentifyInput = pendingTextIdentifyInput
                 ProcessingScreen(
-                    imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
-                    textIdentifyInput = pendingTextIdentifyInput,
+                    imageUri = imageUri,
+                    textIdentifyInput = textIdentifyInput,
                     apiClient = activeApiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
+                        latestIdentifyMode =
+                            if (textIdentifyInput != null || imageUri.isNullOrBlank()) {
+                                VinylRoutes.IDENTIFY_MODE_CATALOG_NUMBER
+                            } else {
+                                VinylRoutes.IDENTIFY_MODE_LABEL_COVER
+                            }
                         navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
+                    },
+                    onTryAgain = {
+                        val retryIdentifyMode =
+                            if (textIdentifyInput != null || imageUri.isNullOrBlank()) {
+                                VinylRoutes.IDENTIFY_MODE_CATALOG_NUMBER
+                            } else {
+                                VinylRoutes.IDENTIFY_MODE_LABEL_COVER
+                            }
+                        pendingTextIdentifyInput = null
+                        if (!navController.popBackStack(VinylRoutes.CAPTURE_RECORD_PATTERN, inclusive = true)) {
+                            navController.popBackStack(backStackEntry.destination.id, inclusive = true)
+                        }
+                        navController.navigate(VinylRoutes.captureRecord(flowMode, retryIdentifyMode))
                     },
                     onManualSearch = {
                         navController.navigate(flowMode.manualSearchRoute())
@@ -381,7 +415,14 @@ fun VinylNavHost(
                             navController.navigate(VinylRoutes.sessionLogging(releaseId))
                         }
                     },
-                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
+                    onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
+                    onTryAgain = {
+                        pendingTextIdentifyInput = null
+                        if (!navController.popBackStack(VinylRoutes.CAPTURE_RECORD_PATTERN, inclusive = true)) {
+                            navController.popBackStack(backStackEntry.destination.id, inclusive = true)
+                        }
+                        navController.navigate(VinylRoutes.captureRecord(flowMode, latestIdentifyMode))
+                    },
                     onDismiss = {
                         if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
                             navController.popBackStack()

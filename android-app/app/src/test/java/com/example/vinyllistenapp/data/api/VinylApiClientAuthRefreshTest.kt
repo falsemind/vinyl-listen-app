@@ -218,20 +218,26 @@ class VinylApiClientAuthRefreshTest {
             try {
                 val client = VinylApiClient(baseUrl = "http://127.0.0.1:${server.address.port}/api/v1")
                 val oversizedLines = List(90) { index -> "  ${index.toString().padStart(2, '0')}-${"A".repeat(300)}  " }
+                val oversizedCatalogHint = "  ${"C".repeat(140)}  "
+                val oversizedBarcodeHint = "  ${"1".repeat(48)}  "
 
                 client.startTextIdentifyJob(
                     TextIdentifyJobInput(
                         lines = oversizedLines,
-                        selectedCatalogNumber = "SW038",
+                        selectedCatalogNumber = oversizedCatalogHint,
+                        selectedBarcode = oversizedBarcodeHint,
                     ),
                 )
 
-                val lines = JSONObject(requestBody).getJSONArray("lines")
+                val body = JSONObject(requestBody)
+                val lines = body.getJSONArray("lines")
                 val postedLines = List(lines.length()) { index -> lines.getString(index) }
                 assertTrue(postedLines.size <= 80)
                 assertTrue(postedLines.all { line -> line.length <= 240 })
                 assertTrue(postedLines.sumOf { line -> line.length } <= 4_000)
                 assertEquals(240, postedLines.first().length)
+                assertEquals("C".repeat(100), body.getString("selected_catalog_number"))
+                assertEquals("1".repeat(32), body.getString("selected_barcode"))
             } finally {
                 server.stop(0)
             }

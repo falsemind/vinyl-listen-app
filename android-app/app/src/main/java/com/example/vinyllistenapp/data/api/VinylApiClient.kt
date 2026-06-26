@@ -1654,6 +1654,8 @@ private fun List<String>.toJsonArray(): JSONArray = JSONArray().also { items -> 
 private const val IDENTIFY_TEXT_JOB_MAX_LINES = 80
 private const val IDENTIFY_TEXT_JOB_MAX_LINE_CHARS = 240
 private const val IDENTIFY_TEXT_JOB_MAX_TOTAL_CHARS = 4_000
+private const val IDENTIFY_TEXT_JOB_MAX_CATALOG_HINT_CHARS = 100
+private const val IDENTIFY_TEXT_JOB_MAX_BARCODE_HINT_CHARS = 32
 
 private fun TextIdentifyJobInput.toJson(): JSONObject {
     val normalizedInput = normalizedForTextIdentifyContract()
@@ -1667,9 +1669,16 @@ private fun TextIdentifyJobInput.toJson(): JSONObject {
 internal fun TextIdentifyJobInput.normalizedForTextIdentifyContract(): TextIdentifyJobInput =
     copy(
         lines = lines.normalizedForTextIdentify(),
-        selectedCatalogNumber = selectedCatalogNumber?.trim()?.takeIf { it.isNotBlank() },
-        selectedBarcode = selectedBarcode?.trim()?.takeIf { it.isNotBlank() },
+        selectedCatalogNumber = selectedCatalogNumber.normalizedOptionalText(IDENTIFY_TEXT_JOB_MAX_CATALOG_HINT_CHARS),
+        selectedBarcode = selectedBarcode.normalizedOptionalText(IDENTIFY_TEXT_JOB_MAX_BARCODE_HINT_CHARS),
     )
+
+private fun String?.normalizedOptionalText(maxChars: Int): String? =
+    this
+        ?.trim()
+        ?.take(maxChars)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 
 private fun List<String>.normalizedForTextIdentify(): List<String> {
     val normalizedLines =
@@ -1847,6 +1856,7 @@ internal fun JSONObject.toCollectionSyncJobState(): CollectionSyncJobState {
 
 private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
     mapObjects { candidate ->
+        val format = candidate.optNullableString("format")
         MatchCandidate(
             releaseId = candidate.optNullableString("release_id"),
             discogsReleaseId = candidate.optLong("discogs_release_id"),
@@ -1858,11 +1868,11 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
             catalogNumber = candidate.optNullableString("catalog_number"),
             barcode = candidate.optNullableString("barcode"),
             coverImageUrl = candidate.optResolvedMediaUrl("cover_image_url"),
-            format = candidate.optNullableString("format"),
+            format = format,
             matchSource = candidate.optNullableString("match_source"),
             matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
         )
-    }
+    }.filterNot { candidate -> isLikelyDigitalReleaseFormat(candidate.format) }
 
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 

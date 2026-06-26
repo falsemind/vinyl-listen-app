@@ -178,7 +178,8 @@ fun BarcodeProcessingScreen(
                         is BarcodeProcessingUiState.Error,
                         ->
                             ProcessingRecoveryActions(
-                                onRetry = onRetryScan,
+                                primaryLabel = "Retry",
+                                onTryAgain = onRetryScan,
                                 onManualSearch = { onManualSearch(normalizedBarcode) },
                             )
 
@@ -198,16 +199,16 @@ fun ProcessingScreen(
     textIdentifyInput: TextIdentifyJobInput? = null,
     apiClient: VinylApiClient,
     onComplete: (List<MatchCandidate>) -> Unit,
+    onTryAgain: () -> Unit,
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isTextIdentify = textIdentifyInput != null || imageUri?.isBlank() == true
-    var retryKey by rememberSaveable { mutableIntStateOf(0) }
-    var state by remember(imageUri, textIdentifyInput, retryKey) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
-    var currentJobId by rememberSaveable(imageUri, textIdentifyInput, retryKey) { mutableStateOf<String?>(null) }
-    var cancelRequested by rememberSaveable(imageUri, textIdentifyInput, retryKey) { mutableStateOf(false) }
+    var state by remember(imageUri, textIdentifyInput) { mutableStateOf<IdentifyUiState>(IdentifyUiState.Loading()) }
+    var currentJobId by rememberSaveable(imageUri, textIdentifyInput) { mutableStateOf<String?>(null) }
+    var cancelRequested by rememberSaveable(imageUri, textIdentifyInput) { mutableStateOf(false) }
 
     suspend fun cancelAndLeave(jobId: String) {
         val cancelResult =
@@ -253,7 +254,7 @@ fun ProcessingScreen(
         // Active identify jobs leave through the explicit cancel action only.
     }
 
-    LaunchedEffect(imageUri, textIdentifyInput, retryKey) {
+    LaunchedEffect(imageUri, textIdentifyInput) {
         cancelRequested = false
         state = IdentifyUiState.Loading()
         val normalizedImageUri = imageUri?.takeIf { it.isNotBlank() }
@@ -388,13 +389,13 @@ fun ProcessingScreen(
                     when (state) {
                         IdentifyUiState.Empty ->
                             ProcessingRecoveryActions(
-                                onRetry = { retryKey += 1 },
+                                onTryAgain = onTryAgain,
                                 onManualSearch = onManualSearch,
                             )
 
                         is IdentifyUiState.Error ->
                             ProcessingRecoveryActions(
-                                onRetry = { retryKey += 1 },
+                                onTryAgain = onTryAgain,
                                 onManualSearch = onManualSearch,
                             )
 
@@ -594,7 +595,7 @@ private fun ProcessingStateIndicator(state: IdentifyUiState) {
 
 private fun IdentifyJobState.toIdentifyErrorMessage(): String =
     when (status) {
-        IdentifyJobStatus.Failed -> error?.message ?: "Identify failed. Retry or use Manual Search."
+        IdentifyJobStatus.Failed -> error?.message ?: "Identify failed. Try Again or use Manual Search."
         IdentifyJobStatus.Expired -> "Identify result expired. Try another image or search manually."
         else -> message.ifBlank { "The identify request could not finish" }
     }
@@ -606,14 +607,15 @@ private fun com.example.vinyllistenapp.data.api.FeatureUsageLimit.toIdentifyFeat
 
 @Composable
 private fun ProcessingRecoveryActions(
-    onRetry: () -> Unit,
+    primaryLabel: String = "Try Again",
+    onTryAgain: () -> Unit,
     onManualSearch: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        ProcessingActionText(label = "Retry", onClick = onRetry)
+        ProcessingActionText(label = primaryLabel, onClick = onTryAgain)
         ProcessingActionText(label = "Manual Search", onClick = onManualSearch)
     }
 }

@@ -65,9 +65,12 @@ fun ShowMoreActionButton(
     onCustomCount: (Int) -> Unit,
     modifier: Modifier = Modifier,
     width: Dp = 232.dp,
+    showHint: Boolean = true,
+    onHintConsumed: () -> Unit = {},
 ) {
     var inputVisible by rememberSaveable { mutableStateOf(false) }
     var inputValue by rememberSaveable { mutableStateOf("") }
+    var hintConsumed by rememberSaveable { mutableStateOf(false) }
     val density = LocalDensity.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val keyboardBottom = WindowInsets.ime.getBottom(density)
@@ -84,6 +87,11 @@ fun ShowMoreActionButton(
     fun dismissInput() {
         keyboardController?.hide()
         inputVisible = false
+    }
+
+    fun consumeHint() {
+        hintConsumed = true
+        onHintConsumed()
     }
 
     Box(
@@ -107,10 +115,14 @@ fun ShowMoreActionButton(
                             onLongClickLabel = "Choose item count",
                             role = Role.Button,
                             onLongClick = {
+                                consumeHint()
                                 inputValue = ""
                                 inputVisible = true
                             },
-                            onClick = onClick,
+                            onClick = {
+                                consumeHint()
+                                onClick()
+                            },
                         ),
                 text = label,
                 color = VinylColors.AccentGreen,
@@ -120,16 +132,18 @@ fun ShowMoreActionButton(
                         fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * 1.5f).sp,
                     ),
             )
-            Text(
-                modifier =
-                    Modifier
-                        .width(width)
-                        .padding(top = VinylSpacing.SpaceXs),
-                text = "Tap and hold to load custom amount of items (from 1 to 250)",
-                color = VinylColors.TextSecondary,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (showHint && !hintConsumed) {
+                Text(
+                    modifier =
+                        Modifier
+                            .width(width)
+                            .padding(top = VinylSpacing.SpaceXs),
+                    text = "Tap and hold to load custom amount of items (from 1 to 250)",
+                    color = VinylColors.TextSecondary,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
         if (inputVisible) {
             Popup(
@@ -143,7 +157,10 @@ fun ShowMoreActionButton(
                     onValueChange = { inputValue = sanitizeShowMoreCount(it) },
                     onDismiss = { dismissInput() },
                     onSave = {
-                        inputValue.toIntOrNull()?.coerceIn(1, SHOW_MORE_MAX_COUNT)?.let(onCustomCount)
+                        inputValue.toIntOrNull()?.coerceIn(1, SHOW_MORE_MAX_COUNT)?.let { count ->
+                            consumeHint()
+                            onCustomCount(count)
+                        }
                         dismissInput()
                         inputValue = ""
                     },

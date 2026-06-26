@@ -68,6 +68,7 @@ fun MatchConfirmationScreen(
     apiClient: VinylApiClient,
     mode: MatchConfirmationMode = MatchConfirmationMode.SessionLogging,
     onConfirm: (String) -> Unit,
+    onTryAgain: () -> Unit,
     onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -180,9 +181,9 @@ fun MatchConfirmationScreen(
                 horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceLg),
             ) {
                 MatchFooterAction(
-                    label = "Show More\nMatches",
+                    label = "Try Again",
                     accentColor = VinylColors.AccentGreen,
-                    onClick = {},
+                    onClick = onTryAgain,
                     modifier = Modifier.weight(1f),
                 )
                 MatchFooterAction(

@@ -143,6 +143,56 @@ def test_identify_service_falls_back_to_discogs_search_in_priority_order(
     assert discogs_service.search_release_calls == []
 
 
+def test_identify_service_filters_digital_discogs_releases(
+    releases_repository_factory,
+    discogs_service_factory,
+    build_identify_service,
+) -> None:
+    repository = releases_repository_factory()
+    discogs_service = discogs_service_factory(
+        payload={
+            "results": [
+                {
+                    "id": 111,
+                    "title": "Air - Moon Safari",
+                    "year": "1998",
+                    "label": ["Source"],
+                    "catno": "7243 8 44978 1 8",
+                    "format": ["File", "MP3", "Album"],
+                },
+                {
+                    "id": 456,
+                    "title": "Air - Moon Safari",
+                    "year": "1998",
+                    "label": ["Source"],
+                    "catno": "7243 8 44978 1 8",
+                    "format": ["Vinyl", "LP"],
+                },
+            ]
+        }
+    )
+    service = build_identify_service(
+        repository=repository,
+        discogs_service=discogs_service,
+        identifiers=ExtractedIdentifiers(
+            barcodes=("724384497818",),
+            catalog_numbers=("7243 8 44978 1 8",),
+            artist="Air",
+            title="Moon Safari",
+        ),
+    )
+
+    result = service.identify(
+        db=object(),
+        image_bytes=b"fake-image",
+        filename="cover.jpg",
+        content_type="image/jpeg",
+    )
+
+    assert [candidate.discogs_release_id for candidate in result.candidates] == [456]
+    assert result.candidates[0].format == "Vinyl, LP"
+
+
 def test_identify_service_builds_discogs_with_user_id(
     releases_repository_factory,
     discogs_service_factory,

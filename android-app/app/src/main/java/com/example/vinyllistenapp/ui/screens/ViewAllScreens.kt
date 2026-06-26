@@ -631,11 +631,15 @@ private fun ViewAllShowMoreButton(
     onClick: () -> Unit,
     onCustomCount: (Int) -> Unit,
 ) {
+    var showHint by rememberSaveable { mutableStateOf(true) }
+
     ShowMoreActionButton(
         label = label,
         enabled = enabled,
         onClick = onClick,
         onCustomCount = onCustomCount,
+        showHint = showHint,
+        onHintConsumed = { showHint = false },
     )
 }
 

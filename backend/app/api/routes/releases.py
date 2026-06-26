@@ -33,6 +33,7 @@ from app.services.sessions_service import (
     SessionValidationError,
 )
 from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_label_name
+from app.utils.release_formats import is_likely_digital_release_format
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -136,6 +137,8 @@ def _map_discogs_search_result(
 ) -> dict[str, Any] | None:
     discogs_release_id = _coerce_int(item.get("id"))
     if discogs_release_id is None:
+        return None
+    if is_likely_digital_release_format(item.get("format")):
         return None
 
     artist, title = _split_discogs_title(str(item.get("title") or ""))

@@ -6,10 +6,13 @@ import com.example.vinyllistenapp.domain.CollectionFolder
 object VinylRoutes {
     const val HOME = "home"
     const val CAPTURE_RECORD = "capture_record"
-    const val CAPTURE_RECORD_PATTERN = "$CAPTURE_RECORD?flowMode={flowMode}"
+    const val CAPTURE_RECORD_PATTERN = "$CAPTURE_RECORD?flowMode={flowMode}&identifyMode={identifyMode}"
     const val PROCESSING = "processing"
     const val PROCESSING_PATTERN = "processing?imageUri={imageUri}&flowMode={flowMode}"
     const val IMAGE_URI = "imageUri"
+    const val IDENTIFY_MODE = "identifyMode"
+    const val IDENTIFY_MODE_CATALOG_NUMBER = "catalog_number"
+    const val IDENTIFY_MODE_LABEL_COVER = "label_cover"
     const val BARCODE_PROCESSING = "barcode_processing"
     const val BARCODE_PROCESSING_PATTERN = "$BARCODE_PROCESSING?barcode={barcode}&flowMode={flowMode}"
     const val MATCH_CONFIRMATION = "match_confirmation"
@@ -98,7 +101,12 @@ object VinylRoutes {
             "&$FOLDER_NAME=${Uri.encode(folder.name)}" +
             folder.count?.let { count -> "&$FOLDER_COUNT=$count" }.orEmpty()
 
-    fun captureRecord(flowMode: String = FLOW_MODE_SESSION): String = "$CAPTURE_RECORD?$FLOW_MODE=$flowMode"
+    fun captureRecord(
+        flowMode: String = FLOW_MODE_SESSION,
+        identifyMode: String? = null,
+    ): String =
+        "$CAPTURE_RECORD?$FLOW_MODE=${Uri.encode(flowMode)}" +
+            identifyMode?.let { mode -> "&$IDENTIFY_MODE=${Uri.encode(mode)}" }.orEmpty()
 
     fun processing(
         imageUri: Uri,
