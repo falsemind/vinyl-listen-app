@@ -22,6 +22,7 @@ from app.repositories.releases_repository import ReleasesRepository
 from app.services.discogs_integration_service import DiscogsIntegrationService
 from app.services.discogs_service import DiscogsService
 from app.utils.discogs_display import clean_discogs_artist_name, clean_discogs_self_released_label
+from app.utils.release_formats import is_likely_digital_release_format
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +357,8 @@ class IdentifyService:
     def _map_external_candidate(self, result: dict[str, Any]) -> IdentifyCandidate | None:
         discogs_release_id = result.get("id")
         if not isinstance(discogs_release_id, int):
+            return None
+        if is_likely_digital_release_format(result.get("format")):
             return None
 
         artist, title = _parse_discogs_title(_clean_string(result.get("title")))

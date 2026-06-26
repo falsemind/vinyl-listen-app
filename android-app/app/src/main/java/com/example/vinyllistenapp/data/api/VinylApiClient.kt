@@ -1856,6 +1856,7 @@ internal fun JSONObject.toCollectionSyncJobState(): CollectionSyncJobState {
 
 private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
     mapObjects { candidate ->
+        val format = candidate.optNullableString("format")
         MatchCandidate(
             releaseId = candidate.optNullableString("release_id"),
             discogsReleaseId = candidate.optLong("discogs_release_id"),
@@ -1867,11 +1868,11 @@ private fun JSONArray.toMatchCandidates(): List<MatchCandidate> =
             catalogNumber = candidate.optNullableString("catalog_number"),
             barcode = candidate.optNullableString("barcode"),
             coverImageUrl = candidate.optResolvedMediaUrl("cover_image_url"),
-            format = candidate.optNullableString("format"),
+            format = format,
             matchSource = candidate.optNullableString("match_source"),
             matchedOn = candidate.optJSONArray("matched_on").orEmpty().mapStrings(),
         )
-    }
+    }.filterNot { candidate -> isLikelyDigitalReleaseFormat(candidate.format) }
 
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
