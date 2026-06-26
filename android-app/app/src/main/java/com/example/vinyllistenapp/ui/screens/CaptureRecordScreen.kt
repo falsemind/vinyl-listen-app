@@ -113,6 +113,7 @@ import kotlin.math.max
 @Composable
 fun CaptureRecordScreen(
     apiClient: VinylApiClient,
+    initialIdentifyMode: String? = null,
     onImageSelected: (Uri) -> Unit,
     onTextIdentifyRequested: (TextIdentifyJobInput) -> Unit,
     onBarcodeDetected: (String) -> Unit,
@@ -133,7 +134,7 @@ fun CaptureRecordScreen(
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
     var isRecognizingText by rememberSaveable { mutableStateOf(false) }
-    var selectedIdentifyMode by rememberSaveable { mutableStateOf(IdentifyMode.BARCODE) }
+    var selectedIdentifyMode by rememberSaveable(initialIdentifyMode) { mutableStateOf(initialIdentifyMode.toIdentifyMode()) }
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
     var capturedBarcode by remember { mutableStateOf<String?>(null) }
@@ -236,9 +237,15 @@ fun CaptureRecordScreen(
                         imageCapture = null
                         cameraPrivacyBlocked = true
                         captureError = CAMERA_PRIVACY_BLOCKED_MESSAGE
-                    } else {
-                        capturedImageUri = createImageCaptureUri(context, imageFile).toString()
+                        return
                     }
+                    imageFile.detectCapturedImageQualityIssue()?.let { issue ->
+                        imageFile.delete()
+                        captureError = issue.message
+                        return
+                    }
+
+                    capturedImageUri = createImageCaptureUri(context, imageFile).toString()
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -279,6 +286,12 @@ fun CaptureRecordScreen(
                         imageFile.delete()
                         isRecognizingText = false
                         captureError = "No text found. Make sure the label is visible and well lit."
+                        return
+                    }
+                    imageFile.detectCapturedImageQualityIssue()?.let { issue ->
+                        imageFile.delete()
+                        isRecognizingText = false
+                        captureError = issue.message
                         return
                     }
 
@@ -572,6 +585,13 @@ private enum class IdentifyMode(
     ),
 }
 
+private fun String?.toIdentifyMode(): IdentifyMode =
+    when (this) {
+        "catalog_number" -> IdentifyMode.CATALOG_NUMBER
+        "label_cover" -> IdentifyMode.LABEL_COVER
+        else -> IdentifyMode.BARCODE
+    }
+
 private fun runTextRecognitionQualityModes(
     context: Context,
     imageFile: File,
@@ -733,6 +753,17 @@ private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by 
 private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
 private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
 private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
+private const val IMAGE_QUALITY_SAMPLE_SIZE = 48
+private const val IMAGE_QUALITY_TOO_DARK_LUMA = 20f
+private const val IMAGE_QUALITY_TOO_BRIGHT_LUMA = 242f
+private const val IMAGE_QUALITY_LOW_DETAIL_LUMA_RANGE = 22
+private const val IMAGE_QUALITY_LOW_DETAIL_DELTA = 5f
+private const val IMAGE_QUALITY_LOW_DETAIL_SATURATION = 0.16f
+private const val IMAGE_QUALITY_FLAT_DELTA = 2f
+private const val IMAGE_QUALITY_MEANINGFUL_EDGE_DELTA = 14
+private const val IMAGE_QUALITY_LOW_EDGE_RATIO = 0.055f
+private const val IMAGE_QUALITY_MONO_LOW_DETAIL_LUMA_RANGE = 72
+private const val IMAGE_QUALITY_MONO_SATURATION = 0.18f
 private const val BARCODE_STABLE_MILLIS = 900L
 private const val MIN_ZOOM_RATIO_DELTA = 0.08f
 private const val GUIDE_AREA_HORIZONTAL_MARGIN_FRACTION = 0.08f
@@ -788,6 +819,119 @@ private fun File.isLikelyCameraPrivacyPlaceholder(): Boolean {
     val averageLuma = totalLuma / pixelCount
     return averageLuma <= PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA &&
         maxLuma - minLuma <= PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE
+}
+
+private enum class CapturedImageQualityIssue(
+    val message: String,
+) {
+    TooDark("Image is too dark. Add light and try again."),
+    TooBright("Image is too bright. Reduce glare and try again."),
+    LowDetail("Image has too little detail. Frame the record cover or label and try again."),
+}
+
+private fun File.detectCapturedImageQualityIssue(): CapturedImageQualityIssue? {
+    val bounds =
+        BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    val sampleSize =
+        generateSequence(1) { it * 2 }
+            .first { bounds.outWidth / it <= IMAGE_QUALITY_SAMPLE_SIZE && bounds.outHeight / it <= IMAGE_QUALITY_SAMPLE_SIZE }
+    val bitmap =
+        BitmapFactory.decodeFile(
+            path,
+            BitmapFactory.Options().apply { inSampleSize = max(1, sampleSize) },
+        ) ?: return null
+
+    var minLuma = 255
+    var maxLuma = 0
+    var totalLuma = 0L
+    var totalSaturation = 0f
+    var totalNeighborDelta = 0L
+    var neighborComparisons = 0
+    var meaningfulEdgeComparisons = 0
+    val previousRowLuma = IntArray(bitmap.width)
+
+    for (y in 0 until bitmap.height) {
+        var leftLuma: Int? = null
+        for (x in 0 until bitmap.width) {
+            val pixel = bitmap.getPixel(x, y)
+            val red = android.graphics.Color.red(pixel)
+            val green = android.graphics.Color.green(pixel)
+            val blue = android.graphics.Color.blue(pixel)
+            val luma =
+                (
+                    0.2126f * red +
+                        0.7152f * green +
+                        0.0722f * blue
+                ).toInt()
+            minLuma = minOf(minLuma, luma)
+            maxLuma = maxOf(maxLuma, luma)
+            totalLuma += luma
+            totalSaturation += (maxOf(red, green, blue) - minOf(red, green, blue)) / 255f
+            leftLuma?.let { neighbor ->
+                val delta = abs(luma - neighbor)
+                totalNeighborDelta += delta
+                if (delta >= IMAGE_QUALITY_MEANINGFUL_EDGE_DELTA) {
+                    meaningfulEdgeComparisons += 1
+                }
+                neighborComparisons += 1
+            }
+            if (y > 0) {
+                val delta = abs(luma - previousRowLuma[x])
+                totalNeighborDelta += delta
+                if (delta >= IMAGE_QUALITY_MEANINGFUL_EDGE_DELTA) {
+                    meaningfulEdgeComparisons += 1
+                }
+                neighborComparisons += 1
+            }
+            previousRowLuma[x] = luma
+            leftLuma = luma
+        }
+    }
+    val pixelCount = bitmap.width * bitmap.height
+    bitmap.recycle()
+
+    val averageLuma = totalLuma.toFloat() / pixelCount
+    val lumaRange = maxLuma - minLuma
+    val averageSaturation = totalSaturation / pixelCount
+    val averageNeighborDelta =
+        if (neighborComparisons == 0) {
+            0f
+        } else {
+            totalNeighborDelta.toFloat() / neighborComparisons
+        }
+    val meaningfulEdgeRatio =
+        if (neighborComparisons == 0) {
+            0f
+        } else {
+            meaningfulEdgeComparisons.toFloat() / neighborComparisons
+        }
+    val lowTexture =
+        (lumaRange <= IMAGE_QUALITY_LOW_DETAIL_LUMA_RANGE && averageNeighborDelta <= IMAGE_QUALITY_LOW_DETAIL_DELTA) ||
+            meaningfulEdgeRatio <= IMAGE_QUALITY_LOW_EDGE_RATIO
+    val lowColorDetail =
+        averageSaturation <= IMAGE_QUALITY_MONO_SATURATION &&
+            lumaRange <= IMAGE_QUALITY_MONO_LOW_DETAIL_LUMA_RANGE &&
+            meaningfulEdgeRatio <= IMAGE_QUALITY_LOW_EDGE_RATIO
+    val lowDetail =
+        (lowTexture && averageSaturation <= IMAGE_QUALITY_LOW_DETAIL_SATURATION) ||
+            lowColorDetail ||
+            averageNeighborDelta <= IMAGE_QUALITY_FLAT_DELTA
+    Log.d(
+        TEXT_RECOGNITION_TAG,
+        "Capture quality avgLuma=$averageLuma lumaRange=$lumaRange avgSat=$averageSaturation avgDelta=$averageNeighborDelta edgeRatio=$meaningfulEdgeRatio lowDetail=$lowDetail",
+    )
+
+    return when {
+        averageLuma <= IMAGE_QUALITY_TOO_DARK_LUMA && lowTexture -> CapturedImageQualityIssue.TooDark
+        averageLuma >= IMAGE_QUALITY_TOO_BRIGHT_LUMA && lowTexture -> CapturedImageQualityIssue.TooBright
+        lowDetail -> CapturedImageQualityIssue.LowDetail
+        else -> null
+    }
 }
 
 private fun normalizeDetectedBarcode(value: String?): String? {

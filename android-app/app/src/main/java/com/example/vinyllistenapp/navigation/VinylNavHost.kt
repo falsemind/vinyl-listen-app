@@ -238,11 +238,17 @@ fun VinylNavHost(
                             type = NavType.StringType
                             defaultValue = VinylRoutes.FLOW_MODE_SESSION
                         },
+                        navArgument(VinylRoutes.IDENTIFY_MODE) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
                 CaptureRecordScreen(
                     apiClient = activeApiClient,
+                    initialIdentifyMode = backStackEntry.arguments?.getString(VinylRoutes.IDENTIFY_MODE),
                     onImageSelected = { imageUri -> navController.navigate(VinylRoutes.processing(imageUri, flowMode)) },
                     onTextIdentifyRequested = { input ->
                         pendingTextIdentifyInput = input.normalizedForTextIdentifyContract()
@@ -323,16 +329,31 @@ fun VinylNavHost(
                         },
                     ),
             ) { backStackEntry ->
+                val imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI)
                 val flowMode = backStackEntry.arguments?.getString(VinylRoutes.FLOW_MODE).asIdentifyFlowMode()
+                val textIdentifyInput = pendingTextIdentifyInput
                 ProcessingScreen(
-                    imageUri = backStackEntry.arguments?.getString(VinylRoutes.IMAGE_URI),
-                    textIdentifyInput = pendingTextIdentifyInput,
+                    imageUri = imageUri,
+                    textIdentifyInput = textIdentifyInput,
                     apiClient = activeApiClient,
                     onComplete = { candidates ->
                         latestCandidates = candidates
                         navController.navigate(VinylRoutes.matchConfirmation(flowMode)) {
                             popUpTo(backStackEntry.destination.id) { inclusive = true }
                         }
+                    },
+                    onTryAgain = {
+                        val retryIdentifyMode =
+                            if (textIdentifyInput != null || imageUri.isNullOrBlank()) {
+                                VinylRoutes.IDENTIFY_MODE_CATALOG_NUMBER
+                            } else {
+                                VinylRoutes.IDENTIFY_MODE_LABEL_COVER
+                            }
+                        pendingTextIdentifyInput = null
+                        if (!navController.popBackStack(VinylRoutes.CAPTURE_RECORD_PATTERN, inclusive = true)) {
+                            navController.popBackStack(backStackEntry.destination.id, inclusive = true)
+                        }
+                        navController.navigate(VinylRoutes.captureRecord(flowMode, retryIdentifyMode))
                     },
                     onManualSearch = {
                         navController.navigate(flowMode.manualSearchRoute())
