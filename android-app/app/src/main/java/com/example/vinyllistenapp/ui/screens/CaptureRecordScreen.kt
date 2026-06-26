@@ -39,8 +39,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FlashlightOff
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,7 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +67,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -111,8 +115,8 @@ fun CaptureRecordScreen(
     apiClient: VinylApiClient,
     onImageSelected: (Uri) -> Unit,
     onTextIdentifyRequested: (TextIdentifyJobInput) -> Unit,
-    onManualSearch: (String?) -> Unit,
     onBarcodeDetected: (String) -> Unit,
+    onManualSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -129,20 +133,19 @@ fun CaptureRecordScreen(
     var captureError by rememberSaveable { mutableStateOf<String?>(null) }
     var isTakingPhoto by rememberSaveable { mutableStateOf(false) }
     var isRecognizingText by rememberSaveable { mutableStateOf(false) }
-    var barcodeScanMode by rememberSaveable { mutableStateOf(false) }
+    var selectedIdentifyMode by rememberSaveable { mutableStateOf(IdentifyMode.BARCODE) }
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var capturedImageUri by remember { mutableStateOf<String?>(null) }
     var capturedBarcode by remember { mutableStateOf<String?>(null) }
-    var textRecognitionResult by remember { mutableStateOf<TextRecognitionPrototypeResult?>(null) }
-    var editableCatalogNumber by rememberSaveable { mutableStateOf("") }
     var cameraPrivacyBlocked by rememberSaveable { mutableStateOf(false) }
     var cameraRetryAttempt by rememberSaveable { mutableStateOf(0) }
     val photoCaptured = capturedImageUri != null
     val barcodeCaptured = capturedBarcode != null
     val captureComplete = photoCaptured || barcodeCaptured
-    val normalCaptureActionsEnabled = !isTakingPhoto && !isRecognizingText && !captureComplete && !barcodeScanMode
-    val photoCaptureActionsEnabled = backendIdentifyEnabled && normalCaptureActionsEnabled
-    val textRecognitionActionsEnabled = !isTakingPhoto && !isRecognizingText && !captureComplete && !barcodeScanMode
+    val barcodeScanMode = selectedIdentifyMode == IdentifyMode.BARCODE && !captureComplete
+    val identifyActionsEnabled = !isTakingPhoto && !isRecognizingText && !captureComplete
+    val photoCaptureActionsEnabled = backendIdentifyEnabled && identifyActionsEnabled
+    val textRecognitionActionsEnabled = backendIdentifyEnabled && identifyActionsEnabled
     LaunchedEffect(Unit) {
         runCatching { apiClient.getDiscogsIntegrationStatus() }
             .onSuccess { status ->
@@ -266,8 +269,6 @@ fun CaptureRecordScreen(
         val imageFile = createImageCaptureFile(context)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(imageFile).build()
         isRecognizingText = true
-        textRecognitionResult = null
-        editableCatalogNumber = ""
         captureError = null
         capture.takePicture(
             outputOptions,
@@ -288,15 +289,20 @@ fun CaptureRecordScreen(
                         mainExecutor = mainExecutor,
                         onComplete = { results ->
                             val selectedResult = selectTextRecognitionResult(results)
-                            textRecognitionResult = selectedResult
-                            editableCatalogNumber =
-                                selectedResult
-                                    ?.catalogCandidates
-                                    ?.firstOrNull()
-                                    ?.value
-                                    .orEmpty()
                             if (selectedResult == null || selectedResult.lines.isEmpty()) {
                                 captureError = "No text found. Try a clearer still frame."
+                            } else {
+                                val catalogNumber = selectedResult.catalogCandidates.firstOrNull()?.value
+                                Log.d(
+                                    TEXT_RECOGNITION_TAG,
+                                    "Submitting ML Kit text identify lines=${selectedResult.lines.size} catalogHint=${catalogNumber?.isNotBlank() == true}",
+                                )
+                                onTextIdentifyRequested(
+                                    TextIdentifyJobInput(
+                                        lines = selectedResult.lines,
+                                        selectedCatalogNumber = catalogNumber?.takeIf { it.isNotBlank() },
+                                    ),
+                                )
                             }
                             isRecognizingText = false
                             imageFile.delete()
@@ -357,11 +363,12 @@ fun CaptureRecordScreen(
                 photoCaptured = photoCaptured,
                 barcodeCaptured = barcodeCaptured,
                 retryAttempt = cameraRetryAttempt,
+                identifyMode = selectedIdentifyMode,
                 barcodeScanMode = barcodeScanMode,
                 torchEnabled = torchEnabled,
+                onTorchToggle = { torchEnabled = !torchEnabled },
                 onImageCaptureReady = { imageCapture = it },
                 onBarcodeDetected = { barcode ->
-                    barcodeScanMode = false
                     torchEnabled = false
                     capturedBarcode = barcode
                 },
@@ -379,6 +386,16 @@ fun CaptureRecordScreen(
                         .fillMaxWidth()
                         .padding(vertical = VinylSpacing.SpaceLg),
             )
+            IdentifyModeChips(
+                selectedMode = selectedIdentifyMode,
+                onModeSelected = { mode ->
+                    selectedIdentifyMode = mode
+                    captureError = null
+                    torchEnabled = false
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(VinylSpacing.SpaceMd))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
@@ -391,26 +408,48 @@ fun CaptureRecordScreen(
                             photoCaptured -> "Photo Captured"
                             barcodeCaptured -> "Barcode Captured"
                             isTakingPhoto -> "Taking Photo..."
+                            isRecognizingText -> "Reading Text..."
+                            selectedIdentifyMode == IdentifyMode.BARCODE && !cameraPermissionGranted -> "Enable Camera"
+                            selectedIdentifyMode == IdentifyMode.BARCODE -> "Barcode Scan Active"
+                            selectedIdentifyMode == IdentifyMode.CATALOG_NUMBER -> "Read Catalog Number"
                             else -> "Take Photo"
                         },
                     onClick = {
-                        if (photoCaptureActionsEnabled) {
-                            if (cameraPrivacyBlocked) {
-                                retryCameraPrivacyAccess()
-                            } else if (refreshCameraPermission(markDenied = false)) {
-                                takePhotoInApp()
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.CAMERA)
-                            }
-                        } else if (!backendIdentifyEnabled) {
+                        if (!backendIdentifyEnabled && selectedIdentifyMode != IdentifyMode.BARCODE) {
                             showDiscogsTokenInfo = true
-                        } else if (!barcodeScanMode) {
-                            refreshCameraPermission(markDenied = true)
+                            return@GlassPrimaryButton
+                        }
+                        if (cameraPrivacyBlocked) {
+                            retryCameraPrivacyAccess()
+                            return@GlassPrimaryButton
+                        }
+                        if (!refreshCameraPermission(markDenied = selectedIdentifyMode != IdentifyMode.BARCODE)) {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                            return@GlassPrimaryButton
+                        }
+                        when (selectedIdentifyMode) {
+                            IdentifyMode.BARCODE -> captureError = null
+                            IdentifyMode.CATALOG_NUMBER -> {
+                                if (textRecognitionActionsEnabled) {
+                                    scanTextFromStillFrame()
+                                }
+                            }
+                            IdentifyMode.LABEL_COVER -> {
+                                if (photoCaptureActionsEnabled) {
+                                    takePhotoInApp()
+                                }
+                            }
                         }
                     },
-                    enabled = photoCaptureActionsEnabled,
+                    enabled =
+                        identifyActionsEnabled &&
+                            if (selectedIdentifyMode == IdentifyMode.BARCODE) {
+                                !cameraPermissionGranted || cameraPrivacyBlocked
+                            } else {
+                                backendIdentifyEnabled
+                            },
                 )
-                if (!backendIdentifyEnabled) {
+                if (!backendIdentifyEnabled && selectedIdentifyMode != IdentifyMode.BARCODE) {
                     InfoCircleButton(onClick = { showDiscogsTokenInfo = true })
                 }
             }
@@ -434,89 +473,6 @@ fun CaptureRecordScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Spacer(Modifier.height(VinylSpacing.SpaceLg))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-            ) {
-                CaptureSecondaryButton(
-                    label = if (barcodeScanMode) "Cancel Barcode" else "Scan Barcode",
-                    accentColor = VinylColors.AccentPurple,
-                    onClick = {
-                        if (!isTakingPhoto && !isRecognizingText && !captureComplete) {
-                            if (barcodeScanMode) {
-                                barcodeScanMode = false
-                                torchEnabled = false
-                                captureError = null
-                            } else if (cameraPrivacyBlocked) {
-                                retryCameraPrivacyAccess()
-                            } else if (refreshCameraPermission(markDenied = false)) {
-                                captureError = null
-                                textRecognitionResult = null
-                                editableCatalogNumber = ""
-                                barcodeScanMode = true
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.CAMERA)
-                            }
-                        }
-                    },
-                    enabled = !isTakingPhoto && !isRecognizingText && !captureComplete,
-                    modifier = Modifier.weight(1f),
-                )
-                CaptureSecondaryButton(
-                    label = if (isRecognizingText) "Reading Text..." else "Scan Text",
-                    accentColor = VinylColors.AccentOrange,
-                    onClick = {
-                        if (cameraPrivacyBlocked) {
-                            retryCameraPrivacyAccess()
-                        } else if (refreshCameraPermission(markDenied = false)) {
-                            scanTextFromStillFrame()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    },
-                    enabled = textRecognitionActionsEnabled,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (barcodeScanMode) {
-                Spacer(Modifier.height(VinylSpacing.SpaceMd))
-                CaptureSecondaryButton(
-                    label = if (torchEnabled) "Torch Off" else "Torch On",
-                    accentColor = VinylColors.AccentGreen,
-                    onClick = { torchEnabled = !torchEnabled },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            textRecognitionResult?.let { result ->
-                Spacer(Modifier.height(VinylSpacing.SpaceMd))
-                TextRecognitionPrototypeResultCard(
-                    result = result,
-                    catalogNumber = editableCatalogNumber,
-                    onCatalogNumberChange = { editableCatalogNumber = it },
-                    onAcceptCatalogNumber = {
-                        val catalogNumber = editableCatalogNumber.trim().repairCatalogNumberForManualSearch()
-                        if (catalogNumber.isNotBlank()) {
-                            onManualSearch(catalogNumber)
-                        }
-                    },
-                    onIdentifyText = {
-                        val catalogNumber = editableCatalogNumber.trim().repairCatalogNumberForManualSearch()
-                        Log.d(
-                            TEXT_RECOGNITION_TAG,
-                            "Submitting ML Kit text identify lines=${result.lines.size} catalogHint=${catalogNumber.isNotBlank()}",
-                        )
-                        onTextIdentifyRequested(
-                            TextIdentifyJobInput(
-                                lines = result.lines,
-                                selectedCatalogNumber = catalogNumber.takeIf { it.isNotBlank() },
-                            ),
-                        )
-                    },
-                    onClearCatalogNumber = { editableCatalogNumber = "" },
-                    textIdentifyEnabled = backendIdentifyEnabled && result.lines.isNotEmpty(),
-                )
-            }
             Spacer(Modifier.height(VinylSpacing.SpaceMd))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -526,22 +482,22 @@ fun CaptureRecordScreen(
                     label = "Upload",
                     accentColor = VinylColors.AccentGreen,
                     onClick = {
-                        if (normalCaptureActionsEnabled) {
+                        if (identifyActionsEnabled) {
                             uploadLauncher.launch("image/*")
                         }
                     },
-                    enabled = normalCaptureActionsEnabled,
+                    enabled = identifyActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
                 CaptureSecondaryButton(
                     label = "Manual Search",
                     accentColor = VinylColors.AccentOrange,
                     onClick = {
-                        if (normalCaptureActionsEnabled) {
-                            onManualSearch(null)
+                        if (identifyActionsEnabled) {
+                            onManualSearch()
                         }
                     },
-                    enabled = normalCaptureActionsEnabled,
+                    enabled = identifyActionsEnabled,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -592,6 +548,28 @@ private data class TextRecognitionInput(
     fun close() {
         bitmap?.recycle()
     }
+}
+
+private enum class IdentifyMode(
+    val label: String,
+    val guideText: String?,
+    val guideFrameHeight: Dp?,
+) {
+    BARCODE(
+        label = "BARCODE",
+        guideText = "Center barcode",
+        guideFrameHeight = 132.dp,
+    ),
+    CATALOG_NUMBER(
+        label = "CATALOG NUMBER",
+        guideText = "Center catalog number",
+        guideFrameHeight = 88.dp,
+    ),
+    LABEL_COVER(
+        label = "LABEL / COVER",
+        guideText = null,
+        guideFrameHeight = null,
+    ),
 }
 
 private fun runTextRecognitionQualityModes(
@@ -746,17 +724,12 @@ private fun OcrInputSizing.withBitmapInputSize(
     )
 }
 
-private fun String.repairCatalogNumberForManualSearch(): String =
-    CatalogNumberExtractor.extract(listOf(this), limit = 1).firstOrNull()?.value ?: trim()
-
 private fun Context.hasCameraPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 private const val TEXT_RECOGNITION_TAG = "CaptureTextRecognition"
 private val DEFAULT_TEXT_RECOGNITION_QUALITY_MODE = OcrQualityMode.BALANCED
 private const val CAMERA_PRIVACY_BLOCKED_MESSAGE = "Camera access is blocked by system privacy controls."
-private const val TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT = 8
-private const val CATALOG_CANDIDATE_PREVIEW_COUNT = 3
 private const val PRIVACY_PLACEHOLDER_SAMPLE_SIZE = 8
 private const val PRIVACY_PLACEHOLDER_MAX_AVERAGE_LUMA = 12
 private const val PRIVACY_PLACEHOLDER_MAX_LUMA_RANGE = 8
@@ -905,8 +878,10 @@ private fun CameraPreviewSurface(
     photoCaptured: Boolean,
     barcodeCaptured: Boolean,
     retryAttempt: Int,
+    identifyMode: IdentifyMode,
     barcodeScanMode: Boolean,
     torchEnabled: Boolean,
+    onTorchToggle: () -> Unit,
     onImageCaptureReady: (ImageCapture?) -> Unit,
     onBarcodeDetected: (String) -> Unit,
     onCameraError: (String?) -> Unit,
@@ -1161,20 +1136,23 @@ private fun CameraPreviewSurface(
             ) {
                 SuccessStatusFeedback(message = if (barcodeCaptured) "Barcode captured" else "Photo captured")
             }
-        } else if (barcodeScanMode) {
-            BarcodeScanGuideOverlay(
+        } else {
+            IdentifyModeGuideOverlay(
+                identifyMode = identifyMode,
                 modifier =
                     Modifier
                         .align(Alignment.Center)
                         .fillMaxWidth()
                         .padding(horizontal = VinylSpacing.Space2Xl),
             )
-        } else {
-            CaptureHintCard(
+        }
+        if (barcodeScanMode) {
+            TorchToggleButton(
+                torchEnabled = torchEnabled,
+                onToggle = onTorchToggle,
                 modifier =
                     Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
+                        .align(Alignment.BottomEnd)
                         .padding(VinylSpacing.SpaceLg),
             )
         }
@@ -1212,17 +1190,16 @@ private fun CameraPlaceholderSurface(
                         .background(VinylColors.GreenTint20, CircleShape),
             )
         }
-        CaptureHintCard(
-            modifier =
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-        )
     }
 }
 
 @Composable
-private fun BarcodeScanGuideOverlay(modifier: Modifier = Modifier) {
+private fun IdentifyModeGuideOverlay(
+    identifyMode: IdentifyMode,
+    modifier: Modifier = Modifier,
+) {
+    val guideText = identifyMode.guideText ?: return
+    val frameHeight = identifyMode.guideFrameHeight ?: return
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1231,14 +1208,14 @@ private fun BarcodeScanGuideOverlay(modifier: Modifier = Modifier) {
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(132.dp)
+                    .height(frameHeight)
                     .clip(VinylShapes.Card)
                     .border(2.dp, VinylColors.AccentGreen.copy(alpha = 0.86f), VinylShapes.Card)
                     .background(VinylColors.AppBackground.copy(alpha = 0.08f)),
         )
         Spacer(Modifier.height(VinylSpacing.SpaceMd))
         Text(
-            text = "Hold still...",
+            text = guideText,
             color = VinylColors.AccentGreen,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.titleMedium,
@@ -1247,164 +1224,82 @@ private fun BarcodeScanGuideOverlay(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun CaptureHintCard(
+private fun TorchToggleButton(
+    torchEnabled: Boolean,
+    onToggle: () -> Unit,
     modifier: Modifier = Modifier,
-    message: String = "Capture the record barcode, label, or runout etching",
 ) {
     Box(
         modifier =
             modifier
-                .clip(VinylShapes.Card)
-                .background(VinylColors.SurfacePrimary.copy(alpha = 0.95f))
-                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                .padding(horizontal = VinylSpacing.SpaceLg, vertical = VinylSpacing.SpaceMd),
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.72f))
+                .border(1.dp, Color.White.copy(alpha = 0.42f), CircleShape)
+                .clickable(
+                    onClickLabel = if (torchEnabled) "Turn torch off" else "Turn torch on",
+                    role = Role.Button,
+                    onClick = onToggle,
+                ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            color = VinylColors.TextSecondary,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
+        Icon(
+            imageVector = if (torchEnabled) Icons.Filled.FlashlightOff else Icons.Filled.FlashlightOn,
+            contentDescription = if (torchEnabled) "Turn torch off" else "Turn torch on",
+            tint = VinylColors.AppBackground.copy(alpha = 0.86f),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
 
 @Composable
-private fun TextRecognitionPrototypeResultCard(
-    result: TextRecognitionPrototypeResult,
-    catalogNumber: String,
-    onCatalogNumberChange: (String) -> Unit,
-    onAcceptCatalogNumber: () -> Unit,
-    onIdentifyText: () -> Unit,
-    onClearCatalogNumber: () -> Unit,
-    textIdentifyEnabled: Boolean,
+private fun IdentifyModeChips(
+    selectedMode: IdentifyMode,
+    onModeSelected: (IdentifyMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val previewLines = result.lines.take(TEXT_RECOGNITION_RESULT_PREVIEW_LINE_COUNT)
-    val catalogCandidates = result.catalogCandidates.take(CATALOG_CANDIDATE_PREVIEW_COUNT)
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(VinylShapes.Card)
-                .background(VinylColors.SurfacePrimary.copy(alpha = 0.88f))
-                .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                .padding(VinylSpacing.SpaceMd),
-        verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceSm),
     ) {
-        Text(
-            text =
-                "ML Kit ${result.qualityMode.displayName}: ${result.lines.size} lines - " +
-                    "${result.catalogCandidates.size} catalog candidates - " +
-                    "${result.processingTimeMillis}ms - " +
-                    "${result.sourceImageSizeLabel} to ${result.inputImageSizeLabel}",
-            color = VinylColors.TextPrimary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Text(
-            text = "Catalog number",
-            color = VinylColors.TextSecondary,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(VinylShapes.Card)
-                    .background(VinylColors.SurfacePrimary)
-                    .border(1.dp, VinylColors.BorderDefault, VinylShapes.Card)
-                    .padding(horizontal = VinylSpacing.SpaceMd),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            BasicTextField(
-                value = catalogNumber,
-                onValueChange = onCatalogNumberChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                textStyle =
-                    MaterialTheme.typography.bodyMedium.copy(
-                        color = VinylColors.TextPrimary,
-                    ),
-                cursorBrush = SolidColor(VinylColors.AccentOrange),
-                decorationBox = { innerTextField ->
-                    if (catalogNumber.isEmpty()) {
-                        Text(
-                            text = "No catalog candidate selected",
-                            color = VinylColors.TextSecondary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    innerTextField()
-                },
-            )
-        }
-        if (catalogCandidates.isEmpty()) {
-            Text(
-                text = "No catalog-number candidates found.",
-                color = VinylColors.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        } else {
-            catalogCandidates.forEach { candidate ->
-                Text(
-                    text = "${candidate.value} (${candidate.score})",
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier =
-                        Modifier.clickable(
-                            onClickLabel = "Use catalog number ${candidate.value}",
+        IdentifyMode.values().forEach { mode ->
+            val selected = mode == selectedMode
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .clip(VinylShapes.Chip)
+                        .background(
+                            if (selected) {
+                                VinylColors.AccentGreen.copy(alpha = 0.28f)
+                            } else {
+                                VinylColors.GreenTint20.copy(alpha = 0.42f)
+                            },
+                        ).border(
+                            width = 1.dp,
+                            color =
+                                if (selected) {
+                                    VinylColors.AccentGreen
+                                } else {
+                                    VinylColors.AccentGreen.copy(alpha = 0.44f)
+                                },
+                            shape = VinylShapes.Chip,
+                        ).clickable(
+                            onClickLabel = "Use ${mode.label} identify mode",
                             role = Role.Button,
                         ) {
-                            onCatalogNumberChange(candidate.value)
-                        },
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd),
-        ) {
-            CaptureSecondaryButton(
-                label = "Identify Text",
-                accentColor = VinylColors.AccentGreen,
-                onClick = onIdentifyText,
-                enabled = textIdentifyEnabled,
-                modifier = Modifier.weight(1f),
-            )
-            CaptureSecondaryButton(
-                label = "Search Catalog",
-                accentColor = VinylColors.AccentOrange,
-                onClick = onAcceptCatalogNumber,
-                enabled = catalogNumber.isNotBlank(),
-                modifier = Modifier.weight(1f),
-            )
-            CaptureSecondaryButton(
-                label = "Clear",
-                accentColor = VinylColors.AccentPurple,
-                onClick = onClearCatalogNumber,
-                enabled = catalogNumber.isNotBlank(),
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (previewLines.isEmpty()) {
-            Text(
-                text = "No text lines found.",
-                color = VinylColors.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        } else {
-            previewLines.forEach { line ->
+                            onModeSelected(mode)
+                        }.padding(horizontal = VinylSpacing.SpaceXs),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    text = line,
-                    color = VinylColors.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = mode.label,
+                    color = if (selected) VinylColors.TextPrimary else VinylColors.AccentGreen,
+                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
         }

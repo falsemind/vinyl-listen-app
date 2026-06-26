@@ -248,12 +248,12 @@ fun VinylNavHost(
                         pendingTextIdentifyInput = input.normalizedForTextIdentifyContract()
                         navController.navigate(VinylRoutes.textProcessing(flowMode))
                     },
-                    onManualSearch = { catalogNumber -> navController.navigate(flowMode.manualSearchRoute(catalogNumber)) },
                     onBarcodeDetected = { barcode ->
                         navController.navigate(VinylRoutes.barcodeProcessing(barcode, flowMode)) {
                             popUpTo(VinylRoutes.CAPTURE_RECORD_PATTERN) { inclusive = true }
                         }
                     },
+                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
                     onDismiss = {
                         if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
                             navController.popBackStack()
@@ -381,7 +381,7 @@ fun VinylNavHost(
                             navController.navigate(VinylRoutes.sessionLogging(releaseId))
                         }
                     },
-                    onManualSearch = { navController.navigate(flowMode.manualSearchRoute()) },
+                    onManualSearch = { navController.navigate(VinylRoutes.MANUAL_SEARCH) },
                     onDismiss = {
                         if (flowMode == VinylRoutes.FLOW_MODE_COLLECTION_ADD) {
                             navController.popBackStack()
