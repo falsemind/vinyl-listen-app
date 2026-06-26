@@ -106,3 +106,13 @@ class DeleteAccountResponse(BaseModel):
     deleted: bool
     deletion_receipt_id: str
     deleted_at: datetime
+
+
+class DeleteAccountDataRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class DeleteAccountDataResponse(BaseModel):
+    reset: bool
+    reset_receipt_id: str
+    reset_at: datetime

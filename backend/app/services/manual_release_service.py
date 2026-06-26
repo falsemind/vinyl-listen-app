@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.releases import ManualRelease, ManualReleaseDraft
 from app.repositories.manual_release_repository import ManualReleaseRepository
 from app.schemas.manual_releases import ManualReleaseFormat, ManualReleaseFormData
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.manual_release_cover_storage import ManualReleaseCoverStorage
 from app.services.manual_release_policy import (
     ARTIST_NAME_LIMIT,
@@ -74,6 +75,7 @@ class ManualReleaseService:
         form_data: ManualReleaseFormData,
         completion_state: dict | None = None,
     ) -> ManualReleaseDraft:
+        lock_account_data_mutation(db, user_id=user_id)
         self.repository.lock_draft_capacity_for_user(db, user_id=user_id)
         ensure_manual_release_draft_capacity(self.repository.count_drafts(db, user_id=user_id))
         return self.repository.create_draft(
@@ -92,6 +94,7 @@ class ManualReleaseService:
         form_data: ManualReleaseFormData,
         completion_state: dict | None = None,
     ) -> ManualReleaseDraft:
+        lock_account_data_mutation(db, user_id=user_id)
         draft = self.get_draft(db, draft_id, user_id=user_id)
         return self.repository.update_draft(
             db,
@@ -101,6 +104,7 @@ class ManualReleaseService:
         )
 
     def delete_draft(self, db: Session, draft_id: str, *, user_id: str) -> None:
+        lock_account_data_mutation(db, user_id=user_id)
         draft = self.get_draft(db, draft_id, user_id=user_id)
         self.repository.delete_draft(db, draft)
 
@@ -112,6 +116,7 @@ class ManualReleaseService:
         form_data: ManualReleaseFormData | None = None,
         draft_id: str | None = None,
     ) -> ManualRelease:
+        lock_account_data_mutation(db, user_id=user_id)
         draft: ManualReleaseDraft | None = None
         if draft_id is not None:
             draft = self.repository.get_draft(db, draft_id, user_id=user_id, for_update=True)
@@ -135,6 +140,7 @@ class ManualReleaseService:
         content_type: str | None,
         image_bytes: bytes,
     ) -> CoverUploadValidationResult:
+        lock_account_data_mutation(db, user_id=user_id)
         draft = self.repository.get_draft(db, draft_id, user_id=user_id, for_update=True)
         if draft is None:
             raise ManualReleaseNotFoundError

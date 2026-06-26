@@ -97,13 +97,28 @@ def test_create_draft_enforces_user_draft_limit() -> None:
         service.create_draft(object(), user_id="user-1", form_data=ManualReleaseFormData(title="Partial"))
 
 
-def test_create_draft_serializes_capacity_check_before_counting() -> None:
+def test_create_draft_serializes_capacity_check_before_counting(monkeypatch) -> None:
     repository = FakeManualReleaseRepository()
     service = ManualReleaseService(repository)
+    fake_repository = repository
+
+    def record_account_data_lock(_db, *, user_id: str, repository=None) -> None:
+        _ = repository
+        fake_repository.operation_log.append(f"account-lock:{user_id}")
+
+    monkeypatch.setattr(
+        "app.services.manual_release_service.lock_account_data_mutation",
+        record_account_data_lock,
+    )
 
     service.create_draft(object(), user_id="user-1", form_data=ManualReleaseFormData(title="Partial"))
 
-    assert repository.operation_log == ["lock:user-1", "count:user-1", "create:user-1"]
+    assert repository.operation_log == [
+        "account-lock:user-1",
+        "lock:user-1",
+        "count:user-1",
+        "create:user-1",
+    ]
 
 
 def test_upload_cover_stores_file_and_updates_draft_metadata(tmp_path) -> None:

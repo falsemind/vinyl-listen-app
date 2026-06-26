@@ -129,6 +129,24 @@ def test_chat_returns_adapter_reply_with_existing_conversation_id(db_session: Se
     ]
 
 
+def test_chat_locks_account_data_before_persisting_reply(db_session: Session, monkeypatch) -> None:
+    service = make_service()
+    locked_user_ids: list[str] = []
+
+    def record_account_data_lock(_db, *, user_id: str, repository=None) -> None:
+        _ = repository
+        locked_user_ids.append(user_id)
+
+    monkeypatch.setattr(
+        "app.services.ai_insights_service.lock_account_data_mutation",
+        record_account_data_lock,
+    )
+
+    service.chat(db=db_session, user_id="user-a", message="Recommend a record")
+
+    assert locked_user_ids == ["user-a"]
+
+
 def test_chat_uses_default_single_thread_conversation_id(db_session: Session) -> None:
     adapter = StubAiChatAdapter()
     service = make_service(adapter=adapter)

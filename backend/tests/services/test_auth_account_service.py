@@ -23,13 +23,15 @@ from app.models.collection_settings import CollectionSettings
 from app.models.collection_sync_job import CollectionSyncJob
 from app.models.identify_job import IdentifyJob
 from app.models.provider_integration import ProviderIntegration
-from app.models.releases import Releases
+from app.models.releases import ManualReleaseDraft, Releases
 from app.models.sessions import SessionGroups, Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import SpotifyArtistStats, SpotifyListeningImportBatch
 from app.repositories.auth_repository import AuthRepository
 from app.services.auth_account_service import (
+    AccountDataResetInvalidPasswordError,
     AuthAccountService,
+    CurrentPasswordAttemptRateLimitedError,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
     EmailVerificationAttemptRateLimitedError,
@@ -48,6 +50,12 @@ from app.services.auth_email_delivery import (
     AuthEmailMessage,
     AuthEmailSender,
     LocalDevEmailSender,
+)
+from app.services.entitlement_service import (
+    OCR_IDENTIFY_CAPABILITY,
+    CapabilityRule,
+    EntitlementService,
+    FeatureGateError,
 )
 from app.services.password_hashing import Argon2idPasswordHasher, PasswordHashConfig
 
@@ -71,6 +79,7 @@ ACCOUNT_DELETE_TABLES = [
     ReleaseCollectionFolder.__table__,
     CollectionSyncJob.__table__,
     IdentifyJob.__table__,
+    ManualReleaseDraft.__table__,
     AiChatSession.__table__,
     AiChatMessageRecord.__table__,
     SpotifyListeningImportBatch.__table__,
@@ -707,6 +716,7 @@ def test_delete_account_requires_password_and_hard_deletes_owned_data(
             CollectionFolder,
             CollectionSyncJob,
             IdentifyJob,
+            ManualReleaseDraft,
             AiChatMessageRecord,
             AiChatSession,
             SpotifyListeningImportBatch,
@@ -720,6 +730,133 @@ def test_delete_account_requires_password_and_hard_deletes_owned_data(
             EmailVerificationCode,
         ):
             assert db_session.query(model).count() == 0
+    finally:
+        _drop_account_delete_tables(db_session)
+
+
+def test_reset_account_data_requires_password_and_preserves_account_auth_state(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+) -> None:
+    _create_account_delete_tables(db_session)
+    try:
+        registration = service.register_account(db_session, email="alex@example.com", password="password")
+        user = repository.get_user_by_id(db_session, registration.user_id)
+        assert user is not None
+
+        with pytest.raises(AccountDataResetInvalidPasswordError):
+            service.reset_account_data(db_session, user=user, password="wrong-password")
+
+        _seed_account_owned_data(db_session, repository=repository, user_id=user.id)
+        result = service.reset_account_data(db_session, user=user, password="password")
+
+        preserved_user = repository.get_user_by_id(db_session, user.id)
+        assert preserved_user is not None
+        assert preserved_user.email == "alex@example.com"
+        assert preserved_user.password_hash == user.password_hash
+
+        reset_event = db_session.query(AuthAuditEvent).filter_by(id=result.reset_receipt_id).one()
+        assert reset_event.user_id == user.id
+        assert reset_event.event_type == "account_data_reset"
+        assert reset_event.outcome == "success"
+        assert reset_event.occurred_at.replace(tzinfo=UTC) == result.reset_at
+
+        assert db_session.query(AuthSession).count() == 1
+        assert db_session.query(ConsumedRefreshToken).count() == 1
+        assert db_session.query(EmailVerificationCode).count() == 1
+        assert db_session.query(UserEntitlement).count() == 1
+        assert db_session.query(UsageEvent).count() == 1
+        assert db_session.query(AuthAuditEvent).count() >= 1
+
+        for model in (
+            ProviderIntegration,
+            CollectionSettings,
+            ReleaseCollectionFolder,
+            ReleaseCollectionMembership,
+            CollectionFolder,
+            CollectionSyncJob,
+            IdentifyJob,
+            ManualReleaseDraft,
+            AiChatMessageRecord,
+            AiChatSession,
+            SpotifyListeningImportBatch,
+            SpotifyArtistStats,
+            SessionTracks,
+            Sessions,
+            SessionGroups,
+            SessionsMoods,
+        ):
+            assert db_session.query(model).count() == 0
+    finally:
+        _drop_account_delete_tables(db_session)
+
+
+def test_reset_account_data_rate_limits_repeated_invalid_passwords(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+    email_sender: RecordingEmailSender,
+) -> None:
+    service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        code_failed_attempt_limit=2,
+        code_failed_attempt_lock=timedelta(minutes=5),
+    )
+    registration = service.register_account(db_session, email="alex@example.com", password="password")
+    user = repository.get_user_by_id(db_session, registration.user_id)
+    assert user is not None
+
+    with pytest.raises(AccountDataResetInvalidPasswordError):
+        service.reset_account_data(db_session, user=user, password="wrong-password")
+    with pytest.raises(AccountDataResetInvalidPasswordError):
+        service.reset_account_data(db_session, user=user, password="still-wrong")
+    with pytest.raises(CurrentPasswordAttemptRateLimitedError):
+        service.reset_account_data(db_session, user=user, password="password")
+
+    clock.advance(timedelta(minutes=5, seconds=1))
+    result = service.reset_account_data(db_session, user=user, password="password")
+
+    assert result.reset_receipt_id
+
+
+def test_reset_account_data_preserves_usage_limit_ledger(
+    db_session: Session,
+    repository: AuthRepository,
+    service: AuthAccountService,
+    clock: AuthTestClock,
+) -> None:
+    _create_account_delete_tables(db_session)
+    try:
+        registration = service.register_account(db_session, email="alex@example.com", password="password")
+        user = repository.get_user_by_id(db_session, registration.user_id)
+        assert user is not None
+
+        _seed_account_owned_data(db_session, repository=repository, user_id=user.id)
+        entitlement_service = EntitlementService(
+            repository=repository,
+            now_provider=clock.now,
+            rules={
+                OCR_IDENTIFY_CAPABILITY: CapabilityRule(
+                    capability=OCR_IDENTIFY_CAPABILITY,
+                    window=timedelta(days=1),
+                    plan_limits={},
+                    default_limit=2,
+                )
+            },
+        )
+        entitlement_service.consume_usage(db_session, user_id=user.id, capability=OCR_IDENTIFY_CAPABILITY)
+
+        service.reset_account_data(db_session, user=user, password="password")
+
+        with pytest.raises(FeatureGateError) as error:
+            entitlement_service.consume_usage(db_session, user_id=user.id, capability=OCR_IDENTIFY_CAPABILITY)
+
+        assert error.value.code == "feature_usage_limit_exceeded"
+        assert error.value.used == 2
+        assert db_session.query(UsageEvent).count() == 2
     finally:
         _drop_account_delete_tables(db_session)
 
@@ -843,6 +980,11 @@ def _seed_account_owned_data(db_session: Session, *, repository: AuthRepository,
                 filename="cover.jpg",
                 content_type="image/jpeg",
                 expires_at=now + timedelta(hours=1),
+            ),
+            ManualReleaseDraft(
+                id="manual-draft-delete",
+                user_id=user_id,
+                form_data={"artist": "Artist", "title": "Title"},
             ),
             chat_session,
             AiChatMessageRecord(conversation_id=chat_session.id, role="user", content="hello"),

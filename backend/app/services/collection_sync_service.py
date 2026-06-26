@@ -80,6 +80,7 @@ class CollectionSyncService:
         *,
         user_id: str,
         progress_reporter: CollectionProgressReporter | None = None,
+        commit: bool = True,
     ) -> CollectionSyncResult:
         sync_started_at = self._now_provider()
         source_of_truth = self._settings_repository.get_source_of_truth(db, user_id=user_id)
@@ -147,7 +148,10 @@ class CollectionSyncService:
                     commit=False,
                 )
             self._sync_collection_folders(db, user_id=user_id, raw_items=raw_items, synced_at=sync_started_at)
-            db.commit()
+            if commit:
+                db.commit()
+            else:
+                db.flush()
             _report_progress(
                 progress_reporter,
                 step="finalizing",
@@ -159,7 +163,8 @@ class CollectionSyncService:
                 removed_count=removed_count,
             )
         except Exception:
-            db.rollback()
+            if commit:
+                db.rollback()
             raise
 
         logger.info(

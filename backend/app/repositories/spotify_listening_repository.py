@@ -19,15 +19,24 @@ from app.models.spotify_listening import (
 
 class SpotifyListeningRepository:
     @staticmethod
-    def create_import_batch(db: Session, *, user_id: str, source_paths: Sequence[str]) -> SpotifyListeningImportBatch:
+    def create_import_batch(
+        db: Session,
+        *,
+        user_id: str,
+        source_paths: Sequence[str],
+        commit: bool = True,
+    ) -> SpotifyListeningImportBatch:
         batch = SpotifyListeningImportBatch(
             user_id=user_id,
             source_paths=list(source_paths),
             status="running",
         )
         db.add(batch)
-        db.commit()
-        db.refresh(batch)
+        if commit:
+            db.commit()
+            db.refresh(batch)
+        else:
+            db.flush()
         return batch
 
     @staticmethod

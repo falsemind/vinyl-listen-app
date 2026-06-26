@@ -144,6 +144,41 @@ class VinylApiClientAuthRefreshTest {
         }
 
     @Test
+    fun resetAccountDataSendsPasswordAndParsesReceipt() =
+        runBlocking {
+            var requestBody = ""
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/api/v1/auth/account/data") { exchange ->
+                assertEquals("DELETE", exchange.requestMethod)
+                requestBody = exchange.requestBody.bufferedReader().use { it.readText() }
+                exchange.respond(
+                    status = 200,
+                    body =
+                        """
+                        {
+                          "reset": true,
+                          "reset_receipt_id": "reset-receipt-1",
+                          "reset_at": "2026-06-19T12:00:00Z"
+                        }
+                        """.trimIndent(),
+                )
+            }
+            server.start()
+            try {
+                val client = VinylApiClient(baseUrl = "http://127.0.0.1:${server.address.port}/api/v1")
+
+                val result = client.resetAccountData("password")
+
+                assertEquals("password", JSONObject(requestBody).getString("password"))
+                assertEquals(true, result.reset)
+                assertEquals("reset-receipt-1", result.resetReceiptId)
+                assertEquals("2026-06-19T12:00:00Z", result.resetAt)
+            } finally {
+                server.stop(0)
+            }
+        }
+
+    @Test
     fun textIdentifyJobPostsRecognizedLinesAndHints() =
         runBlocking {
             var requestBody = ""

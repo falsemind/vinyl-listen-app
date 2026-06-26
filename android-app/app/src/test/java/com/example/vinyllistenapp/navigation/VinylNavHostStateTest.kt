@@ -2,6 +2,12 @@ package com.example.vinyllistenapp.navigation
 
 import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.domain.MatchCandidate
+import com.example.vinyllistenapp.ui.screens.AiInsightsScreenState
+import com.example.vinyllistenapp.ui.screens.ChatMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -71,6 +77,69 @@ class VinylNavHostStateTest {
         assertTrue(restored.lines.sumOf { line -> line.length } <= 4_000)
         assertEquals("C".repeat(100), restored.selectedCatalogNumber)
         assertEquals("1".repeat(32), restored.selectedBarcode)
+    }
+
+    @Test
+    fun aiInsightsStateResetClearsAccountScopedChatState() {
+        val state = AiInsightsScreenState()
+        state.messages.clear()
+        state.messages.add(ChatMessage.User("What did I play yesterday?"))
+        state.messages.add(ChatMessage.Assistant("You played deleted data."))
+        state.inputValue = "draft prompt"
+        state.isLoadingHistory = true
+        state.hasLoadedHistory = true
+        state.isTyping = true
+        state.isClearingHistory = true
+        state.isExportingHistory = true
+        state.showClearConfirmation = true
+        state.shouldFocusLoadedHistory = true
+        state.conversationId = "conversation-old"
+
+        state.resetForAccountDataReset()
+
+        assertEquals(1, state.messages.size)
+        assertTrue(state.messages.single() is ChatMessage.Assistant)
+        assertEquals("Ask about your listening habits, collection patterns, moods, styles, or records.", state.messages.single().text)
+        assertEquals("", state.inputValue)
+        assertFalse(state.isLoadingHistory)
+        assertFalse(state.hasLoadedHistory)
+        assertFalse(state.isTyping)
+        assertFalse(state.isClearingHistory)
+        assertFalse(state.isExportingHistory)
+        assertFalse(state.showClearConfirmation)
+        assertFalse(state.shouldFocusLoadedHistory)
+        assertEquals(null, state.conversationId)
+    }
+
+    @Test
+    fun accountDataResetCancelsAccountScopedRequestsBeforeClearingChatState() {
+        val state = AiInsightsScreenState()
+        state.messages.clear()
+        state.messages.add(ChatMessage.User("What did I play yesterday?"))
+        state.conversationId = "conversation-before-reset"
+        state.isTyping = true
+
+        val requestScope = CoroutineScope(SupervisorJob())
+        val inFlightRequest = requestScope.launch { awaitCancellation() }
+        var scopeResetCount = 0
+        var requestWasCancelledBeforeScopeReset = false
+
+        resetAccountScopedRequestsAfterAccountDataReset(
+            state = state,
+            requestScope = requestScope,
+            onRequestScopeReset = {
+                scopeResetCount += 1
+                requestWasCancelledBeforeScopeReset = inFlightRequest.isCancelled
+            },
+        )
+
+        assertEquals(1, scopeResetCount)
+        assertTrue(requestWasCancelledBeforeScopeReset)
+        assertTrue(inFlightRequest.isCancelled)
+        assertEquals(1, state.messages.size)
+        assertTrue(state.messages.single() is ChatMessage.Assistant)
+        assertEquals(null, state.conversationId)
+        assertFalse(state.isTyping)
     }
 
     @Test

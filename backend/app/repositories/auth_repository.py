@@ -23,6 +23,7 @@ from app.models.collection_settings import CollectionSettings
 from app.models.collection_sync_job import CollectionSyncJob
 from app.models.identify_job import IdentifyJob
 from app.models.provider_integration import ProviderIntegration
+from app.models.releases import ManualRelease, ManualReleaseDraft
 from app.models.sessions import SessionGroups, Sessions, SessionTracks
 from app.models.sessions_moods import SessionsMoods
 from app.models.spotify_listening import (
@@ -73,8 +74,33 @@ class AuthRepository:
     def get_user_by_id(self, db: Session, user_id: str) -> UserAccount | None:
         return db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
 
+    def lock_user_by_id(self, db: Session, user_id: str) -> UserAccount | None:
+        return db.query(UserAccount).filter(UserAccount.id == user_id).with_for_update().one_or_none()
+
     def get_user_by_normalized_email(self, db: Session, email: str) -> UserAccount | None:
         return db.query(UserAccount).filter(UserAccount.normalized_email == normalize_email(email)).one_or_none()
+
+    def count_failed_auth_audit_events(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        event_types: tuple[str, ...],
+        since: datetime,
+    ) -> int:
+        return (
+            db.scalar(
+                select(func.count())
+                .select_from(AuthAuditEvent)
+                .where(
+                    AuthAuditEvent.user_id == user_id,
+                    AuthAuditEvent.event_type.in_(event_types),
+                    AuthAuditEvent.outcome == "failure",
+                    AuthAuditEvent.occurred_at >= since,
+                )
+            )
+            or 0
+        )
 
     def record_auth_audit_event(
         self,
@@ -522,7 +548,31 @@ class AuthRepository:
             db.flush()
         return audit
 
-    def _delete_user_owned_data(self, db: Session, *, user_id: str) -> None:
+    def reset_user_owned_data(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        reset_at: datetime,
+        commit: bool = True,
+    ) -> AuthAuditEvent:
+        self._delete_user_owned_data(db, user_id=user.id, preserve_auth_data=True)
+        audit = self.record_auth_audit_event(
+            db,
+            user_id=user.id,
+            event_type="account_data_reset",
+            outcome="success",
+            occurred_at=reset_at,
+            event_details={"reset": True},
+            commit=False,
+        )
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return audit
+
+    def _delete_user_owned_data(self, db: Session, *, user_id: str, preserve_auth_data: bool = False) -> None:
         existing_tables = _existing_table_names(db)
 
         if _table_exists(existing_tables, AiChatMessageRecord) and _table_exists(existing_tables, AiChatSession):
@@ -540,13 +590,7 @@ class AuthRepository:
                 )
             )
 
-        for model in (
-            AuthAuditEvent,
-            ConsumedRefreshToken,
-            EmailVerificationCode,
-            PasswordResetCode,
-            UsageEvent,
-            UserEntitlement,
+        user_owned_models: tuple[type, ...] = (
             ProviderIntegration,
             CollectionSettings,
             ReleaseCollectionFolder,
@@ -568,9 +612,23 @@ class AuthRepository:
             AiChatSession,
             Sessions,
             SessionGroups,
-            AuthSession,
-        ):
+            ManualReleaseDraft,
+            ManualRelease,
+        )
+        for model in user_owned_models:
             _delete_model_by_user_id(db, model, user_id=user_id, existing_tables=existing_tables)
+
+        if not preserve_auth_data:
+            for model in (
+                AuthAuditEvent,
+                ConsumedRefreshToken,
+                EmailVerificationCode,
+                PasswordResetCode,
+                UsageEvent,
+                UserEntitlement,
+                AuthSession,
+            ):
+                _delete_model_by_user_id(db, model, user_id=user_id, existing_tables=existing_tables)
 
         db.flush()
 

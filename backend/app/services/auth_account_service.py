@@ -31,6 +31,12 @@ AUTH_AUDIT_PASSWORD_RESET_CONFIRMED = "password_reset_confirmed"
 AUTH_AUDIT_SIGN_IN = "sign_in"
 AUTH_AUDIT_PASSWORD_CHANGED = "password_changed"
 AUTH_AUDIT_ACCOUNT_DELETION_REJECTED = "account_deletion_rejected"
+AUTH_AUDIT_ACCOUNT_DATA_RESET_REJECTED = "account_data_reset_rejected"
+CURRENT_PASSWORD_FAILURE_EVENT_TYPES = (
+    AUTH_AUDIT_PASSWORD_CHANGED,
+    AUTH_AUDIT_ACCOUNT_DELETION_REJECTED,
+    AUTH_AUDIT_ACCOUNT_DATA_RESET_REJECTED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +109,14 @@ class DeleteAccountInvalidPasswordError(AuthAccountError):
     pass
 
 
+class AccountDataResetInvalidPasswordError(AuthAccountError):
+    pass
+
+
+class CurrentPasswordAttemptRateLimitedError(AuthAccountError):
+    pass
+
+
 @dataclass(frozen=True)
 class RegisterAccountResult:
     user_id: str
@@ -141,6 +155,12 @@ class DeleteAccountResult:
     deleted_at: datetime
 
 
+@dataclass(frozen=True)
+class AccountDataResetResult:
+    reset_receipt_id: str
+    reset_at: datetime
+
+
 class AuthAccountService:
     """Account registration, email verification, and reset flows."""
 
@@ -157,6 +177,8 @@ class AuthAccountService:
         resend_cooldown: timedelta | None = None,
         code_failed_attempt_limit: int = settings.auth_code_failed_attempt_limit,
         code_failed_attempt_lock: timedelta | None = None,
+        current_password_failed_attempt_limit: int | None = None,
+        current_password_failed_attempt_lock: timedelta | None = None,
         code_length: int = settings.auth_email_code_length,
     ) -> None:
         self._repository = repository or AuthRepository()
@@ -175,6 +197,10 @@ class AuthAccountService:
         self._code_failed_attempt_lock = code_failed_attempt_lock or timedelta(
             seconds=settings.auth_code_failed_attempt_lock_seconds
         )
+        self._current_password_failed_attempt_limit = current_password_failed_attempt_limit or code_failed_attempt_limit
+        self._current_password_failed_attempt_lock = (
+            current_password_failed_attempt_lock or self._code_failed_attempt_lock
+        )
         self._code_length = code_length
 
         if self._code_length <= 0:
@@ -183,6 +209,10 @@ class AuthAccountService:
             raise ValueError("failed attempt limit must be positive.")
         if self._code_failed_attempt_lock <= timedelta(0):
             raise ValueError("failed attempt lock must be positive.")
+        if self._current_password_failed_attempt_limit <= 0:
+            raise ValueError("current password failed attempt limit must be positive.")
+        if self._current_password_failed_attempt_lock <= timedelta(0):
+            raise ValueError("current password failed attempt lock must be positive.")
 
     def register_account(self, db: Session, *, email: str, password: str) -> RegisterAccountResult:
         existing_user = self._repository.get_user_by_normalized_email(db, email)
@@ -448,19 +478,19 @@ class AuthAccountService:
         current_session_id: str,
         sign_out_everywhere: bool = False,
     ) -> PasswordChangeResult:
+        now = self._now_provider()
+        self._ensure_current_password_attempt_allowed(db, user_id=user.id, now=now)
         if not self._verify_password(user=user, password=current_password):
-            self._repository.record_auth_audit_event(
+            self._record_current_password_failure(
                 db,
                 user_id=user.id,
                 session_id=current_session_id,
                 event_type=AUTH_AUDIT_PASSWORD_CHANGED,
-                outcome="failure",
-                occurred_at=self._now_provider(),
-                event_details={"reason": "invalid_current_password"},
+                occurred_at=now,
+                reason="invalid_current_password",
             )
             raise PasswordChangeInvalidCurrentPasswordError("current password is invalid.")
 
-        now = self._now_provider()
         password_hash = self._password_hasher.hash_password(new_password)
         self._repository.update_password_hash(
             db,
@@ -501,18 +531,18 @@ class AuthAccountService:
         user: UserAccount,
         password: str,
     ) -> DeleteAccountResult:
+        now = self._now_provider()
+        self._ensure_current_password_attempt_allowed(db, user_id=user.id, now=now)
         if not self._verify_password(user=user, password=password):
-            self._repository.record_auth_audit_event(
+            self._record_current_password_failure(
                 db,
                 user_id=user.id,
                 event_type=AUTH_AUDIT_ACCOUNT_DELETION_REJECTED,
-                outcome="failure",
-                occurred_at=self._now_provider(),
-                event_details={"reason": "invalid_password"},
+                occurred_at=now,
+                reason="invalid_password",
             )
             raise DeleteAccountInvalidPasswordError("password is invalid.")
 
-        now = self._now_provider()
         audit = self._repository.delete_user_account_and_owned_data(
             db,
             user=user,
@@ -524,6 +554,39 @@ class AuthAccountService:
         deleted_at = audit.deleted_at
         db.commit()
         return DeleteAccountResult(deletion_receipt_id=deletion_receipt_id, deleted_at=deleted_at)
+
+    def reset_account_data(
+        self,
+        db: Session,
+        *,
+        user: UserAccount,
+        password: str,
+    ) -> AccountDataResetResult:
+        now = self._now_provider()
+        self._ensure_current_password_attempt_allowed(db, user_id=user.id, now=now)
+        if not self._verify_password(user=user, password=password):
+            self._record_current_password_failure(
+                db,
+                user_id=user.id,
+                event_type=AUTH_AUDIT_ACCOUNT_DATA_RESET_REJECTED,
+                occurred_at=now,
+                reason="invalid_password",
+            )
+            raise AccountDataResetInvalidPasswordError("password is invalid.")
+
+        reset_at = now
+        locked_user = self._repository.lock_user_by_id(db, user.id)
+        if locked_user is None:
+            raise AccountDataResetInvalidPasswordError("password is invalid.")
+        audit = self._repository.reset_user_owned_data(
+            db,
+            user=locked_user,
+            reset_at=reset_at,
+            commit=False,
+        )
+        reset_receipt_id = audit.id
+        db.commit()
+        return AccountDataResetResult(reset_receipt_id=reset_receipt_id, reset_at=reset_at)
 
     def _create_email_verification_code(
         self,
@@ -619,6 +682,16 @@ class AuthAccountService:
         ):
             raise PasswordResetAttemptRateLimitedError("password reset attempts are rate limited.")
 
+    def _ensure_current_password_attempt_allowed(self, db: Session, *, user_id: str, now: datetime) -> None:
+        failed_attempts = self._repository.count_failed_auth_audit_events(
+            db,
+            user_id=user_id,
+            event_types=CURRENT_PASSWORD_FAILURE_EVENT_TYPES,
+            since=now - self._current_password_failed_attempt_lock,
+        )
+        if failed_attempts >= self._current_password_failed_attempt_limit:
+            raise CurrentPasswordAttemptRateLimitedError("current password attempts are rate limited.")
+
     def _record_email_verification_failed_attempt(self, db: Session, *, email: str, now: datetime) -> None:
         user = self._repository.get_user_by_normalized_email(db, email)
         if user is None:
@@ -645,6 +718,26 @@ class AuthAccountService:
             code=latest_code,
             attempt_limit=self._code_failed_attempt_limit,
             lock_until=now + self._code_failed_attempt_lock,
+        )
+
+    def _record_current_password_failure(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        event_type: str,
+        occurred_at: datetime,
+        reason: str,
+        session_id: str | None = None,
+    ) -> None:
+        self._repository.record_auth_audit_event(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            event_type=event_type,
+            outcome="failure",
+            occurred_at=occurred_at,
+            event_details={"reason": reason},
         )
 
     def _hash_code(self, purpose: str, email: str, code: str) -> str:

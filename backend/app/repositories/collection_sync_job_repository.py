@@ -66,7 +66,7 @@ class CollectionSyncJobRepository:
         expires_at_or_before: datetime,
         updated_at: datetime,
     ) -> int:
-        stale_jobs = (
+        stale_job_candidates = (
             db.query(CollectionSyncJob)
             .filter(CollectionSyncJob.status.in_(ACTIVE_COLLECTION_SYNC_JOB_STATUSES))
             .filter(
@@ -77,24 +77,42 @@ class CollectionSyncJobRepository:
             )
         )
         if user_id is not None:
-            stale_jobs = stale_jobs.filter(CollectionSyncJob.user_id == user_id)
-        stale_jobs = stale_jobs.all()
-        if not stale_jobs:
+            stale_job_candidates = stale_job_candidates.filter(CollectionSyncJob.user_id == user_id)
+        stale_job_candidates = stale_job_candidates.all()
+        if not stale_job_candidates:
             return 0
 
-        for job in stale_jobs:
-            job.status = "expired"
-            job.message = "Collection sync expired. Start a new sync."
-            job.error = {
-                "code": "collection_sync_job_stale",
-                "message": "Collection sync expired. Start a new sync.",
-                "failed_step": job.step or "unknown",
-            }
-            job.updated_at = updated_at
-            db.add(job)
+        expired_count = 0
+        for job in stale_job_candidates:
+            query = (
+                db.query(CollectionSyncJob)
+                .filter(CollectionSyncJob.id == job.id)
+                .filter(CollectionSyncJob.status.in_(ACTIVE_COLLECTION_SYNC_JOB_STATUSES))
+                .filter(
+                    or_(
+                        CollectionSyncJob.updated_at <= stale_before,
+                        CollectionSyncJob.expires_at <= expires_at_or_before,
+                    )
+                )
+            )
+            if user_id is not None:
+                query = query.filter(CollectionSyncJob.user_id == user_id)
+            expired_count += query.update(
+                {
+                    CollectionSyncJob.status: "expired",
+                    CollectionSyncJob.message: "Collection sync expired. Start a new sync.",
+                    CollectionSyncJob.error: {
+                        "code": "collection_sync_job_stale",
+                        "message": "Collection sync expired. Start a new sync.",
+                        "failed_step": job.step or "unknown",
+                    },
+                    CollectionSyncJob.updated_at: updated_at,
+                },
+                synchronize_session=False,
+            )
 
         db.commit()
-        return len(stale_jobs)
+        return expired_count
 
     @staticmethod
     def update_progress(
@@ -109,6 +127,7 @@ class CollectionSyncJobRepository:
         added_count: int | None = None,
         updated_count: int | None = None,
         removed_count: int | None = None,
+        commit: bool = True,
     ) -> CollectionSyncJob:
         job.status = "running"
         job.step = step
@@ -126,8 +145,11 @@ class CollectionSyncJobRepository:
             job.removed_count = removed_count
 
         db.add(job)
-        db.commit()
-        db.refresh(job)
+        if commit:
+            db.commit()
+            db.refresh(job)
+        else:
+            db.flush()
         return job
 
     @staticmethod

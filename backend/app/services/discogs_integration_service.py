@@ -7,6 +7,7 @@ from app.repositories.collection_settings_repository import CollectionSettingsRe
 from app.repositories.provider_integration_repository import ProviderIntegrationRepository
 from app.schemas.collection import CollectionSourceOfTruth
 from app.schemas.integrations import DiscogsIntegrationStatusResponse
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.discogs_service import (
     DiscogsApiConfig,
     DiscogsClient,
@@ -101,6 +102,7 @@ class DiscogsIntegrationService:
         if not normalized_token:
             raise DiscogsTokenValidationError("Discogs access token is required.")
 
+        lock_account_data_mutation(db, user_id=user_id)
         identity = self._identity_client.fetch_identity(normalized_token)
         ciphertext = self._get_token_cipher().encrypt(normalized_token)
         self._integration_repository.upsert_discogs_token(
@@ -118,7 +120,8 @@ class DiscogsIntegrationService:
         *,
         user_id: str | None = None,
     ) -> DiscogsIntegrationStatusResponse:
-        self._integration_repository.delete_discogs_token(db, user_id=user_id)
+        lock_account_data_mutation(db, user_id=user_id)
+        self._integration_repository.delete_discogs_token(db, user_id=user_id, commit=False)
         self._collection_settings_repository.set_source_of_truth(db, CollectionSourceOfTruth.APP, user_id=user_id)
         return self.get_status(db, user_id=user_id)
 

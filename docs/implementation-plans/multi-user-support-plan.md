@@ -122,6 +122,15 @@ This gives the app the practical benefits the user expects from OAuth2 token han
 - Shared public metadata may remain only if it is no longer linked to the deleted user.
 - The API should return a deletion receipt/status so Android can clear local auth state and return to registration.
 
+### Delete My Data
+
+- A separate "Delete my data" option is available from Settings for users who want a full account reset without deleting the account.
+- Reset requires explicit destructive-action confirmation and must clearly distinguish itself from account deletion: the account, email, password, verification state, and entitlement identity remain.
+- Reset should hard-delete all user-owned app data that account deletion would delete, including collection, listening sessions, analytics, insights/chat history, saved provider tokens, collection settings, custom moods, manual releases, imports, sync state, and app-owned preferences.
+- Reset must preserve only the auth account, credentials, current account identity, required security/audit records, and any future billing/entitlement ledger data that cannot be removed without breaking account continuity.
+- Minimal audit records should not retain collection contents, listening history, provider tokens, notes, analytics inputs, or other user-owned app data.
+- The API should return a reset receipt/status so Android can clear local app data and provider state while keeping the user signed in.
+
 ### Future Subscription And Feature Gating
 
 The MVP should include an entitlement-ready model, but not billing implementation.
@@ -195,6 +204,7 @@ Add versioned endpoints for:
 - `POST /api/v1/auth/password/change`
 - `POST /api/v1/auth/logout-all`
 - `DELETE /api/v1/auth/account`
+- `DELETE /api/v1/auth/account/data`
 
 ### Authorization
 
@@ -249,6 +259,7 @@ Add versioned endpoints for:
 
 - Any cached user data must be keyed by account or cleared on sign out.
 - After account deletion, local collection/session/cache state must be cleared.
+- After account data reset, local collection/session/cache/provider state must be cleared while preserving the current auth session.
 - Offline behavior should be explicit: previously loaded data can be shown only if it is clearly tied to the current authenticated account and does not bypass the one-week re-auth requirement.
 - Limited offline read-only mode is not part of the first multi-user auth slice unless a separate local caching/read-only storage plan is approved.
 - For this plan, password re-entry after one week should block the app rather than exposing cached user data behind a stale session.
@@ -267,6 +278,7 @@ Add versioned endpoints for:
 - Mailgun is the preferred first real provider candidate, with provider API favored for the first real-email test.
 - SMTP fallback is out of scope for the first slice.
 - Account deletion uses hard deletion for user-owned data plus minimal audit records.
+- Account data reset reuses the same user-owned data deletion boundary as account deletion, but preserves the auth account, credentials, verification state, entitlement identity, and current signed-in state.
 - One-week inactivity blocks the app for this plan; limited offline read-only mode requires separate local caching work.
 - Shared Discogs/catalog metadata is preferred long term, while personal/manual entries remain separate and user-owned.
 - Manual releases are not automatically merged with Discogs; later Discogs matching should be an explicit suggestion/replacement flow.
@@ -376,6 +388,19 @@ Status: implemented for backend OCR/identify usage counting and deterministic ga
 
 Implementation note: `EntitlementService` currently gates the `ocr_identify` capability for sync identify and accepted async identify jobs. Free/trial limits and the rolling window are configurable, paid plans can be represented as unlimited plan limits, and denied requests return `402 feature_usage_limit_exceeded` without recording an extra usage event. PostgreSQL deployments use a transaction-level advisory lock before summing and inserting usage events, which serializes concurrent usage consumption across backend workers for the same user/capability pair. Billing provider synchronization, subscription webhooks, and Android upgrade messaging remain future work.
 
+### Phase 8: Account Data Reset
+
+Status: implemented for the backend API/service/repository contract.
+
+- Add `DELETE /api/v1/auth/account/data` for a full user-owned data reset that preserves the auth account.
+- Reuse the account deletion ownership graph for collection, settings, integrations/tokens, sync jobs, listening sessions, analytics, AI history, Spotify imports, manual releases, custom moods, app preferences, and other user-owned rows.
+- Preserve the user account row, email, password hash, verification state, current auth session, required security audit rows, usage quota ledger, and future billing/entitlement identity records.
+- Write a minimal reset audit event that records reset timing/status without retaining deleted user content or provider secrets.
+- Return a reset receipt/status so clients can clear local data and reload into an empty signed-in account state.
+- Done when the same account can immediately continue signed in after reset, cannot see pre-reset data, and can build a new collection from a clean state.
+
+Implementation note: `AuthAccountService.reset_account_data` verifies the current password, then `AuthRepository.reset_user_owned_data` reuses the user-owned deletion graph while preserving the account, auth sessions, auth/security rows, entitlement identity, and usage quota ledger. The endpoint returns a reset receipt from the structured auth audit event and leaves the current access token valid.
+
 ## Android Implementation Phases
 
 ### Phase 1: Auth State Gate And Splash
@@ -432,6 +457,18 @@ Status: implemented for OCR/identify gated-feature client states.
 
 Implementation note: Android now parses `feature_usage_limit_exceeded` responses into a feature-gated API error with usage metadata. The OCR/identify processing screen maps that backend denial to a stable limit-reached state with Manual Search and Close actions, and does not show Retry for deterministic entitlement denials. Billing and subscription upgrade UI remain out of scope.
 
+### Phase 8: Delete My Data Settings Flow
+
+Status: implemented for Android Settings, auth repository, and API client wiring.
+
+- Add a Settings account-management option labeled "Delete my data" separate from "Delete account".
+- Show destructive confirmation copy that explains all collection/listening/analytics/insights/provider/app data will be deleted while the account remains active.
+- Call the account data reset endpoint, clear local collection/session/cache/provider state, and preserve secure auth tokens plus the current account email.
+- Reload into the signed-in empty-account experience instead of returning to registration.
+- Done when a reset cannot leave pre-reset data visible locally and the user remains authenticated with the same account.
+
+Implementation note: Settings calls `AuthAccountRepository.resetAccountData`, which preserves the local auth session and access token while clearing provider/settings UI state and returning navigation to Home. `VinylNavHost` also clears account-scoped in-memory UI state for AI insights, identify results/input/mode, and active timed sessions before navigating. The API client targets `DELETE /auth/account/data`, and tests cover request parsing plus local session and AI state reset behavior. Usage quota ledger state remains backend-owned and is not reset by the client flow.
+
 ## Validation Plan
 
 ### Backend
@@ -445,6 +482,7 @@ Implementation note: Android now parses `feature_usage_limit_exceeded` responses
 - One-week inactivity returns a typed re-auth-required response.
 - Password change/reset revokes expected sessions.
 - Account deletion removes user-owned collection, sessions, analytics, AI history, and provider tokens.
+- Account data reset removes user-owned data and provider tokens while preserving the auth account and current signed-in state.
 - All protected endpoints reject missing/invalid tokens.
 - User A cannot read, mutate, sync, or delete User B data.
 - Existing single-user data migrates under an owner without losing history.

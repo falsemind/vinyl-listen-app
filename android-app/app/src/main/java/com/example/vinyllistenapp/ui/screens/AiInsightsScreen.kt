@@ -92,6 +92,20 @@ internal class AiInsightsScreenState {
     var showClearConfirmation by mutableStateOf(false)
     var shouldFocusLoadedHistory by mutableStateOf(false)
     var conversationId by mutableStateOf<String?>(null)
+
+    fun resetForAccountDataReset() {
+        messages.clear()
+        messages.add(ChatMessage.Assistant(INTRO_MESSAGE))
+        inputValue = ""
+        isLoadingHistory = false
+        hasLoadedHistory = false
+        isTyping = false
+        isClearingHistory = false
+        isExportingHistory = false
+        showClearConfirmation = false
+        shouldFocusLoadedHistory = false
+        conversationId = null
+    }
 }
 
 @Composable

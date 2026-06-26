@@ -21,6 +21,7 @@ from app.schemas.identify import (
     IdentifyJobStatusResponse,
     IdentifyResponse,
 )
+from app.services.account_data_mutation import lock_account_data_mutation
 from app.services.discogs_service import DiscogsClientError
 from app.services.entitlement_service import OCR_IDENTIFY_CAPABILITY, EntitlementService
 from app.services.identify_service import (
@@ -289,12 +290,14 @@ class IdentifyJobService:
             admission_ticket = self._admission_controller.acquire_global_slot()
             job_id = str(uuid4())
             try:
+                lock_account_data_mutation(db, user_id=user_id)
                 if consume_usage:
                     self._entitlement_service.consume_usage(
                         db,
                         user_id=user_id,
                         capability=OCR_IDENTIFY_CAPABILITY,
                         event_metadata={"source": event_source},
+                        commit=False,
                     )
                 job = self._repository.create(
                     db,

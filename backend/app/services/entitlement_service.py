@@ -75,6 +75,7 @@ class EntitlementService:
         capability: str,
         units: int = 1,
         event_metadata: dict | None = None,
+        commit: bool = True,
     ) -> UsageGrant:
         if units <= 0:
             raise ValueError("usage units must be positive.")
@@ -88,9 +89,11 @@ class EntitlementService:
                 capability=capability,
                 units=units,
                 event_metadata=event_metadata,
+                commit=commit,
             )
         except Exception:
-            db.rollback()
+            if commit:
+                db.rollback()
             raise
         return grant
 
@@ -146,6 +149,7 @@ class EntitlementService:
         capability: str,
         units: int = 1,
         event_metadata: dict | None = None,
+        commit: bool = True,
     ) -> None:
         if units <= 0:
             raise ValueError("usage units must be positive.")
@@ -164,7 +168,8 @@ class EntitlementService:
             event_metadata=event_metadata,
             commit=False,
         )
-        db.commit()
+        if commit:
+            db.commit()
 
     def _ensure_entitlement_active(self, entitlement: UserEntitlement, *, now: datetime, capability: str) -> None:
         status = entitlement.status.upper()
