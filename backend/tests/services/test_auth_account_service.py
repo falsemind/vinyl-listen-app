@@ -31,6 +31,7 @@ from app.repositories.auth_repository import AuthRepository
 from app.services.auth_account_service import (
     AccountDataResetInvalidPasswordError,
     AuthAccountService,
+    CurrentPasswordAttemptRateLimitedError,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
     EmailVerificationAttemptRateLimitedError,
@@ -789,6 +790,36 @@ def test_reset_account_data_requires_password_and_preserves_account_auth_state(
             assert db_session.query(model).count() == 0
     finally:
         _drop_account_delete_tables(db_session)
+
+
+def test_reset_account_data_rate_limits_repeated_invalid_passwords(
+    db_session: Session,
+    repository: AuthRepository,
+    clock: AuthTestClock,
+    email_sender: RecordingEmailSender,
+) -> None:
+    service = _service(
+        repository=repository,
+        clock=clock,
+        email_sender=email_sender,
+        code_failed_attempt_limit=2,
+        code_failed_attempt_lock=timedelta(minutes=5),
+    )
+    registration = service.register_account(db_session, email="alex@example.com", password="password")
+    user = repository.get_user_by_id(db_session, registration.user_id)
+    assert user is not None
+
+    with pytest.raises(AccountDataResetInvalidPasswordError):
+        service.reset_account_data(db_session, user=user, password="wrong-password")
+    with pytest.raises(AccountDataResetInvalidPasswordError):
+        service.reset_account_data(db_session, user=user, password="still-wrong")
+    with pytest.raises(CurrentPasswordAttemptRateLimitedError):
+        service.reset_account_data(db_session, user=user, password="password")
+
+    clock.advance(timedelta(minutes=5, seconds=1))
+    result = service.reset_account_data(db_session, user=user, password="password")
+
+    assert result.reset_receipt_id
 
 
 def test_reset_account_data_preserves_usage_limit_ledger(

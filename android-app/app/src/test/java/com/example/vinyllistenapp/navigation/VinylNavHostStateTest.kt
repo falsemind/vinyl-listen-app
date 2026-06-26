@@ -112,7 +112,7 @@ class VinylNavHostStateTest {
     }
 
     @Test
-    fun accountDataResetCancelsAiInsightsRequestsBeforeClearingChatState() {
+    fun accountDataResetCancelsAccountScopedRequestsBeforeClearingChatState() {
         val state = AiInsightsScreenState()
         state.messages.clear()
         state.messages.add(ChatMessage.User("What did I play yesterday?"))
@@ -124,7 +124,7 @@ class VinylNavHostStateTest {
         var scopeResetCount = 0
         var requestWasCancelledBeforeScopeReset = false
 
-        resetAiInsightsAfterAccountDataReset(
+        resetAccountScopedRequestsAfterAccountDataReset(
             state = state,
             requestScope = requestScope,
             onRequestScopeReset = {

@@ -74,8 +74,33 @@ class AuthRepository:
     def get_user_by_id(self, db: Session, user_id: str) -> UserAccount | None:
         return db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
 
+    def lock_user_by_id(self, db: Session, user_id: str) -> UserAccount | None:
+        return db.query(UserAccount).filter(UserAccount.id == user_id).with_for_update().one_or_none()
+
     def get_user_by_normalized_email(self, db: Session, email: str) -> UserAccount | None:
         return db.query(UserAccount).filter(UserAccount.normalized_email == normalize_email(email)).one_or_none()
+
+    def count_failed_auth_audit_events(
+        self,
+        db: Session,
+        *,
+        user_id: str,
+        event_types: tuple[str, ...],
+        since: datetime,
+    ) -> int:
+        return (
+            db.scalar(
+                select(func.count())
+                .select_from(AuthAuditEvent)
+                .where(
+                    AuthAuditEvent.user_id == user_id,
+                    AuthAuditEvent.event_type.in_(event_types),
+                    AuthAuditEvent.outcome == "failure",
+                    AuthAuditEvent.occurred_at >= since,
+                )
+            )
+            or 0
+        )
 
     def record_auth_audit_event(
         self,

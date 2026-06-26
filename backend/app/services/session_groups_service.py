@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.sessions import SessionGroups
+from app.repositories.auth_repository import AuthRepository
 from app.repositories.session_groups_repository import SessionGroupsRepository
 from app.repositories.sessions_repository import SessionsRepository
 
@@ -88,10 +89,12 @@ class SessionGroupsService:
         self,
         session_groups_repository: SessionGroupsRepository | None = None,
         sessions_repository: SessionsRepository | None = None,
+        auth_repository: AuthRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._session_groups_repository = session_groups_repository or SessionGroupsRepository()
         self._sessions_repository = sessions_repository or SessionsRepository()
+        self._auth_repository = auth_repository or AuthRepository()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
     def start_session_group(
@@ -106,6 +109,7 @@ class SessionGroupsService:
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroups:
+        self._lock_user_for_account_mutation(db, user_id=user_id)
         active_group = self._expire_if_inactive(
             db,
             self._session_groups_repository.get_active(db, user_id=user_id),
@@ -172,6 +176,7 @@ class SessionGroupsService:
         session_type: str | None = None,
         notes: str | None = None,
     ) -> SessionGroups:
+        self._lock_user_for_account_mutation(db, user_id=user_id)
         session_group = self.get_session_group(db, session_group_id, user_id=user_id)
         if session_group.status != "active":
             raise SessionGroupInactiveError(session_group_id)
@@ -347,3 +352,8 @@ class SessionGroupsService:
 
     def _current_time(self) -> datetime:
         return self._as_aware_utc(self._now_provider())
+
+    def _lock_user_for_account_mutation(self, db: Session, *, user_id: str | None) -> None:
+        if user_id is None:
+            return
+        self._auth_repository.lock_user_by_id(db, user_id)

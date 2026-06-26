@@ -62,6 +62,7 @@ import com.example.vinyllistenapp.ui.screens.StyleDistributionScreen
 import com.example.vinyllistenapp.ui.screens.StyleRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 import com.example.vinyllistenapp.ui.screens.rememberAiInsightsScreenState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -74,7 +75,7 @@ private const val TIMED_SESSION_REFRESH_MILLIS = 60_000L
 private const val COLLECTION_MEMBERSHIP_REFRESH_KEY = "collectionMembershipRefreshKey"
 private const val MANUAL_SUBMISSIONS_REFRESH_KEY = "manualSubmissionsRefreshKey"
 
-internal fun resetAiInsightsAfterAccountDataReset(
+internal fun resetAccountScopedRequestsAfterAccountDataReset(
     state: AiInsightsScreenState,
     requestScope: CoroutineScope,
     onRequestScopeReset: () -> Unit,
@@ -97,13 +98,13 @@ fun VinylNavHost(
     val activeApiClient = apiClient ?: remember { VinylApiClient() }
     val aiInsightsState = rememberAiInsightsScreenState()
     val appScope = rememberCoroutineScope()
-    var aiInsightsRequestScopeKey by remember { mutableStateOf(0) }
-    val aiInsightsRequestScope =
-        remember(appScope, aiInsightsRequestScopeKey) {
+    var accountDataRequestScopeKey by remember { mutableStateOf(0) }
+    val accountDataRequestScope =
+        remember(appScope, accountDataRequestScopeKey) {
             CoroutineScope(appScope.coroutineContext + SupervisorJob(appScope.coroutineContext[Job]))
         }
-    DisposableEffect(aiInsightsRequestScope) {
-        onDispose { aiInsightsRequestScope.cancel() }
+    DisposableEffect(accountDataRequestScope) {
+        onDispose { accountDataRequestScope.cancel() }
     }
     var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
         mutableStateOf(emptyList())
@@ -125,9 +126,17 @@ fun VinylNavHost(
     }
     LockPortraitOrientation(enabled = currentRoute.isPortraitLockedOverflowRoute())
 
-    suspend fun refreshTimedSession() {
-        runCatching { activeApiClient.getActiveSessionGroup() }
-            .onSuccess { activeTimedSession = it }
+    suspend fun refreshTimedSession(requestScopeKey: Int = accountDataRequestScopeKey) {
+        try {
+            val sessionGroup = activeApiClient.getActiveSessionGroup()
+            if (requestScopeKey == accountDataRequestScopeKey) {
+                activeTimedSession = sessionGroup
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Keep the current banner state when refresh fails.
+        }
     }
 
     fun notifyCollectionMembershipChanged() {
@@ -162,17 +171,28 @@ fun VinylNavHost(
     ) {
         if (isStartingTimedSession) return
         isStartingTimedSession = true
-        appScope.launch {
-            runCatching {
-                activeApiClient.startSessionGroup(
-                    styleFocus = styleFocus,
-                    moodDirection = moodDirection,
-                    sessionType = sessionType,
-                    notes = notes,
-                )
-            }.onSuccess { activeTimedSession = it }
-                .onFailure { refreshTimedSession() }
-            isStartingTimedSession = false
+        val requestScopeKey = accountDataRequestScopeKey
+        accountDataRequestScope.launch {
+            try {
+                val sessionGroup =
+                    activeApiClient.startSessionGroup(
+                        styleFocus = styleFocus,
+                        moodDirection = moodDirection,
+                        sessionType = sessionType,
+                        notes = notes,
+                    )
+                if (requestScopeKey == accountDataRequestScopeKey) {
+                    activeTimedSession = sessionGroup
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                refreshTimedSession(requestScopeKey)
+            } finally {
+                if (requestScopeKey == accountDataRequestScopeKey) {
+                    isStartingTimedSession = false
+                }
+            }
         }
     }
 
@@ -180,19 +200,30 @@ fun VinylNavHost(
         val sessionGroup = activeTimedSession ?: return
         if (isStoppingTimedSession) return
         isStoppingTimedSession = true
-        appScope.launch {
-            runCatching { activeApiClient.finishSessionGroup(sessionGroup.id) }
-                .onSuccess { activeTimedSession = null }
-                .onFailure { refreshTimedSession() }
-            isStoppingTimedSession = false
+        val requestScopeKey = accountDataRequestScopeKey
+        accountDataRequestScope.launch {
+            try {
+                activeApiClient.finishSessionGroup(sessionGroup.id)
+                if (requestScopeKey == accountDataRequestScopeKey) {
+                    activeTimedSession = null
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                refreshTimedSession(requestScopeKey)
+            } finally {
+                if (requestScopeKey == accountDataRequestScopeKey) {
+                    isStoppingTimedSession = false
+                }
+            }
         }
     }
 
     fun handleAccountDataReset() {
-        resetAiInsightsAfterAccountDataReset(
+        resetAccountScopedRequestsAfterAccountDataReset(
             state = aiInsightsState,
-            requestScope = aiInsightsRequestScope,
-            onRequestScopeReset = { aiInsightsRequestScopeKey += 1 },
+            requestScope = accountDataRequestScope,
+            onRequestScopeReset = { accountDataRequestScopeKey += 1 },
         )
         latestCandidates = emptyList()
         pendingTextIdentifyInput = null
@@ -204,14 +235,14 @@ fun VinylNavHost(
         onAccountDataReset()
     }
 
-    LaunchedEffect(Unit) {
-        refreshTimedSession()
+    LaunchedEffect(accountDataRequestScopeKey) {
+        refreshTimedSession(accountDataRequestScopeKey)
     }
 
-    LaunchedEffect(activeTimedSession?.id) {
+    LaunchedEffect(activeTimedSession?.id, accountDataRequestScopeKey) {
         while (activeTimedSession != null) {
             delay(TIMED_SESSION_REFRESH_MILLIS)
-            refreshTimedSession()
+            refreshTimedSession(accountDataRequestScopeKey)
         }
     }
 
@@ -578,7 +609,8 @@ fun VinylNavHost(
                     releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
                     apiClient = activeApiClient,
                     onSave = { releaseId ->
-                        appScope.launch { refreshTimedSession() }
+                        val requestScopeKey = accountDataRequestScopeKey
+                        accountDataRequestScope.launch { refreshTimedSession(requestScopeKey) }
                         val previousRoute = navController.previousBackStackEntry?.destination?.route
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
                             when (previousRoute) {
@@ -681,7 +713,7 @@ fun VinylNavHost(
                 AiInsightsScreen(
                     apiClient = activeApiClient,
                     state = aiInsightsState,
-                    requestScope = aiInsightsRequestScope,
+                    requestScope = accountDataRequestScope,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }

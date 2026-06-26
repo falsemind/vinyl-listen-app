@@ -100,6 +100,8 @@ def auth_api() -> Iterator[AuthApiContext]:
         verification_code_ttl=timedelta(minutes=15),
         password_reset_code_ttl=timedelta(minutes=15),
         resend_cooldown=timedelta(seconds=60),
+        current_password_failed_attempt_limit=2,
+        current_password_failed_attempt_lock=timedelta(minutes=5),
     )
     token_service = AuthTokenLifecycleService(
         repository=repository,
@@ -375,6 +377,36 @@ def test_delete_account_data_requires_password_and_preserves_access(auth_api: Au
     assert reset_response.json()["reset_receipt_id"]
     assert protected_response.status_code == 200
     assert protected_response.json()["email"] == "alex@example.com"
+
+
+@pytest.mark.real_auth
+def test_delete_account_data_rate_limits_invalid_password_attempts(auth_api: AuthApiContext) -> None:
+    token_payload = _verified_login(auth_api, email="alex@example.com", password="password")
+    headers = {"Authorization": f"Bearer {token_payload['access_token']}"}
+
+    first_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account/data",
+        json={"password": "wrong-password"},
+        headers=headers,
+    )
+    second_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account/data",
+        json={"password": "still-wrong"},
+        headers=headers,
+    )
+    limited_response = auth_api.client.request(
+        "DELETE",
+        "/api/v1/auth/account/data",
+        json={"password": "password"},
+        headers=headers,
+    )
+
+    assert first_response.status_code == 401
+    assert second_response.status_code == 401
+    assert limited_response.status_code == 429
+    assert limited_response.json()["error"]["code"] == "current_password_rate_limited"
 
 
 def _verified_login(auth_api: AuthApiContext, *, email: str, password: str) -> dict:

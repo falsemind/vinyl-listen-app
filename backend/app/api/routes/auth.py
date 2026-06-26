@@ -39,6 +39,7 @@ from app.schemas.auth import (
 from app.services.auth_account_service import (
     AccountDataResetInvalidPasswordError,
     AuthAccountService,
+    CurrentPasswordAttemptRateLimitedError,
     DeleteAccountInvalidPasswordError,
     EmailAlreadyRegisteredError,
     EmailVerificationAttemptRateLimitedError,
@@ -460,7 +461,7 @@ def confirm_current_user_password_reset(
 @router.post(
     "/password/change",
     response_model=PasswordChangeResponse,
-    responses={401: {"model": AuthErrorResponse}},
+    responses={401: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
 )
 def change_password(
     payload: PasswordChangeRequest,
@@ -483,6 +484,12 @@ def change_password(
             code="invalid_current_password",
             message="Current password is invalid.",
         )
+    except CurrentPasswordAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="current_password_rate_limited",
+            message="Current password attempts are rate limited.",
+        )
 
     return PasswordChangeResponse(changed=True, revoked_sessions=result.revoked_sessions)
 
@@ -490,7 +497,7 @@ def change_password(
 @router.delete(
     "/account",
     response_model=DeleteAccountResponse,
-    responses={401: {"model": AuthErrorResponse}},
+    responses={401: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
 )
 def delete_account(
     payload: DeleteAccountRequest,
@@ -510,6 +517,12 @@ def delete_account(
             code="invalid_credentials",
             message="Password is invalid.",
         )
+    except CurrentPasswordAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="current_password_rate_limited",
+            message="Current password attempts are rate limited.",
+        )
 
     return DeleteAccountResponse(
         deleted=True,
@@ -521,7 +534,7 @@ def delete_account(
 @router.delete(
     "/account/data",
     response_model=DeleteAccountDataResponse,
-    responses={401: {"model": AuthErrorResponse}},
+    responses={401: {"model": AuthErrorResponse}, 429: {"model": AuthErrorResponse}},
 )
 def delete_account_data(
     payload: DeleteAccountDataRequest,
@@ -540,6 +553,12 @@ def delete_account_data(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code="invalid_credentials",
             message="Password is invalid.",
+        )
+    except CurrentPasswordAttemptRateLimitedError:
+        raise_auth_error(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="current_password_rate_limited",
+            message="Current password attempts are rate limited.",
         )
 
     return DeleteAccountDataResponse(

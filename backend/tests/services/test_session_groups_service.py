@@ -25,6 +25,7 @@ class InMemorySessionGroupsRepository:
         self,
         _db,
         *,
+        user_id: str | None = None,
         title: str | None,
         style_focus: str,
         mood_direction: str,
@@ -33,6 +34,7 @@ class InMemorySessionGroupsRepository:
         started_at: datetime,
     ) -> SessionGroups:
         self.created_payload = {
+            "user_id": user_id,
             "title": title,
             "style_focus": style_focus,
             "mood_direction": mood_direction,
@@ -42,6 +44,7 @@ class InMemorySessionGroupsRepository:
         }
         group = SessionGroups(
             id="group-123",
+            user_id=user_id,
             title=title,
             status="active",
             style_focus=style_focus,
@@ -56,10 +59,12 @@ class InMemorySessionGroupsRepository:
         self.groups[group.id] = group
         return group
 
-    def get_by_id(self, _db, session_group_id: str) -> SessionGroups | None:
+    def get_by_id(self, _db, session_group_id: str, *, user_id: str | None = None) -> SessionGroups | None:
+        _ = user_id
         return self.groups.get(session_group_id)
 
-    def get_active(self, _db) -> SessionGroups | None:
+    def get_active(self, _db, *, user_id: str | None = None) -> SessionGroups | None:
+        _ = user_id
         return self.active_group
 
     def finish(
@@ -95,8 +100,24 @@ class InMemorySessionsRepository:
     def __init__(self, latest_created_at_by_group_id: dict[str, datetime] | None = None) -> None:
         self.latest_created_at_by_group_id = latest_created_at_by_group_id or {}
 
-    def get_latest_created_at_by_session_group_id(self, _db, session_group_id: str) -> datetime | None:
+    def get_latest_created_at_by_session_group_id(
+        self,
+        _db,
+        session_group_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> datetime | None:
+        _ = user_id
         return self.latest_created_at_by_group_id.get(session_group_id)
+
+
+class RecordingAuthRepository:
+    def __init__(self) -> None:
+        self.locked_user_ids: list[str] = []
+
+    def lock_user_by_id(self, _db, user_id: str):
+        self.locked_user_ids.append(user_id)
+        return
 
 
 def test_start_session_group_creates_active_group_with_normalized_title() -> None:
@@ -112,6 +133,7 @@ def test_start_session_group_creates_active_group_with_normalized_title() -> Non
     assert group.title == "Late night stack"
     assert group.status == "active"
     assert repository.created_payload == {
+        "user_id": None,
         "title": "Late night stack",
         "style_focus": "mixed",
         "mood_direction": "steady_mood",
@@ -119,6 +141,22 @@ def test_start_session_group_creates_active_group_with_normalized_title() -> Non
         "notes": None,
         "started_at": datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
     }
+
+
+def test_start_session_group_locks_user_for_account_mutation() -> None:
+    repository = InMemorySessionGroupsRepository()
+    auth_repository = RecordingAuthRepository()
+    service = SessionGroupsService(
+        session_groups_repository=repository,
+        auth_repository=auth_repository,
+        now_provider=lambda: datetime(2026, 4, 19, 8, 0, tzinfo=UTC),
+    )
+
+    group = service.start_session_group(db=object(), user_id="user-123", title="Late night stack")
+
+    assert auth_repository.locked_user_ids == ["user-123"]
+    assert group.user_id == "user-123"
+    assert repository.created_payload["user_id"] == "user-123"
 
 
 def test_start_session_group_accepts_metadata() -> None:
@@ -142,6 +180,7 @@ def test_start_session_group_accepts_metadata() -> None:
     assert group.session_type == "dj_set"
     assert group.notes == "Warm up shelf."
     assert repository.created_payload == {
+        "user_id": None,
         "title": None,
         "style_focus": "one_style",
         "mood_direction": "energy_build",
