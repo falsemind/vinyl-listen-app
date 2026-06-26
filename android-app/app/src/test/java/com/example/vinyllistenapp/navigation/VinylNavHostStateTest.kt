@@ -4,6 +4,10 @@ import com.example.vinyllistenapp.data.api.TextIdentifyJobInput
 import com.example.vinyllistenapp.domain.MatchCandidate
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreenState
 import com.example.vinyllistenapp.ui.screens.ChatMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -105,6 +109,37 @@ class VinylNavHostStateTest {
         assertFalse(state.showClearConfirmation)
         assertFalse(state.shouldFocusLoadedHistory)
         assertEquals(null, state.conversationId)
+    }
+
+    @Test
+    fun accountDataResetCancelsAiInsightsRequestsBeforeClearingChatState() {
+        val state = AiInsightsScreenState()
+        state.messages.clear()
+        state.messages.add(ChatMessage.User("What did I play yesterday?"))
+        state.conversationId = "conversation-before-reset"
+        state.isTyping = true
+
+        val requestScope = CoroutineScope(SupervisorJob())
+        val inFlightRequest = requestScope.launch { awaitCancellation() }
+        var scopeResetCount = 0
+        var requestWasCancelledBeforeScopeReset = false
+
+        resetAiInsightsAfterAccountDataReset(
+            state = state,
+            requestScope = requestScope,
+            onRequestScopeReset = {
+                scopeResetCount += 1
+                requestWasCancelledBeforeScopeReset = inFlightRequest.isCancelled
+            },
+        )
+
+        assertEquals(1, scopeResetCount)
+        assertTrue(requestWasCancelledBeforeScopeReset)
+        assertTrue(inFlightRequest.isCancelled)
+        assertEquals(1, state.messages.size)
+        assertTrue(state.messages.single() is ChatMessage.Assistant)
+        assertEquals(null, state.conversationId)
+        assertFalse(state.isTyping)
     }
 
     @Test

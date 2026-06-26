@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +34,7 @@ import com.example.vinyllistenapp.ui.components.LocalTimedSessionBanner
 import com.example.vinyllistenapp.ui.components.LockPortraitOrientation
 import com.example.vinyllistenapp.ui.components.TimedSessionBanner
 import com.example.vinyllistenapp.ui.screens.AiInsightsScreen
+import com.example.vinyllistenapp.ui.screens.AiInsightsScreenState
 import com.example.vinyllistenapp.ui.screens.AllDiscogsFoldersScreen
 import com.example.vinyllistenapp.ui.screens.AnalyticsScreen
 import com.example.vinyllistenapp.ui.screens.BarcodeProcessingScreen
@@ -60,6 +62,10 @@ import com.example.vinyllistenapp.ui.screens.StyleDistributionScreen
 import com.example.vinyllistenapp.ui.screens.StyleRecordsDrilldownScreen
 import com.example.vinyllistenapp.ui.screens.TopRecordsScreen
 import com.example.vinyllistenapp.ui.screens.rememberAiInsightsScreenState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -67,6 +73,16 @@ private const val NAV_FADE_DURATION_MILLIS = 140
 private const val TIMED_SESSION_REFRESH_MILLIS = 60_000L
 private const val COLLECTION_MEMBERSHIP_REFRESH_KEY = "collectionMembershipRefreshKey"
 private const val MANUAL_SUBMISSIONS_REFRESH_KEY = "manualSubmissionsRefreshKey"
+
+internal fun resetAiInsightsAfterAccountDataReset(
+    state: AiInsightsScreenState,
+    requestScope: CoroutineScope,
+    onRequestScopeReset: () -> Unit,
+) {
+    requestScope.cancel()
+    onRequestScopeReset()
+    state.resetForAccountDataReset()
+}
 
 @Composable
 fun VinylNavHost(
@@ -81,7 +97,14 @@ fun VinylNavHost(
     val activeApiClient = apiClient ?: remember { VinylApiClient() }
     val aiInsightsState = rememberAiInsightsScreenState()
     val appScope = rememberCoroutineScope()
-    val aiInsightsRequestScope = appScope
+    var aiInsightsRequestScopeKey by remember { mutableStateOf(0) }
+    val aiInsightsRequestScope =
+        remember(appScope, aiInsightsRequestScopeKey) {
+            CoroutineScope(appScope.coroutineContext + SupervisorJob(appScope.coroutineContext[Job]))
+        }
+    DisposableEffect(aiInsightsRequestScope) {
+        onDispose { aiInsightsRequestScope.cancel() }
+    }
     var latestCandidates by rememberSaveable(stateSaver = MatchCandidateListSaver) {
         mutableStateOf(emptyList())
     }
@@ -166,7 +189,11 @@ fun VinylNavHost(
     }
 
     fun handleAccountDataReset() {
-        aiInsightsState.resetForAccountDataReset()
+        resetAiInsightsAfterAccountDataReset(
+            state = aiInsightsState,
+            requestScope = aiInsightsRequestScope,
+            onRequestScopeReset = { aiInsightsRequestScopeKey += 1 },
+        )
         latestCandidates = emptyList()
         pendingTextIdentifyInput = null
         latestIdentifyMode = null
