@@ -3,6 +3,7 @@ package com.example.vinyllistenapp.data.api
 import android.content.Context
 import android.net.Uri
 import com.example.vinyllistenapp.BuildConfig
+import com.example.vinyllistenapp.data.auth.AuthAccountDataResetResult
 import com.example.vinyllistenapp.data.auth.AuthAccountSummary
 import com.example.vinyllistenapp.data.auth.AuthDeleteAccountResult
 import com.example.vinyllistenapp.data.auth.AuthLogoutAllResult
@@ -205,6 +206,12 @@ class VinylApiClient(
         apiCall {
             val body = JSONObject().put("password", password)
             deleteJson("auth/account", body).toAuthDeleteAccountResult()
+        }
+
+    suspend fun resetAccountData(password: String): AuthAccountDataResetResult =
+        apiCall {
+            val body = JSONObject().put("password", password)
+            deleteJson("auth/account/data", body).toAuthAccountDataResetResult()
         }
 
     suspend fun identifyImage(
@@ -1963,6 +1970,13 @@ private fun JSONObject.toAuthDeleteAccountResult(): AuthDeleteAccountResult =
         deleted = optBoolean("deleted", false),
         deletionReceiptId = getString("deletion_receipt_id"),
         deletedAt = getString("deleted_at"),
+    )
+
+private fun JSONObject.toAuthAccountDataResetResult(): AuthAccountDataResetResult =
+    AuthAccountDataResetResult(
+        reset = optBoolean("reset", false),
+        resetReceiptId = getString("reset_receipt_id"),
+        resetAt = getString("reset_at"),
     )
 
 private fun Int.toApiErrorKind(): ApiErrorKind =

@@ -87,6 +87,7 @@ fun SettingsScreen(
     message: String,
     onAuthSessionEnded: () -> Unit = {},
     onAccountDeleted: () -> Unit = {},
+    onAccountDataReset: () -> Unit = {},
     onHome: () -> Unit,
     onStats: () -> Unit,
     onInsights: () -> Unit,
@@ -111,6 +112,7 @@ fun SettingsScreen(
     var resetCode by remember { mutableStateOf("") }
     var resetPassword by remember { mutableStateOf("") }
     var resetConfirmPassword by remember { mutableStateOf("") }
+    var resetAccountDataPassword by remember { mutableStateOf("") }
     var deleteAccountPassword by remember { mutableStateOf("") }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountErrorMessage by remember { mutableStateOf<String?>(null) }
@@ -119,10 +121,12 @@ fun SettingsScreen(
     var isConfirmingReset by remember { mutableStateOf(false) }
     var isLoggingOut by remember { mutableStateOf(false) }
     var isLoggingOutEverywhere by remember { mutableStateOf(false) }
+    var isResettingAccountData by remember { mutableStateOf(false) }
     var isDeletingAccount by remember { mutableStateOf(false) }
     var showResetCodeConfirmation by rememberSaveable { mutableStateOf(false) }
     var showLogoutConfirmation by rememberSaveable { mutableStateOf(false) }
     var showLogoutAllConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showResetAccountDataConfirmation by rememberSaveable { mutableStateOf(false) }
     var showDeleteAccountConfirmation by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val accountEmail = authAccountRepository?.currentAccountEmail()
@@ -315,6 +319,28 @@ fun SettingsScreen(
         }
     }
 
+    fun resetAccountData(password: String) {
+        val repository = authAccountRepository ?: return
+        if (isResettingAccountData || password.isBlank()) return
+        isResettingAccountData = true
+        accountMessage = null
+        accountErrorMessage = null
+        scope.launch {
+            runCatching { repository.resetAccountData(password) }
+                .onSuccess {
+                    integrationStatus = defaultDiscogsIntegrationStatus()
+                    tokenInput = ""
+                    tokenEditMode = false
+                    tokenManageMode = false
+                    accountMessage = "Your data was deleted. Your account is still active."
+                    onAccountDataReset()
+                }.onFailure { error ->
+                    accountErrorMessage = error.toUserMessage("Could not delete your data.")
+                }
+            isResettingAccountData = false
+        }
+    }
+
     fun deleteAccount(password: String) {
         val repository = authAccountRepository ?: return
         if (isDeletingAccount || password.isBlank()) return
@@ -373,6 +399,7 @@ fun SettingsScreen(
             isConfirmingReset = isConfirmingReset,
             isLoggingOut = isLoggingOut,
             isLoggingOutEverywhere = isLoggingOutEverywhere,
+            isResettingAccountData = isResettingAccountData,
             isDeletingAccount = isDeletingAccount,
             tokenInput = tokenInput,
             tokenEditMode = tokenEditMode,
@@ -413,6 +440,10 @@ fun SettingsScreen(
             onLogoutClick = { showLogoutConfirmation = true },
             onLogoutAllClick = { showLogoutAllConfirmation = true },
             onAccountManageClick = { accountManageMode = !accountManageMode },
+            onResetAccountDataClick = {
+                resetAccountDataPassword = ""
+                showResetAccountDataConfirmation = true
+            },
             onDeleteAccountClick = {
                 deleteAccountPassword = ""
                 showDeleteAccountConfirmation = true
@@ -551,6 +582,52 @@ fun SettingsScreen(
             },
         )
     }
+    if (showResetAccountDataConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                showResetAccountDataConfirmation = false
+                resetAccountDataPassword = ""
+            },
+            title = { Text("Delete my data") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VinylSpacing.SpaceMd)) {
+                    Text(
+                        "This deletes your collection, listening sessions, analytics, insights history, " +
+                            "saved provider tokens, and app-owned preferences. Your account stays active.",
+                    )
+                    PasswordTextField(
+                        value = resetAccountDataPassword,
+                        onValueChange = { resetAccountDataPassword = it },
+                        label = "Password",
+                        enabled = !isResettingAccountData,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isResettingAccountData && resetAccountDataPassword.isNotBlank(),
+                    onClick = {
+                        val password = resetAccountDataPassword
+                        resetAccountDataPassword = ""
+                        showResetAccountDataConfirmation = false
+                        resetAccountData(password)
+                    },
+                ) {
+                    Text("Delete data")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showResetAccountDataConfirmation = false
+                        resetAccountDataPassword = ""
+                    },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
     if (showDeleteAccountConfirmation) {
         AlertDialog(
             onDismissRequest = {
@@ -624,6 +701,7 @@ private fun SettingsContent(
     isConfirmingReset: Boolean,
     isLoggingOut: Boolean,
     isLoggingOutEverywhere: Boolean,
+    isResettingAccountData: Boolean,
     isDeletingAccount: Boolean,
     tokenInput: String,
     tokenEditMode: Boolean,
@@ -651,6 +729,7 @@ private fun SettingsContent(
     onLogoutClick: () -> Unit,
     onLogoutAllClick: () -> Unit,
     onAccountManageClick: () -> Unit,
+    onResetAccountDataClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
     innerPadding: PaddingValues = PaddingValues(),
 ) {
@@ -695,6 +774,7 @@ private fun SettingsContent(
             isConfirmingReset = isConfirmingReset,
             isLoggingOut = isLoggingOut,
             isLoggingOutEverywhere = isLoggingOutEverywhere,
+            isResettingAccountData = isResettingAccountData,
             isDeletingAccount = isDeletingAccount,
             onCurrentPasswordChange = onCurrentPasswordChange,
             onNewPasswordChange = onNewPasswordChange,
@@ -709,6 +789,7 @@ private fun SettingsContent(
             onLogoutClick = onLogoutClick,
             onLogoutAllClick = onLogoutAllClick,
             onManageClick = onAccountManageClick,
+            onResetAccountDataClick = onResetAccountDataClick,
             onDeleteAccountClick = onDeleteAccountClick,
         )
     }
@@ -733,6 +814,7 @@ private fun AccountManagementCard(
     isConfirmingReset: Boolean,
     isLoggingOut: Boolean,
     isLoggingOutEverywhere: Boolean,
+    isResettingAccountData: Boolean,
     isDeletingAccount: Boolean,
     onCurrentPasswordChange: (String) -> Unit,
     onNewPasswordChange: (String) -> Unit,
@@ -747,6 +829,7 @@ private fun AccountManagementCard(
     onLogoutClick: () -> Unit,
     onLogoutAllClick: () -> Unit,
     onManageClick: () -> Unit,
+    onResetAccountDataClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
 ) {
     var isPasswordChangeExpanded by rememberSaveable { mutableStateOf(false) }
@@ -1005,7 +1088,28 @@ private fun AccountManagementCard(
                 }
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = authAvailable && !isDeletingAccount,
+                    enabled = authAvailable && !isResettingAccountData && !isDeletingAccount,
+                    shape = VinylShapes.Button,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = VinylColors.SurfaceSecondary,
+                            contentColor = VinylColors.AccentOrange,
+                        ),
+                    onClick = onResetAccountDataClick,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        modifier = Modifier.padding(start = VinylSpacing.SpaceXs),
+                        text = if (isResettingAccountData) "Deleting data" else "Delete my data",
+                    )
+                }
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = authAvailable && !isDeletingAccount && !isResettingAccountData,
                     shape = VinylShapes.Button,
                     colors =
                         ButtonDefaults.buttonColors(

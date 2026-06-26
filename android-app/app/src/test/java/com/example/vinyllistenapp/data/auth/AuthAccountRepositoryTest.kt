@@ -187,6 +187,34 @@ class AuthAccountRepositoryTest {
         }
 
     @Test
+    fun resetAccountDataPreservesLocalSession() =
+        runBlocking {
+            val store = FakeAuthSessionStore()
+            var publishedAccessToken: String? = "access"
+            val repository =
+                repository(
+                    store = store,
+                    resetAccountData = { password ->
+                        assertEquals("password", password)
+                        AuthAccountDataResetResult(
+                            reset = true,
+                            resetReceiptId = "reset-receipt-1",
+                            resetAt = "2026-06-19T12:00:00Z",
+                        )
+                    },
+                    onAccessTokenChanged = { publishedAccessToken = it },
+                )
+            store.saveTokenPair(tokenPair(), accountEmail = "alex@example.com")
+
+            val result = repository.resetAccountData("password")
+
+            assertEquals(true, result.reset)
+            assertEquals("refresh", store.refreshToken)
+            assertEquals("alex@example.com", store.accountEmail)
+            assertEquals("access", publishedAccessToken)
+        }
+
+    @Test
     fun changePasswordClearsLocalSessionWhenSigningOutEverywhere() =
         runBlocking {
             val store = FakeAuthSessionStore()
@@ -244,6 +272,13 @@ class AuthAccountRepositoryTest {
                 deletedAt = "2026-06-19T12:00:00Z",
             )
         },
+        resetAccountData: suspend (String) -> AuthAccountDataResetResult = {
+            AuthAccountDataResetResult(
+                reset = true,
+                resetReceiptId = "reset-receipt-1",
+                resetAt = "2026-06-19T12:00:00Z",
+            )
+        },
         onAccessTokenChanged: (String?) -> Unit = {},
     ): AuthAccountRepository =
         AuthAccountRepository(
@@ -260,6 +295,7 @@ class AuthAccountRepositoryTest {
             logoutRequest = logout,
             logoutAllRequest = logoutAll,
             deleteAccountRequest = deleteAccount,
+            resetAccountDataRequest = resetAccountData,
             onAccessTokenChanged = onAccessTokenChanged,
             deviceLabelProvider = { "Pixel 9" },
         )

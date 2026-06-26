@@ -76,6 +76,7 @@ fun VinylNavHost(
     authAccountRepository: AuthAccountRepository? = null,
     onAuthSessionEnded: () -> Unit = {},
     onAccountDeleted: () -> Unit = {},
+    onAccountDataReset: () -> Unit = {},
 ) {
     val activeApiClient = apiClient ?: remember { VinylApiClient() }
     val aiInsightsState = rememberAiInsightsScreenState()
@@ -839,6 +840,7 @@ fun VinylNavHost(
                     message = "Application settings",
                     onAuthSessionEnded = onAuthSessionEnded,
                     onAccountDeleted = onAccountDeleted,
+                    onAccountDataReset = onAccountDataReset,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }

@@ -459,11 +459,15 @@ Implementation note: Android now parses `feature_usage_limit_exceeded` responses
 
 ### Phase 8: Delete My Data Settings Flow
 
+Status: implemented for Android Settings, auth repository, and API client wiring.
+
 - Add a Settings account-management option labeled "Delete my data" separate from "Delete account".
 - Show destructive confirmation copy that explains all collection/listening/analytics/insights/provider/app data will be deleted while the account remains active.
 - Call the account data reset endpoint, clear local collection/session/cache/provider state, and preserve secure auth tokens plus the current account email.
 - Reload into the signed-in empty-account experience instead of returning to registration.
 - Done when a reset cannot leave pre-reset data visible locally and the user remains authenticated with the same account.
+
+Implementation note: Settings calls `AuthAccountRepository.resetAccountData`, which preserves the local auth session and access token while clearing provider/settings UI state and returning navigation to Home. The API client targets `DELETE /auth/account/data`, and tests cover request parsing plus local session preservation. Usage quota ledger state remains backend-owned and is not reset by the client flow.
 
 ## Validation Plan
 

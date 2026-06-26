@@ -48,6 +48,12 @@ data class AuthDeleteAccountResult(
     val deletedAt: String,
 )
 
+data class AuthAccountDataResetResult(
+    val reset: Boolean,
+    val resetReceiptId: String,
+    val resetAt: String,
+)
+
 sealed interface AuthStartupResult {
     data object Ready : AuthStartupResult
 

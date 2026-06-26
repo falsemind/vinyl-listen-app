@@ -100,6 +100,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 logoutRequest = apiClient::logout,
                 logoutAllRequest = apiClient::logoutAll,
                 deleteAccountRequest = apiClient::deleteAccount,
+                resetAccountDataRequest = apiClient::resetAccountData,
                 onAccessTokenChanged = apiClient::setAccessToken,
                 deviceLabelProvider = ::androidDeviceLabel,
             )
@@ -134,6 +135,7 @@ fun VinylListenApp(modifier: Modifier = Modifier) {
                 authAccountRepository = authAccountRepository,
                 onAuthSessionEnded = ::requireAuthFromSignedOutState,
                 onAccountDeleted = ::requireAuthFromSignedOutState,
+                onAccountDataReset = ::resetMainNavigationToHome,
                 modifier = modifier,
             )
         is AuthGateUiState.NeedsAuth ->

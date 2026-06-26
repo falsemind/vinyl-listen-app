@@ -14,6 +14,7 @@ class AuthAccountRepository(
     private val logoutRequest: suspend () -> Boolean,
     private val logoutAllRequest: suspend () -> AuthLogoutAllResult,
     private val deleteAccountRequest: suspend (String) -> AuthDeleteAccountResult,
+    private val resetAccountDataRequest: suspend (String) -> AuthAccountDataResetResult,
     private val onAccessTokenChanged: (String?) -> Unit,
     private val deviceLabelProvider: () -> String?,
 ) {
@@ -88,6 +89,8 @@ class AuthAccountRepository(
         clearLocalSession()
         return result
     }
+
+    suspend fun resetAccountData(password: String): AuthAccountDataResetResult = resetAccountDataRequest(password)
 
     fun clearLocalSession() {
         sessionStore.clear()
