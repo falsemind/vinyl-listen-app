@@ -467,7 +467,7 @@ Status: implemented for Android Settings, auth repository, and API client wiring
 - Reload into the signed-in empty-account experience instead of returning to registration.
 - Done when a reset cannot leave pre-reset data visible locally and the user remains authenticated with the same account.
 
-Implementation note: Settings calls `AuthAccountRepository.resetAccountData`, which preserves the local auth session and access token while clearing provider/settings UI state and returning navigation to Home. The API client targets `DELETE /auth/account/data`, and tests cover request parsing plus local session preservation. Usage quota ledger state remains backend-owned and is not reset by the client flow.
+Implementation note: Settings calls `AuthAccountRepository.resetAccountData`, which preserves the local auth session and access token while clearing provider/settings UI state and returning navigation to Home. `VinylNavHost` also clears account-scoped in-memory UI state for AI insights, identify results/input/mode, and active timed sessions before navigating. The API client targets `DELETE /auth/account/data`, and tests cover request parsing plus local session and AI state reset behavior. Usage quota ledger state remains backend-owned and is not reset by the client flow.
 
 ## Validation Plan
 

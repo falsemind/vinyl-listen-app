@@ -165,6 +165,18 @@ fun VinylNavHost(
         }
     }
 
+    fun handleAccountDataReset() {
+        aiInsightsState.resetForAccountDataReset()
+        latestCandidates = emptyList()
+        pendingTextIdentifyInput = null
+        latestIdentifyMode = null
+        activeTimedSession = null
+        isStartingTimedSession = false
+        isStoppingTimedSession = false
+        autoAddTimedSessionRecords = true
+        onAccountDataReset()
+    }
+
     LaunchedEffect(Unit) {
         refreshTimedSession()
     }
@@ -840,7 +852,7 @@ fun VinylNavHost(
                     message = "Application settings",
                     onAuthSessionEnded = onAuthSessionEnded,
                     onAccountDeleted = onAccountDeleted,
-                    onAccountDataReset = onAccountDataReset,
+                    onAccountDataReset = ::handleAccountDataReset,
                     onHome = {
                         navController.navigate(VinylRoutes.HOME) {
                             popUpTo(VinylRoutes.HOME) { inclusive = true }
