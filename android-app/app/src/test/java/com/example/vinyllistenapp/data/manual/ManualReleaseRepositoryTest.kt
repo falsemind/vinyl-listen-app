@@ -1,6 +1,8 @@
 package com.example.vinyllistenapp.data.manual
 
 import com.example.vinyllistenapp.domain.ManualReleaseCompletionState
+import com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult
+import com.example.vinyllistenapp.domain.ManualReleaseDetail
 import com.example.vinyllistenapp.domain.ManualReleaseDraft
 import com.example.vinyllistenapp.domain.ManualReleaseDraftList
 import com.example.vinyllistenapp.domain.ManualReleaseFormData
@@ -164,6 +166,63 @@ class ManualReleaseRepositoryTest {
             assertNull(capturedDraftId)
         }
 
+    @Test
+    fun getReleaseDelegatesReleaseId() =
+        runBlocking {
+            var capturedReleaseId: String? = null
+            val repository =
+                repository(
+                    getRelease = { releaseId ->
+                        capturedReleaseId = releaseId
+                        release(id = releaseId)
+                    },
+                )
+
+            val result = repository.getRelease("manual-2")
+
+            assertEquals("manual-2", result.id)
+            assertEquals("manual-2", capturedReleaseId)
+        }
+
+    @Test
+    fun updateReleaseSubmitsReleaseIdAndFormData() =
+        runBlocking {
+            val formData = completeFormData().copy(title = "Updated Night Plates")
+            var capturedReleaseId: String? = null
+            var capturedFormData: ManualReleaseFormData? = null
+            val repository =
+                repository(
+                    updateRelease = { releaseId, requestFormData ->
+                        capturedReleaseId = releaseId
+                        capturedFormData = requestFormData
+                        release(id = releaseId, formData = requestFormData)
+                    },
+                )
+
+            val result = repository.updateRelease("manual-1", formData)
+
+            assertEquals("manual-1", result.id)
+            assertEquals("Updated Night Plates", result.title)
+            assertEquals("manual-1", capturedReleaseId)
+            assertEquals(formData, capturedFormData)
+        }
+
+    @Test
+    fun deleteReleaseCoverDelegatesReleaseId() =
+        runBlocking {
+            var capturedReleaseId: String? = null
+            val repository =
+                repository(
+                    deleteReleaseCover = { releaseId ->
+                        capturedReleaseId = releaseId
+                    },
+                )
+
+            repository.deleteReleaseCover("manual-1")
+
+            assertEquals("manual-1", capturedReleaseId)
+        }
+
     private fun repository(
         listDrafts: suspend () -> ManualReleaseDraftList = {
             ManualReleaseDraftList(items = emptyList(), limit = 5, remainingSlots = 5)
@@ -181,12 +240,27 @@ class ManualReleaseRepositoryTest {
             android.content.Context,
             String,
             android.net.Uri,
-        ) -> com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult = { _, _, _ ->
-            com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult(
+        ) -> ManualReleaseCoverUploadResult = { _, _, _ ->
+            ManualReleaseCoverUploadResult(
                 contentType = "image/jpeg",
                 sizeBytes = 1,
             )
         },
+        getRelease: suspend (String) -> ManualReleaseDetail = { releaseId -> release(id = releaseId) },
+        updateRelease: suspend (String, ManualReleaseFormData) -> ManualReleaseDetail = { releaseId, formData ->
+            release(id = releaseId, formData = formData)
+        },
+        uploadReleaseCover: suspend (
+            android.content.Context,
+            String,
+            android.net.Uri,
+        ) -> ManualReleaseCoverUploadResult = { _, _, _ ->
+            ManualReleaseCoverUploadResult(
+                contentType = "image/jpeg",
+                sizeBytes = 1,
+            )
+        },
+        deleteReleaseCover: suspend (String) -> Unit = {},
     ): ManualReleaseRepository =
         ManualReleaseRepository(
             listDraftsRequest = listDrafts,
@@ -196,6 +270,10 @@ class ManualReleaseRepositoryTest {
             deleteDraftRequest = deleteDraft,
             saveReleaseRequest = saveRelease,
             uploadCoverRequest = uploadCover,
+            getReleaseRequest = getRelease,
+            updateReleaseRequest = updateRelease,
+            uploadReleaseCoverRequest = uploadReleaseCover,
+            deleteReleaseCoverRequest = deleteReleaseCover,
         )
 
     private fun completeFormData(): ManualReleaseFormData =
@@ -236,5 +314,23 @@ class ManualReleaseRepositoryTest {
             title = "Night Plates",
             artist = "Gradient Sync",
             inCollection = true,
+        )
+
+    private fun release(
+        formData: ManualReleaseFormData = completeFormData(),
+        id: String = "manual-1",
+    ): ManualReleaseDetail =
+        ManualReleaseDetail(
+            id = id,
+            title = formData.title.orEmpty(),
+            artist = formData.artists.firstOrNull().orEmpty(),
+            inCollection = true,
+            formData = formData,
+            coverImageUrl = "https://example.test/manual-1.jpg",
+            coverThumbnailUrl = "https://example.test/manual-1-thumb.jpg",
+            coverContentType = "image/jpeg",
+            coverSizeBytes = 2048,
+            createdAt = "2026-06-21T12:00:00Z",
+            updatedAt = "2026-06-21T12:00:00Z",
         )
 }

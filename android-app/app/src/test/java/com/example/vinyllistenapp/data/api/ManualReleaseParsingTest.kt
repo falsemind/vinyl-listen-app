@@ -175,6 +175,77 @@ class ManualReleaseParsingTest {
     }
 
     @Test
+    fun parsesManualReleaseDetailResponse() {
+        val release =
+            JSONObject(
+                """
+                {
+                  "id": "manual-1",
+                  "title": "Night Plates",
+                  "artist": "Gradient Sync",
+                  "in_collection": true,
+                  "form_data": {
+                    "artists": ["Gradient Sync"],
+                    "title": "Night Plates",
+                    "year": 1998,
+                    "label": "Room Tone",
+                    "catalog_number": "RT-12",
+                    "format": "Vinyl",
+                    "vinyl_size": "12",
+                    "vinyl_speed": "33 1/3",
+                    "vinyl_disc_count": 2,
+                    "genres": ["Electronic"],
+                    "tracklist": [
+                      {
+                        "position": "A1",
+                        "title": "Low Ceiling"
+                      }
+                    ]
+                  },
+                  "cover_image_url": "/media/manual-release-covers/user-1/manual-1/cover.jpg",
+                  "cover_thumbnail_url": "/media/manual-release-covers/user-1/manual-1/thumb.jpg",
+                  "cover_content_type": "image/jpeg",
+                  "cover_size_bytes": 4096,
+                  "created_at": "2026-06-20T12:00:00Z",
+                  "updated_at": "2026-06-21T12:00:00Z"
+                }
+                """.trimIndent(),
+            ).toManualReleaseDetail()
+
+        val expectedCoverUrl =
+            BuildConfig.VINYL_API_BASE_URL
+                .removeSuffix("/api/v1")
+                .trimEnd('/') + "/media/manual-release-covers/user-1/manual-1/cover.jpg"
+        val expectedThumbnailUrl =
+            BuildConfig.VINYL_API_BASE_URL
+                .removeSuffix("/api/v1")
+                .trimEnd('/') + "/media/manual-release-covers/user-1/manual-1/thumb.jpg"
+
+        assertEquals("manual-1", release.id)
+        assertEquals("Night Plates", release.title)
+        assertEquals("Gradient Sync", release.artist)
+        assertTrue(release.inCollection)
+        assertEquals(expectedCoverUrl, release.coverImageUrl)
+        assertEquals(expectedThumbnailUrl, release.coverThumbnailUrl)
+        assertEquals("image/jpeg", release.coverContentType)
+        assertEquals(4096, release.coverSizeBytes)
+        assertEquals("2026-06-20T12:00:00Z", release.createdAt)
+        assertEquals("2026-06-21T12:00:00Z", release.updatedAt)
+        assertEquals(1998, release.formData.year)
+        assertEquals(ManualReleaseFormat.Vinyl, release.formData.format)
+        assertEquals(ManualReleaseVinylSize.TwelveInch, release.formData.vinylSize)
+        assertEquals(ManualReleaseVinylSpeed.ThirtyThree, release.formData.vinylSpeed)
+        assertEquals(2, release.formData.vinylDiscCount)
+        assertEquals(listOf("Electronic"), release.formData.genres)
+        assertEquals(
+            "Low Ceiling",
+            release.formData.tracklist
+                .first()
+                .title,
+        )
+    }
+
+    @Test
     fun manualReleaseFormStateChoosesPrimaryActionFromRequiredFields() {
         val emptyState = ManualReleaseFormState()
 

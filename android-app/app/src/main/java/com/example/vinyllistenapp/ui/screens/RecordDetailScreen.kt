@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -140,6 +141,7 @@ fun RecordDetailScreen(
     onOpenArtistCollection: (String) -> Unit,
     onOpenLabelCollection: (String) -> Unit,
     onOpenRecordActionItems: (String, String) -> Unit,
+    onEditRelease: (String) -> Unit,
     onBack: () -> Unit,
     onBackToHome: () -> Unit,
     onCollectionMembershipChanged: () -> Unit = {},
@@ -553,6 +555,16 @@ fun RecordDetailScreen(
                         onClick = {
                             isActionMenuOpen = false
                             scope.launch { updateFavorite(!record.isFavorite) }
+                        },
+                    )
+                }
+                if (canEditManualRelease(record)) {
+                    ActionMenuAction(
+                        label = "Edit release",
+                        icon = Icons.Filled.Edit,
+                        onClick = {
+                            isActionMenuOpen = false
+                            onEditRelease(record.releaseId)
                         },
                     )
                 }
@@ -2510,6 +2522,8 @@ internal fun shouldShowCollectionRemovedMessage(record: RecordSummary): Boolean 
 internal fun canSyncRelease(record: RecordSummary): Boolean =
     record.discogsReleaseId > 0 && !shouldUsePrototypeRecordDetailFallback(record.releaseId)
 
+internal fun canEditManualRelease(record: RecordSummary): Boolean = record.inCollection && record.isManualRelease
+
 internal fun shouldAutoImportFullRelease(record: RecordSummary): Boolean = canSyncRelease(record) && !record.hasFullDiscogsInfo
 
 internal fun shouldShowArtistDiscographyAction(record: RecordSummary): Boolean =
@@ -2558,7 +2572,12 @@ private fun recordActionMenuLabels(
         if (canSyncRelease(record)) {
             add(if (isFetchingFullRelease) "Syncing release..." else "Sync release")
         }
-        add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
+        if (record.inCollection) {
+            add(if (record.isFavorite) "Remove from favorites" else "Add to favorites")
+        }
+        if (canEditManualRelease(record)) {
+            add("Edit release")
+        }
         add(
             when {
                 isUpdatingCollectionMembership -> "Updating collection..."
@@ -2585,8 +2604,10 @@ private fun recordActionMenuLabels(
                 }
             }
         }
-        add("View on Discogs")
-        if (isViewOnDiscogsExpanded) {
+        if (canSyncRelease(record)) {
+            add("View on Discogs")
+        }
+        if (canSyncRelease(record) && isViewOnDiscogsExpanded) {
             add("• Release page")
             val discogsArtists = discogsArtistRows(record)
             discogsArtists.take(RECORD_DETAIL_ACTION_MENU_OPTION_LIMIT).forEach { artist ->

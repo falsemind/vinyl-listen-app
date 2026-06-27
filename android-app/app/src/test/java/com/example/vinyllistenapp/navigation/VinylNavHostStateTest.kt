@@ -182,6 +182,18 @@ class VinylNavHostStateTest {
     }
 
     @Test
+    fun manualReleaseFormRouteSupportsDraftAndReleaseArguments() {
+        assertEquals("collection_manual_form?draftId={draftId}&releaseId={releaseId}", VinylRoutes.COLLECTION_MANUAL_FORM_PATTERN)
+        assertEquals("collection_manual_form", VinylRoutes.manualReleaseForm())
+        assertEquals("collection_manual_form?draftId=draft-1", VinylRoutes.manualReleaseForm(draftId = "draft-1"))
+        assertEquals("collection_manual_form?releaseId=manual-1", VinylRoutes.manualReleaseForm(releaseId = "manual-1"))
+        assertEquals(
+            "collection_manual_form?draftId=draft%201&releaseId=manual%2F1",
+            VinylRoutes.manualReleaseForm(draftId = "draft 1", releaseId = "manual/1"),
+        )
+    }
+
+    @Test
     fun identifyRoutesCarryCollectionAddFlowMode() {
         assertEquals("capture_record?flowMode=collection_add", VinylRoutes.captureRecord(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
         assertEquals("processing?imageUri=&flowMode=collection_add", VinylRoutes.textProcessing(VinylRoutes.FLOW_MODE_COLLECTION_ADD))
