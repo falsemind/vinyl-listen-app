@@ -303,8 +303,6 @@ fun ManualReleaseFormScreen(
                                 val updatedRelease = repository.updateRelease(releaseId.orEmpty(), submitState.formData)
                                 if (submitState.coverUri != null) {
                                     uploadSelectedReleaseCoverIfNeeded(context, repository, updatedRelease.id, submitState)
-                                } else if (state.coverPreviewImageUrl == null && state.initialCoverPreviewImageUrl != null) {
-                                    repository.deleteReleaseCover(updatedRelease.id)
                                 }
                                 updatedRelease.toSaveResult()
                             } else if (submitState.coverUri != null || !nextActiveDraftId.isNullOrBlank()) {
@@ -357,7 +355,7 @@ fun ManualReleaseFormScreen(
                     ),
                 coverPreviewImageUrl =
                     if (isEditingRelease) {
-                        null
+                        state.initialCoverPreviewImageUrl
                     } else {
                         state.coverPreviewImageUrl
                     },
