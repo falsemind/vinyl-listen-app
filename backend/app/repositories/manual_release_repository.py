@@ -53,15 +53,21 @@ class ManualReleaseRepository:
             query = query.with_for_update()
         return query.one_or_none()
 
-    def get_release(self, db: Session, release_id: str, *, user_id: str) -> ManualRelease | None:
-        return (
-            db.query(ManualRelease)
-            .filter(
-                ManualRelease.id == release_id,
-                ManualRelease.user_id == user_id,
-            )
-            .one_or_none()
+    def get_release(
+        self,
+        db: Session,
+        release_id: str,
+        *,
+        user_id: str,
+        for_update: bool = False,
+    ) -> ManualRelease | None:
+        query = db.query(ManualRelease).filter(
+            ManualRelease.id == release_id,
+            ManualRelease.user_id == user_id,
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.one_or_none()
 
     def get_releases_by_ids(
         self,
@@ -350,29 +356,6 @@ class ManualReleaseRepository:
         release = ManualRelease(
             id=str(uuid4()),
             user_id=user_id,
-            artist=", ".join(form_data.artists),
-            title=form_data.title or "",
-            year=form_data.year,
-            label=form_data.label or "",
-            catalog_number=form_data.catalog_number,
-            barcode=_normalize_barcode(form_data.barcode),
-            format=form_data.format.value if form_data.format else "",
-            genres=form_data.genres or None,
-            styles=form_data.styles or None,
-            artists=[{"name": artist} for artist in form_data.artists],
-            labels=[{"name": form_data.label, "catalog_number": form_data.catalog_number}],
-            identifiers={
-                "catalog_number": form_data.catalog_number,
-                "barcode": _normalize_barcode(form_data.barcode),
-                "year": form_data.year,
-            },
-            format_details={
-                "format": form_data.format.value if form_data.format else None,
-                "vinyl_size": form_data.vinyl_size.value if form_data.vinyl_size else None,
-                "vinyl_speed": form_data.vinyl_speed.value if form_data.vinyl_speed else None,
-                "vinyl_disc_count": form_data.vinyl_disc_count,
-            },
-            tracklist=[track.model_dump(mode="json") for track in form_data.tracklist],
             cover_storage_key=draft.cover_storage_key if draft is not None else None,
             cover_image_url=draft.cover_image_url if draft is not None else None,
             cover_thumbnail_url=draft.cover_thumbnail_url if draft is not None else None,
@@ -381,9 +364,72 @@ class ManualReleaseRepository:
             in_collection=True,
             collection_added_at=datetime.now(UTC),
         )
+        _apply_form_data_to_release(release, form_data)
         db.add(release)
         if draft is not None:
             db.delete(draft)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    def update_manual_release(
+        self,
+        db: Session,
+        release: ManualRelease,
+        *,
+        form_data: ManualReleaseFormData,
+        commit: bool = True,
+    ) -> ManualRelease:
+        _apply_form_data_to_release(release, form_data)
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    def update_manual_release_cover(
+        self,
+        db: Session,
+        release: ManualRelease,
+        *,
+        cover_storage_key: str,
+        cover_image_url: str,
+        cover_thumbnail_url: str,
+        cover_content_type: str,
+        cover_size_bytes: int,
+        commit: bool = True,
+    ) -> ManualRelease:
+        release.cover_storage_key = cover_storage_key
+        release.cover_image_url = cover_image_url
+        release.cover_thumbnail_url = cover_thumbnail_url
+        release.cover_content_type = cover_content_type
+        release.cover_size_bytes = cover_size_bytes
+        db.add(release)
+        if commit:
+            db.commit()
+            db.refresh(release)
+        else:
+            db.flush()
+        return release
+
+    def clear_manual_release_cover(
+        self,
+        db: Session,
+        release: ManualRelease,
+        *,
+        commit: bool = True,
+    ) -> ManualRelease:
+        release.cover_storage_key = None
+        release.cover_image_url = None
+        release.cover_thumbnail_url = None
+        release.cover_content_type = None
+        release.cover_size_bytes = None
+        db.add(release)
         if commit:
             db.commit()
             db.refresh(release)
@@ -397,3 +443,30 @@ def _normalize_barcode(barcode: str | None) -> str | None:
         return None
     normalized = "".join(character for character in barcode if character.isdigit())
     return normalized or None
+
+
+def _apply_form_data_to_release(release: ManualRelease, form_data: ManualReleaseFormData) -> None:
+    normalized_barcode = _normalize_barcode(form_data.barcode)
+    release.artist = ", ".join(form_data.artists)
+    release.title = form_data.title or ""
+    release.year = form_data.year
+    release.label = form_data.label or ""
+    release.catalog_number = form_data.catalog_number
+    release.barcode = normalized_barcode
+    release.format = form_data.format.value if form_data.format else ""
+    release.genres = form_data.genres or None
+    release.styles = form_data.styles or None
+    release.artists = [{"name": artist} for artist in form_data.artists]
+    release.labels = [{"name": form_data.label, "catalog_number": form_data.catalog_number}]
+    release.identifiers = {
+        "catalog_number": form_data.catalog_number,
+        "barcode": normalized_barcode,
+        "year": form_data.year,
+    }
+    release.format_details = {
+        "format": form_data.format.value if form_data.format else None,
+        "vinyl_size": form_data.vinyl_size.value if form_data.vinyl_size else None,
+        "vinyl_speed": form_data.vinyl_speed.value if form_data.vinyl_speed else None,
+        "vinyl_disc_count": form_data.vinyl_disc_count,
+    }
+    release.tracklist = [track.model_dump(mode="json") for track in form_data.tracklist]

@@ -732,6 +732,77 @@ Backend schema/domain
   -> Manual sessions in analytics and insights
 ```
 
+## Future Phase 11: Edit Saved Manual Releases
+
+### Goal
+
+Let a user edit an app-owned manual release after it has been saved to their collection. The flow should reuse the manual release form shape from Phase 10, but it edits committed release data instead of a draft.
+
+### Product Requirements
+
+- Record Detail shows a new **Edit release** action only for saved manual releases owned by the current user.
+- The **Edit release** action appears above **Delete from collection** in `RecordDetailScreen.kt`.
+- The action uses a pencil icon aligned on the right, matching the existing action-row pattern.
+- Tapping **Edit release** opens a new **Edit Release** screen.
+- The edit screen pre-populates every supported manual-release field from the saved release, including cover art, artists, title, year, label, catalog number, barcode, format details, genre/style, tracks, and track credits.
+- The user can change any supported manual-release field.
+- The primary green button reads **Update Release**.
+- Tapping **Update Release** validates and persists the edited release, then returns to refreshed Record Details.
+- Existing collection membership, listening history, ratings, notes, and manual session references stay attached to the same release identity.
+- Discogs-backed releases remain read-only in this phase.
+- Manual drafts remain separate; editing a saved release does not create or consume a draft slot.
+
+### Backend Requirements
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Add saved manual release detail contract | 2-4h | Phase 10B | API returns the full editable manual-release payload needed to hydrate the edit form. |
+| Add update manual release contract | 4-8h | Phase 10A/10B | API updates an existing user-owned manual release without changing release identity, collection membership, or session foreign keys. |
+| Reuse validation and normalization | 4-6h | Phase 10C | Update path applies the same required-field, enum, barcode, duration, track-position, Electronic style, Vinyl detail, and cover rules as save. |
+| Add cover replace/remove handling | 4-6h | Cover upload contract | User can keep, replace, or remove the existing manual cover with typed validation and storage errors. |
+| Add ownership and source guards | 2-4h | Update contract | API rejects edits for other users' manual releases and all Discogs-backed releases. |
+| Add backend tests and docs | 4-8h | Update contract | Tests cover successful update, field validation, cover changes, ownership isolation, Discogs rejection, history preservation, and response shape. |
+
+Draft contract:
+
+```http
+GET /manual-releases/{manual_release_id}
+PUT /manual-releases/{manual_release_id}
+```
+
+The `PUT` response should return the same detail shape Record Details needs after refresh. If the implementation already exposes manual releases through a collection-scoped route, keep the final path consistent with that route family.
+
+### Android Requirements
+
+| Task | Effort | Depends On | Done Criteria |
+| --- | --- | --- | --- |
+| Extend detail models with edit eligibility | 2-4h | Backend detail contract | `RecordDetailScreen` can tell whether the release is an editable manual release. |
+| Add Record Detail action row | 2-4h | Edit eligibility | **Edit release** appears above **Delete from collection** with a right-aligned pencil icon and opens the edit route. |
+| Add edit route and repository calls | 4-6h | Backend update contract | Android can load full manual-release data, submit updates, and refresh Record Details after success. |
+| Reuse manual form state | 4-8h | Phase 10F/10G | Edit screen initializes the existing manual form state from saved release data instead of draft data. |
+| Build **Edit Release** screen tweaks | 4-6h | Form reuse | Screen title, bottom action state, and primary green **Update Release** button match edit semantics. |
+| Add edit save/error states | 4-6h | Repository calls | UI handles loading, validation errors, cover errors, update failure, success navigation, and disabled button state while saving. |
+| Add Android verification | 4-8h | Edit screen | Tests or compile checks cover action visibility, route arguments, populated form state, update request mapping, and success refresh. |
+
+### Non-Goals
+
+- No editing Discogs-backed release metadata.
+- No automatic Discogs replacement or matching.
+- No manual draft creation from a saved release.
+- No bulk editing across multiple collection items.
+- No schema for production/company credits beyond the Phase 10 manual field set.
+
+### Phase 11 Dependency Map
+
+```text
+Manual release save flow
+  -> Backend saved manual release detail/update contracts
+  -> Backend validation, ownership guards, and tests
+  -> Android edit eligibility and action row
+  -> Android edit route/repository calls
+  -> Edit Release form reuse and Update Release flow
+```
+
 ## Recommended Implementation Order
 
 1. Backend schema and defaults.
@@ -764,5 +835,9 @@ Backend schema/domain
 28. Android Log Session support for manual releases, including track dropdown mapping and save request handling.
 29. Backend analytics query refactor for mixed Discogs/manual session targets.
 30. Manual session analytics, drilldowns, insight facts, and focused backend/Android verification.
+31. Backend saved manual release detail/update contracts, cover replace/remove behavior, ownership guards, and tests.
+32. Android Record Detail **Edit release** action row with right-aligned pencil icon and manual-release-only visibility.
+33. Android edit route, repository calls, form hydration from saved release data, and **Update Release** submit handling.
+34. Android edit-release validation/error states, Record Details refresh, and focused verification.
 
 This order keeps data semantics stable before UI depends on them, while still allowing the Android add-entry placeholder work to proceed after navigation contracts are clear.

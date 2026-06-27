@@ -7,7 +7,11 @@ from PIL import Image
 from app.schemas.manual_releases import ManualReleaseFormData
 from app.services.manual_release_cover_storage import ManualReleaseCoverStorage
 from app.services.manual_release_policy import ManualReleaseDraftLimitExceeded
-from app.services.manual_release_service import ManualReleaseService, ManualReleaseValidationError
+from app.services.manual_release_service import (
+    ManualReleaseNotFoundError,
+    ManualReleaseService,
+    ManualReleaseValidationError,
+)
 
 
 class FakeManualReleaseRepository:
@@ -16,10 +20,13 @@ class FakeManualReleaseRepository:
         self.created_draft_user_ids: list[str] = []
         self.created_release_user_ids: list[str] = []
         self.get_draft_calls: list[dict] = []
+        self.get_release_calls: list[dict] = []
         self.operation_log: list[str] = []
         self.saved_form_data: ManualReleaseFormData | None = None
+        self.updated_form_data: ManualReleaseFormData | None = None
         self.cover_updates: list[dict] = []
         self.fail_cover_update = False
+        self.release = SimpleNamespace(id="manual-1", user_id="user-1", title="Original Title")
         self.draft_form_data = ManualReleaseFormData(
             artists=["Draft Artist"],
             title="Draft Title",
@@ -61,6 +68,23 @@ class FakeManualReleaseRepository:
         self.created_release_user_ids.append(user_id)
         self.saved_form_data = form_data
         return SimpleNamespace(id="manual-1", user_id=user_id, title=form_data.title)
+
+    def get_release(self, _db, release_id: str, *, user_id: str, for_update: bool = False):
+        self.get_release_calls.append(
+            {
+                "release_id": release_id,
+                "user_id": user_id,
+                "for_update": for_update,
+            }
+        )
+        if release_id == "missing":
+            return None
+        return self.release
+
+    def update_manual_release(self, _db, release, *, form_data):
+        self.updated_form_data = form_data
+        release.title = form_data.title
+        return release
 
     def update_draft_cover(
         self,
@@ -287,6 +311,69 @@ def test_save_release_accepts_complete_vinyl_form_data() -> None:
     assert release.id == "manual-1"
     assert repository.created_release_user_ids == ["user-1"]
     assert repository.saved_form_data == form_data
+
+
+def test_update_release_reuses_validation_and_updates_existing_release() -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(repository)
+    form_data = ManualReleaseFormData(
+        artists=["Updated Artist"],
+        title="Updated Title",
+        label="Updated Label",
+        format="CD",
+        genres=["Rock"],
+        tracklist=[{"title": "Track"}],
+    )
+
+    release = service.update_release(object(), "manual-1", user_id="user-1", form_data=form_data)
+
+    assert release.id == "manual-1"
+    assert release.title == "Updated Title"
+    assert repository.updated_form_data == form_data
+    assert repository.get_release_calls == [
+        {
+            "release_id": "manual-1",
+            "user_id": "user-1",
+            "for_update": True,
+        }
+    ]
+
+
+def test_update_release_returns_not_found_for_missing_user_owned_release() -> None:
+    repository = FakeManualReleaseRepository()
+    service = ManualReleaseService(repository)
+    form_data = ManualReleaseFormData(
+        artists=["Artist"],
+        title="Title",
+        label="Label",
+        format="CD",
+        genres=["Rock"],
+        tracklist=[{"title": "Track"}],
+    )
+
+    with pytest.raises(ManualReleaseNotFoundError):
+        service.update_release(object(), "missing", user_id="user-1", form_data=form_data)
+
+
+def test_update_release_reuses_save_validation() -> None:
+    service = ManualReleaseService(FakeManualReleaseRepository())
+    form_data = ManualReleaseFormData(
+        artists=["Artist"],
+        title="Title",
+        label="Label",
+        format="Vinyl",
+        vinyl_size="12",
+        vinyl_speed="33 1/3",
+        vinyl_disc_count=1,
+        genres=["Electronic"],
+        styles=["Techno"],
+        tracklist=[{"title": "Track"}],
+    )
+
+    with pytest.raises(ManualReleaseValidationError) as exc_info:
+        service.update_release(object(), "manual-1", user_id="user-1", form_data=form_data)
+
+    assert exc_info.value.field_errors["tracklist.0.position"] == "Track position is required for vinyl releases."
 
 
 def test_save_release_locks_draft_before_consuming_it() -> None:

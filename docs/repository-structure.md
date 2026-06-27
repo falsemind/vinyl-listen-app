@@ -240,6 +240,10 @@ All routes are nested under `/api/v1`.
 | `DELETE /manual-releases/drafts/{draft_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` draft delete scoped to the current user. |
 | `POST /manual-releases/drafts/{draft_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` cover validation, local storage, and draft metadata update. |
 | `POST /manual-releases` | `api/routes/manual_releases.py` | `ManualReleaseService` complete manual release validation and user-owned save. |
+| `GET /manual-releases/{manual_release_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` user-owned saved manual release detail for edit-form hydration. |
+| `PUT /manual-releases/{manual_release_id}` | `api/routes/manual_releases.py` | `ManualReleaseService` validation and update of committed manual release metadata. |
+| `POST /manual-releases/{manual_release_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` saved manual release cover replacement. |
+| `DELETE /manual-releases/{manual_release_id}/cover` | `api/routes/manual_releases.py` | `ManualReleaseService` saved manual release cover removal. |
 | `GET /integrations/discogs` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `PUT /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
 | `DELETE /integrations/discogs/token` | `api/routes/integrations.py` | `DiscogsIntegrationService`. |
