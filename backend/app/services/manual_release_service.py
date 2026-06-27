@@ -64,6 +64,12 @@ class ManualReleaseService:
             raise ManualReleaseNotFoundError
         return draft
 
+    def get_release(self, db: Session, release_id: str, *, user_id: str) -> ManualRelease:
+        release = self.repository.get_release(db, release_id, user_id=user_id)
+        if release is None:
+            raise ManualReleaseNotFoundError
+        return release
+
     def remaining_draft_slots(self, db: Session, *, user_id: str) -> int:
         return max(0, MAX_MANUAL_RELEASE_DRAFTS - self.repository.count_drafts(db, user_id=user_id))
 
@@ -131,6 +137,21 @@ class ManualReleaseService:
         self._validate_release_save(form_data)
         return self.repository.create_manual_release(db, user_id=user_id, form_data=form_data, draft=draft)
 
+    def update_release(
+        self,
+        db: Session,
+        release_id: str,
+        *,
+        user_id: str,
+        form_data: ManualReleaseFormData,
+    ) -> ManualRelease:
+        lock_account_data_mutation(db, user_id=user_id)
+        release = self.repository.get_release(db, release_id, user_id=user_id, for_update=True)
+        if release is None:
+            raise ManualReleaseNotFoundError
+        self._validate_release_save(form_data)
+        return self.repository.update_manual_release(db, release, form_data=form_data)
+
     def upload_cover(
         self,
         db: Session,
@@ -183,6 +204,65 @@ class ManualReleaseService:
             cover_image_url=stored_cover.image_url,
             cover_thumbnail_url=stored_cover.thumbnail_url,
         )
+
+    def upload_release_cover(
+        self,
+        db: Session,
+        *,
+        release_id: str,
+        user_id: str,
+        content_type: str | None,
+        image_bytes: bytes,
+    ) -> CoverUploadValidationResult:
+        lock_account_data_mutation(db, user_id=user_id)
+        release = self.repository.get_release(db, release_id, user_id=user_id, for_update=True)
+        if release is None:
+            raise ManualReleaseNotFoundError
+        if content_type is None:
+            raise ManualReleaseCoverValidationError("Cover image content type is required.")
+
+        normalized_content_type = content_type.strip().lower()
+        size_bytes = len(image_bytes)
+        validate_manual_release_cover_policy(normalized_content_type, size_bytes)
+        width_px, height_px = _read_cover_dimensions(image_bytes)
+        validate_manual_release_cover_dimensions(width_px, height_px)
+        previous_storage_key = release.cover_storage_key
+        stored_cover = self.cover_storage.store_release_cover(
+            user_id=user_id,
+            release_id=release_id,
+            content_type=normalized_content_type,
+            image_bytes=image_bytes,
+        )
+        try:
+            self.repository.update_manual_release_cover(
+                db,
+                release,
+                cover_storage_key=stored_cover.storage_key,
+                cover_image_url=stored_cover.image_url,
+                cover_thumbnail_url=stored_cover.thumbnail_url,
+                cover_content_type=normalized_content_type,
+                cover_size_bytes=size_bytes,
+            )
+        except Exception:
+            self.cover_storage.delete_stored_cover(stored_cover.storage_key)
+            raise
+
+        self.cover_storage.delete_stored_cover(previous_storage_key)
+        return CoverUploadValidationResult(
+            content_type=normalized_content_type,
+            size_bytes=size_bytes,
+            cover_image_url=stored_cover.image_url,
+            cover_thumbnail_url=stored_cover.thumbnail_url,
+        )
+
+    def delete_release_cover(self, db: Session, *, release_id: str, user_id: str) -> None:
+        lock_account_data_mutation(db, user_id=user_id)
+        release = self.repository.get_release(db, release_id, user_id=user_id, for_update=True)
+        if release is None:
+            raise ManualReleaseNotFoundError
+        previous_storage_key = release.cover_storage_key
+        self.repository.clear_manual_release_cover(db, release)
+        self.cover_storage.delete_stored_cover(previous_storage_key)
 
     def _validate_release_save(self, form_data: ManualReleaseFormData) -> None:
         field_errors: dict[str, str] = {}

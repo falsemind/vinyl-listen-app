@@ -109,6 +109,10 @@ class ManualReleaseSaveRequest(ManualReleaseBaseModel):
     draft_id: str | None = None
 
 
+class ManualReleaseUpdateRequest(ManualReleaseBaseModel):
+    form_data: ManualReleaseFormData
+
+
 class ManualReleaseDraftSummaryResponse(BaseModel):
     id: str
     artist: str | None
@@ -141,6 +145,20 @@ class ManualReleaseSaveResponse(BaseModel):
     title: str
     artist: str
     in_collection: bool
+
+
+class ManualReleaseDetailResponse(BaseModel):
+    id: str
+    title: str
+    artist: str
+    in_collection: bool
+    form_data: ManualReleaseFormData
+    cover_image_url: str | None
+    cover_thumbnail_url: str | None
+    cover_content_type: str | None
+    cover_size_bytes: int | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ManualReleaseCoverUploadResponse(BaseModel):

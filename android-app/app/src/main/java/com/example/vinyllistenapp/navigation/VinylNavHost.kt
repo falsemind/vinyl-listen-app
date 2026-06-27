@@ -582,11 +582,17 @@ fun VinylNavHost(
                             nullable = true
                             defaultValue = null
                         },
+                        navArgument(VinylRoutes.RELEASE_ID) {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 ManualReleaseFormScreen(
                     apiClient = activeApiClient,
                     draftId = backStackEntry.arguments?.getString(VinylRoutes.DRAFT_ID),
+                    releaseId = backStackEntry.arguments?.getString(VinylRoutes.RELEASE_ID),
                     onCancel = { navController.popBackStack() },
                     onDraftSaved = {
                         notifyManualSubmissionsChanged()
@@ -596,7 +602,12 @@ fun VinylNavHost(
                         notifyManualSubmissionsChanged()
                         notifyCollectionMembershipChanged()
                         navController.navigate(VinylRoutes.recordDetail(releaseId)) {
-                            popUpTo(VinylRoutes.COLLECTION_PATTERN)
+                            val previousRoute = navController.previousBackStackEntry?.destination?.route
+                            if (previousRoute == VinylRoutes.RECORD_DETAIL_PATTERN) {
+                                popUpTo(VinylRoutes.RECORD_DETAIL_PATTERN) { inclusive = true }
+                            } else {
+                                popUpTo(VinylRoutes.COLLECTION_PATTERN)
+                            }
                         }
                     },
                 )
@@ -668,6 +679,9 @@ fun VinylNavHost(
                     onOpenLabelCollection = { label -> navController.navigate(VinylRoutes.collectionLabel(label)) },
                     onOpenRecordActionItems = { releaseId, actionType ->
                         navController.navigate(VinylRoutes.recordActionItems(releaseId, actionType))
+                    },
+                    onEditRelease = { releaseId ->
+                        navController.navigate(VinylRoutes.manualReleaseForm(releaseId = releaseId))
                     },
                     onCollectionMembershipChanged = {
                         val handle = navController.previousBackStackEntry?.savedStateHandle

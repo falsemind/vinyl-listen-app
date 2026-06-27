@@ -5,6 +5,7 @@ import android.net.Uri
 import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.domain.ManualReleaseCompletionState
 import com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult
+import com.example.vinyllistenapp.domain.ManualReleaseDetail
 import com.example.vinyllistenapp.domain.ManualReleaseDraft
 import com.example.vinyllistenapp.domain.ManualReleaseDraftList
 import com.example.vinyllistenapp.domain.ManualReleaseFormData
@@ -19,6 +20,10 @@ class ManualReleaseRepository(
     private val deleteDraftRequest: suspend (String) -> Unit,
     private val saveReleaseRequest: suspend (ManualReleaseFormData?, String?) -> ManualReleaseSaveResult,
     private val uploadCoverRequest: suspend (Context, String, Uri) -> ManualReleaseCoverUploadResult,
+    private val getReleaseRequest: suspend (String) -> ManualReleaseDetail,
+    private val updateReleaseRequest: suspend (String, ManualReleaseFormData) -> ManualReleaseDetail,
+    private val uploadReleaseCoverRequest: suspend (Context, String, Uri) -> ManualReleaseCoverUploadResult,
+    private val deleteReleaseCoverRequest: suspend (String) -> Unit,
 ) {
     constructor(apiClient: VinylApiClient) : this(
         listDraftsRequest = apiClient::listManualReleaseDrafts,
@@ -28,6 +33,10 @@ class ManualReleaseRepository(
         deleteDraftRequest = apiClient::deleteManualReleaseDraft,
         saveReleaseRequest = apiClient::saveManualRelease,
         uploadCoverRequest = apiClient::uploadManualReleaseDraftCover,
+        getReleaseRequest = apiClient::getManualRelease,
+        updateReleaseRequest = apiClient::updateManualRelease,
+        uploadReleaseCoverRequest = apiClient::uploadManualReleaseCover,
+        deleteReleaseCoverRequest = apiClient::deleteManualReleaseCover,
     )
 
     suspend fun listDrafts(): ManualReleaseDraftList = listDraftsRequest()
@@ -55,4 +64,21 @@ class ManualReleaseRepository(
         draftId: String,
         imageUri: Uri,
     ): ManualReleaseCoverUploadResult = uploadCoverRequest(context, draftId, imageUri)
+
+    suspend fun getRelease(releaseId: String): ManualReleaseDetail = getReleaseRequest(releaseId)
+
+    suspend fun updateRelease(
+        releaseId: String,
+        formData: ManualReleaseFormData,
+    ): ManualReleaseDetail = updateReleaseRequest(releaseId, formData)
+
+    suspend fun uploadReleaseCover(
+        context: Context,
+        releaseId: String,
+        imageUri: Uri,
+    ): ManualReleaseCoverUploadResult = uploadReleaseCoverRequest(context, releaseId, imageUri)
+
+    suspend fun deleteReleaseCover(releaseId: String) {
+        deleteReleaseCoverRequest(releaseId)
+    }
 }

@@ -51,6 +51,21 @@ class ManualReleaseCoverStorage:
             thumbnail_url=public_url,
         )
 
+    def store_release_cover(
+        self,
+        *,
+        user_id: str,
+        release_id: str,
+        content_type: str,
+        image_bytes: bytes,
+    ) -> StoredManualReleaseCover:
+        return self._store_cover(
+            user_id=user_id,
+            resource_id=release_id,
+            content_type=content_type,
+            image_bytes=image_bytes,
+        )
+
     def delete_stored_cover(self, storage_key: str | None) -> None:
         if not storage_key:
             return
@@ -70,6 +85,39 @@ class ManualReleaseCoverStorage:
                     existing_file.unlink(missing_ok=True)
         for temp_file in target_dir.glob(".cover-*.tmp"):
             temp_file.unlink(missing_ok=True)
+
+    def _store_cover(
+        self,
+        *,
+        user_id: str,
+        resource_id: str,
+        content_type: str,
+        image_bytes: bytes,
+    ) -> StoredManualReleaseCover:
+        extension = _cover_extension(content_type)
+        filename = f"cover-{uuid4().hex}{extension}"
+        target_dir = self.root_dir / user_id / resource_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        target_path = target_dir / filename
+        temp_path = target_dir / f".{filename}.tmp"
+        try:
+            temp_path.write_bytes(image_bytes)
+            temp_path.replace(target_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
+
+        storage_key = f"manual-release-covers/{user_id}/{resource_id}/{filename}"
+        public_url = (
+            f"{self.public_url_prefix}/{quote(user_id, safe='')}/"
+            f"{quote(resource_id, safe='')}/{quote(filename, safe='')}"
+        )
+        return StoredManualReleaseCover(
+            storage_key=storage_key,
+            image_url=public_url,
+            thumbnail_url=public_url,
+        )
 
     def _path_for_storage_key(self, storage_key: str | None) -> Path | None:
         if not storage_key:

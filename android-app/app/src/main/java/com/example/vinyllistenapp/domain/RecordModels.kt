@@ -24,7 +24,10 @@ data class RecordSummary(
     val hasFullDiscogsInfo: Boolean = false,
     val tracklist: List<ReleaseTrack> = emptyList(),
     val discogsArtists: List<ReleaseArtist> = emptyList(),
-)
+) {
+    val isManualRelease: Boolean
+        get() = discogsReleaseId <= 0L
+}
 
 data class ReleaseSideOption(
     val value: String,

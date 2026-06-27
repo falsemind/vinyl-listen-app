@@ -29,6 +29,7 @@ import com.example.vinyllistenapp.domain.HomeSummary
 import com.example.vinyllistenapp.domain.ListeningSession
 import com.example.vinyllistenapp.domain.ManualReleaseCompletionState
 import com.example.vinyllistenapp.domain.ManualReleaseCoverUploadResult
+import com.example.vinyllistenapp.domain.ManualReleaseDetail
 import com.example.vinyllistenapp.domain.ManualReleaseDraft
 import com.example.vinyllistenapp.domain.ManualReleaseDraftList
 import com.example.vinyllistenapp.domain.ManualReleaseDraftSummary
@@ -397,6 +398,20 @@ class VinylApiClient(
             postJson("manual-releases", body).toManualReleaseSaveResult()
         }
 
+    suspend fun getManualRelease(releaseId: String): ManualReleaseDetail =
+        apiCall {
+            getJson("manual-releases/${Uri.encode(releaseId)}").toManualReleaseDetail()
+        }
+
+    suspend fun updateManualRelease(
+        releaseId: String,
+        formData: ManualReleaseFormData,
+    ): ManualReleaseDetail =
+        apiCall {
+            val body = JSONObject().put("form_data", formData.toJson())
+            putJson("manual-releases/${Uri.encode(releaseId)}", body).toManualReleaseDetail()
+        }
+
     suspend fun uploadManualReleaseDraftCover(
         context: Context,
         draftId: String,
@@ -412,6 +427,28 @@ class VinylApiClient(
                 contentType = contentType,
             ).toManualReleaseCoverUploadResult()
         }
+
+    suspend fun uploadManualReleaseCover(
+        context: Context,
+        releaseId: String,
+        imageUri: Uri,
+    ): ManualReleaseCoverUploadResult =
+        apiCall {
+            val contentType = validateManualReleaseCoverContentType(context.contentResolver.getType(imageUri))
+            postImageMultipart(
+                context = context,
+                imageUri = imageUri,
+                path = "manual-releases/${Uri.encode(releaseId)}/cover",
+                fieldName = "file",
+                contentType = contentType,
+            ).toManualReleaseCoverUploadResult()
+        }
+
+    suspend fun deleteManualReleaseCover(releaseId: String) {
+        apiCall {
+            deleteJson("manual-releases/${Uri.encode(releaseId)}/cover")
+        }
+    }
 
     suspend fun importRelease(discogsReleaseId: Long): String =
         apiCall {
@@ -1385,6 +1422,21 @@ internal fun JSONObject.toManualReleaseSaveResult(): ManualReleaseSaveResult =
         title = optString("title", ""),
         artist = optString("artist", ""),
         inCollection = optBoolean("in_collection", true),
+    )
+
+internal fun JSONObject.toManualReleaseDetail(): ManualReleaseDetail =
+    ManualReleaseDetail(
+        id = getString("id"),
+        title = optString("title", ""),
+        artist = optString("artist", ""),
+        inCollection = optBoolean("in_collection", true),
+        formData = optJSONObject("form_data").orEmpty().toManualReleaseFormData(),
+        coverImageUrl = optResolvedMediaUrl("cover_image_url"),
+        coverThumbnailUrl = optResolvedMediaUrl("cover_thumbnail_url"),
+        coverContentType = optNullableString("cover_content_type"),
+        coverSizeBytes = optNullableInt("cover_size_bytes"),
+        createdAt = optString("created_at", ""),
+        updatedAt = optString("updated_at", ""),
     )
 
 internal fun JSONObject.toManualReleaseCoverUploadResult(): ManualReleaseCoverUploadResult =

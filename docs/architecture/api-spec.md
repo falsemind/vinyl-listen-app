@@ -1124,6 +1124,121 @@ Validation errors include field-level details:
 }
 ```
 
+## GET /manual-releases/{manual_release_id}
+
+Returns a committed user-owned manual release in the same `form_data` shape Android uses for manual drafts and saved-release editing.
+
+### Response
+
+```json
+{
+  "id": "manual-release-uuid",
+  "title": "Release Title",
+  "artist": "Artist",
+  "in_collection": true,
+  "form_data": {
+    "artists": ["Artist"],
+    "title": "Release Title",
+    "year": 1998,
+    "label": "Label Name",
+    "catalog_number": "CAT-1",
+    "barcode": "12345678",
+    "format": "Vinyl",
+    "vinyl_size": "12",
+    "vinyl_speed": "33 1/3",
+    "vinyl_disc_count": 2,
+    "genres": ["Electronic"],
+    "styles": ["Techno"],
+    "tracklist": [{"position": "A1", "title": "Track Title"}]
+  },
+  "cover_image_url": "/media/manual-release-covers/user/manual-release-uuid/cover.jpg",
+  "cover_thumbnail_url": "/media/manual-release-covers/user/manual-release-uuid/cover.jpg",
+  "cover_content_type": "image/jpeg",
+  "cover_size_bytes": 123456,
+  "created_at": "2026-06-21T12:00:00Z",
+  "updated_at": "2026-06-21T12:00:00Z"
+}
+```
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_not_found` | The manual release does not exist or belongs to another user. |
+
+## PUT /manual-releases/{manual_release_id}
+
+Updates a committed user-owned manual release without changing its release id, collection membership, listening history, ratings, notes, or manual session references.
+
+### Request
+
+```json
+{
+  "form_data": {
+    "artists": ["Updated Artist"],
+    "title": "Updated Release Title",
+    "label": "Updated Label",
+    "format": "CD",
+    "genres": ["Rock"],
+    "tracklist": [{"title": "Track Title"}]
+  }
+}
+```
+
+### Response
+
+Returns the same shape as `GET /manual-releases/{manual_release_id}`.
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_not_found` | The manual release does not exist or belongs to another user. |
+| `422 Unprocessable Content` | `manual_release_validation_failed` | Required release fields are missing or invalid. |
+
+## POST /manual-releases/{manual_release_id}/cover
+
+Validates and stores a replacement cover image for a committed user-owned manual release.
+
+### Request
+
+`multipart/form-data`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `file` | file | JPEG, PNG, or WebP image. Maximum size is 500 KB. Longest side must be 100..1200 px. |
+
+### Response
+
+```json
+{
+  "content_type": "image/jpeg",
+  "size_bytes": 123456
+}
+```
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400 Bad Request` | `manual_release_cover_invalid` | The file type, image dimensions, or image data is invalid. |
+| `404 Not Found` | `manual_release_not_found` | The manual release does not exist or belongs to another user. |
+| `413 Payload Too Large` | `manual_release_cover_invalid` | The uploaded file is larger than 500 KB. |
+
+## DELETE /manual-releases/{manual_release_id}/cover
+
+Removes the cover metadata from a committed user-owned manual release and deletes the stored cover file when possible.
+
+### Response
+
+`204 No Content`
+
+### Errors
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404 Not Found` | `manual_release_not_found` | The manual release does not exist or belongs to another user. |
+
 ## POST /manual-releases/drafts/{draft_id}/cover
 
 Validates and stores a cover image upload for a draft owned by the authenticated user.

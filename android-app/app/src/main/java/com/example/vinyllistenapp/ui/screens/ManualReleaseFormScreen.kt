@@ -74,12 +74,14 @@ import com.example.vinyllistenapp.data.api.VinylApiClient
 import com.example.vinyllistenapp.data.api.toUserMessage
 import com.example.vinyllistenapp.data.manual.ManualReleaseRepository
 import com.example.vinyllistenapp.domain.ManualReleaseCoverValidationState
+import com.example.vinyllistenapp.domain.ManualReleaseDetail
 import com.example.vinyllistenapp.domain.ManualReleaseDraft
 import com.example.vinyllistenapp.domain.ManualReleaseFormData
 import com.example.vinyllistenapp.domain.ManualReleaseFormState
 import com.example.vinyllistenapp.domain.ManualReleaseFormat
 import com.example.vinyllistenapp.domain.ManualReleaseLimits
 import com.example.vinyllistenapp.domain.ManualReleasePrimaryAction
+import com.example.vinyllistenapp.domain.ManualReleaseSaveResult
 import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditInput
 import com.example.vinyllistenapp.domain.ManualReleaseTrackCreditRole
 import com.example.vinyllistenapp.domain.ManualReleaseTrackInput
@@ -145,6 +147,7 @@ private data class ManualReleaseFormUiState(
     val initialFormState: ManualReleaseFormState = ManualReleaseFormState(),
     val activeDraftId: String? = null,
     val coverPreviewImageUrl: String? = null,
+    val initialCoverPreviewImageUrl: String? = null,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val loadError: String? = null,
@@ -164,6 +167,30 @@ private enum class ManualFormSaveTarget {
     Collection,
 }
 
+private sealed class ManualFormLoadResult {
+    data class Draft(
+        val draft: ManualReleaseDraft,
+    ) : ManualFormLoadResult()
+
+    data class Release(
+        val release: ManualReleaseDetail,
+    ) : ManualFormLoadResult()
+
+    val coverImageUrl: String?
+        get() =
+            when (this) {
+                is Draft -> draft.coverImageUrl
+                is Release -> release.coverImageUrl
+            }
+
+    val coverThumbnailUrl: String?
+        get() =
+            when (this) {
+                is Draft -> draft.coverThumbnailUrl
+                is Release -> release.coverThumbnailUrl
+            }
+}
+
 private data class SelectedCoverMetadata(
     val contentType: String?,
     val sizeBytes: Int?,
@@ -175,6 +202,7 @@ private data class SelectedCoverMetadata(
 fun ManualReleaseFormScreen(
     apiClient: VinylApiClient,
     draftId: String?,
+    releaseId: String? = null,
     onCancel: () -> Unit,
     onDraftSaved: () -> Unit,
     onReleaseSaved: (String) -> Unit,
@@ -185,11 +213,12 @@ fun ManualReleaseFormScreen(
     var retryKey by remember { mutableIntStateOf(0) }
     var showCancelConfirmation by remember { mutableStateOf(false) }
     var showSaveAsDialog by remember { mutableStateOf(false) }
-    var state by remember(draftId) {
+    val isEditingRelease = !releaseId.isNullOrBlank()
+    var state by remember(draftId, releaseId) {
         mutableStateOf(
             ManualReleaseFormUiState(
                 activeDraftId = draftId,
-                isLoading = !draftId.isNullOrBlank(),
+                isLoading = !draftId.isNullOrBlank() || isEditingRelease,
             ),
         )
     }
@@ -209,6 +238,7 @@ fun ManualReleaseFormScreen(
                             dirtyFields = state.formState.dirtyFields + "cover",
                             fieldErrors = emptyMap(),
                         ),
+                    coverPreviewImageUrl = state.coverPreviewImageUrl,
                     saveError = null,
                 )
         }
@@ -269,7 +299,13 @@ fun ManualReleaseFormScreen(
 
                     ManualFormSaveTarget.Collection -> {
                         val release =
-                            if (submitState.coverUri != null || !nextActiveDraftId.isNullOrBlank()) {
+                            if (isEditingRelease) {
+                                val updatedRelease = repository.updateRelease(releaseId.orEmpty(), submitState.formData)
+                                if (submitState.coverUri != null) {
+                                    uploadSelectedReleaseCoverIfNeeded(context, repository, updatedRelease.id, submitState)
+                                }
+                                updatedRelease.toSaveResult()
+                            } else if (submitState.coverUri != null || !nextActiveDraftId.isNullOrBlank()) {
                                 val draft =
                                     if (nextActiveDraftId.isNullOrBlank()) {
                                         repository.createDraft(submitState)
@@ -317,54 +353,85 @@ fun ManualReleaseFormScreen(
                         dirtyFields = state.formState.dirtyFields + "cover",
                         fieldErrors = emptyMap(),
                     ),
+                coverPreviewImageUrl =
+                    if (isEditingRelease) {
+                        state.initialCoverPreviewImageUrl
+                    } else {
+                        state.coverPreviewImageUrl
+                    },
                 saveError = null,
             )
     }
 
-    LaunchedEffect(repository, draftId, retryKey) {
-        if (draftId.isNullOrBlank()) {
+    LaunchedEffect(repository, draftId, releaseId, retryKey) {
+        if (draftId.isNullOrBlank() && releaseId.isNullOrBlank()) {
             state = ManualReleaseFormUiState()
             return@LaunchedEffect
         }
         state = state.copy(isLoading = true, loadError = null)
-        runCatching { repository.getDraft(draftId) }
-            .onSuccess { draft ->
-                val loadedState = draft.toFormState()
-                state =
-                    ManualReleaseFormUiState(
-                        formState = loadedState,
-                        initialFormState = loadedState,
-                        activeDraftId = draft.id,
-                        coverPreviewImageUrl = draft.coverImageUrl ?: draft.coverThumbnailUrl,
-                    )
-            }.onFailure { failure ->
-                state =
-                    state.copy(
-                        isLoading = false,
-                        loadError = failure.toUserMessage("Could not load manual release draft."),
-                    )
+        runCatching {
+            if (isEditingRelease) {
+                ManualFormLoadResult.Release(repository.getRelease(releaseId.orEmpty()))
+            } else {
+                ManualFormLoadResult.Draft(repository.getDraft(draftId.orEmpty()))
             }
+        }.onSuccess { loadResult ->
+            val loadedState = loadResult.toFormState()
+            val previewImageUrl = loadResult.coverImageUrl ?: loadResult.coverThumbnailUrl
+            state =
+                ManualReleaseFormUiState(
+                    formState = loadedState,
+                    initialFormState = loadedState,
+                    activeDraftId = (loadResult as? ManualFormLoadResult.Draft)?.draft?.id,
+                    coverPreviewImageUrl = previewImageUrl,
+                    initialCoverPreviewImageUrl = previewImageUrl,
+                )
+        }.onFailure { failure ->
+            state =
+                state.copy(
+                    isLoading = false,
+                    loadError =
+                        failure.toUserMessage(
+                            if (isEditingRelease) {
+                                "Could not load manual release."
+                            } else {
+                                "Could not load manual release draft."
+                            },
+                        ),
+                )
+        }
     }
 
     Scaffold(
         containerColor = VinylColors.AppBackground,
         topBar = {
             ManualReleaseFormTopBar(
-                title = if (!draftId.isNullOrBlank()) "Edit Draft" else "Add Release",
+                title =
+                    when {
+                        isEditingRelease -> "Edit Release"
+                        !draftId.isNullOrBlank() -> "Edit Draft"
+                        else -> "Add Release"
+                    },
                 onClose = ::requestCancel,
             )
         },
         bottomBar = {
             ManualReleaseFormBottomActions(
                 primaryAction = state.formState.primaryAction,
+                saveLabel = if (isEditingRelease) "Update Release" else null,
+                saveEnabled = if (isEditingRelease) state.formState.primaryAction == ManualReleasePrimaryAction.SaveRelease else null,
                 isSaving = state.isSaving,
                 isLoading = state.isLoading,
                 onCancel = ::requestCancel,
                 onSave = {
-                    when (state.formState.primaryAction) {
-                        ManualReleasePrimaryAction.SaveRelease -> showSaveAsDialog = true
-                        ManualReleasePrimaryAction.SaveDraft -> saveForm(ManualFormSaveTarget.Draft)
-                        ManualReleasePrimaryAction.DisabledSave -> Unit
+                    when {
+                        isEditingRelease && state.formState.primaryAction == ManualReleasePrimaryAction.SaveRelease -> {
+                            saveForm(ManualFormSaveTarget.Collection)
+                        }
+
+                        state.formState.primaryAction == ManualReleasePrimaryAction.SaveRelease -> showSaveAsDialog = true
+                        state.formState.primaryAction == ManualReleasePrimaryAction.SaveDraft -> saveForm(ManualFormSaveTarget.Draft)
+                        else -> Unit
                     }
                 },
             )
@@ -372,7 +439,6 @@ fun ManualReleaseFormScreen(
     ) { innerPadding ->
         ManualReleaseFormContent(
             state = state,
-            isEditingDraft = !draftId.isNullOrBlank(),
             innerPadding = innerPadding,
             onRetry = { retryKey += 1 },
             onUpdateForm = ::updateForm,
@@ -472,7 +538,6 @@ private fun ManualSaveAsDialog(
 @Composable
 private fun ManualReleaseFormContent(
     state: ManualReleaseFormUiState,
-    isEditingDraft: Boolean,
     innerPadding: PaddingValues,
     onRetry: () -> Unit,
     onUpdateForm: (String, (ManualReleaseFormData) -> ManualReleaseFormData) -> Unit,
@@ -1211,6 +1276,8 @@ private fun ManualFormLoadingCard() {
 @Composable
 private fun ManualReleaseFormBottomActions(
     primaryAction: ManualReleasePrimaryAction,
+    saveLabel: String? = null,
+    saveEnabled: Boolean? = null,
     isSaving: Boolean,
     isLoading: Boolean,
     onCancel: () -> Unit,
@@ -1231,11 +1298,12 @@ private fun ManualReleaseFormBottomActions(
                 when {
                     isLoading -> "Loading..."
                     isSaving -> "Saving..."
+                    saveLabel != null -> saveLabel
                     primaryAction == ManualReleasePrimaryAction.DisabledSave -> "Save"
                     primaryAction == ManualReleasePrimaryAction.SaveDraft -> "Save Draft"
                     else -> "Save as"
                 },
-            enabled = !isLoading && !isSaving && primaryAction != ManualReleasePrimaryAction.DisabledSave,
+            enabled = !isLoading && !isSaving && (saveEnabled ?: (primaryAction != ManualReleasePrimaryAction.DisabledSave)),
             onClick = onSave,
             modifier = Modifier.weight(1f),
         )
@@ -1384,14 +1452,46 @@ private suspend fun uploadSelectedCoverIfNeeded(
     repository.uploadCover(context, draftId, Uri.parse(coverUri))
 }
 
+private suspend fun uploadSelectedReleaseCoverIfNeeded(
+    context: Context,
+    repository: ManualReleaseRepository,
+    releaseId: String,
+    formState: ManualReleaseFormState,
+) {
+    val coverUri = formState.coverUri ?: return
+    repository.uploadReleaseCover(context, releaseId, Uri.parse(coverUri))
+}
+
 private fun ManualReleaseFormUiState.hasUnsavedChanges(): Boolean =
-    formState.normalizedForChangeCheck() != initialFormState.normalizedForChangeCheck()
+    formState.normalizedForChangeCheck() != initialFormState.normalizedForChangeCheck() ||
+        coverPreviewImageUrl != initialCoverPreviewImageUrl
 
 private fun ManualReleaseDraft.toFormState(): ManualReleaseFormState =
     ManualReleaseFormState(
         formData = formData,
         coverContentType = coverContentType,
         coverSizeBytes = coverSizeBytes,
+    )
+
+private fun ManualReleaseDetail.toFormState(): ManualReleaseFormState =
+    ManualReleaseFormState(
+        formData = formData,
+        coverContentType = coverContentType,
+        coverSizeBytes = coverSizeBytes,
+    )
+
+private fun ManualFormLoadResult.toFormState(): ManualReleaseFormState =
+    when (this) {
+        is ManualFormLoadResult.Draft -> draft.toFormState()
+        is ManualFormLoadResult.Release -> release.toFormState()
+    }
+
+private fun ManualReleaseDetail.toSaveResult(): ManualReleaseSaveResult =
+    ManualReleaseSaveResult(
+        id = id,
+        title = title,
+        artist = artist,
+        inCollection = inCollection,
     )
 
 private fun ManualReleaseFormState.normalizedForChangeCheck(): ManualReleaseFormState =

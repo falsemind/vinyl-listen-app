@@ -157,6 +157,20 @@ data class ManualReleaseSaveResult(
     val inCollection: Boolean,
 )
 
+data class ManualReleaseDetail(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val inCollection: Boolean,
+    val formData: ManualReleaseFormData,
+    val coverImageUrl: String? = null,
+    val coverThumbnailUrl: String? = null,
+    val coverContentType: String? = null,
+    val coverSizeBytes: Int? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
 data class ManualReleaseCoverUploadResult(
     val contentType: String,
     val sizeBytes: Int,

@@ -2,6 +2,8 @@ package com.example.vinyllistenapp.navigation
 
 import android.net.Uri
 import com.example.vinyllistenapp.domain.CollectionFolder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 object VinylRoutes {
     const val HOME = "home"
@@ -28,7 +30,7 @@ object VinylRoutes {
     const val COLLECTION_MANUAL_SEARCH_PATTERN = "$COLLECTION_MANUAL_SEARCH?catalog={catalog}"
     const val COLLECTION_MANUAL_ENTRY = "collection_manual_entry"
     const val COLLECTION_MANUAL_FORM = "collection_manual_form"
-    const val COLLECTION_MANUAL_FORM_PATTERN = "$COLLECTION_MANUAL_FORM?draftId={draftId}"
+    const val COLLECTION_MANUAL_FORM_PATTERN = "$COLLECTION_MANUAL_FORM?draftId={draftId}&releaseId={releaseId}"
     const val DRAFT_ID = "draftId"
     const val RECENT_SESSIONS = "recent_sessions"
     const val TOP_RECORDS = "top_records"
@@ -73,65 +75,74 @@ object VinylRoutes {
     const val ALL_DISCOGS_FOLDERS = "all_discogs_folders"
     const val SETTINGS = "settings"
 
-    fun sessionLogging(releaseId: String): String = "session_logging/${Uri.encode(releaseId)}"
+    fun sessionLogging(releaseId: String): String = "session_logging/${routeEncode(releaseId)}"
 
-    fun sessionEdit(sessionId: String): String = "$SESSION_EDIT/${Uri.encode(sessionId)}"
+    fun sessionEdit(sessionId: String): String = "$SESSION_EDIT/${routeEncode(sessionId)}"
 
-    fun recordDetail(releaseId: String): String = "record_detail/${Uri.encode(releaseId)}"
+    fun recordDetail(releaseId: String): String = "record_detail/${routeEncode(releaseId)}"
 
     fun recordActionItems(
         releaseId: String,
         actionType: String,
-    ): String = "$RECORD_ACTION_ITEMS/${Uri.encode(releaseId)}/${Uri.encode(actionType)}"
+    ): String = "$RECORD_ACTION_ITEMS/${routeEncode(releaseId)}/${routeEncode(actionType)}"
 
-    fun analyticsMonthSessions(month: String): String = "$ANALYTICS_MONTH_SESSIONS/${Uri.encode(month)}"
+    fun analyticsMonthSessions(month: String): String = "$ANALYTICS_MONTH_SESSIONS/${routeEncode(month)}"
 
     fun analyticsRatingRecords(rating: Int): String = "$ANALYTICS_RATING_RECORDS/$rating"
 
-    fun analyticsMoodRecords(mood: String): String = "$ANALYTICS_MOOD_RECORDS/${Uri.encode(mood)}"
+    fun analyticsMoodRecords(mood: String): String = "$ANALYTICS_MOOD_RECORDS/${routeEncode(mood)}"
 
-    fun analyticsStyleRecords(style: String): String = "$ANALYTICS_STYLE_RECORDS/${Uri.encode(style)}"
+    fun analyticsStyleRecords(style: String): String = "$ANALYTICS_STYLE_RECORDS/${routeEncode(style)}"
 
-    fun collectionArtist(artist: String): String = "$COLLECTION?$ARTIST=${Uri.encode(artist)}"
+    fun collectionArtist(artist: String): String = "$COLLECTION?$ARTIST=${routeEncode(artist)}"
 
-    fun collectionLabel(label: String): String = "$COLLECTION?$LABEL=${Uri.encode(label)}"
+    fun collectionLabel(label: String): String = "$COLLECTION?$LABEL=${routeEncode(label)}"
 
     fun collectionFolder(folder: CollectionFolder): String =
         "$COLLECTION?$FOLDER_ID=${folder.id}" +
-            "&$FOLDER_NAME=${Uri.encode(folder.name)}" +
+            "&$FOLDER_NAME=${routeEncode(folder.name)}" +
             folder.count?.let { count -> "&$FOLDER_COUNT=$count" }.orEmpty()
 
     fun captureRecord(
         flowMode: String = FLOW_MODE_SESSION,
         identifyMode: String? = null,
     ): String =
-        "$CAPTURE_RECORD?$FLOW_MODE=${Uri.encode(flowMode)}" +
-            identifyMode?.let { mode -> "&$IDENTIFY_MODE=${Uri.encode(mode)}" }.orEmpty()
+        "$CAPTURE_RECORD?$FLOW_MODE=${routeEncode(flowMode)}" +
+            identifyMode?.let { mode -> "&$IDENTIFY_MODE=${routeEncode(mode)}" }.orEmpty()
 
     fun processing(
         imageUri: Uri,
         flowMode: String = FLOW_MODE_SESSION,
-    ): String = "processing?imageUri=${Uri.encode(imageUri.toString())}&$FLOW_MODE=${Uri.encode(flowMode)}"
+    ): String = "processing?imageUri=${routeEncode(imageUri.toString())}&$FLOW_MODE=${routeEncode(flowMode)}"
 
     fun textProcessing(flowMode: String = FLOW_MODE_SESSION): String = "processing?imageUri=&$FLOW_MODE=$flowMode"
 
     fun barcodeProcessing(
         barcode: String,
         flowMode: String = FLOW_MODE_SESSION,
-    ): String = "$BARCODE_PROCESSING?$BARCODE=${Uri.encode(barcode)}&$FLOW_MODE=${Uri.encode(flowMode)}"
+    ): String = "$BARCODE_PROCESSING?$BARCODE=${routeEncode(barcode)}&$FLOW_MODE=${routeEncode(flowMode)}"
 
     fun matchConfirmation(flowMode: String = FLOW_MODE_SESSION): String = "$MATCH_CONFIRMATION?$FLOW_MODE=$flowMode"
 
-    fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${Uri.encode(barcode)}"
+    fun manualSearchBarcode(barcode: String): String = "$MANUAL_SEARCH?$BARCODE=${routeEncode(barcode)}"
 
-    fun manualSearchCatalog(catalog: String): String = "$MANUAL_SEARCH?$CATALOG=${Uri.encode(catalog)}"
+    fun manualSearchCatalog(catalog: String): String = "$MANUAL_SEARCH?$CATALOG=${routeEncode(catalog)}"
 
-    fun collectionManualSearchCatalog(catalog: String): String = "$COLLECTION_MANUAL_SEARCH?$CATALOG=${Uri.encode(catalog)}"
+    fun collectionManualSearchCatalog(catalog: String): String = "$COLLECTION_MANUAL_SEARCH?$CATALOG=${routeEncode(catalog)}"
 
-    fun manualReleaseForm(draftId: String? = null): String =
-        if (draftId.isNullOrBlank()) {
-            COLLECTION_MANUAL_FORM
-        } else {
-            "$COLLECTION_MANUAL_FORM?$DRAFT_ID=${Uri.encode(draftId)}"
-        }
+    fun manualReleaseForm(
+        draftId: String? = null,
+        releaseId: String? = null,
+    ): String =
+        buildList {
+            draftId?.takeIf { it.isNotBlank() }?.let { add("$DRAFT_ID=${routeEncode(it)}") }
+            releaseId?.takeIf { it.isNotBlank() }?.let { add("$RELEASE_ID=${routeEncode(it)}") }
+        }.takeIf { it.isNotEmpty() }
+            ?.joinToString(prefix = "$COLLECTION_MANUAL_FORM?", separator = "&")
+            ?: COLLECTION_MANUAL_FORM
 }
+
+private fun routeEncode(value: String): String =
+    URLEncoder
+        .encode(value, StandardCharsets.UTF_8.toString())
+        .replace("+", "%20")
